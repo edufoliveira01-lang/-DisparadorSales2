@@ -36,7 +36,7 @@ Requisitos: **Node.js 18+**.
 ```bash
 cp server/.env.example server/.env
 npm run install:all   # instala as dependências de /server e /client
-npm run dev            # sobe os dois ao mesmo tempo (backend:3333 + frontend:5173)
+npm run dev            # sobe os dois ao mesmo tempo (backend:3333 + frontend:8081)
 ```
 
 **Opção 2 — dois terminais separados:**
@@ -51,10 +51,10 @@ npm run dev        # http://localhost:3333
 # Terminal 2
 cd client
 npm install
-npm run dev         # http://localhost:5173
+npm run dev         # http://localhost:8081
 ```
 
-Abra `http://localhost:5173` no navegador. O banco SQLite e a sessão do WhatsApp são criados
+Abra `http://localhost:8081` no navegador. O banco SQLite e a sessão do WhatsApp são criados
 automaticamente em `server/data/` na primeira execução.
 
 > O pacote `whatsapp-web.js` usa Puppeteer, que baixa um Chromium próprio na primeira instalação
