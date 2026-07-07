@@ -8,6 +8,10 @@ import { emitEvent } from "../websocket";
 export type WhatsappStatus = "desconectado" | "inicializando" | "aguardando_qr" | "autenticado" | "conectado" | "falha";
 
 const AUTH_DATA_PATH = path.join(dataDir, "wwebjs_auth");
+// Local padrão onde o whatsapp-web.js guardava o cache de versão do WhatsApp Web antes de
+// mudarmos para webVersionCache: "none". Removido uma vez na inicialização para descartar
+// qualquer versão cacheada de uma tentativa anterior a essa mudança.
+const LEGACY_WEB_VERSION_CACHE_PATH = path.join(process.cwd(), ".wwebjs_cache");
 
 /**
  * O Chromium recusa reutilizar o profile enquanto existir um lock "Singleton*" de
@@ -27,6 +31,14 @@ function clearStaleChromiumLocks(): void {
         // limpeza best-effort
       }
     }
+  }
+}
+
+function clearLegacyWebVersionCache(): void {
+  try {
+    fs.rmSync(LEGACY_WEB_VERSION_CACHE_PATH, { recursive: true, force: true });
+  } catch {
+    // limpeza best-effort
   }
 }
 
@@ -63,6 +75,7 @@ class WhatsappManager {
 
   connect(): void {
     if (this.client) return;
+    clearLegacyWebVersionCache();
     this.geracao++;
     this.tentativa = 0;
     this.iniciarTentativa(this.geracao);
@@ -77,6 +90,14 @@ class WhatsappManager {
     // Configuração idêntica à usada no projeto anterior (que já validamos funcionando):
     // headless, apenas os dois args de sandbox, e os mesmos timeouts. Evitamos adicionar
     // flags extras do Chromium sem validação prévia em ambiente real.
+    //
+    // webVersionCache: "none" evita um problema documentado da comunidade: por padrão o
+    // whatsapp-web.js guarda em cache local a versão do WhatsApp Web que funcionou da
+    // última vez, e volta a usar essa MESMA versão em cada tentativa seguinte. Se o
+    // WhatsApp atualizou o cliente web nesse meio tempo, a versão cacheada fica
+    // incompatível e toda tentativa falha do mesmo jeito, sempre no mesmo ponto (exatamente
+    // o padrão "Execution context was destroyed" antes do QR, de forma consistente, e não
+    // intermitente). Com "none", cada tentativa usa a versão atual servida pelo WhatsApp.
     const client = new Client({
       authStrategy: new LocalAuth({ dataPath: AUTH_DATA_PATH }),
       puppeteer: {
@@ -84,6 +105,7 @@ class WhatsappManager {
         args: ["--no-sandbox", "--disable-setuid-sandbox"],
         protocolTimeout: 120000,
       },
+      webVersionCache: { type: "none" },
       qrMaxRetries: 5,
       authTimeoutMs: 90000,
     });
