@@ -256,10 +256,20 @@ export function Configuracoes() {
             </div>
           )}
 
-          {whatsapp.status === "falha" && whatsapp.lastError && (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-400">
-              {whatsapp.lastError}
+          {whatsapp.status === "inicializando" && whatsapp.lastError && (
+            <p className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:bg-amber-950 dark:text-amber-400">
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> {whatsapp.lastError}
             </p>
+          )}
+
+          {whatsapp.status === "falha" && whatsapp.lastError && (
+            <div className="space-y-1 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-400">
+              <p>{whatsapp.lastError}</p>
+              <p className="text-xs opacity-80">
+                Essa falha é conhecida e costuma ser temporária (bug do WhatsApp Web). Clique em "Conectar WhatsApp" para
+                tentar de novo.
+              </p>
+            </div>
           )}
 
           <div className="flex gap-2">

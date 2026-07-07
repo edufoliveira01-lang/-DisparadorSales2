@@ -30,11 +30,23 @@ function clearStaleChromiumLocks(): void {
   }
 }
 
+// "Execution context was destroyed" / "Protocol error" são falhas conhecidas e
+// intermitentes do whatsapp-web.js (bug de terceiros, ainda sem correção definitiva
+// upstream) que costumam acontecer durante o carregamento inicial do WhatsApp Web,
+// antes mesmo do QR Code aparecer. Na prática, tentar de novo quase sempre resolve —
+// então fazemos isso automaticamente em vez de exigir que o usuário clique de novo.
+const ERRO_TRANSITORIO = /execution context was destroyed|protocol error/i;
+const MAX_TENTATIVAS_AUTOMATICAS = 2;
+const INTERVALO_ENTRE_TENTATIVAS_MS = 3000;
+
 class WhatsappManager {
   private client: Client | null = null;
   private status: WhatsappStatus = "desconectado";
   private qrDataUrl: string | null = null;
   private lastError: string | null = null;
+  private tentativa = 0;
+  /** Incrementado a cada connect()/disconnect()/shutdown() para invalidar retries pendentes de uma tentativa anterior. */
+  private geracao = 0;
 
   getState() {
     return { status: this.status, qrDataUrl: this.qrDataUrl, lastError: this.lastError };
@@ -51,6 +63,14 @@ class WhatsappManager {
 
   connect(): void {
     if (this.client) return;
+    this.geracao++;
+    this.tentativa = 0;
+    this.iniciarTentativa(this.geracao);
+  }
+
+  private iniciarTentativa(minhaGeracao: number): void {
+    if (minhaGeracao !== this.geracao) return; // uma chamada mais recente (connect/disconnect) já assumiu
+
     clearStaleChromiumLocks();
     this.setState({ status: "inicializando", lastError: null, qrDataUrl: null });
 
@@ -58,8 +78,17 @@ class WhatsappManager {
       authStrategy: new LocalAuth({ dataPath: AUTH_DATA_PATH }),
       puppeteer: {
         headless: true,
-        args: ["--no-sandbox", "--disable-setuid-sandbox"],
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-gpu",
+          "--disable-dev-shm-usage",
+          "--disable-accelerated-2d-canvas",
+          "--no-first-run",
+          "--no-zygote",
+        ],
         protocolTimeout: 120000,
+        timeout: 60000,
       },
       qrMaxRetries: 5,
       authTimeoutMs: 90000,
@@ -72,10 +101,21 @@ class WhatsappManager {
       } catch {
         // best-effort — já estamos tratando uma falha
       }
-      if (this.client === client) {
-        this.client = null;
-        this.setState({ status, lastError: message, qrDataUrl: null });
+      if (this.client !== client) return; // uma tentativa mais nova já assumiu
+      this.client = null;
+
+      if (minhaGeracao === this.geracao && ERRO_TRANSITORIO.test(message) && this.tentativa < MAX_TENTATIVAS_AUTOMATICAS) {
+        this.tentativa++;
+        this.setState({
+          status: "inicializando",
+          lastError: `Falha temporária ao carregar o WhatsApp Web, tentando novamente (${this.tentativa}/${MAX_TENTATIVAS_AUTOMATICAS})…`,
+          qrDataUrl: null,
+        });
+        setTimeout(() => this.iniciarTentativa(minhaGeracao), INTERVALO_ENTRE_TENTATIVAS_MS);
+        return;
       }
+
+      this.setState({ status, lastError: message, qrDataUrl: null });
     };
 
     client.on("qr", async (qr) => {
@@ -105,7 +145,11 @@ class WhatsappManager {
   }
 
   async disconnect(): Promise<void> {
-    if (!this.client) return;
+    this.geracao++; // cancela qualquer retry automático pendente
+    if (!this.client) {
+      this.setState({ status: "desconectado", qrDataUrl: null, lastError: null });
+      return;
+    }
     try {
       await this.client.logout();
     } catch {
@@ -125,6 +169,7 @@ class WhatsappManager {
    * processo para não deixar um Chromium travando o profile na próxima inicialização.
    */
   async shutdown(): Promise<void> {
+    this.geracao++; // cancela qualquer retry automático pendente
     if (!this.client) return;
     try {
       await this.client.destroy();
