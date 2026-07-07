@@ -63,11 +63,30 @@ export interface PericiaComOrigem extends Pericia {
   origem: OrigemPericia;
 }
 
+function detectarOrigemPorTipo(valorTipo: string): OrigemPericia {
+  if (/M[EÉ]DI/i.test(valorTipo)) return "medica";
+  if (/SOCIAL/i.test(valorTipo)) return "social";
+  return "geral";
+}
+
+interface BlockStart {
+  origem: OrigemPericia;
+  start: number;
+}
+
 /**
  * Extrai 1 ou 2 perícias da descrição de um card do Trello, junto com a origem
- * de cada uma (qual cabeçalho a gerou) — usada para os filtros do Dashboard.
- * - Se houver cabeçalhos "PERÍCIA MÉDICA" e/ou "PERÍCIA SOCIAL", cada um vira um bloco.
- * - Se nenhum cabeçalho for encontrado, a descrição inteira é tratada como 1 perícia genérica.
+ * de cada uma — usada para os filtros do Dashboard. Dois formatos são suportados:
+ *
+ * 1. Com cabeçalho explícito ("PERÍCIA MÉDICA:" / "PERÍCIA SOCIAL:" em linha própria),
+ *    cada cabeçalho inicia um bloco — o mais comum quando os campos vêm formatados
+ *    manualmente com uma especialidade livre (ex: "TIPO DE PERÍCIA: Ortopédica").
+ * 2. Sem cabeçalho, onde cada ocorrência do campo TIPO já começa uma nova perícia
+ *    (ex: "TIPO: PERÍCIA MÉDICA;" seguido depois por "TIPO: PERÍCIA SOCIAL;") — usado
+ *    quando o card não tem cabeçalho de bloco e o próprio campo TIPO diz qual é.
+ *
+ * Se nenhum dos dois padrões for encontrado, a descrição inteira é tratada como 1
+ * perícia genérica.
  */
 export function parseCardDescriptionComOrigem(description: string): PericiaComOrigem[] {
   if (!description || !description.trim()) return [];
@@ -75,38 +94,51 @@ export function parseCardDescriptionComOrigem(description: string): PericiaComOr
   description = removerTextoOriginalColado(description);
   if (!description.trim()) return [];
 
-  type Header = { origem: OrigemPericia; index: number; end: number };
-  const headers: Header[] = [];
+  const blockStarts: BlockStart[] = [];
 
-  const medicaMatch = MEDICA_HEADER.exec(description);
-  if (medicaMatch) {
-    headers.push({ origem: "medica", index: medicaMatch.index, end: medicaMatch.index + medicaMatch[0].length });
+  const medicaRe = new RegExp(MEDICA_HEADER.source, "gim");
+  const socialRe = new RegExp(SOCIAL_HEADER.source, "gim");
+  const headerMatches: { origem: OrigemPericia; index: number; end: number }[] = [];
+  for (const [re, origem] of [
+    [medicaRe, "medica"],
+    [socialRe, "social"],
+  ] as const) {
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(description))) {
+      headerMatches.push({ origem, index: m.index, end: m.index + m[0].length });
+    }
+  }
+  headerMatches.sort((a, b) => a.index - b.index);
+  for (const h of headerMatches) blockStarts.push({ origem: h.origem, start: h.end });
+
+  // Fora da região já coberta por um cabeçalho explícito (ou na descrição inteira,
+  // se não houver nenhum), cada ocorrência do campo TIPO começa uma nova perícia.
+  // Assume que TIPO é o primeiro campo de cada grupo quando não há cabeçalho.
+  const regiaoSemCabecalho = headerMatches.length > 0 ? description.slice(0, headerMatches[0].index) : description;
+  const tipoRe = new RegExp(FIELD_PATTERNS.tipo.source, "gim");
+  let tipoMatch: RegExpExecArray | null;
+  while ((tipoMatch = tipoRe.exec(regiaoSemCabecalho))) {
+    blockStarts.push({ origem: detectarOrigemPorTipo(tipoMatch[1]), start: tipoMatch.index });
   }
 
-  const socialMatch = SOCIAL_HEADER.exec(description);
-  if (socialMatch) {
-    headers.push({ origem: "social", index: socialMatch.index, end: socialMatch.index + socialMatch[0].length });
-  }
-
-  if (headers.length === 0) {
+  if (blockStarts.length === 0) {
     return [{ ...extractPericiaFromBlock(description), origem: "geral" }];
   }
 
-  headers.sort((a, b) => a.index - b.index);
+  blockStarts.sort((a, b) => a.start - b.start);
 
   const pericias: PericiaComOrigem[] = [];
-  for (let i = 0; i < headers.length; i++) {
-    const start = headers[i].end;
-    const end = i + 1 < headers.length ? headers[i + 1].index : description.length;
-    pericias.push({ ...extractPericiaFromBlock(description.slice(start, end)), origem: headers[i].origem });
+  for (let i = 0; i < blockStarts.length; i++) {
+    const start = blockStarts[i].start;
+    const end = i + 1 < blockStarts.length ? blockStarts[i + 1].start : description.length;
+    pericias.push({ ...extractPericiaFromBlock(description.slice(start, end)), origem: blockStarts[i].origem });
   }
   return pericias;
 }
 
 /**
  * Extrai 1 ou 2 perícias da descrição de um card do Trello.
- * - Se houver cabeçalhos "PERÍCIA MÉDICA" e/ou "PERÍCIA SOCIAL", cada um vira um bloco.
- * - Se nenhum cabeçalho for encontrado, a descrição inteira é tratada como 1 perícia genérica.
+ * Veja `parseCardDescriptionComOrigem` para os formatos suportados.
  */
 export function parseCardDescription(description: string): Pericia[] {
   return parseCardDescriptionComOrigem(description).map(({ origem, ...pericia }) => pericia);

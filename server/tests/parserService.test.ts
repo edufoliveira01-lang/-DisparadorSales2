@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPericiaCompleta, parseCardDescription } from "../src/services/parserService";
+import { isPericiaCompleta, parseCardDescription, parseCardDescriptionComOrigem } from "../src/services/parserService";
 
 describe("parseCardDescription", () => {
   it("extrai 1 perícia com cabeçalho PERÍCIA MÉDICA", () => {
@@ -213,6 +213,47 @@ ADVOGADO: ANTONIO MESSIAS SALES JUNIOR - OAB 346457/SP`;
       nome: "GENI DE FATIMA FURTADO",
     });
     expect(isPericiaCompleta(result[0])).toBe(true);
+  });
+
+  it("card real com 2 perícias sem cabeçalho: cada 'TIPO:' começa um bloco novo, e a origem é detectada pelo próprio valor do TIPO", () => {
+    const desc = `TIPO: PERÍCIA MÉDICA;
+DATA: 14/07/2026;
+HORÁRIO: 15:00;
+LOCAL: sede deste Juizado Especial Federal, AVENIDA ANTONIO EMMERICH, 1238 - VILA CASCATINHA - SÃO VICENTE;
+NOME: GENI DE FATIMA FURTADO;
+PROCESSO: 5001306-35.2026.4.03.6321;
+PROFISSIONAL/PERITO: DIEGO ABAD DOS SANTOS
+
+TIPO: PERÍCIA SOCIAL;
+DATA: 04/08/2026;
+HORÁRIO: 14:00;
+LOCAL: residência do autor;
+NOME: GENI DE FATIMA FURTADO;
+PROCESSO: 5001306-35.2026.4.03.6321;
+PROFISSIONAL/PERITO: ANA LUCIA VALERIO
+
+EMAIL ORIGINAL:
+texto da intimação original que deve ser ignorado...`;
+
+    const result = parseCardDescriptionComOrigem(desc);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({
+      tipo: "PERÍCIA MÉDICA",
+      data: "14/07/2026",
+      horario: "15:00",
+      local: "sede deste Juizado Especial Federal, AVENIDA ANTONIO EMMERICH, 1238 - VILA CASCATINHA - SÃO VICENTE",
+      nome: "GENI DE FATIMA FURTADO",
+      origem: "medica",
+    });
+    expect(result[1]).toEqual({
+      tipo: "PERÍCIA SOCIAL",
+      data: "04/08/2026",
+      horario: "14:00",
+      local: "residência do autor",
+      nome: "GENI DE FATIMA FURTADO",
+      origem: "social",
+    });
+    expect(result.every(isPericiaCompleta)).toBe(true);
   });
 
   it("remove ';' e ',' finais dos campos capturados", () => {
