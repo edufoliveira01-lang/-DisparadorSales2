@@ -26,14 +26,29 @@ histórico completo de sucesso/falha.
 
 Requisitos: **Node.js 18+**.
 
+> ⚠️ Este projeto **não tem um único `package.json` na raiz com o código da aplicação** — `/server`
+> e `/client` são dois projetos Node separados, cada um com suas próprias dependências. Rodar
+> `npm install`/`npm run dev` diretamente na pasta raiz do projeto (sem usar os scripts abaixo)
+> resulta em erro `ENOENT: no such file or directory, open '.../package.json'`.
+
+**Opção 1 — um único comando (recomendado):**
+
 ```bash
-# 1. Backend
+cp server/.env.example server/.env
+npm run install:all   # instala as dependências de /server e /client
+npm run dev            # sobe os dois ao mesmo tempo (backend:3333 + frontend:5173)
+```
+
+**Opção 2 — dois terminais separados:**
+
+```bash
+# Terminal 1
 cd server
 cp .env.example .env
 npm install
 npm run dev        # http://localhost:3333
 
-# 2. Frontend (em outro terminal)
+# Terminal 2
 cd client
 npm install
 npm run dev         # http://localhost:5173
