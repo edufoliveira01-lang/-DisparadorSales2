@@ -51,6 +51,8 @@ const ERRO_TRANSITORIO = /execution context was destroyed|protocol error/i;
 const MAX_TENTATIVAS_AUTOMATICAS = 3;
 const INTERVALO_ENTRE_TENTATIVAS_MS = 3000;
 
+type Listener = () => void;
+
 class WhatsappManager {
   private client: Client | null = null;
   private status: WhatsappStatus = "desconectado";
@@ -59,6 +61,16 @@ class WhatsappManager {
   private tentativa = 0;
   /** Incrementado a cada connect()/disconnect()/shutdown() para invalidar retries pendentes de uma tentativa anterior. */
   private geracao = 0;
+  private listeners = new Set<Listener>();
+
+  onChange(listener: Listener) {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private emit() {
+    for (const l of this.listeners) l();
+  }
 
   getState() {
     return { status: this.status, qrDataUrl: this.qrDataUrl, lastError: this.lastError };
@@ -71,6 +83,7 @@ class WhatsappManager {
   private setState(partial: Partial<{ status: WhatsappStatus; qrDataUrl: string | null; lastError: string | null }>) {
     Object.assign(this, partial);
     emitEvent("whatsapp:status", this.getState());
+    this.emit();
   }
 
   connect(): void {

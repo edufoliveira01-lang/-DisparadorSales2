@@ -60,10 +60,21 @@ export function Configuracoes() {
 
   useEffect(() => {
     loadSettings();
-    api.get<WhatsappState>("/whatsapp/status").then(setWhatsapp).catch(() => {});
-  }, [loadSettings]);
+    
+    const eventSource = new EventSource(`${api.baseUrl}/whatsapp/events`);
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        setWhatsapp(data);
+      } catch (err) {
+        console.error("Erro ao processar evento de WhatsApp:", err);
+      }
+    };
 
-  useSocketEvent<WhatsappState>("whatsapp:status", setWhatsapp);
+    return () => {
+      eventSource.close();
+    };
+  }, [loadSettings]);
 
   async function handleValidarTrello() {
     setValidando(true);

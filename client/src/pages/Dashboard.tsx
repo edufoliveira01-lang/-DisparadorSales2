@@ -66,10 +66,21 @@ export function Dashboard() {
       setTemplates(data);
       if (data.length > 0) setTemplateId(data[0].id);
     });
-    api.get<WhatsappState>("/whatsapp/status").then(setWhatsapp).catch(() => {});
-  }, [carregarCards]);
+    
+    const eventSource = new EventSource(`${api.baseUrl}/whatsapp/events`);
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        setWhatsapp(data);
+      } catch (err) {
+        console.error("Erro ao processar evento de WhatsApp:", err);
+      }
+    };
 
-  useSocketEvent<WhatsappState>("whatsapp:status", setWhatsapp);
+    return () => {
+      eventSource.close();
+    };
+  }, [carregarCards]);
 
   useSocketEvent<{ cardId: string; status: "sucesso" | "falha"; erro?: string }>("send:update", (payload) => {
     setEnviandoCardId(null);
