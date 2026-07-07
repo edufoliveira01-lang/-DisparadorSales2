@@ -1,59 +1,32 @@
 import fs from "node:fs";
 import path from "node:path";
+import makeWASocket, { DisconnectReason, useMultiFileAuthState, type WASocket } from "@whiskeysockets/baileys";
+import pino from "pino";
 import QRCode from "qrcode";
-import { Client, LocalAuth } from "whatsapp-web.js";
 import { dataDir } from "../db";
 import { emitEvent } from "../websocket";
 
 export type WhatsappStatus = "desconectado" | "inicializando" | "aguardando_qr" | "autenticado" | "conectado" | "falha";
 
-const AUTH_DATA_PATH = path.join(dataDir, "wwebjs_auth");
-
-/**
- * O Chromium recusa reutilizar o profile enquanto existir um lock "Singleton*" de
- * uma execução anterior, mesmo que o processo já não exista (ex: servidor reiniciado
- * sem shutdown limpo). Como só rodamos um Client por vez, é seguro limpar esses locks
- * antes de iniciar um novo browser — evita o erro "browser is already running".
- */
-function clearStaleChromiumLocks(): void {
-  if (!fs.existsSync(AUTH_DATA_PATH)) return;
-  const lockFileNames = ["SingletonLock", "SingletonCookie", "SingletonSocket"];
-  for (const sessionDir of fs.readdirSync(AUTH_DATA_PATH, { withFileTypes: true })) {
-    if (!sessionDir.isDirectory()) continue;
-    for (const lockName of lockFileNames) {
-      try {
-        fs.rmSync(path.join(AUTH_DATA_PATH, sessionDir.name, lockName), { force: true });
-      } catch {
-        // limpeza best-effort
-      }
-    }
-  }
-}
-
-// "Execution context was destroyed" / "Protocol error" são falhas conhecidas e
-// intermitentes do whatsapp-web.js (bug de terceiros, ainda sem correção definitiva
-// upstream) que costumam acontecer durante o carregamento inicial do WhatsApp Web,
-// antes mesmo do QR Code aparecer. Na prática, tentar de novo quase sempre resolve —
-// então fazemos isso automaticamente em vez de exigir que o usuário clique de novo.
-const ERRO_TRANSITORIO = /execution context was destroyed|protocol error/i;
-const MAX_TENTATIVAS_AUTOMATICAS = 2;
-const INTERVALO_ENTRE_TENTATIVAS_MS = 3000;
+const AUTH_DIR = path.join(dataDir, "baileys_auth");
+const RECONEXAO_INTERVALO_MS = 4000;
+const MAX_TENTATIVAS_FALHA_SEGUIDAS = 5;
 
 class WhatsappManager {
-  private client: Client | null = null;
+  private sock: WASocket | null = null;
   private status: WhatsappStatus = "desconectado";
   private qrDataUrl: string | null = null;
   private lastError: string | null = null;
-  private tentativa = 0;
-  /** Incrementado a cada connect()/disconnect()/shutdown() para invalidar retries pendentes de uma tentativa anterior. */
+  /** Incrementado a cada connect()/disconnect()/shutdown() para invalidar reconexões automáticas de uma tentativa anterior. */
   private geracao = 0;
+  private tentativasFalhaSeguidas = 0;
 
   getState() {
     return { status: this.status, qrDataUrl: this.qrDataUrl, lastError: this.lastError };
   }
 
   isReady(): boolean {
-    return this.status === "conectado" && this.client !== null;
+    return this.status === "conectado" && this.sock !== null;
   }
 
   private setState(partial: Partial<{ status: WhatsappStatus; qrDataUrl: string | null; lastError: string | null }>) {
@@ -62,137 +35,140 @@ class WhatsappManager {
   }
 
   connect(): void {
-    if (this.client) return;
+    if (this.sock) return;
     this.geracao++;
-    this.tentativa = 0;
-    this.iniciarTentativa(this.geracao);
+    this.tentativasFalhaSeguidas = 0;
+    void this.iniciarConexao(this.geracao);
   }
 
-  private iniciarTentativa(minhaGeracao: number): void {
-    if (minhaGeracao !== this.geracao) return; // uma chamada mais recente (connect/disconnect) já assumiu
-
-    clearStaleChromiumLocks();
+  private async iniciarConexao(minhaGeracao: number): Promise<void> {
+    if (minhaGeracao !== this.geracao) return;
     this.setState({ status: "inicializando", lastError: null, qrDataUrl: null });
 
-    const client = new Client({
-      authStrategy: new LocalAuth({ dataPath: AUTH_DATA_PATH }),
-      puppeteer: {
-        headless: true,
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-gpu",
-          "--disable-dev-shm-usage",
-          "--disable-accelerated-2d-canvas",
-          "--no-first-run",
-          "--no-zygote",
-        ],
-        protocolTimeout: 120000,
-        timeout: 60000,
-      },
-      qrMaxRetries: 5,
-      authTimeoutMs: 90000,
+    let state, saveCreds: () => Promise<void>;
+    try {
+      ({ state, saveCreds } = await useMultiFileAuthState(AUTH_DIR));
+    } catch (err) {
+      this.setState({
+        status: "falha",
+        lastError: `Erro ao carregar a sessão salva: ${(err as Error).message}`,
+        qrDataUrl: null,
+      });
+      return;
+    }
+    if (minhaGeracao !== this.geracao) return; // um disconnect()/connect() mais novo já assumiu
+
+    const sock = makeWASocket({
+      auth: state,
+      logger: pino({ level: "silent" }),
+      browser: ["Disparador de Perícias", "Chrome", "120.0.0"],
     });
-    this.client = client;
+    this.sock = sock;
 
-    const failAndCleanUp = async (status: WhatsappStatus, message: string) => {
-      try {
-        await client.destroy();
-      } catch {
-        // best-effort — já estamos tratando uma falha
+    sock.ev.on("creds.update", saveCreds);
+
+    sock.ev.on("connection.update", (update) => {
+      if (this.sock !== sock) return; // evento de uma conexão antiga já substituída
+
+      const { connection, qr, lastDisconnect } = update;
+
+      if (qr) {
+        QRCode.toDataURL(qr).then((qrDataUrl) => {
+          if (this.sock === sock) this.setState({ status: "aguardando_qr", qrDataUrl });
+        });
       }
-      if (this.client !== client) return; // uma tentativa mais nova já assumiu
-      this.client = null;
 
-      if (minhaGeracao === this.geracao && ERRO_TRANSITORIO.test(message) && this.tentativa < MAX_TENTATIVAS_AUTOMATICAS) {
-        this.tentativa++;
+      if (connection === "open") {
+        this.tentativasFalhaSeguidas = 0;
+        this.setState({ status: "conectado", qrDataUrl: null, lastError: null });
+      }
+
+      if (connection === "close") {
+        this.sock = null;
+        const statusCode = (lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)?.output
+          ?.statusCode;
+
+        if (statusCode === DisconnectReason.loggedOut) {
+          fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+          this.setState({ status: "desconectado", qrDataUrl: null, lastError: null });
+          return;
+        }
+
+        if (minhaGeracao !== this.geracao) return; // uma desconexão/reconexão manual já está em andamento
+
+        this.tentativasFalhaSeguidas++;
+        if (this.tentativasFalhaSeguidas > MAX_TENTATIVAS_FALHA_SEGUIDAS) {
+          this.setState({
+            status: "falha",
+            lastError: "Não foi possível conectar ao WhatsApp após várias tentativas. Clique em Conectar para tentar de novo.",
+            qrDataUrl: null,
+          });
+          return;
+        }
+
         this.setState({
           status: "inicializando",
-          lastError: `Falha temporária ao carregar o WhatsApp Web, tentando novamente (${this.tentativa}/${MAX_TENTATIVAS_AUTOMATICAS})…`,
+          lastError: `Conexão perdida, tentando novamente (${this.tentativasFalhaSeguidas}/${MAX_TENTATIVAS_FALHA_SEGUIDAS})…`,
           qrDataUrl: null,
         });
-        setTimeout(() => this.iniciarTentativa(minhaGeracao), INTERVALO_ENTRE_TENTATIVAS_MS);
-        return;
+        setTimeout(() => void this.iniciarConexao(minhaGeracao), RECONEXAO_INTERVALO_MS);
       }
-
-      this.setState({ status, lastError: message, qrDataUrl: null });
-    };
-
-    client.on("qr", async (qr) => {
-      const qrDataUrl = await QRCode.toDataURL(qr);
-      this.setState({ status: "aguardando_qr", qrDataUrl });
-    });
-
-    client.on("authenticated", () => {
-      this.setState({ status: "autenticado", qrDataUrl: null });
-    });
-
-    client.on("ready", () => {
-      this.setState({ status: "conectado", qrDataUrl: null });
-    });
-
-    client.on("auth_failure", (msg) => {
-      failAndCleanUp("falha", String(msg));
-    });
-
-    client.on("disconnected", (reason) => {
-      failAndCleanUp("desconectado", String(reason));
-    });
-
-    client.initialize().catch((err) => {
-      failAndCleanUp("falha", err?.message ?? String(err));
     });
   }
 
   async disconnect(): Promise<void> {
-    this.geracao++; // cancela qualquer retry automático pendente
-    if (!this.client) {
-      this.setState({ status: "desconectado", qrDataUrl: null, lastError: null });
-      return;
-    }
-    try {
-      await this.client.logout();
-    } catch {
+    this.geracao++; // cancela qualquer reconexão automática pendente
+    const sock = this.sock;
+    this.sock = null;
+
+    if (sock) {
       try {
-        await this.client.destroy();
+        await sock.logout();
       } catch {
-        // best-effort
+        try {
+          await sock.end(undefined);
+        } catch {
+          // best-effort
+        }
       }
     }
-    this.client = null;
+
+    fs.rmSync(AUTH_DIR, { recursive: true, force: true });
     this.setState({ status: "desconectado", qrDataUrl: null, lastError: null });
   }
 
   /**
-   * Fecha o browser sem invalidar a sessão (diferente de disconnect(), que faz logout()),
-   * para que o próximo connect() não precise de um novo QR Code. Chamar no shutdown do
-   * processo para não deixar um Chromium travando o profile na próxima inicialização.
+   * Encerra a conexão sem invalidar a sessão salva (diferente de disconnect(), que faz
+   * logout()), para que o próximo connect() não precise de um novo QR Code. Chamar no
+   * shutdown do processo.
    */
   async shutdown(): Promise<void> {
-    this.geracao++; // cancela qualquer retry automático pendente
-    if (!this.client) return;
+    this.geracao++; // cancela qualquer reconexão automática pendente
+    const sock = this.sock;
+    this.sock = null;
+    if (!sock) return;
     try {
-      await this.client.destroy();
+      await sock.end(undefined);
     } catch {
       // best-effort — estamos encerrando de qualquer forma
     }
-    this.client = null;
   }
 
-  /** Confirma que o telefone existe no WhatsApp e retorna o chat id canônico. */
+  /** Confirma que o telefone existe no WhatsApp e retorna o JID canônico. */
   async resolveChatId(telefoneDigits: string): Promise<string | null> {
-    if (!this.client || this.status !== "conectado") {
+    if (!this.sock || this.status !== "conectado") {
       throw new Error("WhatsApp não está conectado.");
     }
-    const result = await this.client.getNumberId(telefoneDigits);
-    return result ? result._serialized : null;
+    const resultados = await this.sock.onWhatsApp(telefoneDigits);
+    const encontrado = resultados?.find((r) => r.exists);
+    return encontrado ? encontrado.jid : null;
   }
 
   async sendMessage(chatId: string, mensagem: string): Promise<void> {
-    if (!this.client || this.status !== "conectado") {
+    if (!this.sock || this.status !== "conectado") {
       throw new Error("WhatsApp não está conectado.");
     }
-    await this.client.sendMessage(chatId, mensagem);
+    await this.sock.sendMessage(chatId, { text: mensagem });
   }
 }
 

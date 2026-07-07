@@ -11,8 +11,10 @@ histórico completo de sucesso/falha.
 ## Stack
 
 - **Backend:** Node.js + Express + WebSocket (Socket.io), SQLite (`better-sqlite3`), integração
-  oficial com a API do Trello e integração com o WhatsApp via `whatsapp-web.js` (QR Code, sessão
-  persistida em disco).
+  oficial com a API do Trello e integração com o WhatsApp via `@whiskeysockets/baileys` (QR Code,
+  sessão persistida em disco). Baileys se conecta diretamente ao WhatsApp por WebSocket, sem
+  precisar abrir um navegador Chromium — mais leve e rápido de instalar que alternativas baseadas
+  em Puppeteer.
 - **Frontend:** React + Vite + TailwindCSS, consumindo a API do backend em `localhost`.
 
 ## Estrutura
@@ -56,11 +58,6 @@ npm run dev         # http://localhost:8081
 
 Abra `http://localhost:8081` no navegador. O banco SQLite e a sessão do WhatsApp são criados
 automaticamente em `server/data/` na primeira execução.
-
-> O pacote `whatsapp-web.js` usa Puppeteer, que baixa um Chromium próprio na primeira instalação
-> (pode levar alguns minutos). Em servidores Linux sem interface gráfica, pode ser necessário
-> instalar dependências do sistema do Chromium (ex: `libnss3`, `libatk1.0-0`, etc.) — veja a
-> documentação do Puppeteer caso o `npm install` ou a conexão falhem.
 
 ## Testes automatizados
 
@@ -135,8 +132,9 @@ separadas**.
 
 Na tela **Configurações**, clique em **Conectar WhatsApp** e escaneie o QR Code exibido com o
 celular (WhatsApp → Aparelhos conectados → Conectar um aparelho). A sessão fica salva em
-`server/data/wwebjs_auth`, então não é necessário escanear novamente a cada reinício do servidor —
-apenas ao clicar em "Desconectar / trocar de sessão".
+`server/data/baileys_auth`, então não é necessário escanear novamente a cada reinício do servidor —
+apenas ao clicar em "Desconectar / trocar de sessão". Se a conexão falhar, o sistema tenta de novo
+automaticamente algumas vezes antes de pedir para você clicar em "Conectar" outra vez.
 
 ### 6. Enviar mensagens
 
@@ -157,7 +155,7 @@ falha.
 ## Notas
 
 - Aplicação 100% local — nenhum dado sobe para servidores externos além das chamadas às APIs
-  oficiais do Trello e do WhatsApp (via `whatsapp-web.js`, que se conecta diretamente aos
-  servidores do WhatsApp).
+  oficiais do Trello e do WhatsApp (via Baileys, que se conecta diretamente aos servidores do
+  WhatsApp).
 - Se o Trello retornar erro de autenticação, a tela de Configurações exibe o motivo. Se o WhatsApp
   desconectar durante um envio em lote, o envio é pausado e o usuário é notificado.
