@@ -4,13 +4,13 @@ import { dispatchBatch, dispatchSingle, type SendItem } from "../services/dispat
 export const sendRouter = Router();
 
 sendRouter.post("/single", async (req, res) => {
-  const { cardId, cardNome, telefone, contactId, pericias, templateId } = req.body as SendItem & { templateId: number };
+  const { cardId, nomeCliente, telefone, contactId, pericias, templateId } = req.body as SendItem & { templateId: number };
 
   if (!telefone?.trim()) return res.status(400).json({ error: "Este cliente não tem telefone cadastrado." });
   if (!templateId) return res.status(400).json({ error: "Selecione um template de mensagem." });
 
   try {
-    const log = await dispatchSingle({ cardId, cardNome, telefone, contactId: contactId ?? null, pericias }, templateId);
+    const log = await dispatchSingle({ cardId, nomeCliente, telefone, contactId: contactId ?? null, pericias }, templateId);
     res.json({ ok: true, log });
   } catch (err) {
     res.status(400).json({ error: (err as Error).message });

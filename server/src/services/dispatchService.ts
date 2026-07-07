@@ -6,7 +6,8 @@ import { whatsappManager } from "./whatsappService";
 
 export interface SendItem {
   cardId: string;
-  cardNome: string;
+  /** Nome real do cliente (extraído da perícia), usado na variável {{NOME}} da mensagem. */
+  nomeCliente: string;
   telefone: string;
   contactId: number | null;
   pericias: Pericia[];
@@ -26,7 +27,7 @@ export async function dispatchSingle(item: SendItem, templateId: number): Promis
     const chatId = await whatsappManager.resolveChatId(onlyDigits(item.telefone));
     if (!chatId) throw new Error("Este telefone não foi encontrado no WhatsApp.");
 
-    const mensagens = renderMessages(template, item.cardNome, item.pericias);
+    const mensagens = renderMessages(template, item.nomeCliente, item.pericias);
     if (mensagens.length === 0) throw new Error("Nenhuma perícia válida para gerar mensagem.");
 
     for (const mensagem of mensagens) {
@@ -35,7 +36,7 @@ export async function dispatchSingle(item: SendItem, templateId: number): Promis
 
     const log = createLog({
       card_id: item.cardId,
-      card_nome: item.cardNome,
+      card_nome: item.nomeCliente,
       contact_id: item.contactId,
       telefone: item.telefone,
       pericias_json: JSON.stringify(item.pericias),
@@ -49,7 +50,7 @@ export async function dispatchSingle(item: SendItem, templateId: number): Promis
     const erro = (err as Error).message;
     const log = createLog({
       card_id: item.cardId,
-      card_nome: item.cardNome,
+      card_nome: item.nomeCliente,
       contact_id: item.contactId,
       telefone: item.telefone,
       pericias_json: JSON.stringify(item.pericias),

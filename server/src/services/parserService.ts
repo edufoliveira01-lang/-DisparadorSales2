@@ -41,38 +41,53 @@ export function isPericiaCompleta(pericia: Pericia): boolean {
   return Boolean(pericia.tipo && pericia.data && pericia.horario && pericia.local && pericia.nome);
 }
 
+export type OrigemPericia = "medica" | "social" | "geral";
+export interface PericiaComOrigem extends Pericia {
+  origem: OrigemPericia;
+}
+
+/**
+ * Extrai 1 ou 2 perícias da descrição de um card do Trello, junto com a origem
+ * de cada uma (qual cabeçalho a gerou) — usada para os filtros do Dashboard.
+ * - Se houver cabeçalhos "PERÍCIA MÉDICA" e/ou "PERÍCIA SOCIAL", cada um vira um bloco.
+ * - Se nenhum cabeçalho for encontrado, a descrição inteira é tratada como 1 perícia genérica.
+ */
+export function parseCardDescriptionComOrigem(description: string): PericiaComOrigem[] {
+  if (!description || !description.trim()) return [];
+
+  type Header = { origem: OrigemPericia; index: number; end: number };
+  const headers: Header[] = [];
+
+  const medicaMatch = MEDICA_HEADER.exec(description);
+  if (medicaMatch) {
+    headers.push({ origem: "medica", index: medicaMatch.index, end: medicaMatch.index + medicaMatch[0].length });
+  }
+
+  const socialMatch = SOCIAL_HEADER.exec(description);
+  if (socialMatch) {
+    headers.push({ origem: "social", index: socialMatch.index, end: socialMatch.index + socialMatch[0].length });
+  }
+
+  if (headers.length === 0) {
+    return [{ ...extractPericiaFromBlock(description), origem: "geral" }];
+  }
+
+  headers.sort((a, b) => a.index - b.index);
+
+  const pericias: PericiaComOrigem[] = [];
+  for (let i = 0; i < headers.length; i++) {
+    const start = headers[i].end;
+    const end = i + 1 < headers.length ? headers[i + 1].index : description.length;
+    pericias.push({ ...extractPericiaFromBlock(description.slice(start, end)), origem: headers[i].origem });
+  }
+  return pericias;
+}
+
 /**
  * Extrai 1 ou 2 perícias da descrição de um card do Trello.
  * - Se houver cabeçalhos "PERÍCIA MÉDICA" e/ou "PERÍCIA SOCIAL", cada um vira um bloco.
  * - Se nenhum cabeçalho for encontrado, a descrição inteira é tratada como 1 perícia genérica.
  */
 export function parseCardDescription(description: string): Pericia[] {
-  if (!description || !description.trim()) return [];
-
-  type Header = { index: number; end: number };
-  const headers: Header[] = [];
-
-  const medicaMatch = MEDICA_HEADER.exec(description);
-  if (medicaMatch) {
-    headers.push({ index: medicaMatch.index, end: medicaMatch.index + medicaMatch[0].length });
-  }
-
-  const socialMatch = SOCIAL_HEADER.exec(description);
-  if (socialMatch) {
-    headers.push({ index: socialMatch.index, end: socialMatch.index + socialMatch[0].length });
-  }
-
-  if (headers.length === 0) {
-    return [extractPericiaFromBlock(description)];
-  }
-
-  headers.sort((a, b) => a.index - b.index);
-
-  const pericias: Pericia[] = [];
-  for (let i = 0; i < headers.length; i++) {
-    const start = headers[i].end;
-    const end = i + 1 < headers.length ? headers[i + 1].index : description.length;
-    pericias.push(extractPericiaFromBlock(description.slice(start, end)));
-  }
-  return pericias;
+  return parseCardDescriptionComOrigem(description).map(({ origem, ...pericia }) => pericia);
 }

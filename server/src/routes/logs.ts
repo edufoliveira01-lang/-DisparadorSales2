@@ -29,7 +29,7 @@ logsRouter.post("/:id/reenviar", async (req, res) => {
     const novoLog = await dispatchSingle(
       {
         cardId: log.card_id,
-        cardNome: log.card_nome || "",
+        nomeCliente: log.card_nome || "",
         telefone: log.telefone,
         contactId: log.contact_id,
         pericias,
