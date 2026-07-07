@@ -9,7 +9,7 @@ whatsappRouter.get("/status", (_req, res) => {
 
 whatsappRouter.post("/connect", (_req, res) => {
   whatsappManager.connect();
-  res.json({ ok: true });
+  res.json(whatsappManager.getState());
 });
 
 whatsappRouter.post("/disconnect", async (_req, res) => {

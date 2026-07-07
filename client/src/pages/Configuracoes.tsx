@@ -124,7 +124,10 @@ export function Configuracoes() {
   async function handleConectarWhatsapp() {
     setConectando(true);
     try {
-      await api.post("/whatsapp/connect");
+      const state = await api.post<WhatsappState>("/whatsapp/connect");
+      setWhatsapp(state);
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao conectar WhatsApp.", "error");
     } finally {
       setConectando(false);
     }
