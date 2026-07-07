@@ -10,20 +10,37 @@ type FieldName = keyof Pericia;
 
 // Regex tolerantes: maiúsculas/minúsculas, acentuação opcional, ":" opcional,
 // espaços extras. Ancoradas no início da linha para não confundir com texto solto.
+// "tipo" aceita tanto "TIPO DE PERÍCIA:" quanto apenas "TIPO:" (formato usado quando
+// o valor já é o próprio nome da perícia, ex: "TIPO: PERÍCIA MÉDICA").
 const FIELD_PATTERNS: Record<FieldName, RegExp> = {
-  tipo: /^[ \t]*TIPO\s+DE\s+PER[IÍ]CIA\s*:?[ \t]*(.+)$/im,
+  tipo: /^[ \t]*TIPO(?:\s+DE\s+PER[IÍ]CIA)?\s*:?[ \t]*(.+)$/im,
   data: /^[ \t]*DATA\b\s*:?[ \t]*(.+)$/im,
   horario: /^[ \t]*HOR[AÁ]RIO\b\s*:?[ \t]*(.+)$/im,
   local: /^[ \t]*LOCAL\b\s*:?[ \t]*(.+)$/im,
   nome: /^[ \t]*NOME\b\s*:?[ \t]*(.+)$/im,
 };
 
-const MEDICA_HEADER = /PER[IÍ]CIA\s+M[EÉ]DICA\s*:?/i;
-const SOCIAL_HEADER = /PER[IÍ]CIA\s+SOCIAL\s*:?/i;
+// Cabeçalhos de bloco: só contam quando ocupam a linha inteira (opcionalmente com
+// ":" no final), para não disparar um bloco falso quando "PERÍCIA MÉDICA" aparece
+// apenas como valor de um campo (ex: "TIPO: PERÍCIA MÉDICA;").
+const MEDICA_HEADER = /^[ \t]*PER[IÍ]CIA\s+M[EÉ]DICA\s*:?[ \t]*$/im;
+const SOCIAL_HEADER = /^[ \t]*PER[IÍ]CIA\s+SOCIAL\s*:?[ \t]*$/im;
+
+// Muitos cards colam, após os campos estruturados, o texto bruto do e-mail/intimação
+// original (para referência). Tudo a partir desse marcador é ignorado pelo parser.
+const CORTE_TEXTO_ORIGINAL = /EMAIL\s+ORIGINAL\s*:?/i;
+
+function removerTextoOriginalColado(description: string): string {
+  const match = CORTE_TEXTO_ORIGINAL.exec(description);
+  return match ? description.slice(0, match.index) : description;
+}
 
 function extractField(block: string, pattern: RegExp): string {
   const match = block.match(pattern);
-  return match ? match[1].trim() : "";
+  if (!match) return "";
+  // Remove pontuação de fechamento de lista (";", ",") que sobra quando os campos
+  // são escritos como uma lista (ex: "NOME: Fulano;").
+  return match[1].trim().replace(/[;,]+$/, "").trim();
 }
 
 function extractPericiaFromBlock(block: string): Pericia {
@@ -54,6 +71,9 @@ export interface PericiaComOrigem extends Pericia {
  */
 export function parseCardDescriptionComOrigem(description: string): PericiaComOrigem[] {
   if (!description || !description.trim()) return [];
+
+  description = removerTextoOriginalColado(description);
+  if (!description.trim()) return [];
 
   type Header = { origem: OrigemPericia; index: number; end: number };
   const headers: Header[] = [];

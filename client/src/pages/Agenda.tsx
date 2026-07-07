@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Pencil, Plus, Search, Trash2, Users } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Pencil, Plus, Search, Trash2, Upload, Users } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type { Contact } from "@/lib/types";
 import { useToast } from "@/components/ui/Toast";
@@ -20,6 +20,8 @@ export function Agenda() {
   const [observacoes, setObservacoes] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [excluindo, setExcluindo] = useState<number | null>(null);
+  const [importando, setImportando] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function carregar() {
     const data = await api.get<Contact[]>("/contacts");
@@ -72,6 +74,30 @@ export function Agenda() {
     }
   }
 
+  async function handleArquivoSelecionado(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    setImportando(true);
+    try {
+      const content = await file.text();
+      const resultado = await api.post<{ total: number; criados: number; ignorados: number }>("/contacts/import", {
+        content,
+      });
+      show(
+        `${resultado.criados} contato(s) importado(s)` +
+          (resultado.ignorados > 0 ? ` · ${resultado.ignorados} ignorado(s) (duplicado ou sem telefone)` : "."),
+        "success"
+      );
+      carregar();
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao importar arquivo.", "error");
+    } finally {
+      setImportando(false);
+    }
+  }
+
   async function excluir(id: number) {
     setExcluindo(id);
     try {
@@ -92,15 +118,30 @@ export function Agenda() {
           <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Agenda</h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Contatos usados para cruzar com o nome do cliente no card.</p>
         </div>
-        <Button onClick={abrirNovo}>
-          <Plus className="h-4 w-4" /> Adicionar contato
-        </Button>
+        <div className="flex gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.vcf,text/csv,text/vcard"
+            className="hidden"
+            onChange={handleArquivoSelecionado}
+          />
+          <Button variant="outline" onClick={() => fileInputRef.current?.click()} loading={importando}>
+            <Upload className="h-4 w-4" /> Importar CSV/vCard
+          </Button>
+          <Button onClick={abrirNovo}>
+            <Plus className="h-4 w-4" /> Adicionar contato
+          </Button>
+        </div>
       </div>
 
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
         <Input placeholder="Buscar por nome ou telefone…" className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
       </div>
+      <p className="-mt-4 text-xs text-zinc-400">
+        Aceita CSV exportado do Google/Android (Contatos → Exportar) ou arquivo vCard (.vcf).
+      </p>
 
       {contacts === null ? (
         <div className="space-y-2">

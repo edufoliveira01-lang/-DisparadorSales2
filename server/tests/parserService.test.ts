@@ -188,4 +188,48 @@ NOME: Nome B
       nome: "Nome B",
     });
   });
+
+  it("card real: campo 'TIPO:' com valor 'PERÍCIA MÉDICA' não deve ser confundido com cabeçalho de bloco (1 perícia só)", () => {
+    const desc = `TIPO: PERÍCIA MÉDICA;
+DATA: 14/07/2026;
+HORÁRIO: 15:00;
+LOCAL: sede deste Juizado Especial Federal, AVENIDA ANTONIO EMMERICH, 1238 - VILA CASCATINHA - SÃO VICENTE;
+NOME: GENI DE FATIMA FURTADO;
+PROCESSO: 5001306-35.2026.4.03.6321;
+PROFISSIONAL/PERITO: DIEGO ABAD DOS SANTOS
+
+EMAIL ORIGINAL:
+Processo: 50013063520264036321 1ª Vara Gabinete JEF de São Vicente
+PROCEDIMENTO DO JUIZADO ESPECIAL CÍVEL Despacho Processo: 50013063520264036321 PARTE: GENI DE FATIMA FURTADO - POLO ATIVO
+ADVOGADO: ANTONIO MESSIAS SALES JUNIOR - OAB 346457/SP`;
+
+    const result = parseCardDescription(desc);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({
+      tipo: "PERÍCIA MÉDICA",
+      data: "14/07/2026",
+      horario: "15:00",
+      local: "sede deste Juizado Especial Federal, AVENIDA ANTONIO EMMERICH, 1238 - VILA CASCATINHA - SÃO VICENTE",
+      nome: "GENI DE FATIMA FURTADO",
+    });
+    expect(isPericiaCompleta(result[0])).toBe(true);
+  });
+
+  it("remove ';' e ',' finais dos campos capturados", () => {
+    const desc = `
+TIPO: Social;
+DATA: 01/01/2026,
+HORARIO: 10:00;
+LOCAL: Rua A, 123;
+NOME: Fulano de Tal;
+`;
+    const result = parseCardDescription(desc);
+    expect(result[0]).toEqual({
+      tipo: "Social",
+      data: "01/01/2026",
+      horario: "10:00",
+      local: "Rua A, 123",
+      nome: "Fulano de Tal",
+    });
+  });
 });

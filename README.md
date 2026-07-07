@@ -106,14 +106,23 @@ NOME: Maria da Silva
 
 Se não houver nenhum dos dois cabeçalhos, mas os 5 campos existirem soltos na descrição, o card é
 tratado como tendo **1 perícia genérica**. O parser é tolerante a maiúsculas/minúsculas, acentos
-opcionais (ex: `HORARIO` sem acento), `:` opcional e ordem dos campos.
+opcionais (ex: `HORARIO` sem acento), `:` opcional, ordem dos campos e `;`/`,` no final de cada
+valor. O campo de tipo também aceita apenas `TIPO:` (com o valor já sendo o nome da perícia, ex:
+`TIPO: PERÍCIA MÉDICA`), em vez de `TIPO DE PERÍCIA:`.
+
+Se a descrição colar o texto bruto do e-mail/intimação original após os campos estruturados, tudo
+a partir do marcador `EMAIL ORIGINAL:` é ignorado pelo parser — só o que vem antes é considerado.
 
 ### 3. Agenda de contatos
 
 Na tela **Agenda**, cadastre os clientes com nome e telefone no formato internacional
-(`55DDDNÚMERO`, ex: `5511999999999`). O sistema cruza automaticamente o campo `NOME` do card com a
-agenda (match exato ou aproximado); quando não encontra um contato, o Dashboard permite cadastrá-lo
-sem sair da tela.
+(`55DDDNÚMERO`, ex: `5511999999999`), edite ou exclua a qualquer momento. O sistema cruza
+automaticamente o campo `NOME` do card com a agenda (match exato ou aproximado); quando não
+encontra um contato, o Dashboard permite cadastrá-lo sem sair da tela.
+
+Também é possível **importar contatos em massa** pelo botão "Importar CSV/vCard": aceita o CSV
+exportado do Google/Android (Contatos → Exportar) ou um arquivo vCard (`.vcf`). Contatos com o
+mesmo telefone de um já cadastrado são ignorados automaticamente na importação.
 
 ### 4. Templates de mensagem
 
