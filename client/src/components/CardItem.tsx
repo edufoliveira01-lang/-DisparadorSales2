@@ -52,132 +52,116 @@ export function CardItem({
   );
 
   return (
-    <div className={`rounded-2xl border bg-white p-4 sm:p-5 shadow-card transition-shadow hover:shadow-md dark:bg-zinc-900 ${
+    <div className={`w-full overflow-hidden rounded-2xl border bg-white shadow-sm transition-shadow hover:shadow-md dark:bg-zinc-900 ${
       temDadosNaoIdentificados 
-        ? "border-amber-500 border-2 bg-amber-50/50 dark:border-amber-600 dark:bg-amber-900/20" 
+        ? "border-amber-500 border-2 bg-amber-50/30 dark:border-amber-600 dark:bg-amber-900/10" 
         : "border-zinc-200 dark:border-zinc-800"
     }`}>
-      <div className="flex flex-col sm:flex-row items-start gap-3">
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <div className="pt-0.5">
-            <Checkbox checked={selecionado} onChange={onToggleSelecionar} />
-          </div>
-          <div className="sm:hidden flex-1 min-w-0">
-             <h3 className="truncate font-semibold text-zinc-900 dark:text-zinc-100">{card.nomeCliente}</h3>
+      {/* Header do Card - Sempre visível */}
+      <div className="flex items-center justify-between border-b border-zinc-100 p-4 dark:border-zinc-800">
+        <div className="flex min-w-0 items-center gap-3">
+          <Checkbox checked={selecionado} onChange={onToggleSelecionar} className="h-5 w-5" />
+          <div className="min-w-0">
+            <h3 className="truncate text-base font-bold text-zinc-900 dark:text-zinc-100">{card.nomeCliente}</h3>
+            <p className="truncate text-[10px] text-zinc-400">{card.cardNome}</p>
           </div>
         </div>
+        <div className="flex shrink-0 items-center gap-2">
+           <Badge tone="accent" className="px-2 py-0.5 text-[10px]">{card.pericias.length}x</Badge>
+        </div>
+      </div>
 
-        <div className="min-w-0 flex-1 w-full overflow-hidden">
-          <div className="hidden sm:flex flex-wrap items-center gap-2">
-            <h3 className="truncate font-semibold text-zinc-900 dark:text-zinc-100">{card.nomeCliente}</h3>
-            <Badge tone="accent">{card.pericias.length === 2 ? "2 perícias" : "1 perícia"}</Badge>
-            {card.incompleta && (
-              <Badge tone="warning">
-                <AlertTriangle className="h-3 w-3" /> Descrição incompleta
-              </Badge>
-            )}
-          </div>
-          
-          <div className="sm:hidden flex flex-wrap items-center gap-1.5 mb-2">
-            <Badge tone="accent" size="sm">{card.pericias.length === 2 ? "2 perícias" : "1 perícia"}</Badge>
-            {card.incompleta && (
-              <Badge tone="warning" size="sm">
-                Incompleto
-              </Badge>
-            )}
-          </div>
+      {/* Conteúdo do Card */}
+      <div className="p-4 space-y-4">
+        {/* Perícias */}
+        <div className="space-y-2">
+          {card.pericias.map((p, i) => {
+            const dErr = checkNaoIdentificado(p.data);
+            const hErr = checkNaoIdentificado(p.horario);
+            const lErr = checkNaoIdentificado(p.local);
+            const tErr = checkNaoIdentificado(p.tipo);
+            const nErr = checkNaoIdentificado(p.nome);
 
-          <p className="mt-0.5 truncate text-[10px] text-zinc-400">{card.cardNome}</p>
-
-          <div className="mt-3 space-y-2">
-            {card.pericias.map((p, i) => {
-              const dErr = checkNaoIdentificado(p.data);
-              const hErr = checkNaoIdentificado(p.horario);
-              const lErr = checkNaoIdentificado(p.local);
-              const tErr = checkNaoIdentificado(p.tipo);
-              const nErr = checkNaoIdentificado(p.nome);
-
-              return (
-                <div key={i} className={`rounded-xl p-3 text-sm overflow-hidden ${
-                  dErr || hErr || lErr || tErr || nErr
-                    ? "bg-amber-100 dark:bg-amber-900/40 border border-amber-200 dark:border-amber-800"
-                    : "bg-zinc-50 dark:bg-zinc-800/50"
-                }`}>
-                  <p className="font-medium text-zinc-700 dark:text-zinc-200 truncate">
-                    {p.tipo || "(tipo não identificado)"}
-                    {tErr && <span className="ml-2 text-[10px] bg-amber-500 text-white px-1.5 py-0.5 rounded font-bold">VERIFICAR</span>}
-                  </p>
-                  <div className="mt-1.5 flex flex-col gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-                    <div className="flex flex-wrap gap-x-3 gap-y-1">
-                      <span className={`flex items-center gap-1 ${dErr ? "text-amber-700 dark:text-amber-400 font-bold" : ""}`}>
-                        <Calendar className="h-3.5 w-3.5 shrink-0" /> {formatDisplayValue(p.data)}
-                      </span>
-                      <span className={`flex items-center gap-1 ${hErr ? "text-amber-700 dark:text-amber-400 font-bold" : ""}`}>
-                        <Clock className="h-3.5 w-3.5 shrink-0" /> {formatDisplayValue(p.horario)}
-                      </span>
-                    </div>
-                    <div className={`flex items-start gap-1 ${lErr ? "text-amber-700 dark:text-amber-400 font-bold" : ""}`}>
-                      <MapPin className="h-3.5 w-3.5 shrink-0 mt-0.5" /> 
-                      <span className="break-words leading-tight">{formatDisplayValue(p.local)}</span>
-                    </div>
+            return (
+              <div key={i} className={`rounded-xl p-3 text-sm ${
+                dErr || hErr || lErr || tErr || nErr
+                  ? "bg-amber-100/50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800"
+                  : "bg-zinc-50 dark:bg-zinc-800/50"
+              }`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                    {p.tipo || "Perícia"}
+                  </span>
+                  {tErr && <Badge tone="warning" className="text-[9px] h-4">VERIFICAR</Badge>}
+                </div>
+                
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  <div className={`flex items-center gap-1.5 ${dErr ? "text-amber-700 dark:text-amber-400 font-bold" : "text-zinc-600 dark:text-zinc-300"}`}>
+                    <Calendar className="h-3.5 w-3.5 shrink-0" />
+                    <span className="text-xs">{formatDisplayValue(p.data)}</span>
                   </div>
-                  {nErr && (
-                    <p className="mt-1 text-[10px] text-amber-700 dark:text-amber-400 font-bold flex items-center gap-1">
-                      <AlertTriangle className="h-3 w-3" /> NOME NÃO IDENTIFICADO
-                    </p>
-                  )}
+                  <div className={`flex items-center gap-1.5 ${hErr ? "text-amber-700 dark:text-amber-400 font-bold" : "text-zinc-600 dark:text-zinc-300"}`}>
+                    <Clock className="h-3.5 w-3.5 shrink-0" />
+                    <span className="text-xs">{formatDisplayValue(p.horario)}</span>
+                  </div>
                 </div>
-              );
-            })}
-            {card.pericias.length === 0 && (
-              <p className="rounded-xl bg-zinc-50 p-3 text-sm text-zinc-400 dark:bg-zinc-800/50">
-                Nenhuma perícia identificada.
-              </p>
+
+                <div className={`flex items-start gap-1.5 ${lErr ? "text-amber-700 dark:text-amber-400 font-bold" : "text-zinc-500 dark:text-zinc-400"}`}>
+                  <MapPin className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  <span className="text-[11px] leading-tight break-words">{formatDisplayValue(p.local)}</span>
+                </div>
+
+                {nErr && (
+                  <div className="mt-2 flex items-center gap-1 text-[9px] font-bold text-amber-600 uppercase">
+                    <AlertTriangle className="h-3 w-3" /> Nome não identificado
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {card.pericias.length === 0 && (
+            <div className="rounded-xl bg-zinc-50 p-3 text-center text-xs text-zinc-400 dark:bg-zinc-800/50">
+              Nenhuma perícia encontrada na descrição.
+            </div>
+          )}
+        </div>
+
+        {/* Status e Contato */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+          <div className="flex flex-wrap gap-2">
+            {temContatoEfetivo ? (
+              <Badge tone="success" className="h-6 text-[10px]">
+                <CheckCircle2 className="h-3 w-3" /> Contato OK
+              </Badge>
+            ) : card.sugestaoContato ? (
+              <button onClick={onUsarSugestao} className="group">
+                <Badge tone="warning" className="h-6 text-[10px] group-hover:bg-amber-100 transition-colors">
+                  Sugestão: {card.sugestaoContato.nome}
+                </Badge>
+              </button>
+            ) : (
+              <button onClick={onCadastrarContato} className="group">
+                <Badge tone="danger" className="h-6 text-[10px] group-hover:bg-red-100 transition-colors">
+                  <UserPlus className="h-3 w-3" /> Cadastrar Contato
+                </Badge>
+              </button>
+            )}
+
+            {card.ultimoEnvio?.status === "sucesso" && (
+              <Badge tone="success" className="h-6 text-[10px]">
+                <MessageCircle className="h-3 w-3" /> {new Date(card.ultimoEnvio.data).toLocaleDateString("pt-BR")}
+              </Badge>
             )}
           </div>
 
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
-            <div className="flex flex-wrap gap-2">
-              {temContatoEfetivo ? (
-                <Badge tone="success">
-                  <CheckCircle2 className="h-3.5 w-3.5" /> Contato ok
-                </Badge>
-              ) : card.sugestaoContato ? (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <Badge tone="warning">Sugestão: {card.sugestaoContato.nome}</Badge>
-                  <button onClick={onUsarSugestao} className="text-xs font-medium text-accent-600 hover:underline">
-                    Usar
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1.5">
-                  <Badge tone="danger">
-                    <XCircle className="h-3.5 w-3.5" /> Sem contato
-                  </Badge>
-                  <button
-                    onClick={onCadastrarContato}
-                    className="flex items-center gap-1 text-xs font-medium text-accent-600 hover:underline"
-                  >
-                    <UserPlus className="h-3.5 w-3.5" /> Cadastrar
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {card.ultimoEnvio?.status === "sucesso" && (
-                <Badge tone="success">
-                  <MessageCircle className="h-3.5 w-3.5" /> {new Date(card.ultimoEnvio.data).toLocaleDateString("pt-BR")}
-                </Badge>
-              )}
-              {card.ultimoEnvio?.status === "falha" && <Badge tone="danger">Falhou</Badge>}
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-2 flex flex-col gap-2 sm:mt-0">
-          <Button size="sm" onClick={onEnviar} loading={enviando} disabled={!temContatoEfetivo || card.pericias.length === 0} className="w-full sm:w-auto">
-            <Send className="h-3.5 w-3.5" /> Enviar
+          <Button 
+            size="sm" 
+            onClick={onEnviar} 
+            loading={enviando} 
+            disabled={!temContatoEfetivo || card.pericias.length === 0} 
+            className="h-9 px-5 text-xs font-bold sm:w-auto w-full"
+          >
+            <Send className="h-3.5 w-3.5" /> Enviar Mensagem
           </Button>
         </div>
       </div>

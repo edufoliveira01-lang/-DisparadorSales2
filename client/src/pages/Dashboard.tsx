@@ -301,36 +301,56 @@ export function Dashboard() {
         />
       ) : (
         <>
-          <div className="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-3 sm:p-4 dark:border-zinc-800 dark:bg-zinc-900 xl:flex-row xl:items-center">
-            <div className="relative w-full xl:flex-1">
+          <div className="flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="relative w-full">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-              <Input placeholder="Buscar cliente…" className="pl-9 text-sm" value={busca} onChange={(e) => setBusca(e.target.value)} />
+              <Input 
+                placeholder="Buscar cliente ou card..." 
+                className="pl-9 h-11 text-base sm:text-sm" 
+                value={busca} 
+                onChange={(e) => setBusca(e.target.value)} 
+              />
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row xl:items-center">
-              <div className="grid grid-cols-1 gap-2 sm:flex-1 sm:grid-cols-2 lg:grid-cols-3">
-                <Select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value as FiltroStatus)} className="w-full text-sm lg:w-40">
-                  <option value="todos">Status</option>
-                  <option value="nao_enviado">Não env.</option>
-                  <option value="enviado">Enviado</option>
-                  <option value="falhou">Falhou</option>
-                </Select>
-                <Select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value as FiltroTipo)} className="w-full text-sm lg:w-40">
-                  <option value="todos">Perícias</option>
-                  <option value="medica">Médica</option>
-                  <option value="social">Social</option>
-                  <option value="ambas">Ambas</option>
-                </Select>
-                <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="w-full text-sm sm:col-span-2 lg:col-span-1 lg:w-44">
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.nome}
-                    </option>
-                  ))}
-                </Select>
+            
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+              <div className="grid grid-cols-2 gap-2 flex-1 sm:grid-cols-3 lg:grid-cols-3">
+                <div className="space-y-1">
+                  <Label className="text-[10px] uppercase font-bold text-zinc-400 ml-1">Status</Label>
+                  <Select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value as FiltroStatus)} className="h-10 text-sm">
+                    <option value="todos">Todos</option>
+                    <option value="nao_enviado">Não env.</option>
+                    <option value="enviado">Enviados</option>
+                    <option value="falhou">Falhas</option>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] uppercase font-bold text-zinc-400 ml-1">Perícia</Label>
+                  <Select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value as FiltroTipo)} className="h-10 text-sm">
+                    <option value="todos">Todas</option>
+                    <option value="medica">Médica</option>
+                    <option value="social">Social</option>
+                    <option value="ambas">Ambas</option>
+                  </Select>
+                </div>
+                <div className="space-y-1 col-span-2 sm:col-span-1">
+                  <Label className="text-[10px] uppercase font-bold text-zinc-400 ml-1">Template</Label>
+                  <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="h-10 text-sm">
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.id}>{t.nome}</option>
+                    ))}
+                  </Select>
+                </div>
               </div>
-              <Button onClick={abrirConfirmBatch} disabled={selecionados.size === 0 || Boolean(batchProgress)} className="w-full sm:w-auto">
-                <Send className="h-4 w-4" /> <span className="xl:hidden">Enviar</span> ({selecionados.size})
-              </Button>
+              
+              <div className="pt-2 lg:pt-5">
+                <Button 
+                  onClick={abrirConfirmBatch} 
+                  disabled={selecionados.size === 0 || Boolean(batchProgress)} 
+                  className="w-full h-11 lg:w-auto px-6"
+                >
+                  <Send className="h-4 w-4" /> Enviar Selecionados ({selecionados.size})
+                </Button>
+              </div>
             </div>
           </div>
 
