@@ -33,6 +33,15 @@ export function CardItem({
     return clean.includes("NAO_IDENTIFICADO") || clean.includes("NAO_IDENTIFICADA");
   };
 
+  const formatDisplayValue = (val?: string) => {
+    if (!val) return "—";
+    if (checkNaoIdentificado(val)) {
+      // Remove barras e troca sublinhados por espaços para ficar legível
+      return val.replace(/\\/g, "").replace(/_/g, " ").toUpperCase();
+    }
+    return val;
+  };
+
   const temDadosNaoIdentificados = checkNaoIdentificado(card.nomeCliente) || card.pericias.some(
     (p) =>
       checkNaoIdentificado(p.data) ||
@@ -85,18 +94,18 @@ export function CardItem({
                     {tErr && <span className="ml-2 text-[10px] bg-amber-500 text-white px-1.5 py-0.5 rounded font-bold">VERIFICAR TIPO</span>}
                   </p>
                   <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
-                    <span className={`flex items-center gap-1 ${dErr ? "text-amber-700 dark:text-amber-400 font-bold" : ""}`}>
-                      <Calendar className="h-3.5 w-3.5" /> {p.data || "—"}
-                      {dErr && <AlertTriangle className="h-3 w-3" />}
-                    </span>
-                    <span className={`flex items-center gap-1 ${hErr ? "text-amber-700 dark:text-amber-400 font-bold" : ""}`}>
-                      <Clock className="h-3.5 w-3.5" /> {p.horario || "—"}
-                      {hErr && <AlertTriangle className="h-3 w-3" />}
-                    </span>
-                    <span className={`flex items-center gap-1 ${lErr ? "text-amber-700 dark:text-amber-400 font-bold" : ""}`}>
-                      <MapPin className="h-3.5 w-3.5" /> {p.local || "—"}
-                      {lErr && <AlertTriangle className="h-3 w-3" />}
-                    </span>
+                  <span className={`flex items-center gap-1 ${dErr ? "text-amber-700 dark:text-amber-400 font-bold" : ""}`}>
+                    <Calendar className="h-3.5 w-3.5" /> {formatDisplayValue(p.data)}
+                    {dErr && <AlertTriangle className="h-3 w-3" />}
+                  </span>
+                  <span className={`flex items-center gap-1 ${hErr ? "text-amber-700 dark:text-amber-400 font-bold" : ""}`}>
+                    <Clock className="h-3.5 w-3.5" /> {formatDisplayValue(p.horario)}
+                    {hErr && <AlertTriangle className="h-3 w-3" />}
+                  </span>
+                  <span className={`flex items-center gap-1 ${lErr ? "text-amber-700 dark:text-amber-400 font-bold" : ""}`}>
+                    <MapPin className="h-3.5 w-3.5" /> {formatDisplayValue(p.local)}
+                    {lErr && <AlertTriangle className="h-3 w-3" />}
+                  </span>
                   </div>
                   {nErr && (
                     <p className="mt-1 text-[10px] text-amber-700 dark:text-amber-400 font-bold flex items-center gap-1">
