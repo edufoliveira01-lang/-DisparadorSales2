@@ -301,26 +301,26 @@ export function Dashboard() {
         />
       ) : (
         <>
-          <div className="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900 xl:flex-row xl:items-center">
+          <div className="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-3 sm:p-4 dark:border-zinc-800 dark:bg-zinc-900 xl:flex-row xl:items-center">
             <div className="relative w-full xl:flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-              <Input placeholder="Buscar por cliente…" className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
+              <Input placeholder="Buscar cliente…" className="pl-9 text-sm" value={busca} onChange={(e) => setBusca(e.target.value)} />
             </div>
             <div className="flex flex-col gap-3 sm:flex-row xl:items-center">
-              <div className="grid grid-cols-1 gap-3 sm:flex-1 sm:grid-cols-2 lg:grid-cols-3">
-                <Select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value as FiltroStatus)} className="w-full lg:w-40">
-                  <option value="todos">Todos status</option>
-                  <option value="nao_enviado">Não enviado</option>
+              <div className="grid grid-cols-1 gap-2 sm:flex-1 sm:grid-cols-2 lg:grid-cols-3">
+                <Select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value as FiltroStatus)} className="w-full text-sm lg:w-40">
+                  <option value="todos">Status</option>
+                  <option value="nao_enviado">Não env.</option>
                   <option value="enviado">Enviado</option>
                   <option value="falhou">Falhou</option>
                 </Select>
-                <Select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value as FiltroTipo)} className="w-full lg:w-40">
-                  <option value="todos">Todas perícias</option>
-                  <option value="medica">Só Médica</option>
-                  <option value="social">Só Social</option>
+                <Select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value as FiltroTipo)} className="w-full text-sm lg:w-40">
+                  <option value="todos">Perícias</option>
+                  <option value="medica">Médica</option>
+                  <option value="social">Social</option>
                   <option value="ambas">Ambas</option>
                 </Select>
-                <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="w-full sm:col-span-2 lg:col-span-1 lg:w-48">
+                <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="w-full text-sm sm:col-span-2 lg:col-span-1 lg:w-44">
                   {templates.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.nome}
