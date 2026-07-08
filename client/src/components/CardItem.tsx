@@ -52,23 +52,37 @@ export function CardItem({
   );
 
   return (
-    <div className={`rounded-2xl border bg-white p-5 shadow-card transition-shadow hover:shadow-md dark:bg-zinc-900 ${
+    <div className={`rounded-2xl border bg-white p-4 sm:p-5 shadow-card transition-shadow hover:shadow-md dark:bg-zinc-900 ${
       temDadosNaoIdentificados 
         ? "border-amber-500 border-2 bg-amber-50/50 dark:border-amber-600 dark:bg-amber-900/20" 
         : "border-zinc-200 dark:border-zinc-800"
     }`}>
-      <div className="flex items-start gap-3">
-        <div className="pt-0.5">
-          <Checkbox checked={selecionado} onChange={onToggleSelecionar} />
+      <div className="flex flex-col sm:flex-row items-start gap-3">
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="pt-0.5">
+            <Checkbox checked={selecionado} onChange={onToggleSelecionar} />
+          </div>
+          <div className="sm:hidden flex-1 min-w-0">
+             <h3 className="truncate font-semibold text-zinc-900 dark:text-zinc-100">{card.nomeCliente}</h3>
+          </div>
         </div>
 
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="min-w-0 flex-1 w-full">
+          <div className="hidden sm:flex flex-wrap items-center gap-2">
             <h3 className="truncate font-semibold text-zinc-900 dark:text-zinc-100">{card.nomeCliente}</h3>
             <Badge tone="accent">{card.pericias.length === 2 ? "2 perícias" : "1 perícia"}</Badge>
             {card.incompleta && (
               <Badge tone="warning">
                 <AlertTriangle className="h-3 w-3" /> Descrição incompleta
+              </Badge>
+            )}
+          </div>
+          
+          <div className="sm:hidden flex flex-wrap items-center gap-1.5 mb-2">
+            <Badge tone="accent" size="sm">{card.pericias.length === 2 ? "2 perícias" : "1 perícia"}</Badge>
+            {card.incompleta && (
+              <Badge tone="warning" size="sm">
+                Incompleto
               </Badge>
             )}
           </div>
@@ -157,7 +171,7 @@ export function CardItem({
           </div>
         </div>
 
-        <Button size="sm" onClick={onEnviar} loading={enviando} disabled={!temContatoEfetivo || card.pericias.length === 0}>
+        <Button size="sm" onClick={onEnviar} loading={enviando} disabled={!temContatoEfetivo || card.pericias.length === 0} className="sm:w-auto w-full mt-2 sm:mt-0">
           <Send className="h-3.5 w-3.5" /> Enviar
         </Button>
       </div>
