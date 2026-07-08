@@ -28,8 +28,9 @@ export function CardItem({
   // Verifica se o card tem alguma informação não identificada para destacá-lo
   const checkNaoIdentificado = (val?: string) => {
     if (!val) return false;
-    const upper = val.toUpperCase();
-    return upper.includes("NAO_IDENTIFICADO") || upper.includes("NAO_IDENTIFICADA");
+    // Remove barras invertidas que podem vir do escape de markdown/texto
+    const clean = val.replace(/\\/g, "").toUpperCase();
+    return clean.includes("NAO_IDENTIFICADO") || clean.includes("NAO_IDENTIFICADA");
   };
 
   const temDadosNaoIdentificados = checkNaoIdentificado(card.nomeCliente) || card.pericias.some(

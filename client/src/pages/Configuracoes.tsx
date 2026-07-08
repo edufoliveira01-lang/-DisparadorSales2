@@ -57,7 +57,23 @@ export function Configuracoes() {
     if (data.trello_board_id) setBoardId(data.trello_board_id);
     if (data.trello_list_id) setListId(data.trello_list_id);
     if (data.trello_move_to_list_id) setMoveToListId(data.trello_move_to_list_id);
-    if (data.trello_key && data.trello_token_configurado) setTrelloOk(true);
+    
+    if (data.trello_key && data.trello_token_configurado) {
+      setTrelloOk(true);
+      // Carregar boards automaticamente se já estiver configurado
+      try {
+        const boardsData = await api.get<TrelloBoard[]>("/trello/boards");
+        setBoards(boardsData);
+        
+        // Se já tiver um board selecionado, carregar as listas dele
+        if (data.trello_board_id) {
+          const listsData = await api.get<TrelloList[]>(`/trello/boards/${data.trello_board_id}/lists`);
+          setLists(listsData);
+        }
+      } catch (err) {
+        console.error("Erro ao carregar dados do Trello automaticamente:", err);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -115,18 +131,28 @@ export function Configuracoes() {
   async function handleSalvarTrello() {
     setSalvandoTrello(true);
     try {
-      const board = boards.find((b) => b.id === boardId);
-      const list = lists.find((l) => l.id === listId);
-      await api.put("/settings", {
-        trello_key: trelloKey,
-        trello_token: trelloToken,
+      const board = boards.find((b) => b.id === boardId) || { name: settings?.trello_board_nome || "" };
+      const list = lists.find((l) => l.id === listId) || { name: settings?.trello_list_nome || "" };
+      
+      const payload: any = {
         trello_board_id: boardId,
-        trello_board_nome: board?.name || "",
+        trello_board_nome: board.name,
         trello_list_id: listId,
-        trello_list_nome: list?.name || "",
+        trello_list_nome: list.name,
         trello_move_to_list_id: moveToListId,
-      });
+      };
+
+      // Só envia a key/token se o usuário preencheu (para não sobrescrever com vazio)
+      if (trelloKey) payload.trello_key = trelloKey;
+      if (trelloToken) payload.trello_token = trelloToken;
+
+      await api.put("/settings", payload);
       show("Configurações do Trello salvas.", "success");
+      
+      // Limpar campos de input após salvar
+      setTrelloKey("");
+      setTrelloToken("");
+      
       loadSettings();
     } catch (err) {
       show(err instanceof ApiError ? err.message : "Erro ao salvar configurações.", "error");
