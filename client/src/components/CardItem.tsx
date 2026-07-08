@@ -67,7 +67,7 @@ export function CardItem({
           </div>
         </div>
 
-        <div className="min-w-0 flex-1 w-full">
+        <div className="min-w-0 flex-1 w-full overflow-hidden">
           <div className="hidden sm:flex flex-wrap items-center gap-2">
             <h3 className="truncate font-semibold text-zinc-900 dark:text-zinc-100">{card.nomeCliente}</h3>
             <Badge tone="accent">{card.pericias.length === 2 ? "2 perícias" : "1 perícia"}</Badge>
@@ -87,7 +87,7 @@ export function CardItem({
             )}
           </div>
 
-          <p className="mt-0.5 truncate text-xs text-zinc-400">{card.cardNome}</p>
+          <p className="mt-0.5 truncate text-[10px] text-zinc-400">{card.cardNome}</p>
 
           <div className="mt-3 space-y-2">
             {card.pericias.map((p, i) => {
@@ -98,32 +98,32 @@ export function CardItem({
               const nErr = checkNaoIdentificado(p.nome);
 
               return (
-                <div key={i} className={`rounded-xl p-3 text-sm ${
+                <div key={i} className={`rounded-xl p-3 text-sm overflow-hidden ${
                   dErr || hErr || lErr || tErr || nErr
                     ? "bg-amber-100 dark:bg-amber-900/40 border border-amber-200 dark:border-amber-800"
                     : "bg-zinc-50 dark:bg-zinc-800/50"
                 }`}>
-                  <p className="font-medium text-zinc-700 dark:text-zinc-200">
+                  <p className="font-medium text-zinc-700 dark:text-zinc-200 truncate">
                     {p.tipo || "(tipo não identificado)"}
-                    {tErr && <span className="ml-2 text-[10px] bg-amber-500 text-white px-1.5 py-0.5 rounded font-bold">VERIFICAR TIPO</span>}
+                    {tErr && <span className="ml-2 text-[10px] bg-amber-500 text-white px-1.5 py-0.5 rounded font-bold">VERIFICAR</span>}
                   </p>
-                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
-                  <span className={`flex items-center gap-1 ${dErr ? "text-amber-700 dark:text-amber-400 font-bold" : ""}`}>
-                    <Calendar className="h-3.5 w-3.5" /> {formatDisplayValue(p.data)}
-                    {dErr && <AlertTriangle className="h-3 w-3" />}
-                  </span>
-                  <span className={`flex items-center gap-1 ${hErr ? "text-amber-700 dark:text-amber-400 font-bold" : ""}`}>
-                    <Clock className="h-3.5 w-3.5" /> {formatDisplayValue(p.horario)}
-                    {hErr && <AlertTriangle className="h-3 w-3" />}
-                  </span>
-                  <span className={`flex items-center gap-1 ${lErr ? "text-amber-700 dark:text-amber-400 font-bold" : ""}`}>
-                    <MapPin className="h-3.5 w-3.5" /> {formatDisplayValue(p.local)}
-                    {lErr && <AlertTriangle className="h-3 w-3" />}
-                  </span>
+                  <div className="mt-1.5 flex flex-col gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                    <div className="flex flex-wrap gap-x-3 gap-y-1">
+                      <span className={`flex items-center gap-1 ${dErr ? "text-amber-700 dark:text-amber-400 font-bold" : ""}`}>
+                        <Calendar className="h-3.5 w-3.5 shrink-0" /> {formatDisplayValue(p.data)}
+                      </span>
+                      <span className={`flex items-center gap-1 ${hErr ? "text-amber-700 dark:text-amber-400 font-bold" : ""}`}>
+                        <Clock className="h-3.5 w-3.5 shrink-0" /> {formatDisplayValue(p.horario)}
+                      </span>
+                    </div>
+                    <div className={`flex items-start gap-1 ${lErr ? "text-amber-700 dark:text-amber-400 font-bold" : ""}`}>
+                      <MapPin className="h-3.5 w-3.5 shrink-0 mt-0.5" /> 
+                      <span className="break-words leading-tight">{formatDisplayValue(p.local)}</span>
+                    </div>
                   </div>
                   {nErr && (
                     <p className="mt-1 text-[10px] text-amber-700 dark:text-amber-400 font-bold flex items-center gap-1">
-                      <AlertTriangle className="h-3 w-3" /> NOME NÃO IDENTIFICADO NO BLOCO
+                      <AlertTriangle className="h-3 w-3" /> NOME NÃO IDENTIFICADO
                     </p>
                   )}
                 </div>
@@ -131,49 +131,55 @@ export function CardItem({
             })}
             {card.pericias.length === 0 && (
               <p className="rounded-xl bg-zinc-50 p-3 text-sm text-zinc-400 dark:bg-zinc-800/50">
-                Nenhuma perícia identificada na descrição deste card.
+                Nenhuma perícia identificada.
               </p>
             )}
           </div>
 
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {temContatoEfetivo ? (
-              <Badge tone="success">
-                <CheckCircle2 className="h-3.5 w-3.5" /> Contato encontrado
-              </Badge>
-            ) : card.sugestaoContato ? (
-              <div className="flex items-center gap-1.5">
-                <Badge tone="warning">Talvez: {card.sugestaoContato.nome}?</Badge>
-                <button onClick={onUsarSugestao} className="text-xs font-medium text-accent-600 hover:underline">
-                  Usar este contato
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5">
-                <Badge tone="danger">
-                  <XCircle className="h-3.5 w-3.5" /> Sem contato cadastrado
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
+            <div className="flex flex-wrap gap-2">
+              {temContatoEfetivo ? (
+                <Badge tone="success">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> Contato ok
                 </Badge>
-                <button
-                  onClick={onCadastrarContato}
-                  className="flex items-center gap-1 text-xs font-medium text-accent-600 hover:underline"
-                >
-                  <UserPlus className="h-3.5 w-3.5" /> Cadastrar
-                </button>
-              </div>
-            )}
+              ) : card.sugestaoContato ? (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <Badge tone="warning">Sugestão: {card.sugestaoContato.nome}</Badge>
+                  <button onClick={onUsarSugestao} className="text-xs font-medium text-accent-600 hover:underline">
+                    Usar
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <Badge tone="danger">
+                    <XCircle className="h-3.5 w-3.5" /> Sem contato
+                  </Badge>
+                  <button
+                    onClick={onCadastrarContato}
+                    className="flex items-center gap-1 text-xs font-medium text-accent-600 hover:underline"
+                  >
+                    <UserPlus className="h-3.5 w-3.5" /> Cadastrar
+                  </button>
+                </div>
+              )}
+            </div>
 
-            {card.ultimoEnvio?.status === "sucesso" && (
-              <Badge tone="success">
-                <MessageCircle className="h-3.5 w-3.5" /> Enviado em {new Date(card.ultimoEnvio.data).toLocaleString("pt-BR")}
-              </Badge>
-            )}
-            {card.ultimoEnvio?.status === "falha" && <Badge tone="danger">Falhou: {card.ultimoEnvio.erro}</Badge>}
+            <div className="flex flex-wrap gap-2">
+              {card.ultimoEnvio?.status === "sucesso" && (
+                <Badge tone="success">
+                  <MessageCircle className="h-3.5 w-3.5" /> {new Date(card.ultimoEnvio.data).toLocaleDateString("pt-BR")}
+                </Badge>
+              )}
+              {card.ultimoEnvio?.status === "falha" && <Badge tone="danger">Falhou</Badge>}
+            </div>
           </div>
         </div>
 
-        <Button size="sm" onClick={onEnviar} loading={enviando} disabled={!temContatoEfetivo || card.pericias.length === 0} className="sm:w-auto w-full mt-2 sm:mt-0">
-          <Send className="h-3.5 w-3.5" /> Enviar
-        </Button>
+        <div className="mt-2 flex flex-col gap-2 sm:mt-0">
+          <Button size="sm" onClick={onEnviar} loading={enviando} disabled={!temContatoEfetivo || card.pericias.length === 0} className="w-full sm:w-auto">
+            <Send className="h-3.5 w-3.5" /> Enviar
+          </Button>
+        </div>
       </div>
     </div>
   );

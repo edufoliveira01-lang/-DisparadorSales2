@@ -270,7 +270,7 @@ export function Dashboard() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="w-full space-y-6 overflow-x-hidden">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Dashboard</h1>
@@ -278,12 +278,12 @@ export function Dashboard() {
         </div>
         <div className="flex items-center gap-2">
           {whatsapp.status !== "conectado" && (
-            <Badge tone="warning" className="hidden sm:flex">
-              <WifiOff className="h-3.5 w-3.5" /> WhatsApp desconectado
+            <Badge tone="warning" className="flex">
+              <WifiOff className="h-3.5 w-3.5" /> <span className="hidden xs:inline ml-1">WhatsApp desconectado</span>
             </Badge>
           )}
           <Button variant="outline" onClick={carregarCards} loading={carregando} className="flex-1 sm:flex-none">
-            <RefreshCw className="h-4 w-4" /> Atualizar
+            <RefreshCw className="h-4 w-4" /> <span className="xs:inline">Atualizar</span>
           </Button>
         </div>
       </div>
@@ -301,35 +301,37 @@ export function Dashboard() {
         />
       ) : (
         <>
-          <div className="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900 lg:flex-row lg:items-center">
-            <div className="relative flex-1">
+          <div className="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900 xl:flex-row xl:items-center">
+            <div className="relative w-full xl:flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
               <Input placeholder="Buscar por cliente…" className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:flex lg:items-center">
-              <Select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value as FiltroStatus)} className="w-full lg:w-44">
-                <option value="todos">Todos os status</option>
-                <option value="nao_enviado">Não enviado</option>
-                <option value="enviado">Enviado</option>
-                <option value="falhou">Falhou</option>
-              </Select>
-              <Select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value as FiltroTipo)} className="w-full lg:w-44">
-                <option value="todos">Médica e Social</option>
-                <option value="medica">Só Médica</option>
-                <option value="social">Só Social</option>
-                <option value="ambas">Ambas (2 perícias)</option>
-              </Select>
-              <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="w-full lg:w-52">
-                {templates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.nome}
-                  </option>
-                ))}
-              </Select>
+            <div className="flex flex-col gap-3 sm:flex-row xl:items-center">
+              <div className="grid grid-cols-1 gap-3 sm:flex-1 sm:grid-cols-2 lg:grid-cols-3">
+                <Select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value as FiltroStatus)} className="w-full lg:w-40">
+                  <option value="todos">Todos status</option>
+                  <option value="nao_enviado">Não enviado</option>
+                  <option value="enviado">Enviado</option>
+                  <option value="falhou">Falhou</option>
+                </Select>
+                <Select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value as FiltroTipo)} className="w-full lg:w-40">
+                  <option value="todos">Todas perícias</option>
+                  <option value="medica">Só Médica</option>
+                  <option value="social">Só Social</option>
+                  <option value="ambas">Ambas</option>
+                </Select>
+                <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="w-full sm:col-span-2 lg:col-span-1 lg:w-48">
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.nome}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <Button onClick={abrirConfirmBatch} disabled={selecionados.size === 0 || Boolean(batchProgress)} className="w-full sm:w-auto">
+                <Send className="h-4 w-4" /> <span className="xl:hidden">Enviar</span> ({selecionados.size})
+              </Button>
             </div>
-            <Button onClick={abrirConfirmBatch} disabled={selecionados.size === 0 || Boolean(batchProgress)} className="w-full lg:w-auto">
-              <Send className="h-4 w-4" /> <span className="lg:hidden">Enviar selecionados</span> ({selecionados.size})
-            </Button>
           </div>
 
           {batchProgress?.ativo && (
