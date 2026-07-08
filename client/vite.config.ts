@@ -13,9 +13,9 @@ export default defineConfig({
     port: 8081,
     host: "127.0.0.1",
     proxy: {
-      "/api": "http://localhost:3333",
+      "/api": "http://127.0.0.1:3333",
       "/socket.io": {
-        target: "http://localhost:3333",
+        target: "http://127.0.0.1:3333",
         ws: true,
       },
     },
