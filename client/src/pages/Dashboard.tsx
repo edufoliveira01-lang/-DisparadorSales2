@@ -93,6 +93,10 @@ export function Dashboard() {
           )
         : prev
     );
+    // Se for sucesso, recarregar a lista para refletir a mudança de board/status se necessário
+    if (payload.status === "sucesso") {
+      carregarCards();
+    }
   });
 
   useSocketEvent<{ total: number }>("send:batch-started", ({ total }) => {

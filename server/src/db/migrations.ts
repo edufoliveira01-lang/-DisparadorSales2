@@ -18,6 +18,8 @@ export function runMigrations(db: Database.Database): void {
       nome TEXT NOT NULL,
       conteudo_1_pericia TEXT NOT NULL,
       conteudo_2_pericias TEXT NOT NULL,
+      conteudo_pericia_medica TEXT,
+      conteudo_pericia_social TEXT,
       modo_envio_2_pericias TEXT CHECK(modo_envio_2_pericias IN ('combinada','separadas')) DEFAULT 'combinada',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );

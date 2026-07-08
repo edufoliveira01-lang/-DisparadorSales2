@@ -72,3 +72,15 @@ export async function getCardsFromList(key: string, token: string, listId: strin
     fields: "id,name,desc,due,shortUrl",
   });
 }
+
+export async function moveCard(key: string, token: string, cardId: string, listId: string): Promise<void> {
+  const url = new URL(`${TRELLO_API}/cards/${cardId}`);
+  url.searchParams.set("key", key);
+  url.searchParams.set("token", token);
+  url.searchParams.set("idList", listId);
+
+  const response = await fetch(url.toString(), { method: "PUT" });
+  if (!response.ok) {
+    throw new TrelloError(`Erro ao mover o card no Trello (HTTP ${response.status}).`, response.status);
+  }
+}

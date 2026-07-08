@@ -39,6 +39,7 @@ export function Configuracoes() {
   const [lists, setLists] = useState<TrelloList[]>([]);
   const [boardId, setBoardId] = useState("");
   const [listId, setListId] = useState("");
+  const [moveToListId, setMoveToListId] = useState("");
   const [salvandoTrello, setSalvandoTrello] = useState(false);
 
   const [whatsapp, setWhatsapp] = useState<WhatsappState>({ status: "desconectado", qrDataUrl: null, lastError: null });
@@ -55,6 +56,7 @@ export function Configuracoes() {
     setIntervalMax(data.send_interval_max ?? "15");
     if (data.trello_board_id) setBoardId(data.trello_board_id);
     if (data.trello_list_id) setListId(data.trello_list_id);
+    if (data.trello_move_to_list_id) setMoveToListId(data.trello_move_to_list_id);
     if (data.trello_key && data.trello_token_configurado) setTrelloOk(true);
   }, []);
 
@@ -122,6 +124,7 @@ export function Configuracoes() {
         trello_board_nome: board?.name || "",
         trello_list_id: listId,
         trello_list_nome: list?.name || "",
+        trello_move_to_list_id: moveToListId,
       });
       show("Configurações do Trello salvas.", "success");
       loadSettings();
@@ -242,6 +245,23 @@ export function Configuracoes() {
                   ))}
                 </Select>
               </div>
+              <div className="col-span-2">
+                <Label>Mover cartão para:</Label>
+                <Select value={moveToListId} onChange={(e) => setMoveToListId(e.target.value)} disabled={!boardId && lists.length === 0}>
+                  <option value="">Não mover (desativado)</option>
+                  {settings?.trello_move_to_list_id && !lists.find((l) => l.id === settings.trello_move_to_list_id) && (
+                    <option value={settings.trello_move_to_list_id}>Manter atual</option>
+                  )}
+                  {lists.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </Select>
+                <p className="mt-1 text-xs text-zinc-500">
+                  O cartão será movido para esta lista apenas se o disparo for efetuado com sucesso.
+                </p>
+              </div>
             </div>
           )}
 
@@ -267,6 +287,9 @@ export function Configuracoes() {
               <p className="flex items-center gap-1.5 text-sm text-zinc-500 dark:text-zinc-400">
                 <QrCode className="h-4 w-4" /> Abra o WhatsApp no celular → Aparelhos conectados → Conectar um aparelho
               </p>
+              <Button variant="outline" size="sm" onClick={handleDesconectarWhatsapp} className="mt-2">
+                Cancelar QR Code
+              </Button>
             </div>
           )}
 

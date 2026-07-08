@@ -20,6 +20,8 @@ export interface Template {
   nome: string;
   conteudo_1_pericia: string;
   conteudo_2_pericias: string;
+  conteudo_pericia_medica?: string;
+  conteudo_pericia_social?: string;
   modo_envio_2_pericias: "combinada" | "separadas";
   created_at: string;
 }
@@ -63,6 +65,7 @@ export interface Settings {
   trello_board_nome?: string;
   trello_list_id?: string;
   trello_list_nome?: string;
+  trello_move_to_list_id?: string;
   send_interval_min: string;
   send_interval_max: string;
   template_ativo_id?: string;

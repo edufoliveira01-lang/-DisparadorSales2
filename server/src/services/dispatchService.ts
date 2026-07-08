@@ -3,6 +3,8 @@ import type { Pericia } from "./parserService";
 import { getTemplate, renderMessages } from "./templateService";
 import { createLog, type SendLog } from "./logsService";
 import { whatsappManager } from "./whatsappService";
+import { getSetting } from "./settingsService";
+import * as trelloService from "./trelloService";
 
 export interface SendItem {
   cardId: string;
@@ -24,7 +26,23 @@ export async function dispatchSingle(item: SendItem, templateId: number): Promis
   try {
     if (!whatsappManager.isReady()) throw new Error("WhatsApp não está conectado.");
 
-    const chatId = await whatsappManager.resolveChatId(onlyDigits(item.telefone));
+    let digits = onlyDigits(item.telefone);
+    // Suporte para números antigos de 8 dígitos: adiciona o 9 se necessário
+    // Se tiver 10 dígitos (DDD + 8 números), adiciona o 9 após o DDD
+    if (digits.length === 10) {
+      digits = digits.slice(0, 2) + "9" + digits.slice(2);
+    } else if (digits.length === 8) {
+      // Se tiver apenas 8 dígitos, assume que falta o DDD e o 9 (embora o ideal seja ter o DDD)
+      // Mas para garantir a compatibilidade solicitada, vamos tentar resolver como está.
+      // O whatsapp-web.js costuma precisar do DDI (55) também.
+    }
+
+    // Se não tiver o DDI 55, adiciona
+    if (digits.length >= 8 && digits.length <= 11 && !digits.startsWith("55")) {
+      digits = "55" + digits;
+    }
+
+    const chatId = await whatsappManager.resolveChatId(digits);
     if (!chatId) throw new Error("Este telefone não foi encontrado no WhatsApp.");
 
     const mensagens = renderMessages(template, item.nomeCliente, item.pericias);
@@ -45,6 +63,20 @@ export async function dispatchSingle(item: SendItem, templateId: number): Promis
       erro: null,
     });
     emitEvent("send:update", { cardId: item.cardId, status: "sucesso", log });
+
+    // Mover card no Trello se configurado
+    const trelloKey = getSetting("trello_key");
+    const trelloToken = getSetting("trello_token");
+    const moveToListId = getSetting("trello_move_to_list_id");
+
+    if (trelloKey && trelloToken && moveToListId) {
+      try {
+        await trelloService.moveCard(trelloKey, trelloToken, item.cardId, moveToListId);
+      } catch (trelloErr) {
+        console.error(`Erro ao mover card ${item.cardId} no Trello:`, trelloErr);
+      }
+    }
+
     return log;
   } catch (err) {
     const erro = (err as Error).message;

@@ -58,6 +58,8 @@ export function Templates() {
       nome: t.nome,
       conteudo_1_pericia: t.conteudo_1_pericia,
       conteudo_2_pericias: t.conteudo_2_pericias,
+      conteudo_pericia_medica: t.conteudo_pericia_medica || "",
+      conteudo_pericia_social: t.conteudo_pericia_social || "",
       modo_envio_2_pericias: t.modo_envio_2_pericias,
     });
   }
@@ -123,21 +125,24 @@ export function Templates() {
   useEffect(() => {
     const timer = setTimeout(async () => {
       try {
-        const r1 = await api.post<{ mensagens: string[] }>("/templates/preview", {
+        const payload = {
           nome: EXEMPLO_PERICIAS[0].nome,
-          pericias: [EXEMPLO_PERICIAS[0]],
           conteudo_1_pericia: form.conteudo_1_pericia,
           conteudo_2_pericias: form.conteudo_2_pericias,
+          conteudo_pericia_medica: form.conteudo_pericia_medica,
+          conteudo_pericia_social: form.conteudo_pericia_social,
           modo_envio_2_pericias: form.modo_envio_2_pericias,
+        };
+
+        const r1 = await api.post<{ mensagens: string[] }>("/templates/preview", {
+          ...payload,
+          pericias: [EXEMPLO_PERICIAS[0]],
         });
         setPreview1(r1.mensagens[0] || "");
 
         const r2 = await api.post<{ mensagens: string[] }>("/templates/preview", {
-          nome: EXEMPLO_PERICIAS[0].nome,
+          ...payload,
           pericias: EXEMPLO_PERICIAS,
-          conteudo_1_pericia: form.conteudo_1_pericia,
-          conteudo_2_pericias: form.conteudo_2_pericias,
-          modo_envio_2_pericias: form.modo_envio_2_pericias,
         });
         setPreview2(r2.mensagens);
       } catch {
@@ -145,7 +150,13 @@ export function Templates() {
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [form.conteudo_1_pericia, form.conteudo_2_pericias, form.modo_envio_2_pericias]);
+  }, [
+    form.conteudo_1_pericia,
+    form.conteudo_2_pericias,
+    form.conteudo_pericia_medica,
+    form.conteudo_pericia_social,
+    form.modo_envio_2_pericias,
+  ]);
 
   return (
     <div className="space-y-6">
@@ -260,18 +271,37 @@ export function Templates() {
                     Dentro de {"{{#each PERICIAS}}"}...{"{{/each}}"}, use {"{{TIPO_PERICIA}}"}, {"{{DATA}}"}, {"{{HORARIO}}"} e{" "}
                     {"{{LOCAL}}"} para cada perícia. {"{{NOME}}"} fica fora do bloco (é o mesmo cliente).
                   </p>
-                  <Textarea
-                    ref={textarea2Ref}
-                    rows={11}
-                    value={form.conteudo_2_pericias}
-                    onChange={(e) => setForm((f) => ({ ...f, conteudo_2_pericias: e.target.value }))}
-                    className="font-mono text-[13px]"
-                    disabled={form.modo_envio_2_pericias === "separadas"}
-                  />
-                  {form.modo_envio_2_pericias === "separadas" && (
-                    <p className="text-xs text-amber-600 dark:text-amber-500">
-                      No modo "2 mensagens separadas", cada perícia usa o template de "1 perícia" acima.
-                    </p>
+                  {form.modo_envio_2_pericias === "combinada" ? (
+                    <Textarea
+                      ref={textarea2Ref}
+                      rows={11}
+                      value={form.conteudo_2_pericias}
+                      onChange={(e) => setForm((f) => ({ ...f, conteudo_2_pericias: e.target.value }))}
+                      className="font-mono text-[13px]"
+                    />
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <Label className="text-[10px] uppercase text-zinc-400">Perícia Médica</Label>
+                        <Textarea
+                          rows={11}
+                          value={form.conteudo_pericia_medica || form.conteudo_1_pericia}
+                          onChange={(e) => setForm((f) => ({ ...f, conteudo_pericia_medica: e.target.value }))}
+                          className="font-mono text-[13px]"
+                          placeholder="Template para perícia médica..."
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[10px] uppercase text-zinc-400">Perícia Social</Label>
+                        <Textarea
+                          rows={11}
+                          value={form.conteudo_pericia_social || form.conteudo_1_pericia}
+                          onChange={(e) => setForm((f) => ({ ...f, conteudo_pericia_social: e.target.value }))}
+                          className="font-mono text-[13px]"
+                          placeholder="Template para perícia social..."
+                        />
+                      </div>
+                    </div>
                   )}
                 </div>
               )}
