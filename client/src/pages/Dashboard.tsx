@@ -41,6 +41,7 @@ export function Dashboard() {
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [preview, setPreview] = useState<{ card: Card; mensagens: string[] } | null>(null);
   const [enviandoCardId, setEnviandoCardId] = useState<string | null>(null);
+  const [gerandoPreview, setGerandoPreview] = useState(false);
 
   const [batchConfirm, setBatchConfirm] = useState(false);
   const [batchLoading, setBatchLoading] = useState(false);
@@ -167,28 +168,36 @@ export function Dashboard() {
   async function abrirPreview(card: Card) {
     if (!templateId) return;
     try {
+      setGerandoPreview(true);
       setEnviandoCardId(card.cardId);
-      const res = await api.post("/templates/preview", {
+      const res = await api.post<{ mensagens: string[] }>("/templates/preview", {
         templateId,
-        cardId: card.cardId,
+        nome: card.nomeCliente,
+        pericias: card.pericias,
       });
-      setPreview({ card, mensagens: res.data.mensagens });
+      setPreview({ card, mensagens: res.mensagens || [] });
     } catch (err) {
       alert("Erro ao gerar preview");
     } finally {
+      setGerandoPreview(false);
       setEnviandoCardId(null);
     }
   }
 
   async function confirmarEnvioIndividual() {
     if (!preview || !templateId) return;
+    const contato = contatoEfetivo(preview.card);
+    if (!contato) return;
+
     try {
       setEnviandoCardId(preview.card.cardId);
       setPreview(null);
-      await api.post("/dispatch/send", {
+      await api.post("/send", {
         templateId,
         cardId: preview.card.cardId,
+        contactId: contato.id,
       });
+      await carregarCards(false);
     } catch (err) {
       alert("Erro ao enviar mensagem");
     } finally {
@@ -378,14 +387,33 @@ export function Dashboard() {
             <Button variant="outline" onClick={() => setPreview(null)}>
               Cancelar
             </Button>
-            <Button onClick={confirmarEnvioIndividual}>
-              <Send className="h-4 w-4" /> Confirmar envio
+            <Button onClick={confirmarEnvioIndividual} disabled={gerandoPreview}>
+              <Send className="h-4 w-4" /> Confirmar e Enviar
             </Button>
           </>
         }
       >
         <div className="space-y-3">
-          {preview?.mensagens.map((msg, i) => (
+          <div className="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20 mb-4">
+            <p className="text-sm text-blue-700 dark:text-blue-300">
+              Confirmar envio para: <strong>{preview?.card.nomeCliente}</strong>
+            </p>
+            <p className="mt-1 text-xs text-blue-600 dark:text-blue-400">
+              Número cadastrado: <strong>{contatoEfetivo(preview?.card!)?.telefone}</strong>
+            </p>
+            <p className="mt-2 text-[10px] italic text-blue-500">
+              Verifique se o número acima está correto antes de confirmar.
+            </p>
+          </div>
+
+          <Label>Prévia da Mensagem:</Label>
+          {gerandoPreview ? (
+            <div className="animate-pulse space-y-2">
+              <div className="h-4 bg-zinc-200 rounded w-3/4"></div>
+              <div className="h-4 bg-zinc-200 rounded w-1/2"></div>
+            </div>
+          ) : (
+            preview?.mensagens.map((msg, i) => (
             <div
               key={i}
               className="whitespace-pre-wrap rounded-2xl rounded-tl-none bg-accent-50 px-4 py-3 text-sm text-zinc-800 dark:bg-accent-900/20 dark:text-zinc-200"
