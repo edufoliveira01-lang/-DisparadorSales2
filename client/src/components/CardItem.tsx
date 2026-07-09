@@ -1,6 +1,7 @@
 import { AlertTriangle, Calendar, CheckCircle2, Clock, MapPin, MessageCircle, Send, UserPlus, XCircle } from "lucide-react";
 import type { CardViewModel } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
+import { cn, formatPlaceholder } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 
@@ -25,8 +26,23 @@ export function CardItem({
   onUsarSugestao,
   enviando,
 }: CardItemProps) {
+  const temNaoIdentificado = card.pericias.some(
+    (p) =>
+      p.data?.includes("NAO_IDENTIFICADA") ||
+      p.horario?.includes("NAO_IDENTIFICADO") ||
+      p.local?.includes("NAO_IDENTIFICADO") ||
+      p.tipo?.includes("NAO_IDENTIFICADO")
+  );
+
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-card transition-shadow hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900">
+    <div
+      className={cn(
+        "rounded-2xl border bg-white p-5 shadow-card transition-shadow hover:shadow-md dark:bg-zinc-900",
+        temNaoIdentificado
+          ? "border-amber-400 bg-amber-50/30 dark:border-amber-500/50 dark:bg-amber-900/10"
+          : "border-zinc-200 dark:border-zinc-800"
+      )}
+    >
       <div className="flex items-start gap-3">
         <div className="pt-0.5">
           <Checkbox checked={selecionado} onChange={onToggleSelecionar} />
@@ -48,16 +64,16 @@ export function CardItem({
           <div className="mt-3 space-y-2">
             {card.pericias.map((p, i) => (
               <div key={i} className="rounded-xl bg-zinc-50 p-3 text-sm dark:bg-zinc-800/50">
-                <p className="font-medium text-zinc-700 dark:text-zinc-200">{p.tipo || "(tipo não identificado)"}</p>
+                <p className="font-medium text-zinc-700 dark:text-zinc-200">{formatPlaceholder(p.tipo) || "(tipo não identificado)"}</p>
                 <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
                   <span className="flex items-center gap-1">
-                    <Calendar className="h-3.5 w-3.5" /> {p.data || "—"}
+                    <Calendar className="h-3.5 w-3.5" /> {formatPlaceholder(p.data)}
                   </span>
                   <span className="flex items-center gap-1">
-                    <Clock className="h-3.5 w-3.5" /> {p.horario || "—"}
+                    <Clock className="h-3.5 w-3.5" /> {formatPlaceholder(p.horario)}
                   </span>
                   <span className="flex items-center gap-1">
-                    <MapPin className="h-3.5 w-3.5" /> {p.local || "—"}
+                    <MapPin className="h-3.5 w-3.5" /> {formatPlaceholder(p.local)}
                   </span>
                 </div>
               </div>

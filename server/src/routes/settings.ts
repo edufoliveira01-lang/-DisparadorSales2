@@ -26,6 +26,8 @@ settingsRouter.put("/", (req, res) => {
     "send_interval_max",
     "template_ativo_id",
     "auto_sync_minutos",
+    "trello_move_list_id",
+    "trello_move_list_nome",
   ];
 
   for (const key of allowedKeys) {

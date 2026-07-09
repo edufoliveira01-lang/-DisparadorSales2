@@ -18,6 +18,8 @@ export function runMigrations(db: Database.Database): void {
       nome TEXT NOT NULL,
       conteudo_1_pericia TEXT NOT NULL,
       conteudo_2_pericias TEXT NOT NULL,
+      conteudo_pericia_medica TEXT,
+      conteudo_pericia_social TEXT,
       modo_envio_2_pericias TEXT CHECK(modo_envio_2_pericias IN ('combinada','separadas')) DEFAULT 'combinada',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -45,15 +47,25 @@ export function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_contacts_nome ON contacts(nome);
   `);
 
+  // Migração para adicionar colunas se não existirem
+  try {
+    db.exec("ALTER TABLE templates ADD COLUMN conteudo_pericia_medica TEXT");
+    db.exec("ALTER TABLE templates ADD COLUMN conteudo_pericia_social TEXT");
+  } catch {
+    // Colunas já existem
+  }
+
   const templateCount = db.prepare("SELECT COUNT(*) as count FROM templates").get() as { count: number };
   if (templateCount.count === 0) {
     db.prepare(
-      `INSERT INTO templates (nome, conteudo_1_pericia, conteudo_2_pericias, modo_envio_2_pericias)
-       VALUES (?, ?, ?, ?)`
+      `INSERT INTO templates (nome, conteudo_1_pericia, conteudo_2_pericias, conteudo_pericia_medica, conteudo_pericia_social, modo_envio_2_pericias)
+       VALUES (?, ?, ?, ?, ?, ?)`
     ).run(
       "Padrão",
       "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n\nQualquer dúvida, estou à disposição!",
       "Olá {{NOME}}, tudo bem?\n\nVocê tem as seguintes perícias agendadas:\n\n{{#each PERICIAS}}\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n\n{{/each}}\nQualquer dúvida, estou à disposição!",
+      "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia médica agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n\nQualquer dúvida, estou à disposição!",
+      "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia social agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n\nQualquer dúvida, estou à disposição!",
       "combinada"
     );
   }

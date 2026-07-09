@@ -3,6 +3,8 @@ import type { Pericia } from "./parserService";
 import { getTemplate, renderMessages } from "./templateService";
 import { createLog, type SendLog } from "./logsService";
 import { whatsappManager } from "./whatsappService";
+import { getSetting } from "./settingsService";
+import { moveCard } from "./trelloService";
 
 export interface SendItem {
   cardId: string;
@@ -32,6 +34,20 @@ export async function dispatchSingle(item: SendItem, templateId: number): Promis
 
     for (const mensagem of mensagens) {
       await whatsappManager.sendMessage(chatId, mensagem);
+    }
+
+    // Movimentação automática no Trello se configurada
+    const moveListId = getSetting("trello_move_list_id");
+    const trelloKey = getSetting("trello_key");
+    const trelloToken = getSetting("trello_token");
+
+    if (moveListId && trelloKey && trelloToken) {
+      try {
+        await moveCard(trelloKey, trelloToken, item.cardId, moveListId);
+      } catch (moveErr) {
+        console.error(`Erro ao mover cartão ${item.cardId} no Trello:`, moveErr);
+        // Não falhamos o envio se apenas a movimentação falhar, mas logamos o erro
+      }
     }
 
     const log = createLog({

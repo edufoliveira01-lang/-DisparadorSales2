@@ -21,6 +21,8 @@ function novoTemplateVazio(): Omit<Template, "id" | "created_at"> {
     nome: "Novo template",
     conteudo_1_pericia: "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n\nQualquer dúvida, estou à disposição!",
     conteudo_2_pericias: "Olá {{NOME}}, tudo bem?\n\nVocê tem as seguintes perícias agendadas:\n\n{{#each PERICIAS}}\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n\n{{/each}}\nQualquer dúvida, estou à disposição!",
+    conteudo_pericia_medica: "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia MÉDICA agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n\nQualquer dúvida, estou à disposição!",
+    conteudo_pericia_social: "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia SOCIAL agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n\nQualquer dúvida, estou à disposição!",
     modo_envio_2_pericias: "combinada",
   };
 }
@@ -58,6 +60,8 @@ export function Templates() {
       nome: t.nome,
       conteudo_1_pericia: t.conteudo_1_pericia,
       conteudo_2_pericias: t.conteudo_2_pericias,
+      conteudo_pericia_medica: t.conteudo_pericia_medica || "",
+      conteudo_pericia_social: t.conteudo_pericia_social || "",
       modo_envio_2_pericias: t.modo_envio_2_pericias,
     });
   }
@@ -100,12 +104,14 @@ export function Templates() {
     }
   }
 
-  function inserirVariavel(aba1or2: "1" | "2", variavel: string) {
-    const ref = aba1or2 === "1" ? textarea1Ref.current : textarea2Ref.current;
-    const campo = aba1or2 === "1" ? "conteudo_1_pericia" : "conteudo_2_pericias";
+  function inserirVariavel(campo: keyof Omit<Template, "id" | "created_at">, variavel: string) {
+    let ref: HTMLTextAreaElement | null = null;
+    if (campo === "conteudo_1_pericia") ref = textarea1Ref.current;
+    if (campo === "conteudo_2_pericias") ref = textarea2Ref.current;
+
     const placeholder = `{{${variavel}}}`;
     if (!ref) {
-      setForm((f) => ({ ...f, [campo]: f[campo] + placeholder }));
+      setForm((f) => ({ ...f, [campo]: (f[campo] || "") + placeholder }));
       return;
     }
     const start = ref.selectionStart ?? ref.value.length;
@@ -126,18 +132,14 @@ export function Templates() {
         const r1 = await api.post<{ mensagens: string[] }>("/templates/preview", {
           nome: EXEMPLO_PERICIAS[0].nome,
           pericias: [EXEMPLO_PERICIAS[0]],
-          conteudo_1_pericia: form.conteudo_1_pericia,
-          conteudo_2_pericias: form.conteudo_2_pericias,
-          modo_envio_2_pericias: form.modo_envio_2_pericias,
+          ...form,
         });
         setPreview1(r1.mensagens[0] || "");
 
         const r2 = await api.post<{ mensagens: string[] }>("/templates/preview", {
           nome: EXEMPLO_PERICIAS[0].nome,
           pericias: EXEMPLO_PERICIAS,
-          conteudo_1_pericia: form.conteudo_1_pericia,
-          conteudo_2_pericias: form.conteudo_2_pericias,
-          modo_envio_2_pericias: form.modo_envio_2_pericias,
+          ...form,
         });
         setPreview2(r2.mensagens);
       } catch {
@@ -145,7 +147,7 @@ export function Templates() {
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [form.conteudo_1_pericia, form.conteudo_2_pericias, form.modo_envio_2_pericias]);
+  }, [form]);
 
   return (
     <div className="space-y-6">
@@ -225,7 +227,7 @@ export function Templates() {
                     {VARIAVEIS.map((v) => (
                       <button
                         key={v}
-                        onClick={() => inserirVariavel("1", v)}
+                        onClick={() => inserirVariavel("conteudo_1_pericia", v)}
                         className="rounded-md bg-zinc-100 px-2 py-1 text-xs font-mono text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
                       >
                         {`{{${v}}}`}
@@ -246,32 +248,58 @@ export function Templates() {
                     <span className="rounded-md bg-zinc-100 px-2 py-1 text-xs font-mono text-zinc-500 dark:bg-zinc-800">
                       {"{{#each PERICIAS}} ... {{/each}}"}
                     </span>
-                    {VARIAVEIS.map((v) => (
-                      <button
-                        key={v}
-                        onClick={() => inserirVariavel("2", v)}
-                        className="rounded-md bg-zinc-100 px-2 py-1 text-xs font-mono text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
-                      >
-                        {`{{${v}}}`}
-                      </button>
-                    ))}
+                    {form.modo_envio_2_pericias === "combinada" &&
+                      VARIAVEIS.map((v) => (
+                        <button
+                          key={v}
+                          onClick={() => inserirVariavel("conteudo_2_pericias", v)}
+                          className="rounded-md bg-zinc-100 px-2 py-1 text-xs font-mono text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                        >
+                          {`{{${v}}}`}
+                        </button>
+                      ))}
                   </div>
-                  <p className="text-xs text-zinc-400">
-                    Dentro de {"{{#each PERICIAS}}"}...{"{{/each}}"}, use {"{{TIPO_PERICIA}}"}, {"{{DATA}}"}, {"{{HORARIO}}"} e{" "}
-                    {"{{LOCAL}}"} para cada perícia. {"{{NOME}}"} fica fora do bloco (é o mesmo cliente).
-                  </p>
-                  <Textarea
-                    ref={textarea2Ref}
-                    rows={11}
-                    value={form.conteudo_2_pericias}
-                    onChange={(e) => setForm((f) => ({ ...f, conteudo_2_pericias: e.target.value }))}
-                    className="font-mono text-[13px]"
-                    disabled={form.modo_envio_2_pericias === "separadas"}
-                  />
-                  {form.modo_envio_2_pericias === "separadas" && (
-                    <p className="text-xs text-amber-600 dark:text-amber-500">
-                      No modo "2 mensagens separadas", cada perícia usa o template de "1 perícia" acima.
-                    </p>
+                  {form.modo_envio_2_pericias === "combinada" ? (
+                    <>
+                      <p className="text-xs text-zinc-400">
+                        Dentro de {"{{#each PERICIAS}}"}...{"{{/each}}"}, use {"{{TIPO_PERICIA}}"}, {"{{DATA}}"}, {"{{HORARIO}}"} e{" "}
+                        {"{{LOCAL}}"} para cada perícia. {"{{NOME}}"} fica fora do bloco (é o mesmo cliente).
+                      </p>
+                      <Textarea
+                        ref={textarea2Ref}
+                        rows={11}
+                        value={form.conteudo_2_pericias}
+                        onChange={(e) => setForm((f) => ({ ...f, conteudo_2_pericias: e.target.value }))}
+                        className="font-mono text-[13px]"
+                      />
+                    </>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label className="text-xs text-zinc-500">Mensagem da Perícia Médica</Label>
+                        <Textarea
+                          rows={6}
+                          value={form.conteudo_pericia_medica}
+                          onChange={(e) => setForm((f) => ({ ...f, conteudo_pericia_medica: e.target.value }))}
+                          className="font-mono text-[13px]"
+                          placeholder="Template para perícia médica..."
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs text-zinc-500">Mensagem da Perícia Social</Label>
+                        <Textarea
+                          rows={6}
+                          value={form.conteudo_pericia_social}
+                          onChange={(e) => setForm((f) => ({ ...f, conteudo_pericia_social: e.target.value }))}
+                          className="font-mono text-[13px]"
+                          placeholder="Template para perícia social..."
+                        />
+                      </div>
+                      <p className="text-xs text-amber-600 dark:text-amber-500">
+                        As mensagens serão enviadas separadamente. Se uma perícia não for identificada como médica ou social, o
+                        sistema usará o template padrão de "1 perícia".
+                      </p>
+                    </div>
                   )}
                 </div>
               )}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, KeyRound, Loader2, QrCode, Trello, Unplug, Wifi, WifiOff } from "lucide-react";
+import { CheckCircle2, KeyRound, Loader2, QrCode, Square, Trello, Unplug, Wifi, WifiOff } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type { Settings, WhatsappState } from "@/lib/types";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
@@ -39,6 +39,7 @@ export function Configuracoes() {
   const [lists, setLists] = useState<TrelloList[]>([]);
   const [boardId, setBoardId] = useState("");
   const [listId, setListId] = useState("");
+  const [moveListId, setMoveListId] = useState("");
   const [salvandoTrello, setSalvandoTrello] = useState(false);
 
   const [whatsapp, setWhatsapp] = useState<WhatsappState>({ status: "desconectado", qrDataUrl: null, lastError: null });
@@ -55,6 +56,7 @@ export function Configuracoes() {
     setIntervalMax(data.send_interval_max ?? "15");
     if (data.trello_board_id) setBoardId(data.trello_board_id);
     if (data.trello_list_id) setListId(data.trello_list_id);
+    if (data.trello_move_list_id) setMoveListId(data.trello_move_list_id);
     if (data.trello_key && data.trello_token_configurado) setTrelloOk(true);
   }, []);
 
@@ -97,12 +99,14 @@ export function Configuracoes() {
   async function handleSelectBoard(id: string) {
     setBoardId(id);
     setListId("");
+    setMoveListId("");
     setLists([]);
     if (!id) return;
     try {
       const key = trelloKey || settings?.trello_key || "";
+      const token = trelloToken || settings?.trello_token_configurado || "";
       const listsData = await api.get<TrelloList[]>(
-        `/trello/boards/${id}/lists?key=${encodeURIComponent(key)}&token=${encodeURIComponent(trelloToken)}`
+        `/trello/boards/${id}/lists?key=${encodeURIComponent(key)}&token=${encodeURIComponent(token)}`
       );
       setLists(listsData);
     } catch (err) {
@@ -115,6 +119,7 @@ export function Configuracoes() {
     try {
       const board = boards.find((b) => b.id === boardId);
       const list = lists.find((l) => l.id === listId);
+      const moveList = lists.find((l) => l.id === moveListId);
       await api.put("/settings", {
         trello_key: trelloKey,
         trello_token: trelloToken,
@@ -122,6 +127,8 @@ export function Configuracoes() {
         trello_board_nome: board?.name || "",
         trello_list_id: listId,
         trello_list_nome: list?.name || "",
+        trello_move_list_id: moveListId,
+        trello_move_list_nome: moveList?.name || "",
       });
       show("Configurações do Trello salvas.", "success");
       loadSettings();
@@ -141,6 +148,15 @@ export function Configuracoes() {
       show(err instanceof ApiError ? err.message : "Erro ao conectar WhatsApp.", "error");
     } finally {
       setConectando(false);
+    }
+  }
+
+  async function handlePararWhatsapp() {
+    try {
+      await api.whatsapp.stop();
+      show("Geração de QR Code cancelada.", "info");
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao parar WhatsApp.", "error");
     }
   }
 
@@ -242,6 +258,20 @@ export function Configuracoes() {
                   ))}
                 </Select>
               </div>
+              <div>
+                <Label>Mover cartão para:</Label>
+                <Select value={moveListId} onChange={(e) => setMoveListId(e.target.value)} disabled={!boardId && lists.length === 0}>
+                  <option value="">Não mover (manter na lista atual)</option>
+                  {settings?.trello_move_list_id && !lists.find((l) => l.id === settings.trello_move_list_id) && (
+                    <option value={settings.trello_move_list_id}>{settings.trello_move_list_nome} (atual)</option>
+                  )}
+                  {lists.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
             </div>
           )}
 
@@ -292,14 +322,22 @@ export function Configuracoes() {
                 <Unplug className="h-4 w-4" /> Desconectar / trocar de sessão
               </Button>
             ) : (
-              <Button
-                onClick={handleConectarWhatsapp}
-                loading={conectando || whatsapp.status === "inicializando"}
-                disabled={whatsapp.status === "aguardando_qr" || whatsapp.status === "autenticado"}
-              >
-                {whatsapp.status === "aguardando_qr" ? <Loader2 className="h-4 w-4 animate-spin" /> : <WifiOff className="h-4 w-4" />}
-                Conectar WhatsApp
-              </Button>
+              <>
+                <Button
+                  onClick={handleConectarWhatsapp}
+                  loading={conectando || whatsapp.status === "inicializando"}
+                  disabled={whatsapp.status === "aguardando_qr" || whatsapp.status === "autenticado"}
+                >
+                  {whatsapp.status === "aguardando_qr" ? <Loader2 className="h-4 w-4 animate-spin" /> : <WifiOff className="h-4 w-4" />}
+                  Conectar WhatsApp
+                </Button>
+
+                {whatsapp.status === "aguardando_qr" && (
+                  <Button variant="outline" onClick={handlePararWhatsapp}>
+                    <Square className="h-4 w-4" /> Parar
+                  </Button>
+                )}
+              </>
             )}
           </div>
         </CardContent>
