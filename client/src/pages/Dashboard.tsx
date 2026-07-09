@@ -117,13 +117,22 @@ export function Dashboard() {
   }
 
   const contatoEfetivo = (card: Card) => {
-    if (!card.telefone) return null;
-    // Normaliza ambos os telefones para comparação (remove tudo que não é número)
-    const telCard = card.telefone.replace(/\D/g, "");
-    return contatos.find((c) => {
-      const telContato = c.telefone.replace(/\D/g, "");
-      return telContato === telCard || telContato === `55${telCard}`;
-    }) || null;
+    // 1. Tenta vincular pelo ID do contato que já veio do servidor (Match exato por nome)
+    if (card.contato) return card.contato;
+
+    // 2. Se o card tem um telefone extraído do Trello, tenta vincular pelo telefone
+    if (card.telefone) {
+      const telCard = card.telefone.replace(/\D/g, "");
+      const encontrado = contatos.find((c) => {
+        const telContato = c.telefone.replace(/\D/g, "");
+        return telContato === telCard || telContato === `55${telCard}` || telCard === `55${telContato}`;
+      });
+      if (encontrado) return encontrado;
+    }
+
+    // 3. Tenta vincular pelo nome do cliente (Fallback caso o contato tenha sido recém-cadastrado)
+    const nomeClienteNorm = card.nomeCliente.toLowerCase().trim();
+    return contatos.find((c) => c.nome.toLowerCase().trim() === nomeClienteNorm) || null;
   };
 
   const cardsFiltrados = useMemo(() => {
