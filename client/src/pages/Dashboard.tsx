@@ -75,19 +75,19 @@ export function Dashboard() {
     try {
       setCarregando(true);
       const [cardsRes, templatesRes, contatosRes, wsRes] = await Promise.all([
-        api.get("/cards"),
-        api.get("/templates"),
-        api.get("/contatos"),
-        api.get("/whatsapp/status"),
+        api.get<Card[]>("/cards"),
+        api.get<Template[]>("/templates"),
+        api.get<Contato[]>("/contatos"),
+        api.get<WhatsAppStatus>("/whatsapp/status"),
       ]);
 
-      setCards(cardsRes.data);
-      setTemplates(templatesRes.data);
-      setContatos(contatosRes.data);
-      setWhatsapp(wsRes.data);
+      setCards(cardsRes || []);
+      setTemplates(templatesRes || []);
+      setContatos(contatosRes || []);
+      setWhatsapp(wsRes || { status: "desconectado" });
 
-      if (templatesRes.data.length > 0) {
-        setTemplateId(templatesRes.data[0].id);
+      if (templatesRes && templatesRes.length > 0) {
+        setTemplateId(templatesRes[0].id);
       }
     } catch (err: any) {
       setErro(err.response?.data?.error || "Erro ao carregar dados");
@@ -99,10 +99,11 @@ export function Dashboard() {
   async function carregarCards(comLoading = true) {
     try {
       if (comLoading) setCarregando(true);
-      const res = await api.get("/cards");
-      setCards(res.data);
+      const res = await api.get<Card[]>("/cards");
+      setCards(res || []);
+      setErro(null);
     } catch (err: any) {
-      setErro(err.response?.data?.error || "Erro ao carregar cards");
+      setErro(err.message || "Erro ao carregar cards");
     } finally {
       if (comLoading) setCarregando(false);
     }
