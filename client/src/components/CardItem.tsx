@@ -159,9 +159,9 @@ export function CardItem({
             onClick={onEnviar} 
             loading={enviando} 
             disabled={!temContatoEfetivo || card.pericias.length === 0} 
-            className="h-9 px-5 text-xs font-bold sm:w-auto w-full"
+            className="h-10 px-6 text-xs font-bold sm:w-auto w-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/20"
           >
-            <Send className="h-3.5 w-3.5" /> Enviar Mensagem
+            <Send className="h-4 w-4" /> ENVIAR AGORA
           </Button>
         </div>
       </div>
