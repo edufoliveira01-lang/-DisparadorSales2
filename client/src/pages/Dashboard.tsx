@@ -270,20 +270,15 @@ export function Dashboard() {
   }
 
   return (
-    <div className="w-full max-w-full space-y-6 overflow-x-hidden">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className="w-full max-w-full space-y-4 sm:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-1">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Dashboard</h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Cards da lista do Trello configurada.</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-zinc-100">Dashboard</h1>
+          <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400">Cards da lista do Trello configurada.</p>
         </div>
         <div className="flex items-center gap-2">
-          {whatsapp.status !== "conectado" && (
-            <Badge tone="warning" className="flex">
-              <WifiOff className="h-3.5 w-3.5" /> <span className="hidden xs:inline ml-1">WhatsApp desconectado</span>
-            </Badge>
-          )}
-          <Button variant="outline" onClick={carregarCards} loading={carregando} className="flex-1 sm:flex-none">
-            <RefreshCw className="h-4 w-4" /> <span className="xs:inline">Atualizar</span>
+          <Button variant="outline" size="sm" onClick={carregarCards} loading={carregando} className="flex-1 sm:flex-none h-9">
+            <RefreshCw className="h-3.5 w-3.5" /> Atualizar
           </Button>
         </div>
       </div>
@@ -291,66 +286,51 @@ export function Dashboard() {
       {erro ? (
         <EmptyState
           icon={Inbox}
-          title="Não foi possível carregar os cards"
+          title="Erro ao carregar cards"
           description={erro}
-          action={
-            <Button variant="outline" onClick={() => navigate("/configuracoes")}>
-              Ir para Configurações
-            </Button>
-          }
+          action={<Button variant="outline" onClick={() => navigate("/configuracoes")}>Configurações</Button>}
         />
       ) : (
-        <>
-          <div className="flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="w-full max-w-full overflow-hidden space-y-4">
+          <div className="flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
             <div className="relative w-full">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
               <Input 
-                placeholder="Buscar cliente ou card..." 
-                className="pl-9 h-11 text-base sm:text-sm" 
+                placeholder="Buscar..." 
+                className="pl-9 h-10 text-sm" 
                 value={busca} 
                 onChange={(e) => setBusca(e.target.value)} 
               />
             </div>
             
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-              <div className="grid grid-cols-2 gap-2 flex-1 sm:grid-cols-3 lg:grid-cols-3">
-                <div className="space-y-1">
-                  <Label className="text-[10px] uppercase font-bold text-zinc-400 ml-1">Status</Label>
-                  <Select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value as FiltroStatus)} className="h-10 text-sm">
-                    <option value="todos">Todos</option>
-                    <option value="nao_enviado">Não env.</option>
-                    <option value="enviado">Enviados</option>
-                    <option value="falhou">Falhas</option>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-[10px] uppercase font-bold text-zinc-400 ml-1">Perícia</Label>
-                  <Select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value as FiltroTipo)} className="h-10 text-sm">
-                    <option value="todos">Todas</option>
-                    <option value="medica">Médica</option>
-                    <option value="social">Social</option>
-                    <option value="ambas">Ambas</option>
-                  </Select>
-                </div>
-                <div className="space-y-1 col-span-2 sm:col-span-1">
-                  <Label className="text-[10px] uppercase font-bold text-zinc-400 ml-1">Template</Label>
-                  <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="h-10 text-sm">
-                    {templates.map((t) => (
-                      <option key={t.id} value={t.id}>{t.nome}</option>
-                    ))}
-                  </Select>
-                </div>
+            <div className="flex flex-col gap-3">
+              <div className="grid grid-cols-2 gap-2">
+                <Select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value as FiltroStatus)} className="h-9 text-[11px]">
+                  <option value="todos">Todos Status</option>
+                  <option value="nao_enviado">Não Env.</option>
+                  <option value="enviado">Enviados</option>
+                  <option value="falhou">Falhas</option>
+                </Select>
+                <Select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value as FiltroTipo)} className="h-9 text-[11px]">
+                  <option value="todos">Todas Perícias</option>
+                  <option value="medica">Médica</option>
+                  <option value="social">Social</option>
+                  <option value="ambas">Ambas</option>
+                </Select>
               </div>
+              <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="h-9 text-[11px] w-full">
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>{t.nome}</option>
+                ))}
+              </Select>
               
-              <div className="pt-2 lg:pt-5">
-                <Button 
-                  onClick={abrirConfirmBatch} 
-                  disabled={selecionados.size === 0 || Boolean(batchProgress)} 
-                  className="w-full h-11 lg:w-auto px-6"
-                >
-                  <Send className="h-4 w-4" /> Enviar Selecionados ({selecionados.size})
-                </Button>
-              </div>
+              <Button 
+                onClick={abrirConfirmBatch} 
+                disabled={selecionados.size === 0 || Boolean(batchProgress)} 
+                className="w-full h-10 text-xs font-bold"
+              >
+                <Send className="h-3.5 w-3.5" /> Enviar Selecionados ({selecionados.size})
+              </Button>
             </div>
           </div>
 
