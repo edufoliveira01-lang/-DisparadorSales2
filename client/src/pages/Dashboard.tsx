@@ -117,7 +117,8 @@ export function Dashboard() {
     }
   }
 
-  const contatoEfetivo = (card: Card) => {
+  const contatoEfetivo = (card: Card | null) => {
+    if (!card) return null;
     // 1. Tenta vincular pelo ID do contato que já veio do servidor (Match exato por nome)
     if (card.contato) return card.contato;
 
@@ -399,7 +400,7 @@ export function Dashboard() {
               Confirmar envio para: <strong>{preview?.card.nomeCliente}</strong>
             </p>
             <p className="mt-1 text-xs text-blue-600 dark:text-blue-400">
-              Número cadastrado: <strong>{contatoEfetivo(preview?.card!)?.telefone}</strong>
+              Número cadastrado: <strong>{preview?.card ? contatoEfetivo(preview.card)?.telefone : ""}</strong>
             </p>
             <p className="mt-2 text-[10px] italic text-blue-500">
               Verifique se o número acima está correto antes de confirmar.
