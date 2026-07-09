@@ -270,7 +270,7 @@ export function Dashboard() {
   }
 
   return (
-    <div className="w-full space-y-6 overflow-x-hidden">
+    <div className="w-full max-w-full space-y-6 overflow-x-hidden">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Dashboard</h1>

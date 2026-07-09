@@ -32,8 +32,8 @@ export function Layout({ children }: { children: ReactNode }) {
           </Button>
         </header>
 
-        <main className="flex-1 overflow-y-auto overflow-x-hidden">
-          <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-8 sm:py-8">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden w-full">
+          <div className="mx-auto w-full max-w-6xl px-2 py-4 sm:px-8 sm:py-8">
             {children}
           </div>
         </main>
