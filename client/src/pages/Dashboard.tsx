@@ -74,10 +74,11 @@ export function Dashboard() {
   async function carregarDadosIniciais() {
     try {
       setCarregando(true);
+      // Nota: A rota correta no servidor é /api/contacts (em inglês)
       const [cardsRes, templatesRes, contatosRes, wsRes] = await Promise.all([
         api.get<Card[]>("/cards"),
         api.get<Template[]>("/templates"),
-        api.get<Contato[]>("/contatos"),
+        api.get<Contato[]>("/contacts"),
         api.get<WhatsAppStatus>("/whatsapp/status"),
       ]);
 
@@ -93,8 +94,10 @@ export function Dashboard() {
       if (templatesData.length > 0) {
         setTemplateId(templatesData[0].id);
       }
+      setErro(null);
     } catch (err: any) {
-      setErro(err.response?.data?.error || "Erro ao carregar dados");
+      console.error("Erro no carregamento inicial:", err);
+      setErro(err.message || "Erro ao carregar dados");
     } finally {
       setCarregando(false);
     }
@@ -234,16 +237,17 @@ export function Dashboard() {
     if (!cadastro) return;
     try {
       setSalvandoContato(true);
-      await api.post("/contatos", {
+      await api.post("/contacts", {
         nome: cadastro.nome,
         telefone: cadastro.telefone,
         observacoes: cadastro.observacoes,
       });
-      const contatosRes = await api.get("/contatos");
-      setContatos(contatosRes.data);
+      const contatosRes = await api.get<Contato[]>("/contacts");
+      setContatos(contatosRes || []);
       setCadastro(null);
-    } catch (err) {
-      alert("Erro ao salvar contato");
+    } catch (err: any) {
+      console.error("Erro ao salvar contato:", err);
+      alert(err.message || "Erro ao salvar contato");
     } finally {
       setSalvandoContato(false);
     }
