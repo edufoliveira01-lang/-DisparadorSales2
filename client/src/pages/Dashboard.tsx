@@ -414,13 +414,14 @@ export function Dashboard() {
             </div>
           ) : (
             preview?.mensagens.map((msg, i) => (
-            <div
-              key={i}
-              className="whitespace-pre-wrap rounded-2xl rounded-tl-none bg-accent-50 px-4 py-3 text-sm text-zinc-800 dark:bg-accent-900/20 dark:text-zinc-200"
-            >
-              {msg}
-            </div>
-          ))}
+              <div
+                key={i}
+                className="whitespace-pre-wrap rounded-2xl rounded-tl-none bg-accent-50 px-4 py-3 text-sm text-zinc-800 dark:bg-accent-900/20 dark:text-zinc-200 mb-2"
+              >
+                {msg}
+              </div>
+            ))
+          )}
         </div>
       </Modal>
 
