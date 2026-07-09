@@ -266,20 +266,20 @@ export function Dashboard() {
   }
 
   return (
-    <div className="w-full max-w-full space-y-4 sm:space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-1">
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-zinc-100">Dashboard</h1>
-          <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400">Cards da lista do Trello configurada.</p>
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Dashboard</h1>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Cards da lista do Trello configurada.</p>
         </div>
         <div className="flex items-center gap-2">
           {whatsapp.status !== "conectado" && (
-            <Badge tone="warning" className="hidden sm:flex">
+            <Badge tone="warning">
               <WifiOff className="h-3.5 w-3.5" /> WhatsApp desconectado
             </Badge>
           )}
-          <Button variant="outline" size="sm" onClick={carregarCards} loading={carregando} className="flex-1 sm:flex-none h-9">
-            <RefreshCw className="h-3.5 w-3.5" /> Atualizar
+          <Button variant="outline" onClick={carregarCards} loading={carregando}>
+            <RefreshCw className="h-4 w-4" /> Atualizar
           </Button>
         </div>
       </div>
@@ -296,47 +296,34 @@ export function Dashboard() {
           }
         />
       ) : (
-        <div className="w-full max-w-full overflow-hidden space-y-4">
-          <div className="flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
-            <div className="relative w-full">
+        <>
+          <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-              <Input 
-                placeholder="Buscar por cliente…" 
-                className="pl-9 h-10 text-sm" 
-                value={busca} 
-                onChange={(e) => setBusca(e.target.value)} 
-              />
+              <Input placeholder="Buscar por cliente…" className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
             </div>
-            
-            <div className="flex flex-col gap-3">
-              <div className="grid grid-cols-2 gap-2">
-                <Select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value as FiltroStatus)} className="h-9 text-[11px]">
-                  <option value="todos">Todos os status</option>
-                  <option value="nao_enviado">Não enviado</option>
-                  <option value="enviado">Enviado</option>
-                  <option value="falhou">Falhou</option>
-                </Select>
-                <Select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value as FiltroTipo)} className="h-9 text-[11px]">
-                  <option value="todos">Médica e Social</option>
-                  <option value="medica">Só Médica</option>
-                  <option value="social">Só Social</option>
-                  <option value="ambas">Ambas (2 perícias)</option>
-                </Select>
-              </div>
-              <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="h-9 text-[11px] w-full">
-                {templates.map((t) => (
-                  <option key={t.id} value={t.id}>{t.nome}</option>
-                ))}
-              </Select>
-              
-              <Button 
-                onClick={abrirConfirmBatch} 
-                disabled={selecionados.size === 0 || Boolean(batchProgress)} 
-                className="w-full h-10 text-xs font-bold"
-              >
-                <Send className="h-3.5 w-3.5" /> Enviar selecionados ({selecionados.size})
-              </Button>
-            </div>
+            <Select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value as FiltroStatus)} className="w-44">
+              <option value="todos">Todos os status</option>
+              <option value="nao_enviado">Não enviado</option>
+              <option value="enviado">Enviado</option>
+              <option value="falhou">Falhou</option>
+            </Select>
+            <Select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value as FiltroTipo)} className="w-44">
+              <option value="todos">Médica e Social</option>
+              <option value="medica">Só Médica</option>
+              <option value="social">Só Social</option>
+              <option value="ambas">Ambas (2 perícias)</option>
+            </Select>
+            <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="w-52">
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.nome}
+                </option>
+              ))}
+            </Select>
+            <Button onClick={abrirConfirmBatch} disabled={selecionados.size === 0 || Boolean(batchProgress)}>
+              <Send className="h-4 w-4" /> Enviar selecionados ({selecionados.size})
+            </Button>
           </div>
 
           {batchProgress?.ativo && (
@@ -348,7 +335,7 @@ export function Dashboard() {
           {cards === null ? (
             <div className="space-y-3">
               {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-32 w-full rounded-xl" />
+                <Skeleton key={i} className="h-40 w-full" />
               ))}
             </div>
           ) : cardsFiltrados.length === 0 ? (
@@ -378,7 +365,7 @@ export function Dashboard() {
               ))}
             </div>
           )}
-        </div>
+        </>
       )}
 
       <Modal
@@ -398,22 +385,10 @@ export function Dashboard() {
         }
       >
         <div className="space-y-3">
-          <div className="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20 mb-4">
-            <p className="text-sm text-blue-700 dark:text-blue-300">
-              Confirmar envio para: <strong>{preview?.card.nomeCliente}</strong>
-            </p>
-            <p className="mt-1 text-xs text-blue-600 dark:text-blue-400">
-              Número cadastrado: <strong>{preview?.card ? contatoEfetivo(preview.card)?.telefone : ""}</strong>
-            </p>
-            <p className="mt-2 text-[10px] italic text-blue-500">
-              Verifique se o número acima está correto antes de confirmar.
-            </p>
-          </div>
-          <Label>Prévia da Mensagem:</Label>
           {preview?.mensagens.map((msg, i) => (
             <div
               key={i}
-              className="whitespace-pre-wrap rounded-2xl rounded-tl-none bg-accent-50 px-4 py-3 text-sm text-zinc-800 dark:bg-accent-900/20 dark:text-zinc-200 mb-2"
+              className="whitespace-pre-wrap rounded-2xl rounded-tl-none bg-accent-50 px-4 py-3 text-sm text-zinc-800 dark:bg-accent-900/20 dark:text-zinc-200"
             >
               {msg}
             </div>
