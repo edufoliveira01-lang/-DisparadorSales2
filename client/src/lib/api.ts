@@ -16,6 +16,10 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const body = isJson ? await response.json().catch(() => null) : null;
 
   if (!response.ok) {
+    if (response.status === 401 && !path.includes("/auth/login")) {
+      // Redirecionar para login se não estiver autenticado (exceto na própria tela de login)
+      window.location.href = "/login";
+    }
     throw new ApiError(body?.error || `Erro na requisição (HTTP ${response.status})`, response.status);
   }
   return body as T;

@@ -1,12 +1,24 @@
-import { Route, Routes } from "react-router-dom";
+import { Route, Routes, useLocation } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { Dashboard } from "@/pages/Dashboard";
 import { Agenda } from "@/pages/Agenda";
 import { Templates } from "@/pages/Templates";
 import { Historico } from "@/pages/Historico";
 import { Configuracoes } from "@/pages/Configuracoes";
+import { Login } from "@/pages/Login";
 
 export default function App() {
+  const location = useLocation();
+  const isLoginPage = location.pathname === "/login";
+
+  if (isLoginPage) {
+    return (
+      <Routes>
+        <Route path="/login" element={<Login />} />
+      </Routes>
+    );
+  }
+
   return (
     <Layout>
       <Routes>
@@ -15,6 +27,7 @@ export default function App() {
         <Route path="/templates" element={<Templates />} />
         <Route path="/historico" element={<Historico />} />
         <Route path="/configuracoes" element={<Configuracoes />} />
+        <Route path="/login" element={<Login />} />
       </Routes>
     </Layout>
   );

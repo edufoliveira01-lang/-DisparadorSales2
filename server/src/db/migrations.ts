@@ -45,6 +45,24 @@ export function runMigrations(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_send_logs_card_id ON send_logs(card_id);
     CREATE INDEX IF NOT EXISTS idx_contacts_nome ON contacts(nome);
+
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      email TEXT,
+      recovery_token TEXT,
+      recovery_expires DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      expires_at DATETIME NOT NULL,
+      last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
   `);
 
   // Migração para adicionar colunas se não existirem
@@ -53,6 +71,16 @@ export function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE templates ADD COLUMN conteudo_pericia_social TEXT");
   } catch {
     // Colunas já existem
+  }
+
+  // Criar usuário padrão se não existir nenhum
+  const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get() as { count: number };
+  if (userCount.count === 0) {
+    // Senha padrão: admin123 (hash simples para exemplo, ideal seria bcrypt mas para uso local/simples manteremos direto ou hash sha256)
+    // Usaremos um hash SHA256 fixo para 'admin123' para facilitar a primeira entrada
+    const crypto = require("node:crypto");
+    const hash = crypto.createHash("sha256").update("admin123").digest("hex");
+    db.prepare("INSERT INTO users (username, password_hash) VALUES (?, ?)").run("admin", hash);
   }
 
   const templateCount = db.prepare("SELECT COUNT(*) as count FROM templates").get() as { count: number };

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, KeyRound, Loader2, QrCode, Square, Trello, Unplug, Wifi, WifiOff } from "lucide-react";
+import { CheckCircle2, KeyRound, Loader2, Lock, LogOut, QrCode, Square, Trello, Unplug, User, Wifi, WifiOff } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type { Settings, WhatsappState } from "@/lib/types";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
@@ -49,7 +49,17 @@ export function Configuracoes() {
   const [intervalMax, setIntervalMax] = useState("15");
   const [salvandoIntervalo, setSalvandoIntervalo] = useState(false);
 
+  const [usuario, setUsuario] = useState("");
+  const [emailRecuperacao, setEmailRecuperacao] = useState("");
+  const [novaSenha, setNovaSenha] = useState("");
+  const [senhaAtual, setSenhaAtual] = useState("");
+  const [salvandoUsuario, setSalvandoUsuario] = useState(false);
+
   const loadSettings = useCallback(async () => {
+    const me = await api.get<{ user: { username: string, email: string | null } }>("/auth/me");
+    setUsuario(me.user.username);
+    setEmailRecuperacao(me.user.email || "");
+
     const data = await api.get<Settings>("/settings");
     setSettings(data);
     setIntervalMin(data.send_interval_min ?? "5");
@@ -177,16 +187,87 @@ export function Configuracoes() {
     }
   }
 
+  async function handleSalvarUsuario() {
+    if (!senhaAtual) {
+      show("Informe sua senha atual para salvar as alterações.", "error");
+      return;
+    }
+    setSalvandoUsuario(true);
+    try {
+      await api.put("/auth/update", {
+        username: usuario,
+        email: emailRecuperacao,
+        password: novaSenha || undefined,
+        currentPassword: senhaAtual,
+      });
+      show("Dados de acesso atualizados.", "success");
+      setNovaSenha("");
+      setSenhaAtual("");
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao atualizar dados.", "error");
+    } finally {
+      setSalvandoUsuario(false);
+    }
+  }
+
+  async function handleLogout() {
+    await api.post("/auth/logout");
+    window.location.href = "/login";
+  }
+
   const whatsappTone = whatsapp.status === "conectado" ? "success" : whatsapp.status === "falha" ? "danger" : "warning";
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Configurações</h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Configure a integração com o Trello, conecte o WhatsApp e ajuste o intervalo entre envios.
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Configurações</h1>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+            Gerencie seu acesso, integração com o Trello e WhatsApp.
+          </p>
+        </div>
+        <Button variant="outline" onClick={handleLogout} className="text-red-600 hover:bg-red-50 hover:text-red-700">
+          <LogOut className="h-4 w-4" /> Sair do sistema
+        </Button>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Lock className="h-4 w-4 text-amber-500" /> Dados de Acesso
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Usuário</Label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+                <Input className="pl-9" value={usuario} onChange={(e) => setUsuario(e.target.value)} />
+              </div>
+            </div>
+            <div>
+              <Label>E-mail de Recuperação</Label>
+              <Input type="email" value={emailRecuperacao} onChange={(e) => setEmailRecuperacao(e.target.value)} placeholder="email@exemplo.com" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Nova Senha (deixe em branco para não alterar)</Label>
+              <Input type="password" value={novaSenha} onChange={(e) => setNovaSenha(e.target.value)} placeholder="••••••••" />
+            </div>
+            <div>
+              <Label>Senha Atual (obrigatório para salvar)</Label>
+              <Input type="password" value={senhaAtual} onChange={(e) => setSenhaAtual(e.target.value)} placeholder="••••••••" />
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button onClick={handleSalvarUsuario} loading={salvandoUsuario}>
+              Atualizar dados de acesso
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
