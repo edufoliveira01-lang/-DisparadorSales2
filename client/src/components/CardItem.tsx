@@ -52,7 +52,7 @@ export function CardItem({
   );
 
   return (
-    <div className={`w-full max-w-full overflow-hidden rounded-xl border bg-white shadow-sm dark:bg-zinc-900 ${
+    <div className={`w-full max-w-[calc(100vw-2rem)] mx-auto overflow-hidden rounded-xl border bg-white shadow-sm dark:bg-zinc-900 ${
       temDadosNaoIdentificados 
         ? "border-amber-500 border-2 bg-amber-50/30 dark:border-amber-600 dark:bg-amber-900/10" 
         : "border-zinc-200 dark:border-zinc-800"

@@ -81,13 +81,17 @@ export function Dashboard() {
         api.get<WhatsAppStatus>("/whatsapp/status"),
       ]);
 
-      setCards(cardsRes || []);
-      setTemplates(templatesRes || []);
-      setContatos(contatosRes || []);
+      const cardsData = cardsRes || [];
+      const templatesData = templatesRes || [];
+      const contatosData = contatosRes || [];
+      
+      setCards(cardsData);
+      setTemplates(templatesData);
+      setContatos(contatosData);
       setWhatsapp(wsRes || { status: "desconectado" });
 
-      if (templatesRes && templatesRes.length > 0) {
-        setTemplateId(templatesRes[0].id);
+      if (templatesData.length > 0) {
+        setTemplateId(templatesData[0].id);
       }
     } catch (err: any) {
       setErro(err.response?.data?.error || "Erro ao carregar dados");
@@ -110,7 +114,13 @@ export function Dashboard() {
   }
 
   const contatoEfetivo = (card: Card) => {
-    return contatos.find((c) => c.telefone === card.telefone) || null;
+    if (!card.telefone) return null;
+    // Normaliza ambos os telefones para comparação (remove tudo que não é número)
+    const telCard = card.telefone.replace(/\D/g, "");
+    return contatos.find((c) => {
+      const telContato = c.telefone.replace(/\D/g, "");
+      return telContato === telCard || telContato === `55${telCard}`;
+    }) || null;
   };
 
   const cardsFiltrados = useMemo(() => {
