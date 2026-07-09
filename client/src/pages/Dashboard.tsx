@@ -24,7 +24,7 @@ import { Textarea } from "@/components/ui/Input";
 type FiltroStatus = "todos" | "nao_enviado" | "enviado" | "falhou";
 type FiltroTipo = "todos" | "medica" | "social" | "ambas";
 
-export default function Dashboard() {
+export function Dashboard() {
   const navigate = useNavigate();
   const [cards, setCards] = useState<Card[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
