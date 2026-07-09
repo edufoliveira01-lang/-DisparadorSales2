@@ -1,187 +1,201 @@
-import { useState, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  RefreshCw,
-  Search,
-  Send,
-  Inbox,
-  WifiOff,
-} from "lucide-react";
-import { api } from "@/lib/api";
-import { socket } from "@/lib/socket";
-import type { Card, Template, Contato, WhatsAppStatus } from "@/lib/types";
-import { Layout } from "@/components/Layout";
-import { CardItem } from "@/components/CardItem";
+import { Inbox, RefreshCw, Search, Send, WifiOff } from "lucide-react";
+import { api, ApiError } from "@/lib/api";
+import type { CardViewModel, Contact, Template, WhatsappState } from "@/lib/types";
+import { useSocketEvent } from "@/hooks/useSocketEvent";
+import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
+import { Input, Label, Textarea } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
-import { Badge } from "@/components/ui/Badge";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
-import { Label } from "@/components/ui/Input";
-import { Textarea } from "@/components/ui/Input";
+import { Badge } from "@/components/ui/Badge";
+import { CardItem } from "@/components/CardItem";
 
-type FiltroStatus = "todos" | "nao_enviado" | "enviado" | "falhou";
+type FiltroStatus = "todos" | "enviado" | "nao_enviado" | "falhou";
 type FiltroTipo = "todos" | "medica" | "social" | "ambas";
 
 export function Dashboard() {
+  const { show } = useToast();
   const navigate = useNavigate();
-  const [cards, setCards] = useState<Card[]>([]);
-  const [templates, setTemplates] = useState<Template[]>([]);
-  const [contatos, setContatos] = useState<Contato[]>([]);
-  const [whatsapp, setWhatsapp] = useState<WhatsAppStatus>({ status: "desconectado" });
-  const [carregando, setCarregando] = useState(true);
+
+  const [cards, setCards] = useState<CardViewModel[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const [carregando, setCarregando] = useState(false);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [templateId, setTemplateId] = useState<number | null>(null);
+  const [whatsapp, setWhatsapp] = useState<WhatsappState>({ status: "desconectado", qrDataUrl: null, lastError: null });
+
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
+  const [contatoOverrides, setContatoOverrides] = useState<Record<string, Contact>>({});
+  const [enviandoCardId, setEnviandoCardId] = useState<string | null>(null);
 
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>("todos");
   const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>("todos");
-  const [templateId, setTemplateId] = useState<number | null>(null);
 
-  const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
-  const [preview, setPreview] = useState<{ card: Card; mensagens: string[] } | null>(null);
-  const [enviandoCardId, setEnviandoCardId] = useState<string | null>(null);
-  const [gerandoPreview, setGerandoPreview] = useState(false);
-
+  const [preview, setPreview] = useState<{ card: CardViewModel; mensagens: string[] } | null>(null);
   const [batchConfirm, setBatchConfirm] = useState(false);
   const [batchLoading, setBatchLoading] = useState(false);
-  const [batchProgress, setBatchProgress] = useState<{ ativo: boolean; total: number; atual: number } | null>(null);
+  const [batchProgress, setBatchProgress] = useState<{ ativo: boolean; total: number } | null>(null);
 
-  const [cadastro, setCadastro] = useState<{ card: Card; nome: string; telefone: string; observacoes: string } | null>(null);
+  const [cadastro, setCadastro] = useState<{ card: CardViewModel; nome: string; telefone: string; observacoes: string } | null>(
+    null
+  );
   const [salvandoContato, setSalvandoContato] = useState(false);
 
-  useEffect(() => {
-    carregarDadosIniciais();
-
-    socket.on("whatsapp:status", setWhatsapp);
-    socket.on("whatsapp:qr", (qr) => setWhatsapp({ status: "qrcode", qrcode: qr }));
-    socket.on("dispatch:result", () => carregarCards(false));
-    socket.on("batch:progress", (progress) => {
-      setBatchProgress(progress);
-      if (!progress.ativo) {
-        setBatchLoading(false);
-        carregarCards(false);
-      }
-    });
-
-    return () => {
-      socket.off("whatsapp:status");
-      socket.off("whatsapp:qr");
-      socket.off("dispatch:result");
-      socket.off("batch:progress");
-    };
-  }, []);
-
-  async function carregarDadosIniciais() {
+  const carregarCards = useCallback(async () => {
+    setCarregando(true);
+    setErro(null);
     try {
-      setCarregando(true);
-      // Nota: A rota correta no servidor é /api/contacts (em inglês)
-      const [cardsRes, templatesRes, contatosRes, wsRes] = await Promise.all([
-        api.get<Card[]>("/cards"),
-        api.get<Template[]>("/templates"),
-        api.get<Contato[]>("/contacts"),
-        api.get<WhatsAppStatus>("/whatsapp/status"),
-      ]);
-
-      const cardsData = cardsRes || [];
-      const templatesData = templatesRes || [];
-      const contatosData = contatosRes || [];
-      
-      setCards(cardsData);
-      setTemplates(templatesData);
-      setContatos(contatosData);
-      setWhatsapp(wsRes || { status: "desconectado" });
-
-      if (templatesData.length > 0) {
-        setTemplateId(templatesData[0].id);
-      }
-      setErro(null);
-    } catch (err: any) {
-      console.error("Erro no carregamento inicial:", err);
-      setErro(err.message || "Erro ao carregar dados");
+      const data = await api.get<CardViewModel[]>("/cards");
+      setCards(data);
+    } catch (err) {
+      setCards([]);
+      setErro(err instanceof ApiError ? err.message : "Erro ao carregar os cards do Trello.");
     } finally {
       setCarregando(false);
     }
+  }, []);
+
+  useEffect(() => {
+    carregarCards();
+    api.get<Template[]>("/templates").then((data) => {
+      setTemplates(data);
+      if (data.length > 0) setTemplateId(data[0].id);
+    });
+    
+    const eventSource = new EventSource(`${api.baseUrl}/whatsapp/events`);
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        setWhatsapp(data);
+      } catch (err) {
+        console.error("Erro ao processar evento de WhatsApp:", err);
+      }
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [carregarCards]);
+
+  useSocketEvent<{ cardId: string; status: "sucesso" | "falha"; erro?: string }>("send:update", (payload) => {
+    setEnviandoCardId(null);
+    setCards((prev) =>
+      prev
+        ? prev.map((c) =>
+            c.cardId === payload.cardId
+              ? { ...c, ultimoEnvio: { status: payload.status, data: new Date().toISOString(), erro: payload.erro || null } }
+              : c
+          )
+        : prev
+    );
+  });
+
+  useSocketEvent<{ total: number }>("send:batch-started", ({ total }) => {
+    setBatchProgress({ ativo: true, total });
+    show(`Envio em lote iniciado (${total} card${total > 1 ? "s" : ""}).`, "info");
+  });
+  useSocketEvent<{ reason: string }>("send:batch-paused", ({ reason }) => {
+    setBatchProgress(null);
+    show(reason, "error");
+  });
+  useSocketEvent("send:batch-completed", () => {
+    setBatchProgress(null);
+    show("Envio em lote concluído.", "success");
+    setSelecionados(new Set());
+    carregarCards();
+  });
+
+  function contatoEfetivo(card: CardViewModel): Contact | null {
+    return card.contato || contatoOverrides[card.cardId] || null;
   }
-
-  async function carregarCards(comLoading = true) {
-    try {
-      if (comLoading) setCarregando(true);
-      const res = await api.get<Card[]>("/cards");
-      setCards(res || []);
-      setErro(null);
-    } catch (err: any) {
-      setErro(err.message || "Erro ao carregar cards");
-    } finally {
-      if (comLoading) setCarregando(false);
-    }
-  }
-
-  const contatoEfetivo = (card: Card | null) => {
-    if (!card) return null;
-    // 1. Tenta vincular pelo ID do contato que já veio do servidor (Match exato por nome)
-    if (card.contato) return card.contato;
-
-    // 2. Se o card tem um telefone extraído do Trello, tenta vincular pelo telefone
-    if (card.telefone) {
-      const telCard = card.telefone.replace(/\D/g, "");
-      const encontrado = contatos.find((c) => {
-        const telContato = c.telefone.replace(/\D/g, "");
-        return telContato === telCard || telContato === `55${telCard}` || telCard === `55${telContato}`;
-      });
-      if (encontrado) return encontrado;
-    }
-
-    // 3. Tenta vincular pelo nome do cliente (Fallback caso o contato tenha sido recém-cadastrado)
-    const nomeClienteNorm = card.nomeCliente.toLowerCase().trim();
-    return contatos.find((c) => c.nome.toLowerCase().trim() === nomeClienteNorm) || null;
-  };
 
   const cardsFiltrados = useMemo(() => {
+    if (!cards) return [];
+    const termo = busca.trim().toLowerCase();
     return cards.filter((card) => {
-      const matchBusca =
-        card.nomeCliente.toLowerCase().includes(busca.toLowerCase()) ||
-        card.cardNome.toLowerCase().includes(busca.toLowerCase());
+      if (termo && !card.nomeCliente.toLowerCase().includes(termo) && !card.cardNome.toLowerCase().includes(termo)) {
+        return false;
+      }
+      if (filtroStatus === "enviado" && card.ultimoEnvio?.status !== "sucesso") return false;
+      if (filtroStatus === "falhou" && card.ultimoEnvio?.status !== "falha") return false;
+      if (filtroStatus === "nao_enviado" && card.ultimoEnvio) return false;
 
-      const matchStatus =
-        filtroStatus === "todos" ||
-        (filtroStatus === "nao_enviado" && !card.ultimoEnvio) ||
-        (filtroStatus === "enviado" && card.ultimoEnvio?.status === "sucesso") ||
-        (filtroStatus === "falhou" && card.ultimoEnvio?.status === "falha");
-
-      const matchTipo =
-        filtroTipo === "todos" ||
-        (filtroTipo === "medica" && card.pericias.length === 1 && card.pericias[0].tipo?.toLowerCase().includes("médica")) ||
-        (filtroTipo === "social" && card.pericias.length === 1 && card.pericias[0].tipo?.toLowerCase().includes("social")) ||
-        (filtroTipo === "ambas" && card.pericias.length === 2);
-
-      return matchBusca && matchStatus && matchTipo;
+      if (filtroTipo !== "todos") {
+        const origens = card.pericias.map((p) => p.origem || "geral");
+        if (filtroTipo === "ambas" && card.pericias.length < 2) return false;
+        if (filtroTipo === "medica" && !origens.includes("medica")) return false;
+        if (filtroTipo === "social" && !origens.includes("social")) return false;
+      }
+      return true;
     });
   }, [cards, busca, filtroStatus, filtroTipo]);
 
-  const toggleSelecionado = (id: string) => {
-    const newSet = new Set(selecionados);
-    if (newSet.has(id)) newSet.delete(id);
-    else newSet.add(id);
-    setSelecionados(newSet);
-  };
+  function toggleSelecionado(cardId: string) {
+    setSelecionados((prev) => {
+      const next = new Set(prev);
+      if (next.has(cardId)) next.delete(cardId);
+      else next.add(cardId);
+      return next;
+    });
+  }
 
-  async function abrirPreview(card: Card) {
-    if (!templateId) return;
+  function usarSugestao(card: CardViewModel) {
+    if (!card.sugestaoContato) return;
+    setContatoOverrides((prev) => ({ ...prev, [card.cardId]: card.sugestaoContato! }));
+  }
+
+  function abrirCadastro(card: CardViewModel) {
+    setCadastro({ card, nome: card.nomeCliente, telefone: "", observacoes: "" });
+  }
+
+  async function salvarCadastroRapido() {
+    if (!cadastro) return;
+    setSalvandoContato(true);
     try {
-      setGerandoPreview(true);
-      setEnviandoCardId(card.cardId);
-      const res = await api.post<{ mensagens: string[] }>("/templates/preview", {
+      const contato = await api.post<Contact>("/contacts", {
+        nome: cadastro.nome,
+        telefone: cadastro.telefone,
+        observacoes: cadastro.observacoes,
+      });
+      setContatoOverrides((prev) => ({ ...prev, [cadastro.card.cardId]: contato }));
+      show("Contato cadastrado.", "success");
+      setCadastro(null);
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao cadastrar contato.", "error");
+    } finally {
+      setSalvandoContato(false);
+    }
+  }
+
+  async function abrirPreview(card: CardViewModel) {
+    if (whatsapp.status !== "conectado") {
+      show("Conecte o WhatsApp antes de enviar mensagens.", "error");
+      navigate("/configuracoes");
+      return;
+    }
+    const contato = contatoEfetivo(card);
+    if (!contato) {
+      show("Cadastre o contato deste cliente antes de enviar.", "error");
+      return;
+    }
+    if (!templateId) {
+      show("Selecione um template de mensagem.", "error");
+      return;
+    }
+    try {
+      const { mensagens } = await api.post<{ mensagens: string[] }>("/templates/preview", {
         templateId,
         nome: card.nomeCliente,
         pericias: card.pericias,
       });
-      setPreview({ card, mensagens: res.mensagens || [] });
+      setPreview({ card, mensagens });
     } catch (err) {
-      alert("Erro ao gerar preview");
-    } finally {
-      setGerandoPreview(false);
-      setEnviandoCardId(null);
+      show(err instanceof ApiError ? err.message : "Erro ao gerar pré-visualização.", "error");
     }
   }
 
@@ -190,29 +204,39 @@ export function Dashboard() {
     const contato = contatoEfetivo(preview.card);
     if (!contato) return;
 
+    setEnviandoCardId(preview.card.cardId);
+    setPreview(null);
     try {
-      setEnviandoCardId(preview.card.cardId);
-      setPreview(null);
-      await api.post("/send", {
-        templateId,
+      await api.post("/send/single", {
         cardId: preview.card.cardId,
+        nomeCliente: preview.card.nomeCliente,
+        telefone: contato.telefone,
         contactId: contato.id,
+        pericias: preview.card.pericias,
+        templateId,
       });
-      await carregarCards(false);
+      show(`Mensagem enviada para ${preview.card.nomeCliente}.`, "success");
     } catch (err) {
-      alert("Erro ao enviar mensagem");
+      show(err instanceof ApiError ? err.message : "Erro ao enviar mensagem.", "error");
     } finally {
       setEnviandoCardId(null);
     }
   }
 
-  const cardsSelecionadosValidos = cards.filter(
-    (c) => selecionados.has(c.cardId) && contatoEfetivo(c) && c.pericias.length > 0
+  const cardsSelecionadosValidos = useMemo(
+    () => cardsFiltrados.filter((c) => selecionados.has(c.cardId) && contatoEfetivo(c) && c.pericias.length > 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cardsFiltrados, selecionados, contatoOverrides]
   );
 
   function abrirConfirmBatch() {
+    if (whatsapp.status !== "conectado") {
+      show("Conecte o WhatsApp antes de enviar mensagens.", "error");
+      navigate("/configuracoes");
+      return;
+    }
     if (cardsSelecionadosValidos.length === 0) {
-      alert("Nenhum dos cards selecionados possui contato cadastrado ou perícia identificada.");
+      show("Selecione ao menos um card com contato cadastrado.", "error");
       return;
     }
     setBatchConfirm(true);
@@ -220,55 +244,24 @@ export function Dashboard() {
 
   async function confirmarBatch() {
     if (!templateId) return;
+    setBatchLoading(true);
     try {
-      setBatchLoading(true);
+      const items = cardsSelecionadosValidos.map((card) => {
+        const contato = contatoEfetivo(card)!;
+        return {
+          cardId: card.cardId,
+          nomeCliente: card.nomeCliente,
+          telefone: contato.telefone,
+          contactId: contato.id,
+          pericias: card.pericias,
+        };
+      });
+      await api.post("/send/batch", { items, templateId });
       setBatchConfirm(false);
-      await api.post("/dispatch/batch", {
-        templateId,
-        cardIds: cardsSelecionadosValidos.map((c) => c.cardId),
-      });
     } catch (err) {
-      alert("Erro ao iniciar envio em lote");
-      setBatchLoading(false);
-    }
-  }
-
-  function abrirCadastro(card: Card) {
-    setCadastro({
-      card,
-      nome: card.nomeCliente,
-      telefone: "",
-      observacoes: `Cadastrado via Dashboard para o card: ${card.cardNome}`,
-    });
-  }
-
-  function usarSugestao(card: Card) {
-    if (!card.sugestaoContato) return;
-    setCadastro({
-      card,
-      nome: card.sugestaoContato.nome,
-      telefone: card.sugestaoContato.telefone,
-      observacoes: `Sugestão do Trello para o card: ${card.cardNome}`,
-    });
-  }
-
-  async function salvarCadastroRapido() {
-    if (!cadastro) return;
-    try {
-      setSalvandoContato(true);
-      await api.post("/contacts", {
-        nome: cadastro.nome,
-        telefone: cadastro.telefone,
-        observacoes: cadastro.observacoes,
-      });
-      const contatosRes = await api.get<Contato[]>("/contacts");
-      setContatos(contatosRes || []);
-      setCadastro(null);
-    } catch (err: any) {
-      console.error("Erro ao salvar contato:", err);
-      alert(err.message || "Erro ao salvar contato");
+      show(err instanceof ApiError ? err.message : "Erro ao iniciar envio em lote.", "error");
     } finally {
-      setSalvandoContato(false);
+      setBatchLoading(false);
     }
   }
 
@@ -280,6 +273,11 @@ export function Dashboard() {
           <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400">Cards da lista do Trello configurada.</p>
         </div>
         <div className="flex items-center gap-2">
+          {whatsapp.status !== "conectado" && (
+            <Badge tone="warning" className="hidden sm:flex">
+              <WifiOff className="h-3.5 w-3.5" /> WhatsApp desconectado
+            </Badge>
+          )}
           <Button variant="outline" size="sm" onClick={carregarCards} loading={carregando} className="flex-1 sm:flex-none h-9">
             <RefreshCw className="h-3.5 w-3.5" /> Atualizar
           </Button>
@@ -289,9 +287,13 @@ export function Dashboard() {
       {erro ? (
         <EmptyState
           icon={Inbox}
-          title="Erro ao carregar cards"
+          title="Não foi possível carregar os cards"
           description={erro}
-          action={<Button variant="outline" onClick={() => navigate("/configuracoes")}>Configurações</Button>}
+          action={
+            <Button variant="outline" onClick={() => navigate("/configuracoes")}>
+              Ir para Configurações
+            </Button>
+          }
         />
       ) : (
         <div className="w-full max-w-full overflow-hidden space-y-4">
@@ -299,7 +301,7 @@ export function Dashboard() {
             <div className="relative w-full">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
               <Input 
-                placeholder="Buscar..." 
+                placeholder="Buscar por cliente…" 
                 className="pl-9 h-10 text-sm" 
                 value={busca} 
                 onChange={(e) => setBusca(e.target.value)} 
@@ -309,16 +311,16 @@ export function Dashboard() {
             <div className="flex flex-col gap-3">
               <div className="grid grid-cols-2 gap-2">
                 <Select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value as FiltroStatus)} className="h-9 text-[11px]">
-                  <option value="todos">Todos Status</option>
-                  <option value="nao_enviado">Não Env.</option>
-                  <option value="enviado">Enviados</option>
-                  <option value="falhou">Falhas</option>
+                  <option value="todos">Todos os status</option>
+                  <option value="nao_enviado">Não enviado</option>
+                  <option value="enviado">Enviado</option>
+                  <option value="falhou">Falhou</option>
                 </Select>
                 <Select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value as FiltroTipo)} className="h-9 text-[11px]">
-                  <option value="todos">Todas Perícias</option>
-                  <option value="medica">Médica</option>
-                  <option value="social">Social</option>
-                  <option value="ambas">Ambas</option>
+                  <option value="todos">Médica e Social</option>
+                  <option value="medica">Só Médica</option>
+                  <option value="social">Só Social</option>
+                  <option value="ambas">Ambas (2 perícias)</option>
                 </Select>
               </div>
               <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="h-9 text-[11px] w-full">
@@ -332,7 +334,7 @@ export function Dashboard() {
                 disabled={selecionados.size === 0 || Boolean(batchProgress)} 
                 className="w-full h-10 text-xs font-bold"
               >
-                <Send className="h-3.5 w-3.5" /> Enviar Selecionados ({selecionados.size})
+                <Send className="h-3.5 w-3.5" /> Enviar selecionados ({selecionados.size})
               </Button>
             </div>
           </div>
@@ -343,10 +345,11 @@ export function Dashboard() {
             </div>
           )}
 
-          {carregando ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <RefreshCw className="h-8 w-8 animate-spin text-zinc-300" />
-              <p className="mt-4 text-sm text-zinc-500">Buscando cards no Trello…</p>
+          {cards === null ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-32 w-full rounded-xl" />
+              ))}
             </div>
           ) : cardsFiltrados.length === 0 ? (
             <EmptyState
@@ -388,8 +391,8 @@ export function Dashboard() {
             <Button variant="outline" onClick={() => setPreview(null)}>
               Cancelar
             </Button>
-            <Button onClick={confirmarEnvioIndividual} disabled={gerandoPreview}>
-              <Send className="h-4 w-4" /> Confirmar e Enviar
+            <Button onClick={confirmarEnvioIndividual}>
+              <Send className="h-4 w-4" /> Confirmar envio
             </Button>
           </>
         }
@@ -406,23 +409,15 @@ export function Dashboard() {
               Verifique se o número acima está correto antes de confirmar.
             </p>
           </div>
-
           <Label>Prévia da Mensagem:</Label>
-          {gerandoPreview ? (
-            <div className="animate-pulse space-y-2">
-              <div className="h-4 bg-zinc-200 rounded w-3/4"></div>
-              <div className="h-4 bg-zinc-200 rounded w-1/2"></div>
+          {preview?.mensagens.map((msg, i) => (
+            <div
+              key={i}
+              className="whitespace-pre-wrap rounded-2xl rounded-tl-none bg-accent-50 px-4 py-3 text-sm text-zinc-800 dark:bg-accent-900/20 dark:text-zinc-200 mb-2"
+            >
+              {msg}
             </div>
-          ) : (
-            preview?.mensagens.map((msg, i) => (
-              <div
-                key={i}
-                className="whitespace-pre-wrap rounded-2xl rounded-tl-none bg-accent-50 px-4 py-3 text-sm text-zinc-800 dark:bg-accent-900/20 dark:text-zinc-200 mb-2"
-              >
-                {msg}
-              </div>
-            ))
-          )}
+          ))}
         </div>
       </Modal>
 
