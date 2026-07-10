@@ -1,6 +1,7 @@
 import { AlertTriangle, Calendar, CheckCircle2, Clock, MapPin, MessageCircle, Send, UserPlus, XCircle } from "lucide-react";
 import type { CardViewModel } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
+import { cn, formatPlaceholder } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 
@@ -25,113 +26,103 @@ export function CardItem({
   onUsarSugestao,
   enviando,
 }: CardItemProps) {
-  // Verifica se o card tem alguma informação não identificada para destacá-lo
-  const checkNaoIdentificado = (val?: string) => {
-    if (!val) return false;
-    // Remove barras invertidas que podem vir do escape de markdown/texto
-    const clean = val.replace(/\\/g, "").toUpperCase();
-    return clean.includes("NAO_IDENTIFICADO") || clean.includes("NAO_IDENTIFICADA");
-  };
-
-  const formatDisplayValue = (val?: string) => {
-    if (!val) return "—";
-    if (checkNaoIdentificado(val)) {
-      // Remove barras e troca sublinhados por espaços para ficar legível
-      return val.replace(/\\/g, "").replace(/_/g, " ").toUpperCase();
-    }
-    return val;
-  };
-
-  const temDadosNaoIdentificados = checkNaoIdentificado(card.nomeCliente) || card.pericias.some(
+  const temNaoIdentificado = card.pericias.some(
     (p) =>
-      checkNaoIdentificado(p.data) ||
-      checkNaoIdentificado(p.horario) ||
-      checkNaoIdentificado(p.local) ||
-      checkNaoIdentificado(p.tipo) ||
-      checkNaoIdentificado(p.nome)
+      p.data?.includes("NAO_IDENTIFICADA") ||
+      p.horario?.includes("NAO_IDENTIFICADO") ||
+      p.local?.includes("NAO_IDENTIFICADO") ||
+      p.tipo?.includes("NAO_IDENTIFICADO")
   );
 
   return (
-    <div className={`w-full max-w-[calc(100vw-2rem)] mx-auto overflow-hidden rounded-xl border bg-white shadow-sm dark:bg-zinc-900 ${
-      temDadosNaoIdentificados 
-        ? "border-amber-500 border-2 bg-amber-50/30 dark:border-amber-600 dark:bg-amber-900/10" 
-        : "border-zinc-200 dark:border-zinc-800"
-    }`}>
-      {/* Header do Card */}
-      <div className="flex items-center gap-3 border-b border-zinc-100 p-3 dark:border-zinc-800">
-        <Checkbox checked={selecionado} onChange={onToggleSelecionar} className="h-5 w-5 shrink-0" />
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-bold text-zinc-900 dark:text-zinc-100">{card.nomeCliente}</h3>
-          <p className="truncate text-[9px] text-zinc-400">{card.cardNome}</p>
+    <div
+      className={cn(
+        "rounded-2xl border bg-white p-5 shadow-card transition-shadow hover:shadow-md dark:bg-zinc-900",
+        temNaoIdentificado
+          ? "border-amber-400 bg-amber-50/30 dark:border-amber-500/50 dark:bg-amber-900/10"
+          : "border-zinc-200 dark:border-zinc-800"
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <div className="pt-0.5">
+          <Checkbox checked={selecionado} onChange={onToggleSelecionar} />
         </div>
-        <Badge tone="accent" className="h-5 px-1.5 text-[9px] shrink-0">{card.pericias.length}x</Badge>
-      </div>
 
-      {/* Conteúdo do Card */}
-      <div className="p-3 space-y-3">
-        {card.pericias.map((p, i) => {
-          const dErr = checkNaoIdentificado(p.data);
-          const hErr = checkNaoIdentificado(p.horario);
-          const lErr = checkNaoIdentificado(p.local);
-          const tErr = checkNaoIdentificado(p.tipo);
-          const nErr = checkNaoIdentificado(p.nome);
-
-          return (
-            <div key={i} className={`rounded-lg p-2.5 text-xs ${
-              dErr || hErr || lErr || tErr || nErr
-                ? "bg-amber-100/40 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800"
-                : "bg-zinc-50 dark:bg-zinc-800/50"
-            }`}>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[10px] font-bold uppercase text-zinc-500 dark:text-zinc-400">
-                  {p.tipo || "Perícia"}
-                </span>
-                {tErr && <span className="text-[8px] bg-amber-500 text-white px-1 rounded font-bold">VERIFICAR</span>}
-              </div>
-              
-              <div className="flex flex-wrap gap-x-3 gap-y-1 mb-1.5">
-                <div className={`flex items-center gap-1 ${dErr ? "text-amber-700 dark:text-amber-400 font-bold" : "text-zinc-600 dark:text-zinc-300"}`}>
-                  <Calendar className="h-3 w-3" /> <span>{formatDisplayValue(p.data)}</span>
-                </div>
-                <div className={`flex items-center gap-1 ${hErr ? "text-amber-700 dark:text-amber-400 font-bold" : "text-zinc-600 dark:text-zinc-300"}`}>
-                  <Clock className="h-3 w-3" /> <span>{formatDisplayValue(p.horario)}</span>
-                </div>
-              </div>
-
-              <div className={`flex items-start gap-1 ${lErr ? "text-amber-700 dark:text-amber-400 font-bold" : "text-zinc-500 dark:text-zinc-400"}`}>
-                <MapPin className="h-3 w-3 shrink-0 mt-0.5" />
-                <span className="text-[10px] leading-tight break-words">{formatDisplayValue(p.local)}</span>
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Rodapé do Card */}
-        <div className="flex flex-col gap-3 pt-1">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            {temContatoEfetivo ? (
-              <Badge tone="success" className="h-5 text-[9px] px-1.5">OK</Badge>
-            ) : card.sugestaoContato ? (
-              <button onClick={onUsarSugestao} className="text-[9px] font-bold text-amber-600 underline">Usar Sugestão</button>
-            ) : (
-              <button onClick={onCadastrarContato} className="text-[9px] font-bold text-red-600 underline">+ Cadastrar</button>
-            )}
-
-            {card.ultimoEnvio?.status === "sucesso" && (
-              <Badge tone="success" className="h-5 text-[9px] px-1.5">Enviado</Badge>
+            <h3 className="truncate font-semibold text-zinc-900 dark:text-zinc-100">{card.nomeCliente}</h3>
+            <Badge tone="accent">{card.pericias.length === 2 ? "2 perícias" : "1 perícia"}</Badge>
+            {card.incompleta && (
+              <Badge tone="warning">
+                <AlertTriangle className="h-3 w-3" /> Descrição incompleta
+              </Badge>
             )}
           </div>
 
-          <Button 
-            size="sm" 
-            onClick={onEnviar} 
-            loading={enviando} 
-            disabled={!temContatoEfetivo || card.pericias.length === 0} 
-            className="w-full h-10 text-xs font-bold bg-blue-600 text-white"
-          >
-            <Send className="h-3.5 w-3.5" /> ENVIAR AGORA
-          </Button>
+          <p className="mt-0.5 truncate text-xs text-zinc-400">{card.cardNome}</p>
+
+          <div className="mt-3 space-y-2">
+            {card.pericias.map((p, i) => (
+              <div key={i} className="rounded-xl bg-zinc-50 p-3 text-sm dark:bg-zinc-800/50">
+                <p className="font-medium text-zinc-700 dark:text-zinc-200">{formatPlaceholder(p.tipo) || "(tipo não identificado)"}</p>
+                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  <span className="flex items-center gap-1">
+                    <Calendar className="h-3.5 w-3.5" /> {formatPlaceholder(p.data)}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Clock className="h-3.5 w-3.5" /> {formatPlaceholder(p.horario)}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <MapPin className="h-3.5 w-3.5" /> {formatPlaceholder(p.local)}
+                  </span>
+                </div>
+              </div>
+            ))}
+            {card.pericias.length === 0 && (
+              <p className="rounded-xl bg-zinc-50 p-3 text-sm text-zinc-400 dark:bg-zinc-800/50">
+                Nenhuma perícia identificada na descrição deste card.
+              </p>
+            )}
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {temContatoEfetivo ? (
+              <Badge tone="success">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Contato encontrado
+              </Badge>
+            ) : card.sugestaoContato ? (
+              <div className="flex items-center gap-1.5">
+                <Badge tone="warning">Talvez: {card.sugestaoContato.nome}?</Badge>
+                <button onClick={onUsarSugestao} className="text-xs font-medium text-accent-600 hover:underline">
+                  Usar este contato
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <Badge tone="danger">
+                  <XCircle className="h-3.5 w-3.5" /> Sem contato cadastrado
+                </Badge>
+                <button
+                  onClick={onCadastrarContato}
+                  className="flex items-center gap-1 text-xs font-medium text-accent-600 hover:underline"
+                >
+                  <UserPlus className="h-3.5 w-3.5" /> Cadastrar
+                </button>
+              </div>
+            )}
+
+            {card.ultimoEnvio?.status === "sucesso" && (
+              <Badge tone="success">
+                <MessageCircle className="h-3.5 w-3.5" /> Enviado em {new Date(card.ultimoEnvio.data).toLocaleString("pt-BR")}
+              </Badge>
+            )}
+            {card.ultimoEnvio?.status === "falha" && <Badge tone="danger">Falhou: {card.ultimoEnvio.erro}</Badge>}
+          </div>
         </div>
+
+        <Button size="sm" onClick={onEnviar} loading={enviando} disabled={!temContatoEfetivo || card.pericias.length === 0}>
+          <Send className="h-3.5 w-3.5" /> Enviar
+        </Button>
       </div>
     </div>
   );

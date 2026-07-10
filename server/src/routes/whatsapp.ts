@@ -12,6 +12,11 @@ whatsappRouter.post("/connect", (_req, res) => {
   res.json(whatsappManager.getState());
 });
 
+whatsappRouter.post("/stop", async (_req, res) => {
+  await whatsappManager.stop();
+  res.json({ ok: true });
+});
+
 whatsappRouter.post("/disconnect", async (_req, res) => {
   await whatsappManager.disconnect();
   res.json({ ok: true });

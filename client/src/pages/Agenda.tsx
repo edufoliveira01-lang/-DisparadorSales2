@@ -113,12 +113,12 @@ export function Agenda() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Agenda</h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Contatos usados para cruzar com o nome do cliente no card.</p>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="flex gap-2">
           <input
             ref={fileInputRef}
             type="file"
@@ -126,16 +126,16 @@ export function Agenda() {
             className="hidden"
             onChange={handleArquivoSelecionado}
           />
-          <Button variant="outline" onClick={() => fileInputRef.current?.click()} loading={importando} className="w-full sm:w-auto">
-            <Upload className="h-4 w-4" /> <span className="sm:inline">Importar</span>
+          <Button variant="outline" onClick={() => fileInputRef.current?.click()} loading={importando}>
+            <Upload className="h-4 w-4" /> Importar CSV/vCard
           </Button>
-          <Button onClick={abrirNovo} className="w-full sm:w-auto">
-            <Plus className="h-4 w-4" /> <span className="sm:inline">Adicionar</span>
+          <Button onClick={abrirNovo}>
+            <Plus className="h-4 w-4" /> Adicionar contato
           </Button>
         </div>
       </div>
 
-      <div className="relative w-full sm:max-w-sm">
+      <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
         <Input placeholder="Buscar por nome ou telefone…" className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
       </div>
@@ -157,64 +157,36 @@ export function Agenda() {
           action={!busca && <Button onClick={abrirNovo}><Plus className="h-4 w-4" /> Adicionar contato</Button>}
         />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-1">
-          {/* Versão Desktop (Tabela) */}
-          <div className="hidden overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 md:block">
-            <table className="w-full text-sm">
-              <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
-                <tr>
-                  <th className="px-5 py-3">Nome</th>
-                  <th className="px-5 py-3">Telefone</th>
-                  <th className="px-5 py-3">Observações</th>
-                  <th className="px-5 py-3 text-right">Ações</th>
+        <div className="overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800">
+          <table className="w-full text-sm">
+            <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
+              <tr>
+                <th className="px-5 py-3">Nome</th>
+                <th className="px-5 py-3">Telefone</th>
+                <th className="px-5 py-3">Observações</th>
+                <th className="px-5 py-3 text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {filtrados.map((c) => (
+                <tr key={c.id} className="bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800/50">
+                  <td className="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</td>
+                  <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{c.telefone}</td>
+                  <td className="px-5 py-3 text-zinc-500 dark:text-zinc-400">{c.observacoes || "—"}</td>
+                  <td className="px-5 py-3">
+                    <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="icon" onClick={() => abrirEdicao(c)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => excluir(c.id)} loading={excluindo === c.id}>
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
+                    </div>
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {filtrados.map((c) => (
-                  <tr key={c.id} className="bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800/50">
-                    <td className="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</td>
-                    <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{c.telefone}</td>
-                    <td className="px-5 py-3 text-zinc-500 dark:text-zinc-400">{c.observacoes || "—"}</td>
-                    <td className="px-5 py-3">
-                      <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => abrirEdicao(c)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => excluir(c.id)} loading={excluindo === c.id}>
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Versão Mobile (Cards) */}
-          <div className="space-y-3 md:hidden">
-            {filtrados.map((c) => (
-              <div key={c.id} className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-                <div className="flex items-start justify-between">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-semibold text-zinc-900 dark:text-zinc-100">{c.nome}</p>
-                    <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">{c.telefone}</p>
-                  </div>
-                  <div className="flex gap-1">
-                    <Button variant="ghost" size="icon" onClick={() => abrirEdicao(c)}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => excluir(c.id)} loading={excluindo === c.id}>
-                      <Trash2 className="h-4 w-4 text-red-500" />
-                    </Button>
-                  </div>
-                </div>
-                {c.observacoes && (
-                  <p className="mt-2 text-xs text-zinc-400 line-clamp-2 italic">"{c.observacoes}"</p>
-                )}
-              </div>
-            ))}
-          </div>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
