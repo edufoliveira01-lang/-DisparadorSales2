@@ -221,7 +221,7 @@ export function Configuracoes() {
     <div className="space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Configurações</h1>
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Configurações · DisparaZap</h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
             Gerencie seu acesso, integração com o Trello e WhatsApp.
           </p>

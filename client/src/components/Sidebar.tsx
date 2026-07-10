@@ -18,8 +18,7 @@ export function Sidebar() {
           <Send className="h-5 w-5" />
         </div>
         <div>
-          <p className="text-sm font-semibold leading-tight text-zinc-900 dark:text-zinc-100">Disparador de</p>
-          <p className="text-sm font-semibold leading-tight text-zinc-900 dark:text-zinc-100">Perícias</p>
+          <p className="text-lg font-bold leading-tight text-zinc-900 dark:text-zinc-100">DisparaZap</p>
         </div>
       </div>
 
