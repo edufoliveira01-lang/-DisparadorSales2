@@ -14,7 +14,7 @@ export async function sendRecoveryEmail(to: string, token: string) {
   const recoveryUrl = `${process.env.APP_URL || 'http://localhost:3333'}/login?token=${token}`;
 
   const mailOptions = {
-    from: `"DisparaZap" <${process.env.SMTP_USER}>`,
+    from: `"DisparaZap" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
     to,
     subject: "Recuperação de Senha - DisparaZap",
     text: `Você solicitou a recuperação de senha. Use o link abaixo para definir uma nova senha:\n\n${recoveryUrl}\n\nEste link expira em 1 hora.`,
