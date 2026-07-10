@@ -98,3 +98,39 @@ authRouter.put("/update", (req, res) => {
   
   res.json({ ok: true });
 });
+
+authRouter.post("/forgot-password", async (req, res) => {
+  const { username } = req.body;
+  if (!username) return res.status(400).json({ error: "Informe o usuário." });
+  
+  const user = getUserByUsername(username);
+  if (!user) {
+    return res.status(404).json({ error: "Usuário não encontrado." });
+  }
+  
+  if (!user.email) {
+    return res.status(400).json({ error: "Este usuário não possui um e-mail de recuperação cadastrado. Acesse o sistema com a senha padrão e configure um e-mail." });
+  }
+  
+  try {
+    const token = generateRecoveryToken(user.id);
+    await sendRecoveryEmail(user.email, token);
+    res.json({ message: "E-mail de recuperação enviado com sucesso." });
+  } catch (err) {
+    console.error("[Auth] Erro na recuperação:", err);
+    res.status(500).json({ error: "Erro ao enviar e-mail. Verifique as configurações de SMTP no arquivo .env ou consulte o log do servidor." });
+  }
+});
+
+authRouter.post("/reset-password", (req, res) => {
+  const { token, password } = req.body;
+  if (!token || !password) return res.status(400).json({ error: "Token e nova senha são obrigatórios." });
+  
+  const user = getUserByRecoveryToken(token);
+  if (!user) return res.status(400).json({ error: "Token inválido ou expirado." });
+  
+  updateUser(user.id, { password_hash: hashPassword(password) });
+  clearRecoveryToken(user.id);
+  
+  res.json({ message: "Senha alterada com sucesso." });
+});
