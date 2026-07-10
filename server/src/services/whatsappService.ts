@@ -115,24 +115,12 @@ class WhatsappManager {
       authStrategy: new LocalAuth({ dataPath: AUTH_DATA_PATH }),
       puppeteer: {
         headless: true,
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-accelerated-2d-canvas",
-          "--no-first-run",
-          "--no-zygote",
-          "--single-process",
-          "--disable-gpu"
-        ],
-        protocolTimeout: 180000,
+        args: ["--no-sandbox", "--disable-setuid-sandbox"],
+        protocolTimeout: 120000,
       },
-      webVersionCache: { 
-        type: "remote", 
-        remotePath: "https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html" 
-      },
+      webVersionCache: { type: "none" },
       qrMaxRetries: 5,
-      authTimeoutMs: 120000,
+      authTimeoutMs: 90000,
     });
     this.client = client;
 
@@ -185,6 +173,19 @@ class WhatsappManager {
     });
   }
 
+  async stop(): Promise<void> {
+    this.geracao++; // cancela qualquer retry automático pendente
+    if (this.client) {
+      try {
+        await this.client.destroy();
+      } catch {
+        // best-effort
+      }
+      this.client = null;
+    }
+    this.setState({ status: "desconectado", qrDataUrl: null, lastError: null });
+  }
+
   async disconnect(): Promise<void> {
     this.geracao++; // cancela qualquer retry automático pendente
     if (!this.client) {
@@ -225,7 +226,21 @@ class WhatsappManager {
     if (!this.client || this.status !== "conectado") {
       throw new Error("WhatsApp não está conectado.");
     }
-    const result = await this.client.getNumberId(telefoneDigits);
+
+    // Se o número tem apenas 8 dígitos, assumimos que é um número antigo sem o 9 inicial.
+    // Tentamos resolver como está, mas o whatsapp-web.js geralmente espera o formato com DDI e DDD.
+    // O dispatchService já passa apenas dígitos.
+    let target = telefoneDigits;
+
+    // Se o usuário forneceu apenas 8 ou 9 dígitos (sem DDD), não temos como saber o DDD.
+    // Mas se ele forneceu 10 dígitos (DDD + 8 dígitos), o WhatsApp costuma aceitar ou
+    // converter automaticamente se o número for válido.
+    // A melhor prática é garantir que o número tenha o prefixo 55 se não tiver.
+    if (target.length >= 8 && target.length <= 11 && !target.startsWith("55")) {
+      target = "55" + target;
+    }
+
+    const result = await this.client.getNumberId(target);
     return result ? result._serialized : null;
   }
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, KeyRound, Loader2, QrCode, Trello, Unplug, Wifi, WifiOff } from "lucide-react";
+import { CheckCircle2, KeyRound, Loader2, Lock, LogOut, QrCode, Square, Trello, Unplug, User, Wifi, WifiOff } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type { Settings, WhatsappState } from "@/lib/types";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
@@ -39,7 +39,7 @@ export function Configuracoes() {
   const [lists, setLists] = useState<TrelloList[]>([]);
   const [boardId, setBoardId] = useState("");
   const [listId, setListId] = useState("");
-  const [moveToListId, setMoveToListId] = useState("");
+  const [moveListId, setMoveListId] = useState("");
   const [salvandoTrello, setSalvandoTrello] = useState(false);
 
   const [whatsapp, setWhatsapp] = useState<WhatsappState>({ status: "desconectado", qrDataUrl: null, lastError: null });
@@ -49,31 +49,25 @@ export function Configuracoes() {
   const [intervalMax, setIntervalMax] = useState("15");
   const [salvandoIntervalo, setSalvandoIntervalo] = useState(false);
 
+  const [usuario, setUsuario] = useState("");
+  const [emailRecuperacao, setEmailRecuperacao] = useState("");
+  const [novaSenha, setNovaSenha] = useState("");
+  const [senhaAtual, setSenhaAtual] = useState("");
+  const [salvandoUsuario, setSalvandoUsuario] = useState(false);
+
   const loadSettings = useCallback(async () => {
+    const me = await api.get<{ user: { username: string, email: string | null } }>("/auth/me");
+    setUsuario(me.user.username);
+    setEmailRecuperacao(me.user.email || "");
+
     const data = await api.get<Settings>("/settings");
     setSettings(data);
     setIntervalMin(data.send_interval_min ?? "5");
     setIntervalMax(data.send_interval_max ?? "15");
     if (data.trello_board_id) setBoardId(data.trello_board_id);
     if (data.trello_list_id) setListId(data.trello_list_id);
-    if (data.trello_move_to_list_id) setMoveToListId(data.trello_move_to_list_id);
-    
-    if (data.trello_key && data.trello_token_configurado) {
-      setTrelloOk(true);
-      // Carregar boards automaticamente se já estiver configurado
-      try {
-        const boardsData = await api.get<TrelloBoard[]>("/trello/boards");
-        setBoards(boardsData);
-        
-        // Se já tiver um board selecionado, carregar as listas dele
-        if (data.trello_board_id) {
-          const listsData = await api.get<TrelloList[]>(`/trello/boards/${data.trello_board_id}/lists`);
-          setLists(listsData);
-        }
-      } catch (err) {
-        console.error("Erro ao carregar dados do Trello automaticamente:", err);
-      }
-    }
+    if (data.trello_move_list_id) setMoveListId(data.trello_move_list_id);
+    if (data.trello_key && data.trello_token_configurado) setTrelloOk(true);
   }, []);
 
   useEffect(() => {
@@ -115,12 +109,14 @@ export function Configuracoes() {
   async function handleSelectBoard(id: string) {
     setBoardId(id);
     setListId("");
+    setMoveListId("");
     setLists([]);
     if (!id) return;
     try {
       const key = trelloKey || settings?.trello_key || "";
+      const token = trelloToken || settings?.trello_token_configurado || "";
       const listsData = await api.get<TrelloList[]>(
-        `/trello/boards/${id}/lists?key=${encodeURIComponent(key)}&token=${encodeURIComponent(trelloToken)}`
+        `/trello/boards/${id}/lists?key=${encodeURIComponent(key)}&token=${encodeURIComponent(token)}`
       );
       setLists(listsData);
     } catch (err) {
@@ -131,28 +127,20 @@ export function Configuracoes() {
   async function handleSalvarTrello() {
     setSalvandoTrello(true);
     try {
-      const board = boards.find((b) => b.id === boardId) || { name: settings?.trello_board_nome || "" };
-      const list = lists.find((l) => l.id === listId) || { name: settings?.trello_list_nome || "" };
-      
-      const payload: any = {
+      const board = boards.find((b) => b.id === boardId);
+      const list = lists.find((l) => l.id === listId);
+      const moveList = lists.find((l) => l.id === moveListId);
+      await api.put("/settings", {
+        trello_key: trelloKey,
+        trello_token: trelloToken,
         trello_board_id: boardId,
-        trello_board_nome: board.name,
+        trello_board_nome: board?.name || "",
         trello_list_id: listId,
-        trello_list_nome: list.name,
-        trello_move_to_list_id: moveToListId,
-      };
-
-      // Só envia a key/token se o usuário preencheu (para não sobrescrever com vazio)
-      if (trelloKey) payload.trello_key = trelloKey;
-      if (trelloToken) payload.trello_token = trelloToken;
-
-      await api.put("/settings", payload);
+        trello_list_nome: list?.name || "",
+        trello_move_list_id: moveListId,
+        trello_move_list_nome: moveList?.name || "",
+      });
       show("Configurações do Trello salvas.", "success");
-      
-      // Limpar campos de input após salvar
-      setTrelloKey("");
-      setTrelloToken("");
-      
       loadSettings();
     } catch (err) {
       show(err instanceof ApiError ? err.message : "Erro ao salvar configurações.", "error");
@@ -173,6 +161,15 @@ export function Configuracoes() {
     }
   }
 
+  async function handlePararWhatsapp() {
+    try {
+      await api.whatsapp.stop();
+      show("Geração de QR Code cancelada.", "info");
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao parar WhatsApp.", "error");
+    }
+  }
+
   async function handleDesconectarWhatsapp() {
     await api.post("/whatsapp/disconnect");
     show("WhatsApp desconectado.", "info");
@@ -190,16 +187,87 @@ export function Configuracoes() {
     }
   }
 
+  async function handleSalvarUsuario() {
+    if (!senhaAtual) {
+      show("Informe sua senha atual para salvar as alterações.", "error");
+      return;
+    }
+    setSalvandoUsuario(true);
+    try {
+      await api.put("/auth/update", {
+        username: usuario,
+        email: emailRecuperacao,
+        password: novaSenha || undefined,
+        currentPassword: senhaAtual,
+      });
+      show("Dados de acesso atualizados.", "success");
+      setNovaSenha("");
+      setSenhaAtual("");
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao atualizar dados.", "error");
+    } finally {
+      setSalvandoUsuario(false);
+    }
+  }
+
+  async function handleLogout() {
+    await api.post("/auth/logout");
+    window.location.href = "/login";
+  }
+
   const whatsappTone = whatsapp.status === "conectado" ? "success" : whatsapp.status === "falha" ? "danger" : "warning";
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Configurações</h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Configure a integração com o Trello, conecte o WhatsApp e ajuste o intervalo entre envios.
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Configurações</h1>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+            Gerencie seu acesso, integração com o Trello e WhatsApp.
+          </p>
+        </div>
+        <Button variant="outline" onClick={handleLogout} className="text-red-600 hover:bg-red-50 hover:text-red-700">
+          <LogOut className="h-4 w-4" /> Sair do sistema
+        </Button>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Lock className="h-4 w-4 text-amber-500" /> Dados de Acesso
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Usuário</Label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+                <Input className="pl-9" value={usuario} onChange={(e) => setUsuario(e.target.value)} />
+              </div>
+            </div>
+            <div>
+              <Label>E-mail de Recuperação</Label>
+              <Input type="email" value={emailRecuperacao} onChange={(e) => setEmailRecuperacao(e.target.value)} placeholder="email@exemplo.com" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Nova Senha (deixe em branco para não alterar)</Label>
+              <Input type="password" value={novaSenha} onChange={(e) => setNovaSenha(e.target.value)} placeholder="••••••••" />
+            </div>
+            <div>
+              <Label>Senha Atual (obrigatório para salvar)</Label>
+              <Input type="password" value={senhaAtual} onChange={(e) => setSenhaAtual(e.target.value)} placeholder="••••••••" />
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button onClick={handleSalvarUsuario} loading={salvandoUsuario}>
+              Atualizar dados de acesso
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -271,12 +339,12 @@ export function Configuracoes() {
                   ))}
                 </Select>
               </div>
-              <div className="col-span-2">
+              <div>
                 <Label>Mover cartão para:</Label>
-                <Select value={moveToListId} onChange={(e) => setMoveToListId(e.target.value)} disabled={!boardId && lists.length === 0}>
-                  <option value="">Não mover (desativado)</option>
-                  {settings?.trello_move_to_list_id && !lists.find((l) => l.id === settings.trello_move_to_list_id) && (
-                    <option value={settings.trello_move_to_list_id}>Manter atual</option>
+                <Select value={moveListId} onChange={(e) => setMoveListId(e.target.value)} disabled={!boardId && lists.length === 0}>
+                  <option value="">Não mover (manter na lista atual)</option>
+                  {settings?.trello_move_list_id && !lists.find((l) => l.id === settings.trello_move_list_id) && (
+                    <option value={settings.trello_move_list_id}>{settings.trello_move_list_nome} (atual)</option>
                   )}
                   {lists.map((l) => (
                     <option key={l.id} value={l.id}>
@@ -284,9 +352,6 @@ export function Configuracoes() {
                     </option>
                   ))}
                 </Select>
-                <p className="mt-1 text-xs text-zinc-500">
-                  O cartão será movido para esta lista apenas se o disparo for efetuado com sucesso.
-                </p>
               </div>
             </div>
           )}
@@ -313,9 +378,6 @@ export function Configuracoes() {
               <p className="flex items-center gap-1.5 text-sm text-zinc-500 dark:text-zinc-400">
                 <QrCode className="h-4 w-4" /> Abra o WhatsApp no celular → Aparelhos conectados → Conectar um aparelho
               </p>
-              <Button variant="outline" size="sm" onClick={handleDesconectarWhatsapp} className="mt-2">
-                Cancelar QR Code
-              </Button>
             </div>
           )}
 
@@ -341,14 +403,22 @@ export function Configuracoes() {
                 <Unplug className="h-4 w-4" /> Desconectar / trocar de sessão
               </Button>
             ) : (
-              <Button
-                onClick={handleConectarWhatsapp}
-                loading={conectando || whatsapp.status === "inicializando"}
-                disabled={whatsapp.status === "aguardando_qr" || whatsapp.status === "autenticado"}
-              >
-                {whatsapp.status === "aguardando_qr" ? <Loader2 className="h-4 w-4 animate-spin" /> : <WifiOff className="h-4 w-4" />}
-                Conectar WhatsApp
-              </Button>
+              <>
+                <Button
+                  onClick={handleConectarWhatsapp}
+                  loading={conectando || whatsapp.status === "inicializando"}
+                  disabled={whatsapp.status === "aguardando_qr" || whatsapp.status === "autenticado"}
+                >
+                  {whatsapp.status === "aguardando_qr" ? <Loader2 className="h-4 w-4 animate-spin" /> : <WifiOff className="h-4 w-4" />}
+                  Conectar WhatsApp
+                </Button>
+
+                {whatsapp.status === "aguardando_qr" && (
+                  <Button variant="outline" onClick={handlePararWhatsapp}>
+                    <Square className="h-4 w-4" /> Parar
+                  </Button>
+                )}
+              </>
             )}
           </div>
         </CardContent>

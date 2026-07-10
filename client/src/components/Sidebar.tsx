@@ -10,9 +10,9 @@ const items = [
   { to: "/configuracoes", label: "Configurações", icon: Settings },
 ];
 
-export function Sidebar({ onNavClick }: { onNavClick?: () => void }) {
+export function Sidebar() {
   return (
-    <aside className="flex h-screen w-60 shrink-0 flex-col border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+    <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
       <div className="flex items-center gap-2 px-5 py-5">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent-500 text-white shadow-soft">
           <Send className="h-5 w-5" />
@@ -29,7 +29,6 @@ export function Sidebar({ onNavClick }: { onNavClick?: () => void }) {
             key={to}
             to={to}
             end={end}
-            onClick={onNavClick}
             className={({ isActive }) =>
               cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",

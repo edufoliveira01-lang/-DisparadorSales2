@@ -7,8 +7,8 @@ export interface Template {
   nome: string;
   conteudo_1_pericia: string;
   conteudo_2_pericias: string;
-  conteudo_pericia_medica?: string;
-  conteudo_pericia_social?: string;
+  conteudo_pericia_medica: string | null;
+  conteudo_pericia_social: string | null;
   modo_envio_2_pericias: "combinada" | "separadas";
   created_at: string;
 }
@@ -36,8 +36,8 @@ export function createTemplate(data: Omit<Template, "id" | "created_at">): Templ
     data.nome,
     data.conteudo_1_pericia,
     data.conteudo_2_pericias,
-    data.conteudo_pericia_medica || null,
-    data.conteudo_pericia_social || null,
+    data.conteudo_pericia_medica,
+    data.conteudo_pericia_social,
     data.modo_envio_2_pericias
   );
   return getTemplate(info.lastInsertRowid as number)!;
@@ -48,8 +48,8 @@ export function updateTemplate(id: number, data: Omit<Template, "id" | "created_
     data.nome,
     data.conteudo_1_pericia,
     data.conteudo_2_pericias,
-    data.conteudo_pericia_medica || null,
-    data.conteudo_pericia_social || null,
+    data.conteudo_pericia_medica,
+    data.conteudo_pericia_social,
     data.modo_envio_2_pericias,
     id
   );
@@ -88,9 +88,9 @@ export function renderMessages(
   if (template.modo_envio_2_pericias === "separadas") {
     return pericias.map((p) => {
       let content = template.conteudo_1_pericia;
-      if (p.tipo.toLowerCase().includes("médica") && template.conteudo_pericia_medica) {
+      if (p.origem === "medica" && template.conteudo_pericia_medica) {
         content = template.conteudo_pericia_medica;
-      } else if (p.tipo.toLowerCase().includes("social") && template.conteudo_pericia_social) {
+      } else if (p.origem === "social" && template.conteudo_pericia_social) {
         content = template.conteudo_pericia_social;
       }
       const compiled = Handlebars.compile(content, { noEscape: true });

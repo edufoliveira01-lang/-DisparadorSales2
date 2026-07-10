@@ -7,7 +7,7 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
+  const response = await fetch(`/api${path}`, {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
@@ -16,19 +16,22 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const body = isJson ? await response.json().catch(() => null) : null;
 
   if (!response.ok) {
+    if (response.status === 401 && !path.includes("/auth/login")) {
+      // Redirecionar para login se não estiver autenticado (exceto na própria tela de login)
+      window.location.href = "/login";
+    }
     throw new ApiError(body?.error || `Erro na requisição (HTTP ${response.status})`, response.status);
   }
   return body as T;
 }
 
-// Em produção (preview), o Vite não faz proxy automático se acessado direto pelo IP na porta 80.
-// Usamos a URL completa para garantir que o frontend saiba onde está o backend.
-const API_URL = import.meta.env.VITE_API_URL || "/api";
-
 export const api = {
-  baseUrl: API_URL,
+  baseUrl: "/api",
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, data?: unknown) => request<T>(path, { method: "POST", body: data ? JSON.stringify(data) : undefined }),
   put: <T>(path: string, data?: unknown) => request<T>(path, { method: "PUT", body: data ? JSON.stringify(data) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  whatsapp: {
+    stop: () => request<{ ok: boolean }>("/whatsapp/stop", { method: "POST" }),
+  },
 };

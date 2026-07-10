@@ -216,6 +216,8 @@ export function Dashboard() {
         templateId,
       });
       show(`Mensagem enviada para ${preview.card.nomeCliente}.`, "success");
+      // Recarregar cards para refletir possível movimentação no Trello
+      carregarCards();
     } catch (err) {
       show(err instanceof ApiError ? err.message : "Erro ao enviar mensagem.", "error");
     } finally {
