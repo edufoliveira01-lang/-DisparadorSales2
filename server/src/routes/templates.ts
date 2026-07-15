@@ -1,5 +1,5 @@
 import { Router } from "express";
-import type { Pericia } from "../services/parserService";
+import { sortPericiasByDate, type Pericia } from "../services/parserService";
 import {
   createTemplate,
   deleteTemplate,
@@ -113,7 +113,8 @@ templatesRouter.post("/preview", (req, res) => {
   }
 
   try {
-    const mensagens = renderMessages(templateData, nome || "Cliente Exemplo", pericias || []);
+    const sortedPericias = sortPericiasByDate(pericias || []);
+    const mensagens = renderMessages(templateData, nome || "Cliente Exemplo", sortedPericias);
     res.json({ mensagens });
   } catch (err) {
     res.status(400).json({ error: `Erro ao renderizar template: ${(err as Error).message}` });
