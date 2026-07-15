@@ -140,6 +140,49 @@ export function parseCardDescriptionComOrigem(description: string): PericiaComOr
  * Extrai 1 ou 2 perícias da descrição de um card do Trello.
  * Veja `parseCardDescriptionComOrigem` para os formatos suportados.
  */
+function parseBrazilianDate(dateStr: string, timeStr: string): number {
+  try {
+    const dateMatch = dateStr.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+    if (!dateMatch) return Infinity;
+
+    const [, day, month, year] = dateMatch;
+    const timeMatch = timeStr.match(/(\d{2}):(\d{2})/);
+    const hours = timeMatch ? parseInt(timeMatch[1], 10) : 0;
+    const minutes = timeMatch ? parseInt(timeMatch[2], 10) : 0;
+
+    return new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10), hours, minutes).getTime();
+  } catch {
+    return Infinity;
+  }
+}
+
+/**
+ * Ordena um array de perícias pela data e hora mais próxima do momento atual.
+ * Perícias com datas inválidas ou não identificadas ficam por último.
+ */
+export function sortPericiasByDate<T extends Pericia>(pericias: T[]): T[] {
+  const now = Date.now();
+  return [...pericias].sort((a, b) => {
+    const timeA = parseBrazilianDate(a.data, a.horario);
+    const timeB = parseBrazilianDate(b.data, b.horario);
+
+    // Se ambas são inválidas, mantém a ordem original
+    if (timeA === Infinity && timeB === Infinity) return 0;
+
+    // Calcula a diferença absoluta em relação a 'agora'
+    // O usuário quer a "mais próxima", o que geralmente significa a que vai acontecer logo ou a que acabou de acontecer.
+    // No contexto de agendamento, geralmente priorizamos a data cronológica mais próxima (futura ou passada).
+    const diffA = Math.abs(timeA - now);
+    const diffB = Math.abs(timeB - now);
+
+    return diffA - diffB;
+  });
+}
+
+/**
+ * Extrai 1 ou 2 perícias da descrição de um card do Trello.
+ * Veja `parseCardDescriptionComOrigem` para os formatos suportados.
+ */
 export function parseCardDescription(description: string): Pericia[] {
   return parseCardDescriptionComOrigem(description).map(({ origem, ...pericia }) => pericia);
 }

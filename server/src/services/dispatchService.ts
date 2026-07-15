@@ -1,5 +1,5 @@
 import { emitEvent } from "../websocket";
-import type { Pericia } from "./parserService";
+import { sortPericiasByDate, type Pericia } from "./parserService";
 import { getTemplate, renderMessages } from "./templateService";
 import { createLog, type SendLog } from "./logsService";
 import { whatsappManager } from "./whatsappService";
@@ -29,7 +29,8 @@ export async function dispatchSingle(item: SendItem, templateId: number): Promis
     const chatId = await whatsappManager.resolveChatId(onlyDigits(item.telefone));
     if (!chatId) throw new Error("Este telefone não foi encontrado no WhatsApp.");
 
-    const mensagens = renderMessages(template, item.nomeCliente, item.pericias);
+    const sortedPericias = sortPericiasByDate(item.pericias);
+    const mensagens = renderMessages(template, item.nomeCliente, sortedPericias);
     if (mensagens.length === 0) throw new Error("Nenhuma perícia válida para gerar mensagem.");
 
     for (const mensagem of mensagens) {
@@ -55,7 +56,7 @@ export async function dispatchSingle(item: SendItem, templateId: number): Promis
       card_nome: item.nomeCliente,
       contact_id: item.contactId,
       telefone: item.telefone,
-      pericias_json: JSON.stringify(item.pericias),
+      pericias_json: JSON.stringify(sortedPericias),
       mensagem_enviada: mensagens.join("\n\n---\n\n"),
       status: "sucesso",
       erro: null,

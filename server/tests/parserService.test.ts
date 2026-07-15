@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPericiaCompleta, parseCardDescription, parseCardDescriptionComOrigem } from "../src/services/parserService";
+import { isPericiaCompleta, parseCardDescription, parseCardDescriptionComOrigem, sortPericiasByDate } from "../src/services/parserService";
 
 describe("parseCardDescription", () => {
   it("extrai 1 perícia com cabeçalho PERÍCIA MÉDICA", () => {
@@ -22,50 +22,38 @@ NOME: João da Silva
     });
   });
 
-  it("extrai 2 perícias quando há os dois cabeçalhos, na ordem em que aparecem", () => {
-    const desc = `
+  it("ordena perícias pela data mais próxima, independente da ordem no texto", () => {
+    // Mockando a data atual para garantir consistência no teste
+    const originalNow = Date.now;
+    Date.now = () => new Date("2026-08-01T12:00:00Z").getTime();
+
+    try {
+      const desc = `
 PERÍCIA MÉDICA:
 TIPO DE PERÍCIA: Ortopédica
-DATA: 01/09/2026
+DATA: 10/09/2026
 HORÁRIO: 09:00
 LOCAL: Clínica A
 NOME: Maria Souza
 
 PERÍCIA SOCIAL:
 TIPO DE PERÍCIA: Assistente Social
-DATA: 02/09/2026
+DATA: 05/08/2026
 HORÁRIO: 10:30
 LOCAL: Clínica B
 NOME: Maria Souza
 `;
-    const result = parseCardDescription(desc);
-    expect(result).toHaveLength(2);
-    expect(result[0].tipo).toBe("Ortopédica");
-    expect(result[0].data).toBe("01/09/2026");
-    expect(result[1].tipo).toBe("Assistente Social");
-    expect(result[1].local).toBe("Clínica B");
-  });
+      // Usamos as funções já importadas no topo do arquivo
+      const pericias = parseCardDescriptionComOrigem(desc);
+      const result = sortPericiasByDate(pericias);
 
-  it("respeita a ordem inversa quando SOCIAL aparece antes de MÉDICA no texto", () => {
-    const desc = `
-PERICIA SOCIAL:
-TIPO DE PERICIA: Social
-DATA: 05/05/2026
-HORARIO: 08:00
-LOCAL: Local Social
-NOME: Carlos
-
-PERICIA MEDICA:
-TIPO DE PERICIA: Medica
-DATA: 06/05/2026
-HORARIO: 09:00
-LOCAL: Local Medico
-NOME: Carlos
-`;
-    const result = parseCardDescription(desc);
-    expect(result).toHaveLength(2);
-    expect(result[0].tipo).toBe("Social");
-    expect(result[1].tipo).toBe("Medica");
+      expect(result).toHaveLength(2);
+      // Social (05/08) é mais próxima de 01/08 que Médica (10/09)
+      expect(result[0].origem).toBe("social");
+      expect(result[1].origem).toBe("medica");
+    } finally {
+      Date.now = originalNow;
+    }
   });
 
   it("trata como 1 perícia genérica quando não há cabeçalho de bloco", () => {

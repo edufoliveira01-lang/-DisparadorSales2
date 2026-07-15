@@ -2,7 +2,7 @@ import { Router } from "express";
 import { listContacts } from "../services/contactsService";
 import { getLastStatusForCard } from "../services/logsService";
 import { matchContact } from "../services/matcherService";
-import { isPericiaCompleta, parseCardDescriptionComOrigem } from "../services/parserService";
+import { isPericiaCompleta, parseCardDescriptionComOrigem, sortPericiasByDate } from "../services/parserService";
 import { getSetting } from "../services/settingsService";
 import { getCardsFromList, TrelloError } from "../services/trelloService";
 
@@ -22,7 +22,8 @@ cardsRouter.get("/", async (_req, res) => {
     const contacts = listContacts();
 
     const cards = trelloCards.map((card) => {
-      const pericias = parseCardDescriptionComOrigem(card.desc);
+      let pericias = parseCardDescriptionComOrigem(card.desc);
+      pericias = sortPericiasByDate(pericias);
       const incompleta = pericias.length === 0 || pericias.some((p) => !isPericiaCompleta(p));
       const nomeCliente = pericias[0]?.nome || card.name;
       const match = matchContact(nomeCliente, contacts);
