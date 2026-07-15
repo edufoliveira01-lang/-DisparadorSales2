@@ -94,6 +94,9 @@ export function parseCardDescriptionComOrigem(description: string): PericiaComOr
   description = removerTextoOriginalColado(description);
   if (!description.trim()) return [];
 
+  // Tenta capturar o nome globalmente se não estiver dentro de um bloco
+  const globalNome = extractField(description, FIELD_PATTERNS.nome);
+
   const blockStarts: BlockStart[] = [];
 
   const medicaRe = new RegExp(MEDICA_HEADER.source, "gim");
@@ -131,9 +134,47 @@ export function parseCardDescriptionComOrigem(description: string): PericiaComOr
   for (let i = 0; i < blockStarts.length; i++) {
     const start = blockStarts[i].start;
     const end = i + 1 < blockStarts.length ? blockStarts[i + 1].start : description.length;
-    pericias.push({ ...extractPericiaFromBlock(description.slice(start, end)), origem: blockStarts[i].origem });
+    const pericia = extractPericiaFromBlock(description.slice(start, end));
+
+    // Se a perícia do bloco não tem nome, mas encontramos um nome global, usa o global
+    if (!pericia.nome && globalNome) {
+      pericia.nome = globalNome;
+    }
+
+    pericias.push({ ...pericia, origem: blockStarts[i].origem });
   }
   return pericias;
+}
+
+/**
+ * Tenta extrair o nome do cliente a partir do título do card do Trello.
+ * Útil como fallback quando a descrição está vazia ou mal formatada.
+ * Exemplo: "P. SOCIAL - 05/08/2026 - 15:36 - FABIOLA CARLA ALBERTINI BORGES E SILVA - 5002573-34.2025.4.03.6141"
+ */
+export function extractNomeFromCardTitle(title: string): string {
+  if (!title) return "";
+
+  // Padrão: partes separadas por " - ". O nome costuma ser a parte que não é data, horário, tipo ou número de processo.
+  // Geralmente o nome é a penúltima ou antepenúltima parte.
+  const parts = title.split(" - ").map((p) => p.trim());
+
+  if (parts.length >= 3) {
+    // Procura por uma parte que contenha apenas letras e espaços (nome)
+    // Ignora partes que pareçam data (xx/xx/xxxx), horário (xx:xx) ou processo (números e pontos)
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const part = parts[i];
+      const isDate = /\d{2}\/\d{2}\/\d{4}/.test(part);
+      const isTime = /\d{2}:\d{2}/.test(part);
+      const isProcesso = /[\d.-]{10,}/.test(part);
+      const isTipo = /^(P\.|PER[IÍ]CIA)/i.test(part);
+
+      if (!isDate && !isTime && !isProcesso && !isTipo && part.length > 3) {
+        return part;
+      }
+    }
+  }
+
+  return title;
 }
 
 /**
