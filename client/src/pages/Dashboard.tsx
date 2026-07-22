@@ -144,6 +144,23 @@ export function Dashboard() {
     });
   }
 
+  function toggleSelecionarTodos() {
+    const todosVisiveisSelecionados = cardsFiltrados.every((c) => selecionados.has(c.cardId));
+    if (todosVisiveisSelecionados) {
+      setSelecionados((prev) => {
+        const next = new Set(prev);
+        cardsFiltrados.forEach((c) => next.delete(c.cardId));
+        return next;
+      });
+    } else {
+      setSelecionados((prev) => {
+        const next = new Set(prev);
+        cardsFiltrados.forEach((c) => next.add(c.cardId));
+        return next;
+      });
+    }
+  }
+
   function usarSugestao(card: CardViewModel) {
     if (!card.sugestaoContato) return;
     setContatoOverrides((prev) => ({ ...prev, [card.cardId]: card.sugestaoContato! }));
@@ -323,9 +340,20 @@ export function Dashboard() {
                 </option>
               ))}
             </Select>
-            <Button onClick={abrirConfirmBatch} disabled={selecionados.size === 0 || Boolean(batchProgress)}>
-              <Send className="h-4 w-4" /> Enviar selecionados ({selecionados.size})
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={toggleSelecionarTodos}
+                disabled={cardsFiltrados.length === 0 || Boolean(batchProgress)}
+              >
+                {cardsFiltrados.length > 0 && cardsFiltrados.every((c) => selecionados.has(c.cardId))
+                  ? "Desmarcar Todos"
+                  : "Selecionar Todos"}
+              </Button>
+              <Button onClick={abrirConfirmBatch} disabled={selecionados.size === 0 || Boolean(batchProgress)}>
+                <Send className="h-4 w-4" /> Enviar selecionados ({selecionados.size})
+              </Button>
+            </div>
           </div>
 
           {batchProgress?.ativo && (
