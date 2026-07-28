@@ -54,7 +54,7 @@ export function Agenda() {
   function abrirEdicao(contact: Contact) {
     setEditando(contact);
     setNome(contact.nome);
-    setTelefone(formatPhoneInput(contact.telefone));
+    setTelefone(formatPhoneDisplay(contact.telefone));
     setObservacoes(contact.observacoes || "");
     setModalAberto(true);
   }
