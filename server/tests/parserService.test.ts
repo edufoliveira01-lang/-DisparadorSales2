@@ -25,7 +25,23 @@ NOME: João da Silva
       horario: "14:00",
       local: "Rua das Flores, 100",
       nome: "João da Silva",
+      telefone: "",
     });
+  });
+
+  it("extrai o campo TELEFONE quando presente no formato (XX) XXXXX-XXXX", () => {
+    const desc = `
+PERÍCIA MÉDICA:
+TIPO DE PERÍCIA: Psiquiátrica
+DATA: 10/08/2026
+HORÁRIO: 14:00
+LOCAL: Rua das Flores, 100
+NOME: João da Silva
+TELEFONE: (11) 99999-8888
+`;
+    const result = parseCardDescription(desc);
+    expect(result).toHaveLength(1);
+    expect(result[0].telefone).toBe("(11) 99999-8888");
   });
 
   it("ordena perícias pela data mais próxima, independente da ordem no texto", () => {
@@ -110,6 +126,7 @@ HORÁRIO: 11:15
       horario: "11:15",
       local: "Hospital Central",
       nome: "Pedro Alves",
+      telefone: "",
     });
   });
 
@@ -129,6 +146,7 @@ nome Fulano de Tal
       horario: "08:30",
       local: "Posto de Saúde",
       nome: "Fulano de Tal",
+      telefone: "",
     });
   });
 
@@ -153,6 +171,7 @@ NOME: João da Silva
       horario: "X",
       local: "X",
       nome: "X",
+      telefone: "",
     };
     expect(isPericiaCompleta(pericia)).toBe(true);
   });
@@ -198,6 +217,7 @@ NOME: Nome B
       horario: "11:00",
       local: "Local B",
       nome: "Nome B",
+      telefone: "",
     });
   });
 
@@ -223,6 +243,7 @@ ADVOGADO: ANTONIO MESSIAS SALES JUNIOR - OAB 346457/SP`;
       horario: "15:00",
       local: "sede deste Juizado Especial Federal, AVENIDA ANTONIO EMMERICH, 1238 - VILA CASCATINHA - SÃO VICENTE",
       nome: "GENI DE FATIMA FURTADO",
+      telefone: "",
     });
     expect(isPericiaCompleta(result[0])).toBe(true);
   });
@@ -255,6 +276,7 @@ texto da intimação original que deve ser ignorado...`;
       horario: "15:00",
       local: "sede deste Juizado Especial Federal, AVENIDA ANTONIO EMMERICH, 1238 - VILA CASCATINHA - SÃO VICENTE",
       nome: "GENI DE FATIMA FURTADO",
+      telefone: "",
       origem: "medica",
     });
     expect(result[1]).toEqual({
@@ -263,6 +285,7 @@ texto da intimação original que deve ser ignorado...`;
       horario: "14:00",
       local: "residência do autor",
       nome: "GENI DE FATIMA FURTADO",
+      telefone: "",
       origem: "social",
     });
     expect(result.every(isPericiaCompleta)).toBe(true);
@@ -283,6 +306,7 @@ NOME: Fulano de Tal;
       horario: "10:00",
       local: "Rua A, 123",
       nome: "Fulano de Tal",
+      telefone: "",
     });
   });
 });

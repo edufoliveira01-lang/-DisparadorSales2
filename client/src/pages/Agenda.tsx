@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pencil, Plus, Search, Trash2, Upload, Users } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
+import { formatPhoneDisplay, formatPhoneInput } from "@/lib/phone";
 import type { Contact } from "@/lib/types";
 import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
@@ -36,7 +37,10 @@ export function Agenda() {
     if (!contacts) return [];
     const termo = busca.trim().toLowerCase();
     if (!termo) return contacts;
-    return contacts.filter((c) => c.nome.toLowerCase().includes(termo) || c.telefone.includes(termo));
+    const termoDigits = termo.replace(/\D/g, "");
+    return contacts.filter(
+      (c) => c.nome.toLowerCase().includes(termo) || (termoDigits && c.telefone.replace(/\D/g, "").includes(termoDigits))
+    );
   }, [contacts, busca]);
 
   function abrirNovo() {
@@ -50,7 +54,7 @@ export function Agenda() {
   function abrirEdicao(contact: Contact) {
     setEditando(contact);
     setNome(contact.nome);
-    setTelefone(contact.telefone);
+    setTelefone(formatPhoneInput(contact.telefone));
     setObservacoes(contact.observacoes || "");
     setModalAberto(true);
   }
@@ -171,7 +175,7 @@ export function Agenda() {
               {filtrados.map((c) => (
                 <tr key={c.id} className="bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800/50">
                   <td className="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</td>
-                  <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{c.telefone}</td>
+                  <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(c.telefone)}</td>
                   <td className="px-5 py-3 text-zinc-500 dark:text-zinc-400">{c.observacoes || "—"}</td>
                   <td className="px-5 py-3">
                     <div className="flex justify-end gap-1">
@@ -212,8 +216,12 @@ export function Agenda() {
           </div>
           <div>
             <Label>Telefone</Label>
-            <Input value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="Ex: 5511999999999" />
-            <p className="mt-1 text-xs text-zinc-400">Formato internacional, sem espaços ou símbolos: 55DDDNÚMERO.</p>
+            <Input
+              value={telefone}
+              onChange={(e) => setTelefone(formatPhoneInput(e.target.value))}
+              placeholder="Ex: (11) 99999-8888"
+            />
+            <p className="mt-1 text-xs text-zinc-400">DDD + número. Números antigos de 8 dígitos ficam (XX) XXXX-XXXX.</p>
           </div>
           <div>
             <Label>Observações</Label>

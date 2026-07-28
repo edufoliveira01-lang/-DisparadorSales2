@@ -4,6 +4,7 @@ export interface Pericia {
   horario: string;
   local: string;
   nome: string;
+  telefone: string;
   origem?: "medica" | "social" | "geral";
 }
 

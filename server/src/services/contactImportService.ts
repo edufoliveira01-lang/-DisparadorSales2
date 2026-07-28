@@ -1,3 +1,5 @@
+import { normalizePhone } from "../utils/phone";
+
 export interface ContatoImportado {
   nome: string;
   telefone: string;
@@ -56,12 +58,6 @@ function normalizarCabecalho(header: string): string {
     .trim();
 }
 
-function normalizarTelefone(raw: string): string {
-  const digits = raw.replace(/\D/g, "");
-  if (digits.length === 10 || digits.length === 11) return `55${digits}`;
-  return digits;
-}
-
 function parseCsvContent(content: string): ContatoImportado[] {
   const rows = parseCsvRows(content);
   if (rows.length < 2) return [];
@@ -100,7 +96,7 @@ function parseCsvContent(content: string): ContatoImportado[] {
     const observacoes = obsIdx >= 0 ? row[obsIdx]?.trim() || "" : "";
 
     if (nome && telefone) {
-      contatos.push({ nome, telefone: normalizarTelefone(telefone), observacoes });
+      contatos.push({ nome, telefone: normalizePhone(telefone), observacoes });
     }
   }
   return contatos;
@@ -128,7 +124,7 @@ function parseVCardContent(content: string): ContatoImportado[] {
     }
 
     if (nome && telefone) {
-      contatos.push({ nome, telefone: normalizarTelefone(telefone), observacoes });
+      contatos.push({ nome, telefone: normalizePhone(telefone), observacoes });
     }
   }
   return contatos;

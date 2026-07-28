@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { listContacts } from "../services/contactsService";
+import { createContact, listContacts, type Contact } from "../services/contactsService";
 import { getLastStatusForCard } from "../services/logsService";
 import { matchContact } from "../services/matcherService";
 import {
@@ -10,8 +10,24 @@ import {
 } from "../services/parserService";
 import { getSetting } from "../services/settingsService";
 import { getCardsFromList, TrelloError } from "../services/trelloService";
+import { normalizePhone } from "../utils/phone";
 
 export const cardsRouter = Router();
+
+/**
+ * Quando o card não tem contato cadastrado por nome mas traz o campo TELEFONE
+ * na descrição, cadastra o contato automaticamente (por nome + telefone do card)
+ * em vez de exigir cadastro manual no Dashboard.
+ */
+function autoCadastrarPorTelefone(nomeCliente: string, telefoneCard: string, todosContatos: Contact[]): Contact | null {
+  const telefoneNormalizado = normalizePhone(telefoneCard);
+  if (telefoneNormalizado.length < 10) return null;
+
+  const existente = todosContatos.find((c) => normalizePhone(c.telefone) === telefoneNormalizado);
+  if (existente) return existente;
+
+  return createContact(nomeCliente, telefoneNormalizado);
+}
 
 cardsRouter.get("/", async (_req, res) => {
   const key = getSetting("trello_key");
@@ -25,19 +41,30 @@ cardsRouter.get("/", async (_req, res) => {
   try {
     const trelloCards = await getCardsFromList(key, token, listId);
     const contacts = listContacts();
+    const novosContatos: Contact[] = [];
 
     const cards = trelloCards.map((card) => {
       let pericias = parseCardDescriptionComOrigem(card.desc);
       pericias = sortPericiasByDate(pericias);
       const incompleta = pericias.length === 0 || pericias.some((p) => !isPericiaCompleta(p));
-
       // Prioridade de nome:
       // 1. Campo NOME extraído da descrição (já vem dentro do objeto pericia)
       // 2. Fallback inteligente do título do card (limpando datas e códigos)
-      // 3. Título bruto do card (último caso)
+      // 3. Título bruto do card (último caso, dentro do próprio extractNomeFromCardTitle)
       const nomeCliente = pericias[0]?.nome || extractNomeFromCardTitle(card.name);
+      let match = matchContact(nomeCliente, [...contacts, ...novosContatos]);
 
-      const match = matchContact(nomeCliente, contacts);
+      if (!match.exact) {
+        const telefoneCard = pericias.map((p) => p.telefone).find((t) => t.trim());
+        if (telefoneCard) {
+          const contato = autoCadastrarPorTelefone(nomeCliente, telefoneCard, [...contacts, ...novosContatos]);
+          if (contato) {
+            novosContatos.push(contato);
+            match = { exact: contato, sugestao: null, score: 1 };
+          }
+        }
+      }
+
       const lastLog = getLastStatusForCard(card.id);
 
       return {
