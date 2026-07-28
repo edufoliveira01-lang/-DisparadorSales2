@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Inbox, RefreshCw, Search, Send, WifiOff } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import { formatPhoneInput } from "@/lib/phone";
+import { formatPhoneDisplay, formatPhoneInput } from "@/lib/phone";
 import type { CardViewModel, Contact, Pericia, Template } from "@/lib/types";
 import { useWhatsapp } from "@/context/WhatsappContext";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
@@ -186,7 +186,7 @@ export function Dashboard() {
     setCadastro({
       card,
       nome: contato.nome,
-      telefone: formatPhoneInput(contato.telefone),
+      telefone: formatPhoneDisplay(contato.telefone),
       observacoes: contato.observacoes || "",
       contatoId: contato.id,
     });
