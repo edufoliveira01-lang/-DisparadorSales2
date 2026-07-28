@@ -197,7 +197,7 @@ export function Login() {
         </Card>
         
         <p className="text-center text-xs text-zinc-400">
-          Uso 100% local · v2.4
+          Uso 100% local · v2.5
         </p>
       </div>
     </div>

@@ -234,11 +234,31 @@ class WhatsappManager {
     this.client = null;
   }
 
+  /**
+   * "Protocol error (Runtime.callFunctionOn): Execution context was destroyed" também
+   * acontece em operações normais (resolver contato, enviar mensagem), não só durante a
+   * conexão — é um problema conhecido do whatsapp-web.js quando a página do WhatsApp Web faz
+   * uma navegação/reload interna bem no meio de uma chamada do Puppeteer. Tentar de novo quase
+   * sempre resolve, então fazemos isso automaticamente em vez de falhar o envio de primeira.
+   */
+  private async comRetryTransitorio<T>(fn: () => Promise<T>): Promise<T> {
+    for (let tentativa = 1; ; tentativa++) {
+      try {
+        return await fn();
+      } catch (err) {
+        const mensagem = (err as Error)?.message ?? String(err);
+        if (tentativa >= MAX_TENTATIVAS_AUTOMATICAS || !ERRO_TRANSITORIO.test(mensagem)) throw err;
+        await new Promise((resolve) => setTimeout(resolve, INTERVALO_ENTRE_TENTATIVAS_MS));
+      }
+    }
+  }
+
   /** Confirma que o telefone existe no WhatsApp e retorna o chat id canônico. */
   async resolveChatId(telefoneDigits: string): Promise<string | null> {
     if (!this.client || this.status !== "conectado") {
       throw new Error("WhatsApp não está conectado.");
     }
+    const client = this.client;
 
     // Se o número tem apenas 8 dígitos, assumimos que é um número antigo sem o 9 inicial.
     // Tentamos resolver como está, mas o whatsapp-web.js geralmente espera o formato com DDI e DDD.
@@ -253,7 +273,7 @@ class WhatsappManager {
       target = "55" + target;
     }
 
-    const result = await this.client.getNumberId(target);
+    const result = await this.comRetryTransitorio(() => client.getNumberId(target));
     return result ? result._serialized : null;
   }
 
@@ -261,7 +281,8 @@ class WhatsappManager {
     if (!this.client || this.status !== "conectado") {
       throw new Error("WhatsApp não está conectado.");
     }
-    await this.client.sendMessage(chatId, mensagem);
+    const client = this.client;
+    await this.comRetryTransitorio(() => client.sendMessage(chatId, mensagem));
   }
 }
 
