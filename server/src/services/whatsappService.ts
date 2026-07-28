@@ -51,6 +51,14 @@ const ERRO_TRANSITORIO = /execution context was destroyed|protocol error/i;
 const MAX_TENTATIVAS_AUTOMATICAS = 3;
 const INTERVALO_ENTRE_TENTATIVAS_MS = 3000;
 
+/**
+ * Tempo máximo aguardando o WhatsApp ficar pronto depois de "autenticado" (celular escaneou
+ * o QR, mas o whatsapp-web.js às vezes trava nessa fase sem nunca emitir "ready" nem
+ * "disconnected" — especialmente em celulares/conexões mais lentas). Sem esse limite, a tela
+ * fica presa em "Autenticando…" para sempre, sem nenhuma tentativa automática de recuperação.
+ */
+const TEMPO_LIMITE_APOS_AUTENTICAR_MS = 3 * 60 * 1000;
+
 type Listener = () => void;
 
 class WhatsappManager {
@@ -119,12 +127,26 @@ class WhatsappManager {
         protocolTimeout: 120000,
       },
       webVersionCache: { type: "none" },
-      qrMaxRetries: 5,
+      // Quantas vezes o QR Code pode ser renovado (o WhatsApp Web troca a imagem sozinho a
+      // cada ~20-30s) antes do whatsapp-web.js desistir e desconectar. Um valor generoso dá
+      // mais tempo real para escanear em celulares mais lentos, sem travar para sempre — depois
+      // de esgotado, nosso próprio retry automático entra em ação e gera um QR novo.
+      qrMaxRetries: 12,
       authTimeoutMs: 90000,
     });
     this.client = client;
 
+    let readyWatchdog: ReturnType<typeof setTimeout> | null = null;
+    const limparReadyWatchdog = () => {
+      if (readyWatchdog) {
+        clearTimeout(readyWatchdog);
+        readyWatchdog = null;
+      }
+    };
+
     const failAndCleanUp = async (status: WhatsappStatus, message: string) => {
+      limparReadyWatchdog();
+
       // O whatsapp-web.js costuma emitir "disconnected" de forma espúria durante o próprio
       // fluxo de pareamento (ex: "Max qrcode retries reached", ou uma oscilação momentânea
       // do estado do socket logo após o QR ser escaneado, antes do evento "ready"). Se ainda
@@ -167,9 +189,22 @@ class WhatsappManager {
 
     client.on("authenticated", () => {
       this.setState({ status: "autenticado", qrDataUrl: null });
+
+      // Depois de autenticar, o whatsapp-web.js às vezes trava sem nunca emitir "ready" nem
+      // "disconnected" (mais comum em celulares/conexões lentas) — sem esse timeout a tela
+      // ficaria presa em "Autenticando…" para sempre. Se estourar, tratamos como falha
+      // transitória: o retry automático entra em ação e tenta uma conexão nova.
+      limparReadyWatchdog();
+      readyWatchdog = setTimeout(() => {
+        failAndCleanUp(
+          "desconectado",
+          "Tempo esgotado aguardando o WhatsApp sincronizar após a autenticação (celular pode estar lento ou sem internet)."
+        );
+      }, TEMPO_LIMITE_APOS_AUTENTICAR_MS);
     });
 
     client.on("ready", () => {
+      limparReadyWatchdog();
       this.setState({ status: "conectado", qrDataUrl: null });
     });
 
