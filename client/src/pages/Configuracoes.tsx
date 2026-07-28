@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, KeyRound, Loader2, Lock, LogOut, QrCode, Square, Trello, Unplug, User, Wifi, WifiOff } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type { Settings, WhatsappState } from "@/lib/types";
+import { useWhatsapp } from "@/context/WhatsappContext";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
 import { useToast } from "@/components/ui/Toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -42,8 +43,7 @@ export function Configuracoes() {
   const [moveListId, setMoveListId] = useState("");
   const [salvandoTrello, setSalvandoTrello] = useState(false);
 
-  const [whatsapp, setWhatsapp] = useState<WhatsappState>({ status: "desconectado", qrDataUrl: null, lastError: null });
-  const [conectando, setConectando] = useState(false);
+  const whatsapp = useWhatsapp();
 
   const [intervalMin, setIntervalMin] = useState("5");
   const [intervalMax, setIntervalMax] = useState("15");
@@ -72,20 +72,6 @@ export function Configuracoes() {
 
   useEffect(() => {
     loadSettings();
-    
-    const eventSource = new EventSource(`${api.baseUrl}/whatsapp/events`);
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        setWhatsapp(data);
-      } catch (err) {
-        console.error("Erro ao processar evento de WhatsApp:", err);
-      }
-    };
-
-    return () => {
-      eventSource.close();
-    };
   }, [loadSettings]);
 
   async function handleValidarTrello() {
@@ -150,20 +136,16 @@ export function Configuracoes() {
   }
 
   async function handleConectarWhatsapp() {
-    setConectando(true);
     try {
-      const state = await api.post<WhatsappState>("/whatsapp/connect");
-      setWhatsapp(state);
+      await whatsapp.conectar();
     } catch (err) {
       show(err instanceof ApiError ? err.message : "Erro ao conectar WhatsApp.", "error");
-    } finally {
-      setConectando(false);
     }
   }
 
   async function handlePararWhatsapp() {
     try {
-      await api.whatsapp.stop();
+      await whatsapp.parar();
       show("Geração de QR Code cancelada.", "info");
     } catch (err) {
       show(err instanceof ApiError ? err.message : "Erro ao parar WhatsApp.", "error");
@@ -171,8 +153,12 @@ export function Configuracoes() {
   }
 
   async function handleDesconectarWhatsapp() {
-    await api.post("/whatsapp/disconnect");
-    show("WhatsApp desconectado.", "info");
+    try {
+      await whatsapp.desconectar();
+      show("WhatsApp desconectado.", "info");
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao desconectar WhatsApp.", "error");
+    }
   }
 
   async function handleSalvarIntervalo() {
@@ -406,7 +392,7 @@ export function Configuracoes() {
               <>
                 <Button
                   onClick={handleConectarWhatsapp}
-                  loading={conectando || whatsapp.status === "inicializando"}
+                  loading={whatsapp.conectando || whatsapp.status === "inicializando"}
                   disabled={whatsapp.status === "aguardando_qr" || whatsapp.status === "autenticado"}
                 >
                   {whatsapp.status === "aguardando_qr" ? <Loader2 className="h-4 w-4 animate-spin" /> : <WifiOff className="h-4 w-4" />}
