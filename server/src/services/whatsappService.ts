@@ -125,6 +125,14 @@ class WhatsappManager {
     this.client = client;
 
     const failAndCleanUp = async (status: WhatsappStatus, message: string) => {
+      // O whatsapp-web.js costuma emitir "disconnected" de forma espúria durante o próprio
+      // fluxo de pareamento (ex: "Max qrcode retries reached", ou uma oscilação momentânea
+      // do estado do socket logo após o QR ser escaneado, antes do evento "ready"). Se ainda
+      // não tínhamos chegado a "conectado" nesta tentativa, tratamos como falha transitória e
+      // tentamos de novo automaticamente — só paramos sem retry quando a desconexão acontece
+      // DEPOIS de já estar conectado (ex: logout pelo celular), que é uma desconexão real.
+      const aindaNaoConectouNestaTentativa = this.status !== "conectado";
+
       try {
         await client.destroy();
       } catch {
@@ -133,11 +141,16 @@ class WhatsappManager {
       if (this.client !== client) return; // uma tentativa mais nova já assumiu
       this.client = null;
 
-      if (minhaGeracao === this.geracao && ERRO_TRANSITORIO.test(message) && this.tentativa < MAX_TENTATIVAS_AUTOMATICAS) {
+      const deveTentarNovamente =
+        minhaGeracao === this.geracao &&
+        this.tentativa < MAX_TENTATIVAS_AUTOMATICAS &&
+        (ERRO_TRANSITORIO.test(message) || aindaNaoConectouNestaTentativa);
+
+      if (deveTentarNovamente) {
         this.tentativa++;
         this.setState({
           status: "inicializando",
-          lastError: `Falha temporária ao carregar o WhatsApp Web, tentando novamente (${this.tentativa}/${MAX_TENTATIVAS_AUTOMATICAS})…`,
+          lastError: `Falha temporária ao conectar (${message}), tentando novamente (${this.tentativa}/${MAX_TENTATIVAS_AUTOMATICAS})…`,
           qrDataUrl: null,
         });
         setTimeout(() => this.iniciarTentativa(minhaGeracao), INTERVALO_ENTRE_TENTATIVAS_MS);
