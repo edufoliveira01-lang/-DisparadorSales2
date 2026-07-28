@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Inbox, RefreshCw, Search, Send, WifiOff } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import type { CardViewModel, Contact, Template, WhatsappState } from "@/lib/types";
+import type { CardViewModel, Contact, Pericia, Template, WhatsappState } from "@/lib/types";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
 import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
@@ -30,6 +30,8 @@ export function Dashboard() {
 
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [contatoOverrides, setContatoOverrides] = useState<Record<string, Contact>>({});
+  const [nomeOverrides, setNomeOverrides] = useState<Record<string, string>>({});
+  const [periciasOverrides, setPericiasOverrides] = useState<Record<string, Pericia[]>>({});
   const [enviandoCardId, setEnviandoCardId] = useState<string | null>(null);
 
   const [busca, setBusca] = useState("");
@@ -41,10 +43,17 @@ export function Dashboard() {
   const [batchLoading, setBatchLoading] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{ ativo: boolean; total: number } | null>(null);
 
-  const [cadastro, setCadastro] = useState<{ card: CardViewModel; nome: string; telefone: string; observacoes: string } | null>(
-    null
-  );
+  const [cadastro, setCadastro] = useState<{
+    card: CardViewModel;
+    nome: string;
+    telefone: string;
+    observacoes: string;
+    contatoId?: number;
+  } | null>(null);
   const [salvandoContato, setSalvandoContato] = useState(false);
+
+  const [edicaoNome, setEdicaoNome] = useState<{ card: CardViewModel; nome: string } | null>(null);
+  const [edicaoPericia, setEdicaoPericia] = useState<{ card: CardViewModel; index: number; pericia: Pericia } | null>(null);
 
   const carregarCards = useCallback(async () => {
     setCarregando(true);
@@ -114,6 +123,19 @@ export function Dashboard() {
     return card.contato || contatoOverrides[card.cardId] || null;
   }
 
+  function nomeEfetivo(card: CardViewModel): string {
+    return nomeOverrides[card.cardId] ?? card.nomeCliente;
+  }
+
+  function periciasEfetivas(card: CardViewModel): Pericia[] {
+    return periciasOverrides[card.cardId] ?? card.pericias;
+  }
+
+  /** Aplica os overrides locais (nome, perícias, contato) — são os dados usados na mensagem enviada. */
+  function cardEfetivo(card: CardViewModel): CardViewModel {
+    return { ...card, nomeCliente: nomeEfetivo(card), pericias: periciasEfetivas(card) };
+  }
+
   const cardsFiltrados = useMemo(() => {
     if (!cards) return [];
     const termo = busca.trim().toLowerCase();
@@ -150,26 +172,55 @@ export function Dashboard() {
   }
 
   function abrirCadastro(card: CardViewModel) {
-    setCadastro({ card, nome: card.nomeCliente, telefone: "", observacoes: "" });
+    setCadastro({ card, nome: nomeEfetivo(card), telefone: "", observacoes: "" });
+  }
+
+  function abrirEdicaoContato(card: CardViewModel) {
+    const contato = contatoEfetivo(card);
+    if (!contato) return;
+    setCadastro({ card, nome: contato.nome, telefone: contato.telefone, observacoes: contato.observacoes || "", contatoId: contato.id });
   }
 
   async function salvarCadastroRapido() {
     if (!cadastro) return;
     setSalvandoContato(true);
     try {
-      const contato = await api.post<Contact>("/contacts", {
-        nome: cadastro.nome,
-        telefone: cadastro.telefone,
-        observacoes: cadastro.observacoes,
-      });
+      const payload = { nome: cadastro.nome, telefone: cadastro.telefone, observacoes: cadastro.observacoes };
+      const contato = cadastro.contatoId
+        ? await api.put<Contact>(`/contacts/${cadastro.contatoId}`, payload)
+        : await api.post<Contact>("/contacts", payload);
       setContatoOverrides((prev) => ({ ...prev, [cadastro.card.cardId]: contato }));
-      show("Contato cadastrado.", "success");
+      show(cadastro.contatoId ? "Contato atualizado." : "Contato cadastrado.", "success");
       setCadastro(null);
     } catch (err) {
-      show(err instanceof ApiError ? err.message : "Erro ao cadastrar contato.", "error");
+      show(err instanceof ApiError ? err.message : "Erro ao salvar contato.", "error");
     } finally {
       setSalvandoContato(false);
     }
+  }
+
+  function abrirEdicaoNome(card: CardViewModel) {
+    setEdicaoNome({ card, nome: nomeEfetivo(card) });
+  }
+
+  function salvarEdicaoNome() {
+    if (!edicaoNome || !edicaoNome.nome.trim()) return;
+    setNomeOverrides((prev) => ({ ...prev, [edicaoNome.card.cardId]: edicaoNome.nome.trim() }));
+    setEdicaoNome(null);
+  }
+
+  function abrirEdicaoPericia(card: CardViewModel, index: number) {
+    const pericias = periciasEfetivas(card);
+    setEdicaoPericia({ card, index, pericia: { ...pericias[index] } });
+  }
+
+  function salvarEdicaoPericia() {
+    if (!edicaoPericia) return;
+    const { card, index, pericia } = edicaoPericia;
+    const atuais = periciasEfetivas(card);
+    const atualizadas = atuais.map((p, i) => (i === index ? pericia : p));
+    setPericiasOverrides((prev) => ({ ...prev, [card.cardId]: atualizadas }));
+    setEdicaoPericia(null);
   }
 
   async function abrirPreview(card: CardViewModel) {
@@ -187,13 +238,14 @@ export function Dashboard() {
       show("Selecione um template de mensagem.", "error");
       return;
     }
+    const cardComOverrides = cardEfetivo(card);
     try {
       const { mensagens } = await api.post<{ mensagens: string[] }>("/templates/preview", {
         templateId,
-        nome: card.nomeCliente,
-        pericias: card.pericias,
+        nome: cardComOverrides.nomeCliente,
+        pericias: cardComOverrides.pericias,
       });
-      setPreview({ card, mensagens });
+      setPreview({ card: cardComOverrides, mensagens });
     } catch (err) {
       show(err instanceof ApiError ? err.message : "Erro ao gerar pré-visualização.", "error");
     }
@@ -226,9 +278,9 @@ export function Dashboard() {
   }
 
   const cardsSelecionadosValidos = useMemo(
-    () => cardsFiltrados.filter((c) => selecionados.has(c.cardId) && contatoEfetivo(c) && c.pericias.length > 0),
+    () => cardsFiltrados.filter((c) => selecionados.has(c.cardId) && contatoEfetivo(c) && periciasEfetivas(c).length > 0),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [cardsFiltrados, selecionados, contatoOverrides]
+    [cardsFiltrados, selecionados, contatoOverrides, nomeOverrides, periciasOverrides]
   );
 
   function abrirConfirmBatch() {
@@ -250,12 +302,13 @@ export function Dashboard() {
     try {
       const items = cardsSelecionadosValidos.map((card) => {
         const contato = contatoEfetivo(card)!;
+        const cardComOverrides = cardEfetivo(card);
         return {
           cardId: card.cardId,
-          nomeCliente: card.nomeCliente,
+          nomeCliente: cardComOverrides.nomeCliente,
           telefone: contato.telefone,
           contactId: contato.id,
-          pericias: card.pericias,
+          pericias: cardComOverrides.pericias,
         };
       });
       await api.post("/send/batch", { items, templateId });
@@ -355,12 +408,15 @@ export function Dashboard() {
               {cardsFiltrados.map((card) => (
                 <CardItem
                   key={card.cardId}
-                  card={card}
+                  card={cardEfetivo(card)}
                   selecionado={selecionados.has(card.cardId)}
                   onToggleSelecionar={() => toggleSelecionado(card.cardId)}
                   temContatoEfetivo={Boolean(contatoEfetivo(card))}
                   onEnviar={() => abrirPreview(card)}
                   onCadastrarContato={() => abrirCadastro(card)}
+                  onEditarContato={() => abrirEdicaoContato(card)}
+                  onEditarNome={() => abrirEdicaoNome(card)}
+                  onEditarPericia={(index) => abrirEdicaoPericia(card, index)}
                   onUsarSugestao={() => usarSugestao(card)}
                   enviando={enviandoCardId === card.cardId}
                 />
@@ -417,8 +473,8 @@ export function Dashboard() {
         <ul className="max-h-64 space-y-1.5 overflow-y-auto text-sm text-zinc-600 dark:text-zinc-300">
           {cardsSelecionadosValidos.map((c) => (
             <li key={c.cardId} className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2 dark:bg-zinc-800/50">
-              <span>{c.nomeCliente}</span>
-              <span className="text-xs text-zinc-400">{c.pericias.length} perícia(s)</span>
+              <span>{nomeEfetivo(c)}</span>
+              <span className="text-xs text-zinc-400">{periciasEfetivas(c).length} perícia(s)</span>
             </li>
           ))}
         </ul>
@@ -433,7 +489,7 @@ export function Dashboard() {
       <Modal
         open={Boolean(cadastro)}
         onClose={() => setCadastro(null)}
-        title="Cadastrar contato"
+        title={cadastro?.contatoId ? "Editar contato" : "Cadastrar contato"}
         footer={
           <>
             <Button variant="outline" onClick={() => setCadastro(null)}>
@@ -462,6 +518,80 @@ export function Dashboard() {
             <div>
               <Label>Observações</Label>
               <Textarea rows={2} value={cadastro.observacoes} onChange={(e) => setCadastro({ ...cadastro, observacoes: e.target.value })} />
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={Boolean(edicaoNome)}
+        onClose={() => setEdicaoNome(null)}
+        title="Editar nome do cliente"
+        description="Esse é o nome usado na variável {{NOME}} da mensagem enviada."
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setEdicaoNome(null)}>
+              Cancelar
+            </Button>
+            <Button onClick={salvarEdicaoNome} disabled={!edicaoNome?.nome.trim()}>
+              Salvar
+            </Button>
+          </>
+        }
+      >
+        {edicaoNome && (
+          <div>
+            <Label>Nome</Label>
+            <Input value={edicaoNome.nome} onChange={(e) => setEdicaoNome({ ...edicaoNome, nome: e.target.value })} />
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={Boolean(edicaoPericia)}
+        onClose={() => setEdicaoPericia(null)}
+        title="Editar informações da perícia"
+        description="Esses dados são usados nas variáveis da mensagem enviada."
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setEdicaoPericia(null)}>
+              Cancelar
+            </Button>
+            <Button onClick={salvarEdicaoPericia}>Salvar</Button>
+          </>
+        }
+      >
+        {edicaoPericia && (
+          <div className="space-y-4">
+            <div>
+              <Label>Tipo de perícia</Label>
+              <Input
+                value={edicaoPericia.pericia.tipo}
+                onChange={(e) => setEdicaoPericia({ ...edicaoPericia, pericia: { ...edicaoPericia.pericia, tipo: e.target.value } })}
+              />
+            </div>
+            <div>
+              <Label>Data</Label>
+              <Input
+                value={edicaoPericia.pericia.data}
+                onChange={(e) => setEdicaoPericia({ ...edicaoPericia, pericia: { ...edicaoPericia.pericia, data: e.target.value } })}
+                placeholder="Ex: 15/07/2026"
+              />
+            </div>
+            <div>
+              <Label>Horário</Label>
+              <Input
+                value={edicaoPericia.pericia.horario}
+                onChange={(e) => setEdicaoPericia({ ...edicaoPericia, pericia: { ...edicaoPericia.pericia, horario: e.target.value } })}
+                placeholder="Ex: 14:30"
+              />
+            </div>
+            <div>
+              <Label>Local</Label>
+              <Input
+                value={edicaoPericia.pericia.local}
+                onChange={(e) => setEdicaoPericia({ ...edicaoPericia, pericia: { ...edicaoPericia.pericia, local: e.target.value } })}
+              />
             </div>
           </div>
         )}

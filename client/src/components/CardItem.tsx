@@ -1,4 +1,4 @@
-import { AlertTriangle, Calendar, CheckCircle2, Clock, MapPin, MessageCircle, Send, UserPlus, XCircle } from "lucide-react";
+import { AlertTriangle, Calendar, CheckCircle2, Clock, MapPin, MessageCircle, Pencil, Send, UserPlus, XCircle } from "lucide-react";
 import type { CardViewModel } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
 import { cn, formatPlaceholder } from "@/lib/utils";
@@ -12,6 +12,9 @@ interface CardItemProps {
   temContatoEfetivo: boolean;
   onEnviar: () => void;
   onCadastrarContato: () => void;
+  onEditarContato: () => void;
+  onEditarNome: () => void;
+  onEditarPericia: (index: number) => void;
   onUsarSugestao: () => void;
   enviando: boolean;
 }
@@ -23,6 +26,9 @@ export function CardItem({
   temContatoEfetivo,
   onEnviar,
   onCadastrarContato,
+  onEditarContato,
+  onEditarNome,
+  onEditarPericia,
   onUsarSugestao,
   enviando,
 }: CardItemProps) {
@@ -51,6 +57,13 @@ export function CardItem({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="truncate font-semibold text-zinc-900 dark:text-zinc-100">{card.nomeCliente}</h3>
+            <button
+              onClick={onEditarNome}
+              title="Editar nome do cliente"
+              className="text-zinc-400 hover:text-accent-600 dark:text-zinc-500 dark:hover:text-accent-400"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
             <Badge tone="accent">{card.pericias.length === 2 ? "2 perícias" : "1 perícia"}</Badge>
             {card.incompleta && (
               <Badge tone="warning">
@@ -63,19 +76,28 @@ export function CardItem({
 
           <div className="mt-3 space-y-2">
             {card.pericias.map((p, i) => (
-              <div key={i} className="rounded-xl bg-zinc-50 p-3 text-sm dark:bg-zinc-800/50">
-                <p className="font-medium text-zinc-700 dark:text-zinc-200">{formatPlaceholder(p.tipo) || "(tipo não identificado)"}</p>
-                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
-                  <span className="flex items-center gap-1">
-                    <Calendar className="h-3.5 w-3.5" /> {formatPlaceholder(p.data)}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-3.5 w-3.5" /> {formatPlaceholder(p.horario)}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <MapPin className="h-3.5 w-3.5" /> {formatPlaceholder(p.local)}
-                  </span>
+              <div key={i} className="flex items-start justify-between gap-2 rounded-xl bg-zinc-50 p-3 text-sm dark:bg-zinc-800/50">
+                <div className="min-w-0">
+                  <p className="font-medium text-zinc-700 dark:text-zinc-200">{formatPlaceholder(p.tipo) || "(tipo não identificado)"}</p>
+                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="h-3.5 w-3.5" /> {formatPlaceholder(p.data)}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3.5 w-3.5" /> {formatPlaceholder(p.horario)}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <MapPin className="h-3.5 w-3.5" /> {formatPlaceholder(p.local)}
+                    </span>
+                  </div>
                 </div>
+                <button
+                  onClick={() => onEditarPericia(i)}
+                  title="Editar informações da perícia"
+                  className="shrink-0 text-zinc-400 hover:text-accent-600 dark:text-zinc-500 dark:hover:text-accent-400"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
               </div>
             ))}
             {card.pericias.length === 0 && (
@@ -87,9 +109,18 @@ export function CardItem({
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {temContatoEfetivo ? (
-              <Badge tone="success">
-                <CheckCircle2 className="h-3.5 w-3.5" /> Contato encontrado
-              </Badge>
+              <div className="flex items-center gap-1.5">
+                <Badge tone="success">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> Contato encontrado
+                </Badge>
+                <button
+                  onClick={onEditarContato}
+                  title="Editar contato/número"
+                  className="text-zinc-400 hover:text-accent-600 dark:text-zinc-500 dark:hover:text-accent-400"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              </div>
             ) : card.sugestaoContato ? (
               <div className="flex items-center gap-1.5">
                 <Badge tone="warning">Talvez: {card.sugestaoContato.nome}?</Badge>
