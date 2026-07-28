@@ -1,5 +1,6 @@
 import { Route, Routes, useLocation } from "react-router-dom";
 import { Layout } from "@/components/Layout";
+import { WhatsappProvider } from "@/context/WhatsappContext";
 import { Dashboard } from "@/pages/Dashboard";
 import { Agenda } from "@/pages/Agenda";
 import { Templates } from "@/pages/Templates";
@@ -20,15 +21,17 @@ export default function App() {
   }
 
   return (
-    <Layout>
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/agenda" element={<Agenda />} />
-        <Route path="/templates" element={<Templates />} />
-        <Route path="/historico" element={<Historico />} />
-        <Route path="/configuracoes" element={<Configuracoes />} />
-        <Route path="/login" element={<Login />} />
-      </Routes>
-    </Layout>
+    <WhatsappProvider>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/agenda" element={<Agenda />} />
+          <Route path="/templates" element={<Templates />} />
+          <Route path="/historico" element={<Historico />} />
+          <Route path="/configuracoes" element={<Configuracoes />} />
+          <Route path="/login" element={<Login />} />
+        </Routes>
+      </Layout>
+    </WhatsappProvider>
   );
 }

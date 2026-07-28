@@ -14,12 +14,12 @@ whatsappRouter.post("/connect", (_req, res) => {
 
 whatsappRouter.post("/stop", async (_req, res) => {
   await whatsappManager.stop();
-  res.json({ ok: true });
+  res.json(whatsappManager.getState());
 });
 
 whatsappRouter.post("/disconnect", async (_req, res) => {
   await whatsappManager.disconnect();
-  res.json({ ok: true });
+  res.json(whatsappManager.getState());
 });
 
 whatsappRouter.get("/events", (req, res) => {
@@ -27,6 +27,10 @@ whatsappRouter.get("/events", (req, res) => {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
     Connection: "keep-alive",
+    // Evita que um proxy reverso na frente (ex: Nginx) segure os eventos em buffer em vez de
+    // repassar em tempo real — sem isso, atualizações de status só chegam ao navegador quando
+    // o buffer enche ou a conexão fecha, dando a impressão de que o app não atualiza sozinho.
+    "X-Accel-Buffering": "no",
   });
   res.flushHeaders();
 

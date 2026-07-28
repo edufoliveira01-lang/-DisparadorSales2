@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { Inbox, RefreshCw, Search, Send, WifiOff } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneInput } from "@/lib/phone";
-import type { CardViewModel, Contact, Pericia, Template, WhatsappState } from "@/lib/types";
+import type { CardViewModel, Contact, Pericia, Template } from "@/lib/types";
+import { useWhatsapp } from "@/context/WhatsappContext";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
 import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
@@ -27,7 +28,7 @@ export function Dashboard() {
   const [carregando, setCarregando] = useState(false);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [templateId, setTemplateId] = useState<number | null>(null);
-  const [whatsapp, setWhatsapp] = useState<WhatsappState>({ status: "desconectado", qrDataUrl: null, lastError: null });
+  const whatsapp = useWhatsapp();
 
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [contatoOverrides, setContatoOverrides] = useState<Record<string, Contact>>({});
@@ -76,20 +77,6 @@ export function Dashboard() {
       setTemplates(data);
       if (data.length > 0) setTemplateId(data[0].id);
     });
-    
-    const eventSource = new EventSource(`${api.baseUrl}/whatsapp/events`);
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        setWhatsapp(data);
-      } catch (err) {
-        console.error("Erro ao processar evento de WhatsApp:", err);
-      }
-    };
-
-    return () => {
-      eventSource.close();
-    };
   }, [carregarCards]);
 
   useSocketEvent<{ cardId: string; status: "sucesso" | "falha"; erro?: string }>("send:update", (payload) => {
