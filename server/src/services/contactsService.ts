@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { normalizePhone } from "../utils/phone";
 
 export interface Contact {
   id: number;
@@ -23,12 +24,12 @@ export function getContact(id: number): Contact | undefined {
 }
 
 export function createContact(nome: string, telefone: string, observacoes?: string): Contact {
-  const info = insertStmt.run(nome.trim(), telefone.trim(), observacoes?.trim() || null);
+  const info = insertStmt.run(nome.trim(), normalizePhone(telefone), observacoes?.trim() || null);
   return getContact(info.lastInsertRowid as number)!;
 }
 
 export function updateContact(id: number, nome: string, telefone: string, observacoes?: string): Contact | undefined {
-  updateStmt.run(nome.trim(), telefone.trim(), observacoes?.trim() || null, id);
+  updateStmt.run(nome.trim(), normalizePhone(telefone), observacoes?.trim() || null, id);
   return getContact(id);
 }
 

@@ -121,13 +121,15 @@ a partir do marcador `EMAIL ORIGINAL:` é ignorado pelo parser — só o que vem
 
 ### 3. Agenda de contatos
 
-Na tela **Agenda**, cadastre os clientes com nome e telefone no formato internacional
-(`55DDDNÚMERO`, ex: `5511999999999`), edite ou exclua a qualquer momento. O sistema cruza
-automaticamente o campo `NOME` do card com a agenda (match exato ou aproximado); quando não
-encontra um contato mas o card traz o campo `TELEFONE`, o cliente é **cadastrado automaticamente**
-(nome do card + telefone normalizado para o formato internacional). Quando não há `TELEFONE` no
-card e nenhum contato correspondente é encontrado, o Dashboard permite cadastrá-lo manualmente sem
-sair da tela.
+Na tela **Agenda**, cadastre os clientes com nome e telefone (digite no formato `(XX) XXXXX-XXXX`
+— o campo aplica a máscara automaticamente enquanto você digita; números antigos de 8 dígitos ficam
+`(XX) XXXX-XXXX`), edite ou exclua a qualquer momento. Internamente o telefone é sempre normalizado
+e salvo no formato internacional (`55DDDNÚMERO`), usado para o disparo no WhatsApp — a tela apenas
+exibe/edita no formato local. O sistema cruza automaticamente o campo `NOME` do card com a agenda
+(match exato ou aproximado); quando não encontra um contato mas o card traz o campo `TELEFONE`, o
+cliente é **cadastrado automaticamente** (nome do card + telefone normalizado). Quando não há
+`TELEFONE` no card e nenhum contato correspondente é encontrado, o Dashboard permite cadastrá-lo
+manualmente sem sair da tela.
 
 Também é possível **importar contatos em massa** pelo botão "Importar CSV/vCard": aceita o CSV
 exportado do Google/Android (Contatos → Exportar) ou um arquivo vCard (`.vcf`). Contatos com o

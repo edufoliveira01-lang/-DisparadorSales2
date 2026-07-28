@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Inbox, RefreshCw, Search, Send, WifiOff } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
+import { formatPhoneInput } from "@/lib/phone";
 import type { CardViewModel, Contact, Pericia, Template, WhatsappState } from "@/lib/types";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
 import { useToast } from "@/components/ui/Toast";
@@ -178,7 +179,13 @@ export function Dashboard() {
   function abrirEdicaoContato(card: CardViewModel) {
     const contato = contatoEfetivo(card);
     if (!contato) return;
-    setCadastro({ card, nome: contato.nome, telefone: contato.telefone, observacoes: contato.observacoes || "", contatoId: contato.id });
+    setCadastro({
+      card,
+      nome: contato.nome,
+      telefone: formatPhoneInput(contato.telefone),
+      observacoes: contato.observacoes || "",
+      contatoId: contato.id,
+    });
   }
 
   async function salvarCadastroRapido() {
@@ -511,8 +518,8 @@ export function Dashboard() {
               <Label>Telefone</Label>
               <Input
                 value={cadastro.telefone}
-                onChange={(e) => setCadastro({ ...cadastro, telefone: e.target.value })}
-                placeholder="Ex: 5511999999999"
+                onChange={(e) => setCadastro({ ...cadastro, telefone: formatPhoneInput(e.target.value) })}
+                placeholder="Ex: (11) 99999-8888"
               />
             </div>
             <div>
