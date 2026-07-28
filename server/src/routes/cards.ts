@@ -2,7 +2,12 @@ import { Router } from "express";
 import { createContact, listContacts, type Contact } from "../services/contactsService";
 import { getLastStatusForCard } from "../services/logsService";
 import { matchContact } from "../services/matcherService";
-import { isPericiaCompleta, parseCardDescriptionComOrigem, sortPericiasByDate } from "../services/parserService";
+import {
+  extractNomeFromCardTitle,
+  isPericiaCompleta,
+  parseCardDescriptionComOrigem,
+  sortPericiasByDate,
+} from "../services/parserService";
 import { getSetting } from "../services/settingsService";
 import { getCardsFromList, TrelloError } from "../services/trelloService";
 import { normalizePhone } from "../utils/phone";
@@ -42,7 +47,11 @@ cardsRouter.get("/", async (_req, res) => {
       let pericias = parseCardDescriptionComOrigem(card.desc);
       pericias = sortPericiasByDate(pericias);
       const incompleta = pericias.length === 0 || pericias.some((p) => !isPericiaCompleta(p));
-      const nomeCliente = pericias[0]?.nome || card.name;
+      // Prioridade de nome:
+      // 1. Campo NOME extraído da descrição (já vem dentro do objeto pericia)
+      // 2. Fallback inteligente do título do card (limpando datas e códigos)
+      // 3. Título bruto do card (último caso, dentro do próprio extractNomeFromCardTitle)
+      const nomeCliente = pericias[0]?.nome || extractNomeFromCardTitle(card.name);
       let match = matchContact(nomeCliente, [...contacts, ...novosContatos]);
 
       if (!match.exact) {

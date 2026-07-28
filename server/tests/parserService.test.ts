@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { isPericiaCompleta, parseCardDescription, parseCardDescriptionComOrigem, sortPericiasByDate } from "../src/services/parserService";
+import {
+  extractNomeFromCardTitle,
+  isPericiaCompleta,
+  parseCardDescription,
+  parseCardDescriptionComOrigem,
+  sortPericiasByDate,
+} from "../src/services/parserService";
 
 describe("parseCardDescription", () => {
   it("extrai 1 perícia com cabeçalho PERÍCIA MÉDICA", () => {
@@ -70,6 +76,24 @@ NOME: Maria Souza
     } finally {
       Date.now = originalNow;
     }
+  });
+
+  it("extrai o nome do cliente de um título de card complexo", () => {
+    const title = "P. SOCIAL - 05/08/2026 - 15:36 - FABIOLA CARLA ALBERTINI BORGES E SILVA - 5002573-34.2025.4.03.6141";
+    const nome = extractNomeFromCardTitle(title);
+    expect(nome).toBe("FABIOLA CARLA ALBERTINI BORGES E SILVA");
+  });
+
+  it("extrai o nome do cliente de um título com menos partes", () => {
+    const title = "MÉDICA - 10/09/2026 - JOÃO DA SILVA";
+    const nome = extractNomeFromCardTitle(title);
+    expect(nome).toBe("JOÃO DA SILVA");
+  });
+
+  it("mantém o título original se não seguir o padrão de hífens", () => {
+    const title = "Card Urgente de Maria";
+    const nome = extractNomeFromCardTitle(title);
+    expect(nome).toBe("Card Urgente de Maria");
   });
 
   it("trata como 1 perícia genérica quando não há cabeçalho de bloco", () => {
