@@ -4,6 +4,7 @@ export interface Pericia {
   horario: string;
   local: string;
   nome: string;
+  telefone: string;
 }
 
 type FieldName = keyof Pericia;
@@ -18,6 +19,7 @@ const FIELD_PATTERNS: Record<FieldName, RegExp> = {
   horario: /^[ \t]*HOR[AÁ]RIO\b\s*:?[ \t]*(.+)$/im,
   local: /^[ \t]*LOCAL\b\s*:?[ \t]*(.+)$/im,
   nome: /^[ \t]*NOME\b\s*:?[ \t]*(.+)$/im,
+  telefone: /^[ \t]*TELEFONE\b\s*:?[ \t]*(.+)$/im,
 };
 
 // Cabeçalhos de bloco: só contam quando ocupam a linha inteira (opcionalmente com
@@ -50,6 +52,7 @@ function extractPericiaFromBlock(block: string): Pericia {
     horario: extractField(block, FIELD_PATTERNS.horario),
     local: extractField(block, FIELD_PATTERNS.local),
     nome: extractField(block, FIELD_PATTERNS.nome),
+    telefone: extractField(block, FIELD_PATTERNS.telefone),
   };
 }
 

@@ -95,6 +95,7 @@ DATA: 15/07/2026
 HORÁRIO: 14:30
 LOCAL: Rua Exemplo, 123 - Centro
 NOME: Maria da Silva
+TELEFONE: (11) 99999-8888
 
 PERÍCIA SOCIAL:
 TIPO DE PERÍCIA: Assistente Social
@@ -102,6 +103,7 @@ DATA: 16/07/2026
 HORÁRIO: 09:00
 LOCAL: Fórum Central, sala 4
 NOME: Maria da Silva
+TELEFONE: (11) 99999-8888
 ```
 
 Se não houver nenhum dos dois cabeçalhos, mas os 5 campos existirem soltos na descrição, o card é
@@ -109,6 +111,10 @@ tratado como tendo **1 perícia genérica**. O parser é tolerante a maiúsculas
 opcionais (ex: `HORARIO` sem acento), `:` opcional, ordem dos campos e `;`/`,` no final de cada
 valor. O campo de tipo também aceita apenas `TIPO:` (com o valor já sendo o nome da perícia, ex:
 `TIPO: PERÍCIA MÉDICA`), em vez de `TIPO DE PERÍCIA:`.
+
+O campo `TELEFONE` é opcional e não afeta se a perícia é considerada completa, mas quando presente
+no formato `(XX) XXXXX-XXXX` é usado para **cadastrar o cliente automaticamente na agenda** (veja
+seção 3), sem precisar de nenhuma ação manual no Dashboard.
 
 Se a descrição colar o texto bruto do e-mail/intimação original após os campos estruturados, tudo
 a partir do marcador `EMAIL ORIGINAL:` é ignorado pelo parser — só o que vem antes é considerado.
@@ -118,7 +124,10 @@ a partir do marcador `EMAIL ORIGINAL:` é ignorado pelo parser — só o que vem
 Na tela **Agenda**, cadastre os clientes com nome e telefone no formato internacional
 (`55DDDNÚMERO`, ex: `5511999999999`), edite ou exclua a qualquer momento. O sistema cruza
 automaticamente o campo `NOME` do card com a agenda (match exato ou aproximado); quando não
-encontra um contato, o Dashboard permite cadastrá-lo sem sair da tela.
+encontra um contato mas o card traz o campo `TELEFONE`, o cliente é **cadastrado automaticamente**
+(nome do card + telefone normalizado para o formato internacional). Quando não há `TELEFONE` no
+card e nenhum contato correspondente é encontrado, o Dashboard permite cadastrá-lo manualmente sem
+sair da tela.
 
 Também é possível **importar contatos em massa** pelo botão "Importar CSV/vCard": aceita o CSV
 exportado do Google/Android (Contatos → Exportar) ou um arquivo vCard (`.vcf`). Contatos com o
