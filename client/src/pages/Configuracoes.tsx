@@ -67,8 +67,24 @@ export function Configuracoes() {
     if (data.trello_board_id) setBoardId(data.trello_board_id);
     if (data.trello_list_id) setListId(data.trello_list_id);
     if (data.trello_move_list_id) setMoveListId(data.trello_move_list_id);
-    if (data.trello_key && data.trello_token_configurado) setTrelloOk(true);
-  }, []);
+
+    if (data.trello_key && data.trello_token_configurado) {
+      setTrelloOk(true);
+      // Board/lista já configurados: busca com as credenciais salvas no servidor (sem passar
+      // key/token, que só ficam preenchidos no formulário se o usuário digitar de novo) para
+      // os dropdowns virem populados sem exigir revalidação a cada visita à tela.
+      try {
+        const boardsData = await api.get<TrelloBoard[]>("/trello/boards");
+        setBoards(boardsData);
+        if (data.trello_board_id) {
+          const listsData = await api.get<TrelloList[]>(`/trello/boards/${data.trello_board_id}/lists`);
+          setLists(listsData);
+        }
+      } catch (err) {
+        show(err instanceof ApiError ? err.message : "Erro ao carregar boards/listas do Trello.", "error");
+      }
+    }
+  }, [show]);
 
   useEffect(() => {
     loadSettings();
@@ -99,11 +115,14 @@ export function Configuracoes() {
     setLists([]);
     if (!id) return;
     try {
-      const key = trelloKey || settings?.trello_key || "";
-      const token = trelloToken || settings?.trello_token_configurado || "";
-      const listsData = await api.get<TrelloList[]>(
-        `/trello/boards/${id}/lists?key=${encodeURIComponent(key)}&token=${encodeURIComponent(token)}`
-      );
+      // Só manda key/token na query se o usuário digitou algo novo no formulário — vazio faz
+      // o backend cair de volta para as credenciais já salvas (trello_token_configurado é só
+      // uma flag de "já tem token", nunca o valor real, então não pode ser usado aqui).
+      const params = new URLSearchParams();
+      if (trelloKey) params.set("key", trelloKey);
+      if (trelloToken) params.set("token", trelloToken);
+      const qs = params.toString();
+      const listsData = await api.get<TrelloList[]>(`/trello/boards/${id}/lists${qs ? `?${qs}` : ""}`);
       setLists(listsData);
     } catch (err) {
       show(err instanceof ApiError ? err.message : "Erro ao buscar listas do board.", "error");
@@ -116,16 +135,19 @@ export function Configuracoes() {
       const board = boards.find((b) => b.id === boardId);
       const list = lists.find((l) => l.id === listId);
       const moveList = lists.find((l) => l.id === moveListId);
-      await api.put("/settings", {
-        trello_key: trelloKey,
-        trello_token: trelloToken,
+      const payload: Record<string, string> = {
         trello_board_id: boardId,
         trello_board_nome: board?.name || "",
         trello_list_id: listId,
         trello_list_nome: list?.name || "",
         trello_move_list_id: moveListId,
         trello_move_list_nome: moveList?.name || "",
-      });
+      };
+      // Só inclui key/token se o usuário digitou algo novo — do contrário, o campo some do
+      // corpo da requisição e o backend mantém a credencial já salva em vez de apagá-la.
+      if (trelloKey) payload.trello_key = trelloKey;
+      if (trelloToken) payload.trello_token = trelloToken;
+      await api.put("/settings", payload);
       show("Configurações do Trello salvas.", "success");
       loadSettings();
     } catch (err) {
