@@ -64,6 +64,8 @@ export interface Settings {
   trello_board_nome?: string;
   trello_list_id?: string;
   trello_list_nome?: string;
+  trello_move_list_id?: string;
+  trello_move_list_nome?: string;
   send_interval_min: string;
   send_interval_max: string;
   template_ativo_id?: string;
