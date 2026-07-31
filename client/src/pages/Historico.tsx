@@ -100,7 +100,7 @@ export function Historico() {
                 <Fragment key={log.id}>
                   <tr className="bg-white dark:bg-zinc-900">
                     <td className="px-5 py-3 text-zinc-500 dark:text-zinc-400">
-                      {new Date(log.created_at).toLocaleString("pt-BR")}
+                      {new Date(log.created_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
                     </td>
                     <td className="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{log.card_nome || "—"}</td>
                     <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{log.telefone || "—"}</td>

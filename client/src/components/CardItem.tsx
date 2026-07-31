@@ -144,7 +144,7 @@ export function CardItem({
 
             {card.ultimoEnvio?.status === "sucesso" && (
               <Badge tone="success">
-                <MessageCircle className="h-3.5 w-3.5" /> Enviado em {new Date(card.ultimoEnvio.data).toLocaleString("pt-BR")}
+                <MessageCircle className="h-3.5 w-3.5" /> Enviado em {new Date(card.ultimoEnvio.data).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
               </Badge>
             )}
             {card.ultimoEnvio?.status === "falha" && <Badge tone="danger">Falhou: {card.ultimoEnvio.erro}</Badge>}

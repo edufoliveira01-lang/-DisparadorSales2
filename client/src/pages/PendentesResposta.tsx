@@ -200,7 +200,7 @@ export function PendentesResposta() {
                           <Checkbox checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />
                         </td>
                         <td className="px-5 py-3 text-zinc-500 dark:text-zinc-400">
-                          {new Date(item.created_at).toLocaleString("pt-BR")}
+                          {new Date(item.created_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
                         </td>
                         <td className="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{item.card_nome || "—"}</td>
                         <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(item.telefone)}</td>
@@ -277,7 +277,7 @@ export function PendentesResposta() {
                           <Checkbox checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />
                         </td>
                         <td className="px-5 py-3 text-zinc-500 dark:text-zinc-400">
-                          {item.resolved_at ? new Date(item.resolved_at).toLocaleString("pt-BR") : "—"}
+                          {item.resolved_at ? new Date(item.resolved_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}
                         </td>
                         <td className="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{item.card_nome || "—"}</td>
                         <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(item.telefone)}</td>

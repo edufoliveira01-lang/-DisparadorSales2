@@ -402,9 +402,29 @@ class WhatsappManager {
       throw new Error("WhatsApp não está conectado.");
     }
     const client = this.client;
-    const sent = await this.comRetryTransitorio(() => client.sendMessage(chatId, mensagem));
-    if (sent?.id?._serialized) return sent.id._serialized;
-    return this.aguardarIdViaMessageCreate(chatId, mensagem);
+
+    // Registramos a intenção de capturar o ID via message_create ANTES de enviar, para evitar
+    // race condition onde a mensagem é criada e o evento disparado antes de começarmos a ouvir.
+    const promessaIdFallback = this.aguardarIdViaMessageCreate(chatId, mensagem);
+
+    try {
+      const sent = await this.comRetryTransitorio(() => client.sendMessage(chatId, mensagem));
+      if (sent?.id?._serialized) {
+        // Se o retorno direto funcionou, removemos do aguardo para não vazar memória
+        this.removerEnvioAguardando(chatId, mensagem);
+        return sent.id._serialized;
+      }
+    } catch (err) {
+      this.removerEnvioAguardando(chatId, mensagem);
+      throw err;
+    }
+
+    return promessaIdFallback;
+  }
+
+  private removerEnvioAguardando(chatId: string, texto: string) {
+    const idx = this.enviosAguardandoId.findIndex((e) => e.chatId === chatId && e.texto === texto);
+    if (idx !== -1) this.enviosAguardandoId.splice(idx, 1);
   }
 
   private aguardarIdViaMessageCreate(chatId: string, texto: string, timeoutMs = 8000): Promise<string | null> {
