@@ -90,6 +90,8 @@ class WhatsappManager {
   private listeners = new Set<Listener>();
   /** Envios recentes aguardando o id real via "message_create" (fallback do sendMessage). */
   private enviosAguardandoId: EnvioAguardandoId[] = [];
+  /** Acks que chegaram antes do log ser persistido no banco (race condition). */
+  private acksPendentes = new Map<string, number>();
 
   onChange(listener: Listener) {
     this.listeners.add(listener);
@@ -286,9 +288,18 @@ class WhatsappManager {
       try {
         const messageId = message.id._serialized;
         const log = updateLogAckByMessageId(messageId, ack);
-        if (log) emitEvent("send:ack-update", log);
         const pending = updatePendingReplyAckByMessageId(messageId, ack);
+
+        if (log) emitEvent("send:ack-update", log);
         if (pending) emitEvent("pendingReply:ack-update", pending);
+
+        // Se não encontrou nem log nem pendente, pode ser que o registro ainda não tenha sido
+        // salvo no banco (race condition). Guardamos o ack para tentar aplicar logo em seguida.
+        if (!log && !pending) {
+          this.acksPendentes.set(messageId, ack);
+          // Limpa do cache após 30 segundos para não vazar memória
+          setTimeout(() => this.acksPendentes.delete(messageId), 30000);
+        }
       } catch (err) {
         console.error("Erro ao processar confirmação de entrega/leitura:", err);
       }
@@ -345,6 +356,27 @@ class WhatsappManager {
       // best-effort — estamos encerrando de qualquer forma
     }
     this.client = null;
+  }
+
+  /**
+   * Tenta aplicar um ack que chegou antes do registro existir no banco.
+   * Chamado por logsService/pendingRepliesService logo após o INSERT.
+   */
+  processarAckPendente(messageId: string) {
+    const ack = this.acksPendentes.get(messageId);
+    if (ack === undefined) return;
+
+    const log = updateLogAckByMessageId(messageId, ack);
+    const pending = updatePendingReplyAckByMessageId(messageId, ack);
+
+    if (log) {
+      emitEvent("send:ack-update", log);
+      this.acksPendentes.delete(messageId);
+    }
+    if (pending) {
+      emitEvent("pendingReply:ack-update", pending);
+      this.acksPendentes.delete(messageId);
+    }
   }
 
   /**

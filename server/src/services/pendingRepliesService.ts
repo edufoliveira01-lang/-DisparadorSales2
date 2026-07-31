@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { normalizePhone } from "../utils/phone";
+import { whatsappManager } from "./whatsappService";
 
 export type PendingReplyStatus = "aguardando" | "respondido" | "cancelado";
 export type TipoResposta = "mensagem" | "reacao";
@@ -74,7 +75,15 @@ export function createPendingReply(
     telefone_digits: telefoneDigits,
     whatsapp_message_id: whatsappMessageId,
   });
-  return getStmt.get(info.lastInsertRowid) as PendingReply;
+  const pending = getStmt.get(info.lastInsertRowid) as PendingReply;
+
+  // Se o pendente tem um ID de mensagem, verifica se já chegou algum ack para ele enquanto
+  // o registro estava sendo criado (race condition).
+  if (pending.whatsapp_message_id) {
+    whatsappManager.processarAckPendente(pending.whatsapp_message_id);
+  }
+
+  return pending;
 }
 
 /** Atualiza o nível de confirmação (ack) do pendente associado a essa mensagem do WhatsApp. */

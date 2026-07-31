@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { whatsappManager } from "./whatsappService";
 
 export interface SendLog {
   id: number;
@@ -45,7 +46,15 @@ const updateAckStmt = db.prepare(
 
 export function createLog(entry: NewSendLog): SendLog {
   const info = insertStmt.run({ ...entry, whatsapp_message_id: entry.whatsapp_message_id ?? null });
-  return getStmt.get(info.lastInsertRowid) as SendLog;
+  const log = getStmt.get(info.lastInsertRowid) as SendLog;
+
+  // Se o log tem um ID de mensagem, verifica se já chegou algum ack para ele enquanto
+  // o registro estava sendo criado (race condition).
+  if (log.whatsapp_message_id) {
+    whatsappManager.processarAckPendente(log.whatsapp_message_id);
+  }
+
+  return log;
 }
 
 export function listLogs(): SendLog[] {
