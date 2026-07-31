@@ -145,7 +145,17 @@ class WhatsappManager {
       authStrategy: new LocalAuth({ dataPath: AUTH_DATA_PATH }),
       puppeteer: {
         headless: true,
-        args: ["--no-sandbox", "--disable-setuid-sandbox"],
+        // As três flags abaixo evitam que o Chromium aplique power-saving throttling à aba
+        // headless (tratada como "em segundo plano"). Sem elas, o app interno do WhatsApp Web
+        // pode atrasar/descartar o processamento de eventos vindos do WebSocket — inclusive os
+        // que disparam message_ack/message_create — mesmo com a conexão íntegra.
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-backgrounding-occluded-windows",
+          "--disable-renderer-backgrounding",
+          "--disable-background-timer-throttling",
+        ],
         protocolTimeout: 120000,
       },
       webVersionCache: { type: "none" },
