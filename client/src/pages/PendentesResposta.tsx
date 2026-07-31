@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, MessageSquareReply, RefreshCw, SmilePlus, Trash2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
+import { formatPhoneDisplay } from "@/lib/phone";
 import type { PendingReply } from "@/lib/types";
 import { useToast } from "@/components/ui/Toast";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
@@ -196,7 +197,7 @@ export function PendentesResposta() {
                           {new Date(item.created_at).toLocaleString("pt-BR")}
                         </td>
                         <td className="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{item.card_nome || "—"}</td>
-                        <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{item.telefone}</td>
+                        <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(item.telefone)}</td>
                         <td className="px-5 py-3">
                           <Badge tone={STATUS_BADGE[item.status].tone}>{STATUS_BADGE[item.status].label}</Badge>
                         </td>
@@ -269,7 +270,7 @@ export function PendentesResposta() {
                           {item.resolved_at ? new Date(item.resolved_at).toLocaleString("pt-BR") : "—"}
                         </td>
                         <td className="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{item.card_nome || "—"}</td>
-                        <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{item.telefone}</td>
+                        <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(item.telefone)}</td>
                         <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">
                           {item.tipo_resposta === "reacao" ? (
                             <span className="inline-flex items-center gap-1">
