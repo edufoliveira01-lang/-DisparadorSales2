@@ -274,9 +274,15 @@ class WhatsappManager {
     // mensagem quando o retorno direto falha (ver sendMessage()/aguardarIdViaMessageCreate()).
     client.on("message_create", (message: Message) => {
       if (!message.fromMe) return;
-      const idx = this.enviosAguardandoId.findIndex((e) => e.chatId === message.to && e.texto === message.body);
+      
+      // Procuramos o envio pendente mais antigo para este destinatário.
+      // Removemos a comparação exata de texto (message.body) porque o WhatsApp pode
+      // alterar a formatação (ex: links, emojis, espaços) invalidando o match.
+      const idx = this.enviosAguardandoId.findIndex((e) => e.chatId === message.to);
       if (idx === -1) return;
+      
       const [aguardando] = this.enviosAguardandoId.splice(idx, 1);
+      console.log(`[WhatsApp] ID capturado via fallback para ${message.to}: ${message.id._serialized}`);
       aguardando.resolve(message.id._serialized);
     });
 
@@ -461,8 +467,11 @@ class WhatsappManager {
   }
 
   private removerEnvioAguardando(chatId: string, texto: string) {
+    // Removemos o match mais antigo para este chat e texto para manter a fila limpa
     const idx = this.enviosAguardandoId.findIndex((e) => e.chatId === chatId && e.texto === texto);
-    if (idx !== -1) this.enviosAguardandoId.splice(idx, 1);
+    if (idx !== -1) {
+      this.enviosAguardandoId.splice(idx, 1);
+    }
   }
 
   private aguardarIdViaMessageCreate(chatId: string, texto: string, timeoutMs = 8000): Promise<string | null> {
