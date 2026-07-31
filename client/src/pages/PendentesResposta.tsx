@@ -205,7 +205,7 @@ export function PendentesResposta() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Pendentes de Resposta</h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
@@ -213,7 +213,7 @@ export function PendentesResposta() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={filtro} onChange={(e) => setFiltro(e.target.value as Filtro)} className="w-44">
+          <Select value={filtro} onChange={(e) => setFiltro(e.target.value as Filtro)} className="w-full sm:w-44">
             {FILTRO_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
@@ -271,7 +271,8 @@ export function PendentesResposta() {
             ) : (
               <>
                 <div className="overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800">
-                  <table className="w-full text-sm">
+                  <div className="overflow-x-auto">
+                  <table className="w-full min-w-[820px] text-sm">
                     <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
                       <tr>
                         <th className="w-10 px-5 py-3">
@@ -280,12 +281,12 @@ export function PendentesResposta() {
                             onChange={() => alternarSelecionarTodos(aguardandoPaginado)}
                           />
                         </th>
-                        <th className="px-5 py-3">Enviado em</th>
-                        <th className="px-5 py-3">Cliente</th>
-                        <th className="px-5 py-3">Telefone</th>
-                        <th className="px-5 py-3">Entrega</th>
-                        <th className="px-5 py-3">Status</th>
-                        <th className="px-5 py-3 text-right">Ações</th>
+                        <th className="whitespace-nowrap px-5 py-3">Enviado em</th>
+                        <th className="whitespace-nowrap px-5 py-3">Cliente</th>
+                        <th className="whitespace-nowrap px-5 py-3">Telefone</th>
+                        <th className="whitespace-nowrap px-5 py-3">Entrega</th>
+                        <th className="whitespace-nowrap px-5 py-3">Status</th>
+                        <th className="whitespace-nowrap px-5 py-3 text-right">Ações</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -294,11 +295,11 @@ export function PendentesResposta() {
                           <td className="px-5 py-3">
                             <Checkbox checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />
                           </td>
-                          <td className="px-5 py-3 text-zinc-500 dark:text-zinc-400">
+                          <td className="whitespace-nowrap px-5 py-3 text-zinc-500 dark:text-zinc-400">
                             {new Date(item.created_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
                           </td>
-                          <td className="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{item.card_nome || "—"}</td>
-                          <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(item.telefone)}</td>
+                          <td className="whitespace-nowrap px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{item.card_nome || "—"}</td>
+                          <td className="whitespace-nowrap px-5 py-3 text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(item.telefone)}</td>
                           <td className="px-5 py-3">
                             <AckIndicator ack={item.ack} />
                           </td>
@@ -340,6 +341,7 @@ export function PendentesResposta() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 </div>
                 <Pagination
                   page={paginaAguardando}
@@ -355,7 +357,8 @@ export function PendentesResposta() {
             <section className="space-y-3">
               <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Histórico recente</h2>
               <div className="overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800">
-                <table className="w-full text-sm">
+                <div className="overflow-x-auto">
+                <table className="w-full min-w-[900px] text-sm">
                   <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
                     <tr>
                       <th className="w-10 px-5 py-3">
@@ -364,13 +367,13 @@ export function PendentesResposta() {
                           onChange={() => alternarSelecionarTodos(resolvidosPaginado)}
                         />
                       </th>
-                      <th className="px-5 py-3">Resolvido em</th>
-                      <th className="px-5 py-3">Cliente</th>
-                      <th className="px-5 py-3">Telefone</th>
-                      <th className="px-5 py-3">Entrega</th>
-                      <th className="px-5 py-3">Como respondeu</th>
-                      <th className="px-5 py-3">Status</th>
-                      <th className="px-5 py-3 text-right">Ações</th>
+                      <th className="whitespace-nowrap px-5 py-3">Resolvido em</th>
+                      <th className="whitespace-nowrap px-5 py-3">Cliente</th>
+                      <th className="whitespace-nowrap px-5 py-3">Telefone</th>
+                      <th className="whitespace-nowrap px-5 py-3">Entrega</th>
+                      <th className="whitespace-nowrap px-5 py-3">Como respondeu</th>
+                      <th className="whitespace-nowrap px-5 py-3">Status</th>
+                      <th className="whitespace-nowrap px-5 py-3 text-right">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -379,15 +382,15 @@ export function PendentesResposta() {
                         <td className="px-5 py-3">
                           <Checkbox checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />
                         </td>
-                        <td className="px-5 py-3 text-zinc-500 dark:text-zinc-400">
+                        <td className="whitespace-nowrap px-5 py-3 text-zinc-500 dark:text-zinc-400">
                           {item.resolved_at ? new Date(item.resolved_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}
                         </td>
-                        <td className="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{item.card_nome || "—"}</td>
-                        <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(item.telefone)}</td>
+                        <td className="whitespace-nowrap px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{item.card_nome || "—"}</td>
+                        <td className="whitespace-nowrap px-5 py-3 text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(item.telefone)}</td>
                         <td className="px-5 py-3">
                           <AckIndicator ack={item.ack} />
                         </td>
-                        <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">
+                        <td className="max-w-[220px] truncate px-5 py-3 text-zinc-600 dark:text-zinc-400">
                           {item.tipo_resposta === "reacao" ? (
                             <span className="inline-flex items-center gap-1">
                               <SmilePlus className="h-3.5 w-3.5" /> Reação {item.resposta_preview}
@@ -420,6 +423,7 @@ export function PendentesResposta() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
               <Pagination
                 page={paginaResolvidos}

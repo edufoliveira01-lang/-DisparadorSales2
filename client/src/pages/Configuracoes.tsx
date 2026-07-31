@@ -233,14 +233,14 @@ export function Configuracoes() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Configurações · DisparaZap</h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
             Gerencie seu acesso, integração com o Trello e WhatsApp.
           </p>
         </div>
-        <Button variant="outline" onClick={handleLogout} className="text-red-600 hover:bg-red-50 hover:text-red-700">
+        <Button variant="outline" onClick={handleLogout} className="self-start text-red-600 hover:bg-red-50 hover:text-red-700">
           <LogOut className="h-4 w-4" /> Sair do sistema
         </Button>
       </div>
@@ -252,7 +252,7 @@ export function Configuracoes() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label>Usuário</Label>
               <div className="relative">
@@ -265,7 +265,7 @@ export function Configuracoes() {
               <Input type="email" value={emailRecuperacao} onChange={(e) => setEmailRecuperacao(e.target.value)} placeholder="email@exemplo.com" />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label>Nova Senha (deixe em branco para não alterar)</Label>
               <Input type="password" value={novaSenha} onChange={(e) => setNovaSenha(e.target.value)} placeholder="••••••••" />
@@ -295,7 +295,7 @@ export function Configuracoes() {
           )}
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label>API Key</Label>
               <Input
@@ -324,7 +324,7 @@ export function Configuracoes() {
           </Button>
 
           {(boards.length > 0 || settings?.trello_board_id) && (
-            <div className="grid grid-cols-2 gap-4 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-zinc-100 pt-4 dark:border-zinc-800">
               <div>
                 <Label>Board</Label>
                 <Select value={boardId} onChange={(e) => handleSelectBoard(e.target.value)}>
@@ -468,7 +468,7 @@ export function Configuracoes() {
             Ao enviar em lote, o sistema aguarda um tempo aleatório entre esses limites antes de cada mensagem, para reduzir o
             risco de bloqueio da conta.
           </p>
-          <div className="grid grid-cols-2 gap-4 max-w-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-sm">
             <div>
               <Label>Mínimo (segundos)</Label>
               <Input type="number" min={1} value={intervalMin} onChange={(e) => setIntervalMin(e.target.value)} />

@@ -165,24 +165,24 @@ export function Templates() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Templates</h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Edite as mensagens enviadas aos clientes.</p>
         </div>
-        <Button onClick={novoTemplate}>
+        <Button onClick={novoTemplate} className="self-start">
           <Plus className="h-4 w-4" /> Novo template
         </Button>
       </div>
 
-      <div className="grid grid-cols-[220px_1fr] gap-6">
-        <div className="space-y-1.5">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[220px_1fr]">
+        <div className="flex gap-1.5 overflow-x-auto pb-1 lg:block lg:space-y-1.5 lg:overflow-visible lg:pb-0">
           {templates?.map((t) => (
             <button
               key={t.id}
               onClick={() => selecionarTemplate(t)}
               className={cn(
-                "flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors",
+                "flex shrink-0 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors lg:w-full lg:shrink",
                 selecionadoId === t.id
                   ? "bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300"
                   : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
@@ -197,12 +197,12 @@ export function Templates() {
         <div className="space-y-4">
           <Card>
             <CardContent className="space-y-4 pt-5">
-              <div className="flex items-end gap-4">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
                 <div className="flex-1">
                   <Label>Nome do template</Label>
                   <Input value={form.nome} onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))} />
                 </div>
-                <div className="w-56">
+                <div className="sm:w-56">
                   <Label>Envio com 2 perícias</Label>
                   <Select
                     value={form.modo_envio_2_pericias}
