@@ -8,6 +8,7 @@ import { authRouter } from "./routes/auth";
 import { getSession } from "./services/authService";
 import { contactsRouter } from "./routes/contacts";
 import { logsRouter } from "./routes/logs";
+import { pendingRepliesRouter } from "./routes/pendingReplies";
 import { sendRouter } from "./routes/send";
 import { settingsRouter } from "./routes/settings";
 import { templatesRouter } from "./routes/templates";
@@ -51,6 +52,7 @@ app.use("/api/whatsapp", whatsappRouter);
 app.use("/api/cards", cardsRouter);
 app.use("/api/send", sendRouter);
 app.use("/api/logs", logsRouter);
+app.use("/api/pending-replies", pendingRepliesRouter);
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });

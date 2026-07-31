@@ -1,9 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import QRCode from "qrcode";
-import { Client, LocalAuth } from "whatsapp-web.js";
+import { Client, LocalAuth, type Message, type Reaction } from "whatsapp-web.js";
 import { dataDir } from "../db";
 import { emitEvent } from "../websocket";
+import { normalizePhone } from "../utils/phone";
+import { getSetting } from "./settingsService";
+import { moveCard } from "./trelloService";
+import { findAwaitingByPhoneDigits, resolvePendingReply, type TipoResposta } from "./pendingRepliesService";
 
 export type WhatsappStatus = "desconectado" | "inicializando" | "aguardando_qr" | "autenticado" | "conectado" | "falha";
 
@@ -216,6 +220,26 @@ class WhatsappManager {
       failAndCleanUp("desconectado", String(reason));
     });
 
+    // "message" só dispara para mensagens recebidas (não inclui as que o próprio bot envia).
+    // Chega uma mensagem de QUALQUER conversa; o filtro por "está esperando resposta desse
+    // telefone" acontece dentro de resolvePendingReplyForPhone.
+    client.on("message", (message: Message) => {
+      if (message.fromMe || message.from.endsWith("@g.us")) return;
+      this.resolvePendingReplyForPhone(message.from, "mensagem", message.body ? message.body.slice(0, 300) : null).catch(
+        (err) => console.error("Erro ao processar mensagem recebida:", err)
+      );
+    });
+
+    // Só considera reações feitas em mensagens que NÓS enviamos (msgId.fromMe) — reações em
+    // mensagens de terceiros na mesma conversa são ignoradas. reaction.reaction vem vazia
+    // quando o cliente remove a reação, então também ignoramos esse caso.
+    client.on("message_reaction", (reaction: Reaction) => {
+      if (!reaction.msgId.fromMe || !reaction.reaction) return;
+      this.resolvePendingReplyForPhone(reaction.senderId, "reacao", reaction.reaction).catch((err) =>
+        console.error("Erro ao processar reação recebida:", err)
+      );
+    });
+
     client.initialize().catch((err) => {
       failAndCleanUp("falha", err?.message ?? String(err));
     });
@@ -318,6 +342,31 @@ class WhatsappManager {
     }
     const client = this.client;
     await this.comRetryTransitorio(() => client.sendMessage(chatId, mensagem));
+  }
+
+  /**
+   * Casa o remetente de uma mensagem/reação recebida com um pendente "aguardando" pelo mesmo
+   * telefone (criado em dispatchService ao enviar, quando há lista de confirmação configurada).
+   * Sem pendente para esse telefone, a mensagem é apenas ignorada — não há nada para mover.
+   */
+  private async resolvePendingReplyForPhone(chatId: string, tipo: TipoResposta, preview: string | null): Promise<void> {
+    const telefoneDigits = normalizePhone(chatId.split("@")[0]);
+    const pending = findAwaitingByPhoneDigits(telefoneDigits);
+    if (!pending) return;
+
+    const resolved = resolvePendingReply(pending.id, tipo, preview);
+    emitEvent("pendingReply:resolved", resolved);
+
+    const trelloKey = getSetting("trello_key");
+    const trelloToken = getSetting("trello_token");
+    const confirmListId = getSetting("trello_confirm_list_id");
+    if (trelloKey && trelloToken && confirmListId) {
+      try {
+        await moveCard(trelloKey, trelloToken, pending.card_id, confirmListId);
+      } catch (err) {
+        console.error(`Erro ao mover cartão ${pending.card_id} no Trello após resposta do cliente:`, err);
+      }
+    }
   }
 }
 

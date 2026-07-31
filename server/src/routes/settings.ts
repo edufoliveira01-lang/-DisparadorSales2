@@ -28,6 +28,8 @@ settingsRouter.put("/", (req, res) => {
     "auto_sync_minutos",
     "trello_move_list_id",
     "trello_move_list_nome",
+    "trello_confirm_list_id",
+    "trello_confirm_list_nome",
   ];
 
   for (const key of allowedKeys) {

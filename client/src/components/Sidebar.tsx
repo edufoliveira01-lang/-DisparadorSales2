@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Users, MessageSquareText, History, Settings, Send } from "lucide-react";
+import { LayoutDashboard, Users, MessageSquareText, History, MessageSquareReply, Settings, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const items = [
@@ -7,6 +7,7 @@ const items = [
   { to: "/agenda", label: "Agenda", icon: Users },
   { to: "/templates", label: "Templates", icon: MessageSquareText },
   { to: "/historico", label: "Histórico", icon: History },
+  { to: "/pendentes", label: "Pendentes de Resposta", icon: MessageSquareReply },
   { to: "/configuracoes", label: "Configurações", icon: Settings },
 ];
 
