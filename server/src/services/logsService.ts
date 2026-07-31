@@ -43,6 +43,7 @@ const getByMessageIdStmt = db.prepare("SELECT * FROM send_logs WHERE whatsapp_me
 const updateAckStmt = db.prepare(
   "UPDATE send_logs SET ack = ?, ack_updated_at = CURRENT_TIMESTAMP WHERE whatsapp_message_id = ?"
 );
+const deleteStmt = db.prepare("DELETE FROM send_logs WHERE id = ?");
 
 export function createLog(entry: NewSendLog): SendLog {
   const info = insertStmt.run({ ...entry, whatsapp_message_id: entry.whatsapp_message_id ?? null });
@@ -74,4 +75,16 @@ export function updateLogAckByMessageId(whatsappMessageId: string, ack: number):
   const info = updateAckStmt.run(ack, whatsappMessageId);
   if (info.changes === 0) return undefined;
   return getByMessageIdStmt.get(whatsappMessageId) as SendLog;
+}
+
+export function deleteLog(id: number): void {
+  deleteStmt.run(id);
+}
+
+/** Apaga em massa; ids inexistentes são ignorados. Retorna quantos registros foram de fato apagados. */
+export function deleteLogs(ids: number[]): number {
+  if (ids.length === 0) return 0;
+  const placeholders = ids.map(() => "?").join(",");
+  const info = db.prepare(`DELETE FROM send_logs WHERE id IN (${placeholders})`).run(...ids);
+  return info.changes;
 }

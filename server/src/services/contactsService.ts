@@ -36,3 +36,11 @@ export function updateContact(id: number, nome: string, telefone: string, observ
 export function deleteContact(id: number): void {
   deleteStmt.run(id);
 }
+
+/** Apaga em massa; ids inexistentes são ignorados. Retorna quantos registros foram de fato apagados. */
+export function deleteContacts(ids: number[]): number {
+  if (ids.length === 0) return 0;
+  const placeholders = ids.map(() => "?").join(",");
+  const info = db.prepare(`DELETE FROM contacts WHERE id IN (${placeholders})`).run(...ids);
+  return info.changes;
+}

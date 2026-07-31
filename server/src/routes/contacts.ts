@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createContact, deleteContact, getContact, listContacts, updateContact } from "../services/contactsService";
+import { createContact, deleteContact, deleteContacts, getContact, listContacts, updateContact } from "../services/contactsService";
 import { parseImportContent } from "../services/contactImportService";
 import { matchContact } from "../services/matcherService";
 
@@ -34,6 +34,16 @@ contactsRouter.delete("/:id", (req, res) => {
   if (!getContact(id)) return res.status(404).json({ error: "Contato não encontrado." });
   deleteContact(id);
   res.status(204).send();
+});
+
+contactsRouter.post("/apagar-em-massa", (req, res) => {
+  const { ids } = req.body as { ids?: number[] };
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: "Nenhum contato selecionado." });
+  }
+
+  const apagados = deleteContacts(ids.filter((id) => Number.isInteger(id)));
+  res.json({ ok: true, apagados });
 });
 
 contactsRouter.get("/match/:nome", (req, res) => {

@@ -5,10 +5,14 @@ import { formatPhoneDisplay, formatPhoneInput } from "@/lib/phone";
 import type { Contact } from "@/lib/types";
 import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { Input, Label, Textarea } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
+import { Pagination } from "@/components/ui/Pagination";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
+
+const ITENS_POR_PAGINA = 20;
 
 export function Agenda() {
   const { show } = useToast();
@@ -22,6 +26,9 @@ export function Agenda() {
   const [salvando, setSalvando] = useState(false);
   const [excluindo, setExcluindo] = useState<number | null>(null);
   const [importando, setImportando] = useState(false);
+  const [pagina, setPagina] = useState(0);
+  const [selecionados, setSelecionados] = useState<Set<number>>(new Set());
+  const [apagandoSelecionados, setApagandoSelecionados] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function carregar() {
@@ -42,6 +49,20 @@ export function Agenda() {
       (c) => c.nome.toLowerCase().includes(termo) || (termoDigits && c.telefone.replace(/\D/g, "").includes(termoDigits))
     );
   }, [contacts, busca]);
+
+  useEffect(() => {
+    setPagina(0);
+  }, [busca]);
+
+  const contatosPaginados = useMemo(
+    () => filtrados.slice(pagina * ITENS_POR_PAGINA, (pagina + 1) * ITENS_POR_PAGINA),
+    [filtrados, pagina]
+  );
+
+  useEffect(() => {
+    const ultimaPagina = Math.max(0, Math.ceil(filtrados.length / ITENS_POR_PAGINA) - 1);
+    if (pagina > ultimaPagina) setPagina(ultimaPagina);
+  }, [filtrados, pagina]);
 
   function abrirNovo() {
     setEditando(null);
@@ -107,12 +128,54 @@ export function Agenda() {
     try {
       await api.delete(`/contacts/${id}`);
       show("Contato removido.", "info");
+      setSelecionados((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
       carregar();
     } catch (err) {
       show(err instanceof ApiError ? err.message : "Erro ao remover contato.", "error");
     } finally {
       setExcluindo(null);
     }
+  }
+
+  async function excluirSelecionados() {
+    if (selecionados.size === 0) return;
+    setApagandoSelecionados(true);
+    try {
+      const ids = Array.from(selecionados);
+      await api.post("/contacts/apagar-em-massa", { ids });
+      show(`${ids.length} contato(s) removido(s).`, "success");
+      setSelecionados(new Set());
+      carregar();
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao remover contatos selecionados.", "error");
+    } finally {
+      setApagandoSelecionados(false);
+    }
+  }
+
+  function alternarSelecionado(id: number) {
+    setSelecionados((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function alternarSelecionarTodos() {
+    setSelecionados((prev) => {
+      const todosMarcados = contatosPaginados.length > 0 && contatosPaginados.every((c) => prev.has(c.id));
+      const next = new Set(prev);
+      for (const contato of contatosPaginados) {
+        if (todosMarcados) next.delete(contato.id);
+        else next.add(contato.id);
+      }
+      return next;
+    });
   }
 
   return (
@@ -147,6 +210,22 @@ export function Agenda() {
         Aceita CSV exportado do Google/Android (Contatos → Exportar) ou arquivo vCard (.vcf).
       </p>
 
+      {selecionados.size > 0 && (
+        <div className="flex items-center justify-between rounded-xl border border-accent-200 bg-accent-50 px-4 py-3 dark:border-accent-900 dark:bg-accent-900/20">
+          <p className="text-sm font-medium text-accent-800 dark:text-accent-300">
+            {selecionados.size} contato(s) selecionado(s)
+          </p>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setSelecionados(new Set())}>
+              Limpar seleção
+            </Button>
+            <Button variant="danger" size="sm" onClick={excluirSelecionados} loading={apagandoSelecionados}>
+              <Trash2 className="h-3.5 w-3.5" /> Apagar selecionados
+            </Button>
+          </div>
+        </div>
+      )}
+
       {contacts === null ? (
         <div className="space-y-2">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -161,37 +240,49 @@ export function Agenda() {
           action={!busca && <Button onClick={abrirNovo}><Plus className="h-4 w-4" /> Adicionar contato</Button>}
         />
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800">
-          <table className="w-full text-sm">
-            <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
-              <tr>
-                <th className="px-5 py-3">Nome</th>
-                <th className="px-5 py-3">Telefone</th>
-                <th className="px-5 py-3">Observações</th>
-                <th className="px-5 py-3 text-right">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {filtrados.map((c) => (
-                <tr key={c.id} className="bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800/50">
-                  <td className="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</td>
-                  <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(c.telefone)}</td>
-                  <td className="px-5 py-3 text-zinc-500 dark:text-zinc-400">{c.observacoes || "—"}</td>
-                  <td className="px-5 py-3">
-                    <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => abrirEdicao(c)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => excluir(c.id)} loading={excluindo === c.id}>
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
-                    </div>
-                  </td>
+        <>
+          <div className="overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800">
+            <table className="w-full text-sm">
+              <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
+                <tr>
+                  <th className="w-10 px-5 py-3">
+                    <Checkbox
+                      checked={contatosPaginados.length > 0 && contatosPaginados.every((c) => selecionados.has(c.id))}
+                      onChange={alternarSelecionarTodos}
+                    />
+                  </th>
+                  <th className="px-5 py-3">Nome</th>
+                  <th className="px-5 py-3">Telefone</th>
+                  <th className="px-5 py-3">Observações</th>
+                  <th className="px-5 py-3 text-right">Ações</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                {contatosPaginados.map((c) => (
+                  <tr key={c.id} className="bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800/50">
+                    <td className="px-5 py-3">
+                      <Checkbox checked={selecionados.has(c.id)} onChange={() => alternarSelecionado(c.id)} />
+                    </td>
+                    <td className="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</td>
+                    <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(c.telefone)}</td>
+                    <td className="px-5 py-3 text-zinc-500 dark:text-zinc-400">{c.observacoes || "—"}</td>
+                    <td className="px-5 py-3">
+                      <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => abrirEdicao(c)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => excluir(c.id)} loading={excluindo === c.id}>
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pagination page={pagina} totalItems={filtrados.length} pageSize={ITENS_POR_PAGINA} onPageChange={setPagina} />
+        </>
       )}
 
       <Modal
