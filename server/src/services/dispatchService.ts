@@ -54,9 +54,14 @@ export async function dispatchSingle(item: SendItem, templateId: number): Promis
 
     // Se houver uma lista de confirmação configurada, passamos a monitorar esse telefone:
     // quando o cliente responder ou reagir à mensagem, o cartão é movido automaticamente.
+    // Importante: usamos o chatId já resolvido pelo WhatsApp (linha acima), não item.telefone
+    // bruto — números brasileiros têm uma ambiguidade conhecida do 9º dígito, e o JID que
+    // chega em "message"/"message_reaction" é sempre o canônico do WhatsApp. Guardar o
+    // telefone bruto do contato podia gerar um telefone_digits que nunca batia com o remetente
+    // real da resposta, deixando o pendente preso em "aguardando" para sempre.
     const confirmListId = getSetting("trello_confirm_list_id");
     if (confirmListId) {
-      createPendingReply(item.cardId, item.nomeCliente, item.telefone);
+      createPendingReply(item.cardId, item.nomeCliente, chatId.split("@")[0]);
     }
 
     const log = createLog({
