@@ -66,7 +66,22 @@ export interface Settings {
   trello_list_nome?: string;
   trello_move_list_id?: string;
   trello_move_list_nome?: string;
+  trello_confirm_list_id?: string;
+  trello_confirm_list_nome?: string;
   send_interval_min: string;
   send_interval_max: string;
   template_ativo_id?: string;
+}
+
+export interface PendingReply {
+  id: number;
+  card_id: string;
+  card_nome: string | null;
+  telefone: string;
+  telefone_digits: string;
+  status: "aguardando" | "respondido" | "cancelado";
+  tipo_resposta: "mensagem" | "reacao" | null;
+  resposta_preview: string | null;
+  created_at: string;
+  resolved_at: string | null;
 }

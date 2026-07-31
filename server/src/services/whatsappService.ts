@@ -1,9 +1,19 @@
 import fs from "node:fs";
 import path from "node:path";
 import QRCode from "qrcode";
-import { Client, LocalAuth } from "whatsapp-web.js";
+import { Client, LocalAuth, type Message, type Reaction } from "whatsapp-web.js";
 import { dataDir } from "../db";
 import { emitEvent } from "../websocket";
+import { normalizePhone } from "../utils/phone";
+import { getSetting } from "./settingsService";
+import { moveCard } from "./trelloService";
+import {
+  findAwaitingByPhoneDigits,
+  listPendingReplies,
+  resolvePendingReply,
+  type PendingReply,
+  type TipoResposta,
+} from "./pendingRepliesService";
 
 export type WhatsappStatus = "desconectado" | "inicializando" | "aguardando_qr" | "autenticado" | "conectado" | "falha";
 
@@ -206,6 +216,15 @@ class WhatsappManager {
     client.on("ready", () => {
       limparReadyWatchdog();
       this.setState({ status: "conectado", qrDataUrl: null });
+
+      // "ready" dispara em toda reconexão (não só na primeira). O whatsapp-web.js não reemite
+      // "message"/"message_reaction" para o que chegou enquanto a sessão estava desconectada —
+      // esses eventos só pegam o que chega ao vivo, depois do client já pronto — então sem essa
+      // checagem, uma resposta de texto do cliente durante uma queda ficaria presa em
+      // "aguardando" para sempre.
+      this.reconciliarPendentesAoReconectar().catch((err) =>
+        console.error("Erro ao verificar mensagens perdidas durante a desconexão:", err)
+      );
     });
 
     client.on("auth_failure", (msg) => {
@@ -214,6 +233,26 @@ class WhatsappManager {
 
     client.on("disconnected", (reason) => {
       failAndCleanUp("desconectado", String(reason));
+    });
+
+    // "message" só dispara para mensagens recebidas (não inclui as que o próprio bot envia).
+    // Chega uma mensagem de QUALQUER conversa; o filtro por "está esperando resposta desse
+    // telefone" acontece dentro de resolvePendingReplyForPhone.
+    client.on("message", (message: Message) => {
+      if (message.fromMe || message.from.endsWith("@g.us")) return;
+      this.resolvePendingReplyForPhone(message.from, "mensagem", message.body ? message.body.slice(0, 300) : null).catch(
+        (err) => console.error("Erro ao processar mensagem recebida:", err)
+      );
+    });
+
+    // Só considera reações feitas em mensagens que NÓS enviamos (msgId.fromMe) — reações em
+    // mensagens de terceiros na mesma conversa são ignoradas. reaction.reaction vem vazia
+    // quando o cliente remove a reação, então também ignoramos esse caso.
+    client.on("message_reaction", (reaction: Reaction) => {
+      if (!reaction.msgId.fromMe || !reaction.reaction) return;
+      this.resolvePendingReplyForPhone(reaction.senderId, "reacao", reaction.reaction).catch((err) =>
+        console.error("Erro ao processar reação recebida:", err)
+      );
     });
 
     client.initialize().catch((err) => {
@@ -318,6 +357,67 @@ class WhatsappManager {
     }
     const client = this.client;
     await this.comRetryTransitorio(() => client.sendMessage(chatId, mensagem));
+  }
+
+  /**
+   * Verifica, para cada pendente ainda "aguardando", se o cliente já respondeu por texto
+   * enquanto a sessão estava fora do ar. Reações perdidas durante a desconexão não têm como
+   * ser recuperadas por aqui (a lib não expõe reações antigas por mensagem de forma prática) —
+   * ficam para o usuário resolver manualmente na tela de Pendentes de Resposta.
+   */
+  private async reconciliarPendentesAoReconectar(): Promise<void> {
+    const client = this.client;
+    if (!client) return;
+
+    const pendentes = listPendingReplies().filter((p) => p.status === "aguardando");
+    for (const pendente of pendentes) {
+      try {
+        await this.verificarMensagemPerdida(client, pendente);
+      } catch (err) {
+        console.error(`Erro ao verificar mensagens perdidas do pendente ${pendente.id}:`, err);
+      }
+    }
+  }
+
+  private async verificarMensagemPerdida(client: Client, pendente: PendingReply): Promise<void> {
+    const numberId = await this.comRetryTransitorio(() => client.getNumberId(pendente.telefone_digits));
+    if (!numberId) return;
+
+    const chat = await client.getChatById(numberId._serialized);
+    const mensagens = await chat.fetchMessages({ limit: 50, fromMe: false });
+
+    // created_at do SQLite vem como "YYYY-MM-DD HH:MM:SS" em UTC, sem indicação de fuso —
+    // sem o "Z", o Date trataria como horário local e compararia timestamps errado.
+    const criadoEmMs = new Date(`${pendente.created_at.replace(" ", "T")}Z`).getTime();
+    const resposta = mensagens.find((m) => m.timestamp * 1000 >= criadoEmMs);
+    if (!resposta) return;
+
+    await this.resolvePendingReplyForPhone(numberId._serialized, "mensagem", resposta.body ? resposta.body.slice(0, 300) : null);
+  }
+
+  /**
+   * Casa o remetente de uma mensagem/reação recebida com um pendente "aguardando" pelo mesmo
+   * telefone (criado em dispatchService ao enviar, quando há lista de confirmação configurada).
+   * Sem pendente para esse telefone, a mensagem é apenas ignorada — não há nada para mover.
+   */
+  private async resolvePendingReplyForPhone(chatId: string, tipo: TipoResposta, preview: string | null): Promise<void> {
+    const telefoneDigits = normalizePhone(chatId.split("@")[0]);
+    const pending = findAwaitingByPhoneDigits(telefoneDigits);
+    if (!pending) return;
+
+    const resolved = resolvePendingReply(pending.id, tipo, preview);
+    emitEvent("pendingReply:resolved", resolved);
+
+    const trelloKey = getSetting("trello_key");
+    const trelloToken = getSetting("trello_token");
+    const confirmListId = getSetting("trello_confirm_list_id");
+    if (trelloKey && trelloToken && confirmListId) {
+      try {
+        await moveCard(trelloKey, trelloToken, pending.card_id, confirmListId);
+      } catch (err) {
+        console.error(`Erro ao mover cartão ${pending.card_id} no Trello após resposta do cliente:`, err);
+      }
+    }
   }
 }
 

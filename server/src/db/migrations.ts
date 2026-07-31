@@ -46,6 +46,22 @@ export function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_send_logs_card_id ON send_logs(card_id);
     CREATE INDEX IF NOT EXISTS idx_contacts_nome ON contacts(nome);
 
+    CREATE TABLE IF NOT EXISTS pending_replies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      card_id TEXT NOT NULL,
+      card_nome TEXT,
+      telefone TEXT NOT NULL,
+      telefone_digits TEXT NOT NULL,
+      status TEXT CHECK(status IN ('aguardando','respondido','cancelado')) DEFAULT 'aguardando',
+      tipo_resposta TEXT CHECK(tipo_resposta IN ('mensagem','reacao')),
+      resposta_preview TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      resolved_at DATETIME
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pending_replies_telefone_digits ON pending_replies(telefone_digits);
+    CREATE INDEX IF NOT EXISTS idx_pending_replies_status ON pending_replies(status);
+
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT UNIQUE NOT NULL,

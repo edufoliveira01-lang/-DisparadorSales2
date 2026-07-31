@@ -5,6 +5,7 @@ import { createLog, type SendLog } from "./logsService";
 import { whatsappManager } from "./whatsappService";
 import { getSetting } from "./settingsService";
 import { moveCard } from "./trelloService";
+import { createPendingReply } from "./pendingRepliesService";
 
 export interface SendItem {
   cardId: string;
@@ -49,6 +50,13 @@ export async function dispatchSingle(item: SendItem, templateId: number): Promis
         console.error(`Erro ao mover cartão ${item.cardId} no Trello:`, moveErr);
         // Não falhamos o envio se apenas a movimentação falhar, mas logamos o erro
       }
+    }
+
+    // Se houver uma lista de confirmação configurada, passamos a monitorar esse telefone:
+    // quando o cliente responder ou reagir à mensagem, o cartão é movido automaticamente.
+    const confirmListId = getSetting("trello_confirm_list_id");
+    if (confirmListId) {
+      createPendingReply(item.cardId, item.nomeCliente, item.telefone);
     }
 
     const log = createLog({

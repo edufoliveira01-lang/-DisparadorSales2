@@ -5,6 +5,7 @@ import { Dashboard } from "@/pages/Dashboard";
 import { Agenda } from "@/pages/Agenda";
 import { Templates } from "@/pages/Templates";
 import { Historico } from "@/pages/Historico";
+import { PendentesResposta } from "@/pages/PendentesResposta";
 import { Configuracoes } from "@/pages/Configuracoes";
 import { Login } from "@/pages/Login";
 
@@ -28,6 +29,7 @@ export default function App() {
           <Route path="/agenda" element={<Agenda />} />
           <Route path="/templates" element={<Templates />} />
           <Route path="/historico" element={<Historico />} />
+          <Route path="/pendentes" element={<PendentesResposta />} />
           <Route path="/configuracoes" element={<Configuracoes />} />
           <Route path="/login" element={<Login />} />
         </Routes>

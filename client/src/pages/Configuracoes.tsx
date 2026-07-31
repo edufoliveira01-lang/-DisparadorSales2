@@ -41,6 +41,7 @@ export function Configuracoes() {
   const [boardId, setBoardId] = useState("");
   const [listId, setListId] = useState("");
   const [moveListId, setMoveListId] = useState("");
+  const [confirmListId, setConfirmListId] = useState("");
   const [salvandoTrello, setSalvandoTrello] = useState(false);
 
   const whatsapp = useWhatsapp();
@@ -67,6 +68,7 @@ export function Configuracoes() {
     if (data.trello_board_id) setBoardId(data.trello_board_id);
     if (data.trello_list_id) setListId(data.trello_list_id);
     if (data.trello_move_list_id) setMoveListId(data.trello_move_list_id);
+    if (data.trello_confirm_list_id) setConfirmListId(data.trello_confirm_list_id);
 
     if (data.trello_key && data.trello_token_configurado) {
       setTrelloOk(true);
@@ -112,6 +114,7 @@ export function Configuracoes() {
     setBoardId(id);
     setListId("");
     setMoveListId("");
+    setConfirmListId("");
     setLists([]);
     if (!id) return;
     try {
@@ -135,6 +138,7 @@ export function Configuracoes() {
       const board = boards.find((b) => b.id === boardId);
       const list = lists.find((l) => l.id === listId);
       const moveList = lists.find((l) => l.id === moveListId);
+      const confirmList = lists.find((l) => l.id === confirmListId);
       const payload: Record<string, string> = {
         trello_board_id: boardId,
         trello_board_nome: board?.name || "",
@@ -142,6 +146,8 @@ export function Configuracoes() {
         trello_list_nome: list?.name || "",
         trello_move_list_id: moveListId,
         trello_move_list_nome: moveList?.name || "",
+        trello_confirm_list_id: confirmListId,
+        trello_confirm_list_nome: confirmList?.name || "",
       };
       // Só inclui key/token se o usuário digitou algo novo — do contrário, o campo some do
       // corpo da requisição e o backend mantém a credencial já salva em vez de apagá-la.
@@ -361,7 +367,28 @@ export function Configuracoes() {
                   ))}
                 </Select>
               </div>
+              <div>
+                <Label>Mover cartão para (após resposta do cliente):</Label>
+                <Select value={confirmListId} onChange={(e) => setConfirmListId(e.target.value)} disabled={!boardId && lists.length === 0}>
+                  <option value="">Não monitorar respostas</option>
+                  {settings?.trello_confirm_list_id && !lists.find((l) => l.id === settings.trello_confirm_list_id) && (
+                    <option value={settings.trello_confirm_list_id}>{settings.trello_confirm_list_nome} (atual)</option>
+                  )}
+                  {lists.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
             </div>
+          )}
+          {confirmListId && (
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              Com uma lista de confirmação selecionada, toda vez que uma mensagem for enviada o sistema passa a monitorar
+              aquele número: quando o cliente responder ou reagir à mensagem, o cartão é movido automaticamente para a lista
+              acima. Acompanhe em <span className="font-medium">Pendentes de Resposta</span>.
+            </p>
           )}
 
           <div className="flex justify-end">
