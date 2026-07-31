@@ -144,13 +144,13 @@ export function Historico() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Histórico</h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Registro de todas as mensagens enviadas.</p>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="w-52">
+          <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="w-full sm:w-52">
             {templates.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.nome}
@@ -190,7 +190,8 @@ export function Historico() {
       ) : (
         <>
           <div className="overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-sm">
               <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
                 <tr>
                   <th className="w-10 px-5 py-3">
@@ -199,12 +200,12 @@ export function Historico() {
                       onChange={alternarSelecionarTodos}
                     />
                   </th>
-                  <th className="px-5 py-3">Data/hora</th>
-                  <th className="px-5 py-3">Cliente</th>
-                  <th className="px-5 py-3">Telefone</th>
-                  <th className="px-5 py-3">Status</th>
-                  <th className="px-5 py-3">Entrega</th>
-                  <th className="px-5 py-3 text-right">Ações</th>
+                  <th className="whitespace-nowrap px-5 py-3">Data/hora</th>
+                  <th className="whitespace-nowrap px-5 py-3">Cliente</th>
+                  <th className="whitespace-nowrap px-5 py-3">Telefone</th>
+                  <th className="whitespace-nowrap px-5 py-3">Status</th>
+                  <th className="whitespace-nowrap px-5 py-3">Entrega</th>
+                  <th className="whitespace-nowrap px-5 py-3 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -214,11 +215,11 @@ export function Historico() {
                       <td className="px-5 py-3">
                         <Checkbox checked={selecionados.has(log.id)} onChange={() => alternarSelecionado(log.id)} />
                       </td>
-                      <td className="px-5 py-3 text-zinc-500 dark:text-zinc-400">
+                      <td className="whitespace-nowrap px-5 py-3 text-zinc-500 dark:text-zinc-400">
                         {new Date(log.created_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
                       </td>
-                      <td className="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{log.card_nome || "—"}</td>
-                      <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{log.telefone || "—"}</td>
+                      <td className="whitespace-nowrap px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{log.card_nome || "—"}</td>
+                      <td className="whitespace-nowrap px-5 py-3 text-zinc-600 dark:text-zinc-400">{log.telefone || "—"}</td>
                       <td className="px-5 py-3">
                         {log.status === "sucesso" ? <Badge tone="success">Enviado</Badge> : <Badge tone="danger">Falhou</Badge>}
                         {log.erro && log.status === "falha" && <p className="mt-1 text-xs text-red-500">{log.erro}</p>}
@@ -265,6 +266,7 @@ export function Historico() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
           <Pagination page={pagina} totalItems={logs.length} pageSize={ITENS_POR_PAGINA} onPageChange={setPagina} />
         </>

@@ -11,9 +11,20 @@ const items = [
   { to: "/configuracoes", label: "Configurações", icon: Settings },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  open: boolean;
+  onNavigate: () => void;
+}
+
+export function Sidebar({ open, onNavigate }: SidebarProps) {
   return (
-    <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+    <aside
+      className={cn(
+        "fixed inset-y-0 left-0 z-40 flex h-screen w-60 shrink-0 flex-col border-r border-zinc-200 bg-white transition-transform duration-200 dark:border-zinc-800 dark:bg-zinc-900",
+        "lg:sticky lg:top-0 lg:translate-x-0",
+        open ? "translate-x-0" : "-translate-x-full"
+      )}
+    >
       <div className="flex items-center gap-2 px-5 py-5">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent-500 text-white shadow-soft">
           <Send className="h-5 w-5" />
@@ -29,6 +40,7 @@ export function Sidebar() {
             key={to}
             to={to}
             end={end}
+            onClick={onNavigate}
             className={({ isActive }) =>
               cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
@@ -45,7 +57,7 @@ export function Sidebar() {
       </nav>
 
       <div className="border-t border-zinc-200 px-5 py-4 text-xs text-zinc-400 dark:border-zinc-800">
-        Uso 100% local · v2.17.2
+        Uso 100% local · v2.18.0
       </div>
     </aside>
   );

@@ -195,12 +195,12 @@ export function Agenda() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Agenda</h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Contatos usados para cruzar com o nome do cliente no card.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <input
             ref={fileInputRef}
             type="file"
@@ -217,7 +217,7 @@ export function Agenda() {
         </div>
       </div>
 
-      <div className="relative max-w-sm">
+      <div className="relative w-full max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
         <Input placeholder="Buscar por nome ou telefone…" className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
       </div>
@@ -257,7 +257,8 @@ export function Agenda() {
       ) : (
         <>
           <div className="overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-sm">
               <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
                 <tr>
                   <th className="w-10 px-5 py-3">
@@ -266,10 +267,10 @@ export function Agenda() {
                       onChange={alternarSelecionarTodos}
                     />
                   </th>
-                  <th className="px-5 py-3">Nome</th>
-                  <th className="px-5 py-3">Telefone</th>
-                  <th className="px-5 py-3">Observações</th>
-                  <th className="px-5 py-3 text-right">Ações</th>
+                  <th className="whitespace-nowrap px-5 py-3">Nome</th>
+                  <th className="whitespace-nowrap px-5 py-3">Telefone</th>
+                  <th className="whitespace-nowrap px-5 py-3">Observações</th>
+                  <th className="whitespace-nowrap px-5 py-3 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -278,9 +279,9 @@ export function Agenda() {
                     <td className="px-5 py-3">
                       <Checkbox checked={selecionados.has(c.id)} onChange={() => alternarSelecionado(c.id)} />
                     </td>
-                    <td className="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</td>
-                    <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(c.telefone)}</td>
-                    <td className="px-5 py-3 text-zinc-500 dark:text-zinc-400">{c.observacoes || "—"}</td>
+                    <td className="whitespace-nowrap px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</td>
+                    <td className="whitespace-nowrap px-5 py-3 text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(c.telefone)}</td>
+                    <td className="max-w-xs truncate px-5 py-3 text-zinc-500 dark:text-zinc-400">{c.observacoes || "—"}</td>
                     <td className="px-5 py-3">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="icon" onClick={() => abrirEdicao(c)}>
@@ -295,6 +296,7 @@ export function Agenda() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
           <Pagination page={pagina} totalItems={filtrados.length} pageSize={ITENS_POR_PAGINA} onPageChange={setPagina} />
         </>
