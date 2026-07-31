@@ -35,6 +35,10 @@ export interface SendLog {
   mensagem_enviada: string | null;
   status: "sucesso" | "falha";
   erro: string | null;
+  whatsapp_message_id: string | null;
+  /** -1 erro, 0 pendente, 1 enviado ao servidor, 2 entregue (✓✓ cinza), 3 lido (✓✓ azul), 4 áudio reproduzido. */
+  ack: number | null;
+  ack_updated_at: string | null;
   created_at: string;
 }
 

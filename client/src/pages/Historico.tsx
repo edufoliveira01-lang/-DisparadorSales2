@@ -1,13 +1,62 @@
 import { Fragment, useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, History as HistoryIcon, RefreshCw, RotateCcw } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  CheckCheck,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  History as HistoryIcon,
+  RefreshCw,
+  RotateCcw,
+} from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type { SendLog, Template } from "@/lib/types";
 import { useToast } from "@/components/ui/Toast";
+import { useSocketEvent } from "@/hooks/useSocketEvent";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
+
+/** -1 erro, 0 pendente, 1 enviado ao servidor, 2 entregue (✓✓ cinza), 3 lido (✓✓ azul), 4 áudio reproduzido. */
+function AckIndicator({ ack }: { ack: number | null }) {
+  if (ack === null || ack === undefined) return <span className="text-zinc-300 dark:text-zinc-600">—</span>;
+  if (ack === -1) {
+    return (
+      <span className="inline-flex items-center gap-1 text-red-500" title="Erro ao entregar">
+        <AlertTriangle className="h-3.5 w-3.5" /> Erro
+      </span>
+    );
+  }
+  if (ack === 0) {
+    return (
+      <span className="inline-flex items-center gap-1 text-zinc-400" title="Aguardando confirmação do WhatsApp">
+        <Clock className="h-3.5 w-3.5" /> Pendente
+      </span>
+    );
+  }
+  if (ack === 1) {
+    return (
+      <span className="inline-flex items-center gap-1 text-zinc-400" title="Enviado ao servidor do WhatsApp">
+        <Check className="h-3.5 w-3.5" /> Enviado
+      </span>
+    );
+  }
+  if (ack === 2) {
+    return (
+      <span className="inline-flex items-center gap-1 text-zinc-400" title="Entregue no aparelho do cliente">
+        <CheckCheck className="h-3.5 w-3.5" /> Entregue
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-accent-500" title="Lido pelo cliente">
+      <CheckCheck className="h-3.5 w-3.5" /> Lido
+    </span>
+  );
+}
 
 export function Historico() {
   const { show } = useToast();
@@ -29,6 +78,10 @@ export function Historico() {
       if (data.length > 0) setTemplateId(data[0].id);
     });
   }, []);
+
+  useSocketEvent<SendLog>("send:ack-update", (atualizado) => {
+    setLogs((prev) => (prev ? prev.map((l) => (l.id === atualizado.id ? atualizado : l)) : prev));
+  });
 
   async function reenviar(log: SendLog) {
     if (!templateId) {
@@ -85,6 +138,7 @@ export function Historico() {
                 <th className="px-5 py-3">Cliente</th>
                 <th className="px-5 py-3">Telefone</th>
                 <th className="px-5 py-3">Status</th>
+                <th className="px-5 py-3">Entrega</th>
                 <th className="px-5 py-3 text-right">Ações</th>
               </tr>
             </thead>
@@ -100,6 +154,9 @@ export function Historico() {
                     <td className="px-5 py-3">
                       {log.status === "sucesso" ? <Badge tone="success">Enviado</Badge> : <Badge tone="danger">Falhou</Badge>}
                       {log.erro && log.status === "falha" && <p className="mt-1 text-xs text-red-500">{log.erro}</p>}
+                    </td>
+                    <td className="px-5 py-3">
+                      <AckIndicator ack={log.ack} />
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex justify-end gap-1">
@@ -121,7 +178,7 @@ export function Historico() {
                   </tr>
                   {expandido === log.id && log.mensagem_enviada && (
                     <tr className="bg-zinc-50 dark:bg-zinc-800/30">
-                      <td colSpan={5} className="px-5 py-4">
+                      <td colSpan={6} className="px-5 py-4">
                         <p className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-400">Mensagem enviada</p>
                         <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{log.mensagem_enviada}</p>
                       </td>
