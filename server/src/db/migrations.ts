@@ -58,6 +58,9 @@ export function runMigrations(db: Database.Database): void {
       status TEXT CHECK(status IN ('aguardando','respondido','cancelado')) DEFAULT 'aguardando',
       tipo_resposta TEXT CHECK(tipo_resposta IN ('mensagem','reacao')),
       resposta_preview TEXT,
+      whatsapp_message_id TEXT,
+      ack INTEGER,
+      ack_updated_at DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       resolved_at DATETIME
     );
@@ -92,12 +95,16 @@ export function runMigrations(db: Database.Database): void {
     // Colunas já existem
   }
 
-  // Rastreamento de status de entrega/leitura (✓✓ do WhatsApp) por envio — cada ALTER isolado
-  // no seu próprio try/catch para não pular as colunas seguintes se uma já existir.
+  // Rastreamento de status de entrega/leitura (✓✓ do WhatsApp) por envio e por pendente de
+  // resposta — cada ALTER isolado no seu próprio try/catch para não pular as colunas
+  // seguintes se uma já existir.
   for (const stmt of [
     "ALTER TABLE send_logs ADD COLUMN whatsapp_message_id TEXT",
     "ALTER TABLE send_logs ADD COLUMN ack INTEGER",
     "ALTER TABLE send_logs ADD COLUMN ack_updated_at DATETIME",
+    "ALTER TABLE pending_replies ADD COLUMN whatsapp_message_id TEXT",
+    "ALTER TABLE pending_replies ADD COLUMN ack INTEGER",
+    "ALTER TABLE pending_replies ADD COLUMN ack_updated_at DATETIME",
   ]) {
     try {
       db.exec(stmt);
@@ -106,6 +113,7 @@ export function runMigrations(db: Database.Database): void {
     }
   }
   db.exec("CREATE INDEX IF NOT EXISTS idx_send_logs_whatsapp_message_id ON send_logs(whatsapp_message_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_pending_replies_whatsapp_message_id ON pending_replies(whatsapp_message_id)");
 
   // Criar usuário padrão se não existir nenhum
   const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get() as { count: number };

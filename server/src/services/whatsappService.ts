@@ -12,6 +12,7 @@ import {
   findAwaitingByPhoneDigits,
   listPendingReplies,
   resolvePendingReply,
+  updatePendingReplyAckByMessageId,
   type PendingReply,
   type TipoResposta,
 } from "./pendingRepliesService";
@@ -72,6 +73,12 @@ const TEMPO_LIMITE_APOS_AUTENTICAR_MS = 3 * 60 * 1000;
 
 type Listener = () => void;
 
+interface EnvioAguardandoId {
+  chatId: string;
+  texto: string;
+  resolve: (id: string) => void;
+}
+
 class WhatsappManager {
   private client: Client | null = null;
   private status: WhatsappStatus = "desconectado";
@@ -81,6 +88,8 @@ class WhatsappManager {
   /** Incrementado a cada connect()/disconnect()/shutdown() para invalidar retries pendentes de uma tentativa anterior. */
   private geracao = 0;
   private listeners = new Set<Listener>();
+  /** Envios recentes aguardando o id real via "message_create" (fallback do sendMessage). */
+  private enviosAguardandoId: EnvioAguardandoId[] = [];
 
   onChange(listener: Listener) {
     this.listeners.add(listener);
@@ -256,13 +265,30 @@ class WhatsappManager {
       );
     });
 
+    // "message_create" dispara para toda mensagem criada, incluindo as que nós mesmos enviamos
+    // (fromMe) — ao contrário do retorno de client.sendMessage(), que às vezes vem vazio mesmo
+    // com o envio ok, esse evento chega por um caminho totalmente separado (o listener da
+    // própria página do WhatsApp Web), então é o fallback usado para capturar o id real da
+    // mensagem quando o retorno direto falha (ver sendMessage()/aguardarIdViaMessageCreate()).
+    client.on("message_create", (message: Message) => {
+      if (!message.fromMe) return;
+      const idx = this.enviosAguardandoId.findIndex((e) => e.chatId === message.to && e.texto === message.body);
+      if (idx === -1) return;
+      const [aguardando] = this.enviosAguardandoId.splice(idx, 1);
+      aguardando.resolve(message.id._serialized);
+    });
+
     // "message_ack" dispara a cada mudança no status de confirmação de uma mensagem NOSSA
     // (✓ enviado ao servidor, ✓✓ cinza entregue no aparelho, ✓✓ azul lido). Associamos pelo id
-    // da mensagem do WhatsApp, salvo em send_logs no momento do envio (dispatchService).
+    // da mensagem do WhatsApp, salvo tanto em send_logs quanto em pending_replies (quando há
+    // monitoramento de resposta ativo) no momento do envio, em dispatchService.
     client.on("message_ack", (message: Message, ack: number) => {
       try {
-        const log = updateLogAckByMessageId(message.id._serialized, ack);
+        const messageId = message.id._serialized;
+        const log = updateLogAckByMessageId(messageId, ack);
         if (log) emitEvent("send:ack-update", log);
+        const pending = updatePendingReplyAckByMessageId(messageId, ack);
+        if (pending) emitEvent("pendingReply:ack-update", pending);
       } catch (err) {
         console.error("Erro ao processar confirmação de entrega/leitura:", err);
       }
@@ -368,7 +394,8 @@ class WhatsappManager {
    * Envia a mensagem e retorna o id do WhatsApp, usado depois para rastrear entrega/leitura.
    * O whatsapp-web.js às vezes devolve undefined mesmo quando a mensagem foi enviada com
    * sucesso (limitação conhecida da lib — não consegue montar o objeto de retorno a tempo).
-   * Nesse caso não falhamos o envio: só não temos o id para acompanhar o ✓✓ desta mensagem.
+   * Nesse caso não falhamos o envio: tentamos capturar o id por "message_create" (que chega por
+   * um caminho independente) antes de desistir e seguir sem id de rastreamento.
    */
   async sendMessage(chatId: string, mensagem: string): Promise<string | null> {
     if (!this.client || this.status !== "conectado") {
@@ -376,7 +403,27 @@ class WhatsappManager {
     }
     const client = this.client;
     const sent = await this.comRetryTransitorio(() => client.sendMessage(chatId, mensagem));
-    return sent?.id?._serialized ?? null;
+    if (sent?.id?._serialized) return sent.id._serialized;
+    return this.aguardarIdViaMessageCreate(chatId, mensagem);
+  }
+
+  private aguardarIdViaMessageCreate(chatId: string, texto: string, timeoutMs = 8000): Promise<string | null> {
+    return new Promise((resolve) => {
+      const aguardando: EnvioAguardandoId = {
+        chatId,
+        texto,
+        resolve: (id) => {
+          clearTimeout(timer);
+          resolve(id);
+        },
+      };
+      const timer = setTimeout(() => {
+        const idx = this.enviosAguardandoId.indexOf(aguardando);
+        if (idx !== -1) this.enviosAguardandoId.splice(idx, 1);
+        resolve(null);
+      }, timeoutMs);
+      this.enviosAguardandoId.push(aguardando);
+    });
   }
 
   /**

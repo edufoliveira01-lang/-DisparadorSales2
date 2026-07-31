@@ -13,6 +13,10 @@ export interface PendingReply {
   status: PendingReplyStatus;
   tipo_resposta: TipoResposta | null;
   resposta_preview: string | null;
+  whatsapp_message_id: string | null;
+  /** -1 erro, 0 pendente, 1 enviado ao servidor, 2 entregue (✓✓ cinza), 3 lido (✓✓ azul), 4 áudio reproduzido. */
+  ack: number | null;
+  ack_updated_at: string | null;
   created_at: string;
   resolved_at: string | null;
 }
@@ -24,10 +28,11 @@ const cancelAwaitingForPhoneStmt = db.prepare(
   `UPDATE pending_replies SET status = 'cancelado', resolved_at = CURRENT_TIMESTAMP WHERE telefone_digits = ? AND status = 'aguardando'`
 );
 const insertStmt = db.prepare(
-  `INSERT INTO pending_replies (card_id, card_nome, telefone, telefone_digits, status)
-   VALUES (@card_id, @card_nome, @telefone, @telefone_digits, 'aguardando')`
+  `INSERT INTO pending_replies (card_id, card_nome, telefone, telefone_digits, whatsapp_message_id, status)
+   VALUES (@card_id, @card_nome, @telefone, @telefone_digits, @whatsapp_message_id, 'aguardando')`
 );
 const getStmt = db.prepare("SELECT * FROM pending_replies WHERE id = ?");
+const getByMessageIdStmt = db.prepare("SELECT * FROM pending_replies WHERE whatsapp_message_id = ?");
 const findAwaitingByDigitsStmt = db.prepare(
   `SELECT * FROM pending_replies WHERE telefone_digits = ? AND status = 'aguardando' ORDER BY created_at DESC LIMIT 1`
 );
@@ -41,6 +46,9 @@ const cancelStmt = db.prepare(
   `UPDATE pending_replies SET status = 'cancelado', resolved_at = CURRENT_TIMESTAMP WHERE id = ?`
 );
 const deleteStmt = db.prepare("DELETE FROM pending_replies WHERE id = ?");
+const updateAckStmt = db.prepare(
+  "UPDATE pending_replies SET ack = ?, ack_updated_at = CURRENT_TIMESTAMP WHERE whatsapp_message_id = ?"
+);
 
 /**
  * telefoneExibicao é o número "para humano ler" (o telefone salvo no contato). chatIdDigits é
@@ -54,7 +62,8 @@ export function createPendingReply(
   cardId: string,
   cardNome: string | null,
   telefoneExibicao: string,
-  chatIdDigits: string
+  chatIdDigits: string,
+  whatsappMessageId: string | null = null
 ): PendingReply {
   const telefoneDigits = normalizePhone(chatIdDigits);
   cancelAwaitingForPhoneStmt.run(telefoneDigits);
@@ -63,8 +72,16 @@ export function createPendingReply(
     card_nome: cardNome,
     telefone: telefoneExibicao,
     telefone_digits: telefoneDigits,
+    whatsapp_message_id: whatsappMessageId,
   });
   return getStmt.get(info.lastInsertRowid) as PendingReply;
+}
+
+/** Atualiza o nível de confirmação (ack) do pendente associado a essa mensagem do WhatsApp. */
+export function updatePendingReplyAckByMessageId(whatsappMessageId: string, ack: number): PendingReply | undefined {
+  const info = updateAckStmt.run(ack, whatsappMessageId);
+  if (info.changes === 0) return undefined;
+  return getByMessageIdStmt.get(whatsappMessageId) as PendingReply;
 }
 
 export function findAwaitingByPhoneDigits(telefoneDigits: string): PendingReply | undefined {

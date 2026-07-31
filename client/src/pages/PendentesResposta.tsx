@@ -5,6 +5,7 @@ import { formatPhoneDisplay } from "@/lib/phone";
 import type { PendingReply } from "@/lib/types";
 import { useToast } from "@/components/ui/Toast";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
+import { AckIndicator } from "@/components/AckIndicator";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -35,6 +36,10 @@ export function PendentesResposta() {
 
   useSocketEvent("pendingReply:resolved", () => {
     carregar();
+  });
+
+  useSocketEvent<PendingReply>("pendingReply:ack-update", (atualizado) => {
+    setPendentes((prev) => (prev ? prev.map((p) => (p.id === atualizado.id ? atualizado : p)) : prev));
   });
 
   async function confirmar(item: PendingReply) {
@@ -183,6 +188,7 @@ export function PendentesResposta() {
                       <th className="px-5 py-3">Enviado em</th>
                       <th className="px-5 py-3">Cliente</th>
                       <th className="px-5 py-3">Telefone</th>
+                      <th className="px-5 py-3">Entrega</th>
                       <th className="px-5 py-3">Status</th>
                       <th className="px-5 py-3 text-right">Ações</th>
                     </tr>
@@ -198,6 +204,9 @@ export function PendentesResposta() {
                         </td>
                         <td className="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{item.card_nome || "—"}</td>
                         <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(item.telefone)}</td>
+                        <td className="px-5 py-3">
+                          <AckIndicator ack={item.ack} />
+                        </td>
                         <td className="px-5 py-3">
                           <Badge tone={STATUS_BADGE[item.status].tone}>{STATUS_BADGE[item.status].label}</Badge>
                         </td>
@@ -255,6 +264,7 @@ export function PendentesResposta() {
                       <th className="px-5 py-3">Resolvido em</th>
                       <th className="px-5 py-3">Cliente</th>
                       <th className="px-5 py-3">Telefone</th>
+                      <th className="px-5 py-3">Entrega</th>
                       <th className="px-5 py-3">Como respondeu</th>
                       <th className="px-5 py-3">Status</th>
                       <th className="px-5 py-3 text-right">Ações</th>
@@ -271,6 +281,9 @@ export function PendentesResposta() {
                         </td>
                         <td className="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{item.card_nome || "—"}</td>
                         <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(item.telefone)}</td>
+                        <td className="px-5 py-3">
+                          <AckIndicator ack={item.ack} />
+                        </td>
                         <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">
                           {item.tipo_resposta === "reacao" ? (
                             <span className="inline-flex items-center gap-1">

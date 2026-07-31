@@ -63,7 +63,7 @@ export async function dispatchSingle(item: SendItem, templateId: number): Promis
     // O telefone bruto do contato continua sendo usado só para EXIBIÇÃO na tela.
     const confirmListId = getSetting("trello_confirm_list_id");
     if (confirmListId) {
-      createPendingReply(item.cardId, item.nomeCliente, item.telefone, chatId.split("@")[0]);
+      createPendingReply(item.cardId, item.nomeCliente, item.telefone, chatId.split("@")[0], ultimoMessageId);
     }
 
     const log = createLog({
