@@ -364,14 +364,19 @@ class WhatsappManager {
     return result ? result._serialized : null;
   }
 
-  /** Envia a mensagem e retorna o id do WhatsApp, usado depois para rastrear entrega/leitura. */
-  async sendMessage(chatId: string, mensagem: string): Promise<string> {
+  /**
+   * Envia a mensagem e retorna o id do WhatsApp, usado depois para rastrear entrega/leitura.
+   * O whatsapp-web.js às vezes devolve undefined mesmo quando a mensagem foi enviada com
+   * sucesso (limitação conhecida da lib — não consegue montar o objeto de retorno a tempo).
+   * Nesse caso não falhamos o envio: só não temos o id para acompanhar o ✓✓ desta mensagem.
+   */
+  async sendMessage(chatId: string, mensagem: string): Promise<string | null> {
     if (!this.client || this.status !== "conectado") {
       throw new Error("WhatsApp não está conectado.");
     }
     const client = this.client;
     const sent = await this.comRetryTransitorio(() => client.sendMessage(chatId, mensagem));
-    return sent.id._serialized;
+    return sent?.id?._serialized ?? null;
   }
 
   /**
