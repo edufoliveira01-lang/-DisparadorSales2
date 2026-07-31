@@ -45,7 +45,7 @@ export function Sidebar() {
       </nav>
 
       <div className="border-t border-zinc-200 px-5 py-4 text-xs text-zinc-400 dark:border-zinc-800">
-        Uso 100% local · v2.8
+        Uso 100% local · v2.9
       </div>
     </aside>
   );
