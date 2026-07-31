@@ -467,21 +467,23 @@ class WhatsappManager {
       if (idFallback) return idFallback;
 
       // Prioridade 3: Verificação Ativa (Fetch-back)
-      // Se a lib falhou em retornar o ID e o evento não disparou, vamos buscar a última 
-      // mensagem enviada por nós nesse chat diretamente na base do WhatsApp.
-      console.log(`[WhatsApp] Tentando verificação ativa para ${chatId}...`);
-      await new Promise(r => setTimeout(r, 2000)); // Aguarda o WhatsApp processar
-      
-      const chat = await client.getChatById(chatId);
-      const messages = await chat.fetchMessages({ limit: 5 });
-      
-      // Procuramos a mensagem mais recente enviada por nós que corresponda ao texto
-      // (ou simplesmente a última enviada por nós se o texto for muito complexo)
-      const lastSent = messages.reverse().find(m => m.fromMe);
-      
-      if (lastSent && lastSent.id?._serialized) {
-        console.log(`[WhatsApp] ID capturado via verificação ativa: ${lastSent.id._serialized}`);
-        return lastSent.id._serialized;
+      // Envolvido em try-catch para que qualquer erro aqui não falhe o envio da mensagem.
+      try {
+        console.log(`[WhatsApp] Tentando verificação ativa para ${chatId}...`);
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Aguarda o WhatsApp processar
+        
+        const chat = await client.getChatById(chatId);
+        const messages = await chat.fetchMessages({ limit: 5 });
+        
+        // Procuramos a mensagem mais recente enviada por nós
+        const lastSent = messages.reverse().find(m => m.fromMe);
+        
+        if (lastSent && lastSent.id?._serialized) {
+          console.log(`[WhatsApp] ID capturado via verificação ativa: ${lastSent.id._serialized}`);
+          return lastSent.id._serialized;
+        }
+      } catch (fetchErr) {
+        console.error(`[WhatsApp] Erro na verificação ativa para ${chatId}:`, fetchErr);
       }
 
       return null;
