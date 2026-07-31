@@ -272,17 +272,18 @@ class WhatsappManager {
     // com o envio ok, esse evento chega por um caminho totalmente separado (o listener da
     // própria página do WhatsApp Web), então é o fallback usado para capturar o id real da
     // mensagem quando o retorno direto falha (ver sendMessage()/aguardarIdViaMessageCreate()).
-    client.on("message_create", (message: Message) => {
+      client.on("message_create", (message: Message) => {
       if (!message.fromMe) return;
       
-      // Procuramos o envio pendente mais antigo para este destinatário.
-      // Removemos a comparação exata de texto (message.body) porque o WhatsApp pode
-      // alterar a formatação (ex: links, emojis, espaços) invalidando o match.
-      const idx = this.enviosAguardandoId.findIndex((e) => e.chatId === message.to);
+      const toDigits = message.to.split("@")[0];
+      console.log(`[WhatsApp] message_create detectado (fromMe) para: ${toDigits}`);
+
+      // Match por dígitos para evitar problemas com @c.us vs @s.whatsapp.net
+      const idx = this.enviosAguardandoId.findIndex((e) => e.chatId.split("@")[0] === toDigits);
       if (idx === -1) return;
       
       const [aguardando] = this.enviosAguardandoId.splice(idx, 1);
-      console.log(`[WhatsApp] ID capturado via fallback para ${message.to}: ${message.id._serialized}`);
+      console.log(`[WhatsApp] ID capturado via fallback para ${toDigits}: ${message.id._serialized}`);
       aguardando.resolve(message.id._serialized);
     });
 
@@ -454,47 +455,59 @@ class WhatsappManager {
     const promessaIdFallback = this.aguardarIdViaMessageCreate(chatId, mensagem);
 
     try {
+      console.log(`[WhatsApp] Enviando mensagem para ${chatId}...`);
       const sent = await this.comRetryTransitorio(() => client.sendMessage(chatId, mensagem));
       
+      // Pequena pausa para o WhatsApp Web processar o ID interno
+      await new Promise(r => setTimeout(r, 500));
+
       // Prioridade 1: ID retornado diretamente pelo sendMessage
       if (sent?.id?._serialized) {
+        console.log(`[WhatsApp] ID retornado no envio direto: ${sent.id._serialized}`);
         this.removerEnvioAguardando(chatId, mensagem);
         return sent.id._serialized;
       }
       
       // Prioridade 2: Fallback via message_create (evento disparado pela lib)
       const idFallback = await promessaIdFallback;
-      if (idFallback) return idFallback;
+      if (idFallback) {
+        console.log(`[WhatsApp] ID obtido via fallback de evento: ${idFallback}`);
+        return idFallback;
+      }
 
-      // Prioridade 3: Busca Persistente (Polling Fetch-back)
-      // Tentamos buscar a mensagem no chat repetidamente durante 10 segundos.
+      // Prioridade 3: Verificação via Propriedade lastMessage (Mais fiável que fetchMessages)
       try {
-        console.log(`[WhatsApp] Iniciando busca persistente de ID para ${chatId}...`);
-        
-        for (let i = 0; i < 5; i++) {
-          await new Promise(resolve => setTimeout(resolve, 2000)); // Espera 2s entre tentativas
-          
+        const chat = await client.getChatById(chatId);
+        if (chat.lastMessage && chat.lastMessage.fromMe) {
+          const bodyStart = chat.lastMessage.body.slice(0, 20);
+          if (mensagem.includes(bodyStart)) {
+            console.log(`[WhatsApp] ID capturado via lastMessage: ${chat.lastMessage.id._serialized}`);
+            return chat.lastMessage.id._serialized;
+          }
+        }
+      } catch (e) {
+        console.warn(`[WhatsApp] Falha ao verificar lastMessage para ${chatId}`);
+      }
+
+      // Prioridade 4: Busca Persistente (Polling Fetch-back)
+      try {
+        console.log(`[WhatsApp] Iniciando busca persistente para ${chatId}...`);
+        for (let i = 0; i < 4; i++) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
           const chat = await client.getChatById(chatId);
-          const messages = await chat.fetchMessages({ limit: 10 });
-          
-          // Procuramos a mensagem mais recente enviada por nós.
-          // Comparamos também o início do texto para evitar pegar uma mensagem muito antiga
-          // caso o envio atual tenha falhado silenciosamente no navegador.
-          const textoReduzido = mensagem.slice(0, 50);
-          const lastSent = messages.reverse().find(m => 
-            m.fromMe && (m.body.includes(textoReduzido) || mensagem.includes(m.body.slice(0, 50)))
-          );
+          const messages = await chat.fetchMessages({ limit: 5 });
+          const lastSent = messages.reverse().find(m => m.fromMe && mensagem.includes(m.body.slice(0, 20)));
           
           if (lastSent && lastSent.id?._serialized) {
-            console.log(`[WhatsApp] ID capturado na tentativa ${i + 1}: ${lastSent.id._serialized}`);
+            console.log(`[WhatsApp] ID capturado na busca persistente (T${i+1}): ${lastSent.id._serialized}`);
             return lastSent.id._serialized;
           }
-          console.log(`[WhatsApp] Tentativa ${i + 1} falhou, tentando novamente...`);
         }
       } catch (fetchErr) {
         console.error(`[WhatsApp] Erro na busca persistente para ${chatId}:`, fetchErr);
       }
 
+      console.error(`[WhatsApp] FALHA TOTAL ao capturar ID para ${chatId}. Status ficará como "—".`);
       return null;
     } catch (err) {
       this.removerEnvioAguardando(chatId, mensagem);
@@ -503,8 +516,9 @@ class WhatsappManager {
   }
 
   private removerEnvioAguardando(chatId: string, texto: string) {
-    // Removemos o match mais antigo para este chat e texto para manter a fila limpa
-    const idx = this.enviosAguardandoId.findIndex((e) => e.chatId === chatId && e.texto === texto);
+    // Match por dígitos para ser consistente com o listener
+    const digits = chatId.split("@")[0];
+    const idx = this.enviosAguardandoId.findIndex((e) => e.chatId.split("@")[0] === digits);
     if (idx !== -1) {
       this.enviosAguardandoId.splice(idx, 1);
     }
