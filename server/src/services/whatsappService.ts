@@ -134,13 +134,30 @@ class WhatsappManager {
     // headless, apenas os dois args de sandbox, e os mesmos timeouts. Evitamos adicionar
     // flags extras do Chromium sem validação prévia em ambiente real.
     //
-    // webVersionCache: "none" evita um problema documentado da comunidade: por padrão o
-    // whatsapp-web.js guarda em cache local a versão do WhatsApp Web que funcionou da
-    // última vez, e volta a usar essa MESMA versão em cada tentativa seguinte. Se o
-    // WhatsApp atualizou o cliente web nesse meio tempo, a versão cacheada fica
-    // incompatível e toda tentativa falha do mesmo jeito, sempre no mesmo ponto (exatamente
-    // o padrão "Execution context was destroyed" antes do QR, de forma consistente, e não
-    // intermitente). Com "none", cada tentativa usa a versão atual servida pelo WhatsApp.
+    // Historicamente usávamos webVersionCache: "none" para evitar um problema documentado da
+    // comunidade: por padrão o whatsapp-web.js guarda em cache local a versão do WhatsApp Web
+    // que funcionou da última vez, e volta a usar essa MESMA versão em cada tentativa seguinte.
+    // Se o WhatsApp atualizou o cliente web nesse meio tempo, a versão cacheada fica
+    // incompatível e toda tentativa falha do mesmo jeito, sempre no mesmo ponto (exatamente o
+    // padrão "Execution context was destroyed" antes do QR, de forma consistente).
+    //
+    // Só que "none" sempre puxa a build MAIS NOVA (às vezes literalmente alpha do dia) servida
+    // pelo WhatsApp — e essa build muda por fora do nosso controle. Foi assim que o id das
+    // mensagens (message.id._serialized) passou a vir "undefined" em 100% dos eventos
+    // message_ack/message_create em produção: o whatsapp-web.js injeta um patch no Store
+    // interno do WhatsApp Web esperando um formato específico, e quando o WhatsApp muda esse
+    // formato numa build nova, esse patch (não a conexão em si) quebra silenciosamente — por
+    // isso reações/mensagens recebidas continuam funcionando (caminho diferente), mas o id de
+    // mensagens enviadas por nós não.
+    //
+    // A correção é fixar uma versão específica, hospedada pelo wa-version (mantido pela
+    // comunidade wppconnect, a referência oficialmente citada pelo próprio whatsapp-web.js
+    // para esse cenário). O repositório só mantém uma janela recente de builds — pegamos a
+    // mais antiga ainda disponível ali (bem mais conservadora que a build do dia, que é o que
+    // "none" nos dava), dando ao patch de Store uma chance melhor de bater com o formato que
+    // ele espera. "strict: false" garante que, se essa versão específica sair do ar, caímos de
+    // volta no comportamento anterior (usar a mais recente) em vez de travar para sempre — sem
+    // repetir o bug do cache local citado acima, já que aqui não persistimos nada em disco.
     const client = new Client({
       authStrategy: new LocalAuth({ dataPath: AUTH_DATA_PATH }),
       puppeteer: {
@@ -158,7 +175,12 @@ class WhatsappManager {
         ],
         protocolTimeout: 120000,
       },
-      webVersionCache: { type: "none" },
+      webVersionCache: {
+        type: "remote",
+        remotePath:
+          "https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1040524532-alpha.html",
+        strict: false,
+      },
       // Quantas vezes o QR Code pode ser renovado (o WhatsApp Web troca a imagem sozinho a
       // cada ~20-30s) antes do whatsapp-web.js desistir e desconectar. Um valor generoso dá
       // mais tempo real para escanear em celulares mais lentos, sem travar para sempre — depois
