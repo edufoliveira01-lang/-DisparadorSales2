@@ -8,6 +8,7 @@ import { AckIndicator } from "@/components/AckIndicator";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Pagination } from "@/components/ui/Pagination";
 import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -26,6 +27,8 @@ export function Historico() {
   const [selecionados, setSelecionados] = useState<Set<number>>(new Set());
   const [apagando, setApagando] = useState<number | null>(null);
   const [apagandoSelecionados, setApagandoSelecionados] = useState(false);
+  const [apagarAlvo, setApagarAlvo] = useState<SendLog | null>(null);
+  const [confirmMassaAberto, setConfirmMassaAberto] = useState(false);
 
   async function carregar() {
     const data = await api.get<SendLog[]>("/logs");
@@ -90,6 +93,13 @@ export function Historico() {
     }
   }
 
+  async function confirmarApagar() {
+    if (!apagarAlvo) return;
+    const alvo = apagarAlvo;
+    setApagarAlvo(null);
+    await apagar(alvo);
+  }
+
   async function apagarSelecionados() {
     if (selecionados.size === 0) return;
     setApagandoSelecionados(true);
@@ -104,6 +114,11 @@ export function Historico() {
     } finally {
       setApagandoSelecionados(false);
     }
+  }
+
+  async function confirmarApagarSelecionados() {
+    setConfirmMassaAberto(false);
+    await apagarSelecionados();
   }
 
   function alternarSelecionado(id: number) {
@@ -157,7 +172,7 @@ export function Historico() {
             <Button variant="ghost" size="sm" onClick={() => setSelecionados(new Set())}>
               Limpar seleção
             </Button>
-            <Button variant="danger" size="sm" onClick={apagarSelecionados} loading={apagandoSelecionados}>
+            <Button variant="danger" size="sm" onClick={() => setConfirmMassaAberto(true)} loading={apagandoSelecionados}>
               <Trash2 className="h-3.5 w-3.5" /> Apagar selecionados
             </Button>
           </div>
@@ -230,7 +245,7 @@ export function Historico() {
                             variant="ghost"
                             size="icon"
                             title="Apagar"
-                            onClick={() => apagar(log)}
+                            onClick={() => setApagarAlvo(log)}
                             disabled={apagando === log.id}
                           >
                             <Trash2 className="h-4 w-4 text-red-500" />
@@ -254,6 +269,24 @@ export function Historico() {
           <Pagination page={pagina} totalItems={logs.length} pageSize={ITENS_POR_PAGINA} onPageChange={setPagina} />
         </>
       )}
+
+      <ConfirmDialog
+        open={apagarAlvo !== null}
+        title="Apagar registro?"
+        message={`Isso vai apagar em definitivo o registro de envio para ${apagarAlvo?.card_nome || "este cliente"}. Essa ação não pode ser desfeita.`}
+        loading={apagando === apagarAlvo?.id}
+        onConfirm={confirmarApagar}
+        onCancel={() => setApagarAlvo(null)}
+      />
+      <ConfirmDialog
+        open={confirmMassaAberto}
+        title="Apagar registros selecionados?"
+        message={`Isso vai apagar em definitivo ${selecionados.size} registro(s) selecionado(s), em todas as páginas. Essa ação não pode ser desfeita.`}
+        confirmLabel="Apagar selecionados"
+        loading={apagandoSelecionados}
+        onConfirm={confirmarApagarSelecionados}
+        onCancel={() => setConfirmMassaAberto(false)}
+      />
     </div>
   );
 }

@@ -9,9 +9,13 @@ import { AckIndicator } from "@/components/AckIndicator";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { Pagination } from "@/components/ui/Pagination";
 import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
+
+const ITENS_POR_PAGINA = 20;
 
 const STATUS_BADGE: Record<PendingReply["status"], { label: string; tone: "warning" | "success" | "neutral" }> = {
   aguardando: { label: "Aguardando resposta", tone: "warning" },
@@ -51,6 +55,10 @@ export function PendentesResposta() {
   const [selecionados, setSelecionados] = useState<Set<number>>(new Set());
   const [apagandoSelecionados, setApagandoSelecionados] = useState(false);
   const [filtro, setFiltro] = useState<Filtro>("todos");
+  const [paginaAguardando, setPaginaAguardando] = useState(0);
+  const [paginaResolvidos, setPaginaResolvidos] = useState(0);
+  const [apagarAlvo, setApagarAlvo] = useState<PendingReply | null>(null);
+  const [confirmMassaAberto, setConfirmMassaAberto] = useState(false);
 
   const carregar = useCallback(async () => {
     const data = await api.get<PendingReply[]>("/pending-replies");
@@ -113,6 +121,13 @@ export function PendentesResposta() {
     }
   }
 
+  async function confirmarApagar() {
+    if (!apagarAlvo) return;
+    const alvo = apagarAlvo;
+    setApagarAlvo(null);
+    await apagar(alvo);
+  }
+
   async function apagarSelecionados() {
     if (selecionados.size === 0) return;
     setApagandoSelecionados(true);
@@ -127,6 +142,11 @@ export function PendentesResposta() {
     } finally {
       setApagandoSelecionados(false);
     }
+  }
+
+  async function confirmarApagarSelecionados() {
+    setConfirmMassaAberto(false);
+    await apagarSelecionados();
   }
 
   function alternarSelecionado(id: number) {
@@ -158,6 +178,30 @@ export function PendentesResposta() {
     () => pendentes?.filter((p) => p.status !== "aguardando" && combinaFiltro(p, filtro)) ?? [],
     [pendentes, filtro]
   );
+
+  const aguardandoPaginado = useMemo(
+    () => aguardando.slice(paginaAguardando * ITENS_POR_PAGINA, (paginaAguardando + 1) * ITENS_POR_PAGINA),
+    [aguardando, paginaAguardando]
+  );
+  const resolvidosPaginado = useMemo(
+    () => resolvidos.slice(paginaResolvidos * ITENS_POR_PAGINA, (paginaResolvidos + 1) * ITENS_POR_PAGINA),
+    [resolvidos, paginaResolvidos]
+  );
+
+  useEffect(() => {
+    setPaginaAguardando(0);
+    setPaginaResolvidos(0);
+  }, [filtro]);
+
+  useEffect(() => {
+    const ultimaPagina = Math.max(0, Math.ceil(aguardando.length / ITENS_POR_PAGINA) - 1);
+    if (paginaAguardando > ultimaPagina) setPaginaAguardando(ultimaPagina);
+  }, [aguardando, paginaAguardando]);
+
+  useEffect(() => {
+    const ultimaPagina = Math.max(0, Math.ceil(resolvidos.length / ITENS_POR_PAGINA) - 1);
+    if (paginaResolvidos > ultimaPagina) setPaginaResolvidos(ultimaPagina);
+  }, [resolvidos, paginaResolvidos]);
 
   return (
     <div className="space-y-6">
@@ -191,7 +235,7 @@ export function PendentesResposta() {
             <Button variant="ghost" size="sm" onClick={() => setSelecionados(new Set())}>
               Limpar seleção
             </Button>
-            <Button variant="danger" size="sm" onClick={apagarSelecionados} loading={apagandoSelecionados}>
+            <Button variant="danger" size="sm" onClick={() => setConfirmMassaAberto(true)} loading={apagandoSelecionados}>
               <Trash2 className="h-3.5 w-3.5" /> Apagar selecionados
             </Button>
           </div>
@@ -225,77 +269,85 @@ export function PendentesResposta() {
                 {filtro === "todos" ? "Nenhum cliente aguardando resposta no momento." : "Nenhum resultado para esse filtro."}
               </p>
             ) : (
-              <div className="overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800">
-                <table className="w-full text-sm">
-                  <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
-                    <tr>
-                      <th className="w-10 px-5 py-3">
-                        <Checkbox
-                          checked={aguardando.length > 0 && aguardando.every((i) => selecionados.has(i.id))}
-                          onChange={() => alternarSelecionarTodos(aguardando)}
-                        />
-                      </th>
-                      <th className="px-5 py-3">Enviado em</th>
-                      <th className="px-5 py-3">Cliente</th>
-                      <th className="px-5 py-3">Telefone</th>
-                      <th className="px-5 py-3">Entrega</th>
-                      <th className="px-5 py-3">Status</th>
-                      <th className="px-5 py-3 text-right">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                    {aguardando.map((item) => (
-                      <tr key={item.id} className="bg-white dark:bg-zinc-900">
-                        <td className="px-5 py-3">
-                          <Checkbox checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />
-                        </td>
-                        <td className="px-5 py-3 text-zinc-500 dark:text-zinc-400">
-                          {new Date(item.created_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
-                        </td>
-                        <td className="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{item.card_nome || "—"}</td>
-                        <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(item.telefone)}</td>
-                        <td className="px-5 py-3">
-                          <AckIndicator ack={item.ack} />
-                        </td>
-                        <td className="px-5 py-3">
-                          <Badge tone={STATUS_BADGE[item.status].tone}>{STATUS_BADGE[item.status].label}</Badge>
-                        </td>
-                        <td className="px-5 py-3">
-                          <div className="flex justify-end gap-1.5">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="whitespace-nowrap"
-                              onClick={() => confirmar(item)}
-                              loading={processando === item.id}
-                            >
-                              <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar manualmente
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              title="Cancelar monitoramento"
-                              onClick={() => cancelar(item)}
-                              disabled={processando === item.id}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              title="Apagar (ex: cliente só reagiu e o sistema não detectou)"
-                              onClick={() => apagar(item)}
-                              disabled={processando === item.id}
-                            >
-                              <Trash2 className="h-4 w-4 text-red-500" />
-                            </Button>
-                          </div>
-                        </td>
+              <>
+                <div className="overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800">
+                  <table className="w-full text-sm">
+                    <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
+                      <tr>
+                        <th className="w-10 px-5 py-3">
+                          <Checkbox
+                            checked={aguardandoPaginado.length > 0 && aguardandoPaginado.every((i) => selecionados.has(i.id))}
+                            onChange={() => alternarSelecionarTodos(aguardandoPaginado)}
+                          />
+                        </th>
+                        <th className="px-5 py-3">Enviado em</th>
+                        <th className="px-5 py-3">Cliente</th>
+                        <th className="px-5 py-3">Telefone</th>
+                        <th className="px-5 py-3">Entrega</th>
+                        <th className="px-5 py-3">Status</th>
+                        <th className="px-5 py-3 text-right">Ações</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                      {aguardandoPaginado.map((item) => (
+                        <tr key={item.id} className="bg-white dark:bg-zinc-900">
+                          <td className="px-5 py-3">
+                            <Checkbox checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />
+                          </td>
+                          <td className="px-5 py-3 text-zinc-500 dark:text-zinc-400">
+                            {new Date(item.created_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
+                          </td>
+                          <td className="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{item.card_nome || "—"}</td>
+                          <td className="px-5 py-3 text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(item.telefone)}</td>
+                          <td className="px-5 py-3">
+                            <AckIndicator ack={item.ack} />
+                          </td>
+                          <td className="px-5 py-3">
+                            <Badge tone={STATUS_BADGE[item.status].tone}>{STATUS_BADGE[item.status].label}</Badge>
+                          </td>
+                          <td className="px-5 py-3">
+                            <div className="flex justify-end gap-1.5">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="whitespace-nowrap"
+                                onClick={() => confirmar(item)}
+                                loading={processando === item.id}
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar manualmente
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                title="Cancelar monitoramento"
+                                onClick={() => cancelar(item)}
+                                disabled={processando === item.id}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                title="Apagar (ex: cliente só reagiu e o sistema não detectou)"
+                                onClick={() => setApagarAlvo(item)}
+                                disabled={processando === item.id}
+                              >
+                                <Trash2 className="h-4 w-4 text-red-500" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <Pagination
+                  page={paginaAguardando}
+                  totalItems={aguardando.length}
+                  pageSize={ITENS_POR_PAGINA}
+                  onPageChange={setPaginaAguardando}
+                />
+              </>
             )}
           </section>
 
@@ -308,8 +360,8 @@ export function PendentesResposta() {
                     <tr>
                       <th className="w-10 px-5 py-3">
                         <Checkbox
-                          checked={resolvidos.length > 0 && resolvidos.every((i) => selecionados.has(i.id))}
-                          onChange={() => alternarSelecionarTodos(resolvidos)}
+                          checked={resolvidosPaginado.length > 0 && resolvidosPaginado.every((i) => selecionados.has(i.id))}
+                          onChange={() => alternarSelecionarTodos(resolvidosPaginado)}
                         />
                       </th>
                       <th className="px-5 py-3">Resolvido em</th>
@@ -322,7 +374,7 @@ export function PendentesResposta() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                    {resolvidos.map((item) => (
+                    {resolvidosPaginado.map((item) => (
                       <tr key={item.id} className="bg-white dark:bg-zinc-900">
                         <td className="px-5 py-3">
                           <Checkbox checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />
@@ -357,7 +409,7 @@ export function PendentesResposta() {
                               variant="ghost"
                               size="icon"
                               title="Apagar"
-                              onClick={() => apagar(item)}
+                              onClick={() => setApagarAlvo(item)}
                               disabled={processando === item.id}
                             >
                               <Trash2 className="h-4 w-4 text-red-500" />
@@ -369,10 +421,34 @@ export function PendentesResposta() {
                   </tbody>
                 </table>
               </div>
+              <Pagination
+                page={paginaResolvidos}
+                totalItems={resolvidos.length}
+                pageSize={ITENS_POR_PAGINA}
+                onPageChange={setPaginaResolvidos}
+              />
             </section>
           )}
         </>
       )}
+
+      <ConfirmDialog
+        open={apagarAlvo !== null}
+        title="Apagar registro?"
+        message={`Isso vai apagar em definitivo o registro de ${apagarAlvo?.card_nome || "este cliente"}. Essa ação não pode ser desfeita.`}
+        loading={processando === apagarAlvo?.id}
+        onConfirm={confirmarApagar}
+        onCancel={() => setApagarAlvo(null)}
+      />
+      <ConfirmDialog
+        open={confirmMassaAberto}
+        title="Apagar registros selecionados?"
+        message={`Isso vai apagar em definitivo ${selecionados.size} registro(s) selecionado(s), em todas as páginas. Essa ação não pode ser desfeita.`}
+        confirmLabel="Apagar selecionados"
+        loading={apagandoSelecionados}
+        onConfirm={confirmarApagarSelecionados}
+        onCancel={() => setConfirmMassaAberto(false)}
+      />
     </div>
   );
 }

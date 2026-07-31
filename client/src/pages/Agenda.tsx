@@ -6,6 +6,7 @@ import type { Contact } from "@/lib/types";
 import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Input, Label, Textarea } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Pagination } from "@/components/ui/Pagination";
@@ -29,6 +30,8 @@ export function Agenda() {
   const [pagina, setPagina] = useState(0);
   const [selecionados, setSelecionados] = useState<Set<number>>(new Set());
   const [apagandoSelecionados, setApagandoSelecionados] = useState(false);
+  const [excluirAlvo, setExcluirAlvo] = useState<Contact | null>(null);
+  const [confirmMassaAberto, setConfirmMassaAberto] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function carregar() {
@@ -141,6 +144,13 @@ export function Agenda() {
     }
   }
 
+  async function confirmarExcluir() {
+    if (!excluirAlvo) return;
+    const alvo = excluirAlvo;
+    setExcluirAlvo(null);
+    await excluir(alvo.id);
+  }
+
   async function excluirSelecionados() {
     if (selecionados.size === 0) return;
     setApagandoSelecionados(true);
@@ -155,6 +165,11 @@ export function Agenda() {
     } finally {
       setApagandoSelecionados(false);
     }
+  }
+
+  async function confirmarExcluirSelecionados() {
+    setConfirmMassaAberto(false);
+    await excluirSelecionados();
   }
 
   function alternarSelecionado(id: number) {
@@ -219,7 +234,7 @@ export function Agenda() {
             <Button variant="ghost" size="sm" onClick={() => setSelecionados(new Set())}>
               Limpar seleção
             </Button>
-            <Button variant="danger" size="sm" onClick={excluirSelecionados} loading={apagandoSelecionados}>
+            <Button variant="danger" size="sm" onClick={() => setConfirmMassaAberto(true)} loading={apagandoSelecionados}>
               <Trash2 className="h-3.5 w-3.5" /> Apagar selecionados
             </Button>
           </div>
@@ -271,7 +286,7 @@ export function Agenda() {
                         <Button variant="ghost" size="icon" onClick={() => abrirEdicao(c)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => excluir(c.id)} loading={excluindo === c.id}>
+                        <Button variant="ghost" size="icon" onClick={() => setExcluirAlvo(c)} loading={excluindo === c.id}>
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
                       </div>
@@ -320,6 +335,24 @@ export function Agenda() {
           </div>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={excluirAlvo !== null}
+        title="Apagar contato?"
+        message={`Isso vai apagar em definitivo o contato "${excluirAlvo?.nome}". Essa ação não pode ser desfeita.`}
+        loading={excluindo === excluirAlvo?.id}
+        onConfirm={confirmarExcluir}
+        onCancel={() => setExcluirAlvo(null)}
+      />
+      <ConfirmDialog
+        open={confirmMassaAberto}
+        title="Apagar contatos selecionados?"
+        message={`Isso vai apagar em definitivo ${selecionados.size} contato(s) selecionado(s), em todas as páginas. Essa ação não pode ser desfeita.`}
+        confirmLabel="Apagar selecionados"
+        loading={apagandoSelecionados}
+        onConfirm={confirmarExcluirSelecionados}
+        onCancel={() => setConfirmMassaAberto(false)}
+      />
     </div>
   );
 }
