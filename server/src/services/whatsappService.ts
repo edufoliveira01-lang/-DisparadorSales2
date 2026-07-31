@@ -466,24 +466,33 @@ class WhatsappManager {
       const idFallback = await promessaIdFallback;
       if (idFallback) return idFallback;
 
-      // Prioridade 3: Verificação Ativa (Fetch-back)
-      // Envolvido em try-catch para que qualquer erro aqui não falhe o envio da mensagem.
+      // Prioridade 3: Busca Persistente (Polling Fetch-back)
+      // Tentamos buscar a mensagem no chat repetidamente durante 10 segundos.
       try {
-        console.log(`[WhatsApp] Tentando verificação ativa para ${chatId}...`);
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Aguarda o WhatsApp processar
+        console.log(`[WhatsApp] Iniciando busca persistente de ID para ${chatId}...`);
         
-        const chat = await client.getChatById(chatId);
-        const messages = await chat.fetchMessages({ limit: 5 });
-        
-        // Procuramos a mensagem mais recente enviada por nós
-        const lastSent = messages.reverse().find(m => m.fromMe);
-        
-        if (lastSent && lastSent.id?._serialized) {
-          console.log(`[WhatsApp] ID capturado via verificação ativa: ${lastSent.id._serialized}`);
-          return lastSent.id._serialized;
+        for (let i = 0; i < 5; i++) {
+          await new Promise(resolve => setTimeout(resolve, 2000)); // Espera 2s entre tentativas
+          
+          const chat = await client.getChatById(chatId);
+          const messages = await chat.fetchMessages({ limit: 10 });
+          
+          // Procuramos a mensagem mais recente enviada por nós.
+          // Comparamos também o início do texto para evitar pegar uma mensagem muito antiga
+          // caso o envio atual tenha falhado silenciosamente no navegador.
+          const textoReduzido = mensagem.slice(0, 50);
+          const lastSent = messages.reverse().find(m => 
+            m.fromMe && (m.body.includes(textoReduzido) || mensagem.includes(m.body.slice(0, 50)))
+          );
+          
+          if (lastSent && lastSent.id?._serialized) {
+            console.log(`[WhatsApp] ID capturado na tentativa ${i + 1}: ${lastSent.id._serialized}`);
+            return lastSent.id._serialized;
+          }
+          console.log(`[WhatsApp] Tentativa ${i + 1} falhou, tentando novamente...`);
         }
       } catch (fetchErr) {
-        console.error(`[WhatsApp] Erro na verificação ativa para ${chatId}:`, fetchErr);
+        console.error(`[WhatsApp] Erro na busca persistente para ${chatId}:`, fetchErr);
       }
 
       return null;
