@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { dispatchSingle } from "../services/dispatchService";
-import { getLog, listLogs } from "../services/logsService";
+import { deleteLog, deleteLogs, getLog, listLogs } from "../services/logsService";
 import type { Pericia } from "../services/parserService";
 
 export const logsRouter = Router();
@@ -40,4 +40,21 @@ logsRouter.post("/:id/reenviar", async (req, res) => {
   } catch (err) {
     res.status(400).json({ error: (err as Error).message });
   }
+});
+
+logsRouter.delete("/:id", (req, res) => {
+  const id = Number(req.params.id);
+  if (!getLog(id)) return res.status(404).json({ error: "Registro de envio não encontrado." });
+  deleteLog(id);
+  res.json({ ok: true });
+});
+
+logsRouter.post("/apagar-em-massa", (req, res) => {
+  const { ids } = req.body as { ids?: number[] };
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: "Nenhum registro selecionado." });
+  }
+
+  const apagados = deleteLogs(ids.filter((id) => Number.isInteger(id)));
+  res.json({ ok: true, apagados });
 });

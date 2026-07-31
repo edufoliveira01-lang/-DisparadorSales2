@@ -9,6 +9,7 @@ import { AckIndicator } from "@/components/AckIndicator";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 
@@ -18,12 +19,38 @@ const STATUS_BADGE: Record<PendingReply["status"], { label: string; tone: "warni
   cancelado: { label: "Substituído por novo envio", tone: "neutral" },
 };
 
+type Filtro = "todos" | "enviado" | "entregue" | "lido" | "respondido";
+
+const FILTRO_OPTIONS: { value: Filtro; label: string }[] = [
+  { value: "todos", label: "Todos os status" },
+  { value: "enviado", label: "Enviado" },
+  { value: "entregue", label: "Entregue" },
+  { value: "lido", label: "Lido" },
+  { value: "respondido", label: "Respondido" },
+];
+
+function combinaFiltro(item: PendingReply, filtro: Filtro): boolean {
+  switch (filtro) {
+    case "todos":
+      return true;
+    case "enviado":
+      return item.ack === 1;
+    case "entregue":
+      return item.ack === 2;
+    case "lido":
+      return item.ack !== null && item.ack >= 3;
+    case "respondido":
+      return item.status === "respondido";
+  }
+}
+
 export function PendentesResposta() {
   const { show } = useToast();
   const [pendentes, setPendentes] = useState<PendingReply[] | null>(null);
   const [processando, setProcessando] = useState<number | null>(null);
   const [selecionados, setSelecionados] = useState<Set<number>>(new Set());
   const [apagandoSelecionados, setApagandoSelecionados] = useState(false);
+  const [filtro, setFiltro] = useState<Filtro>("todos");
 
   const carregar = useCallback(async () => {
     const data = await api.get<PendingReply[]>("/pending-replies");
@@ -123,8 +150,14 @@ export function PendentesResposta() {
     });
   }
 
-  const aguardando = useMemo(() => pendentes?.filter((p) => p.status === "aguardando") ?? [], [pendentes]);
-  const resolvidos = useMemo(() => pendentes?.filter((p) => p.status !== "aguardando") ?? [], [pendentes]);
+  const aguardando = useMemo(
+    () => pendentes?.filter((p) => p.status === "aguardando" && combinaFiltro(p, filtro)) ?? [],
+    [pendentes, filtro]
+  );
+  const resolvidos = useMemo(
+    () => pendentes?.filter((p) => p.status !== "aguardando" && combinaFiltro(p, filtro)) ?? [],
+    [pendentes, filtro]
+  );
 
   return (
     <div className="space-y-6">
@@ -135,9 +168,18 @@ export function PendentesResposta() {
             Clientes que já receberam a mensagem e aguardam resposta ou reação para o cartão ser movido automaticamente.
           </p>
         </div>
-        <Button variant="outline" onClick={carregar}>
-          <RefreshCw className="h-4 w-4" /> Atualizar
-        </Button>
+        <div className="flex items-center gap-2">
+          <Select value={filtro} onChange={(e) => setFiltro(e.target.value as Filtro)} className="w-44">
+            {FILTRO_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </Select>
+          <Button variant="outline" onClick={carregar}>
+            <RefreshCw className="h-4 w-4" /> Atualizar
+          </Button>
+        </div>
       </div>
 
       {selecionados.size > 0 && (
@@ -168,12 +210,20 @@ export function PendentesResposta() {
           title="Nenhum monitoramento ativo"
           description='Configure uma "lista de confirmação" em Configurações → Trello para que envios passem a aparecer aqui.'
         />
+      ) : aguardando.length === 0 && resolvidos.length === 0 && filtro !== "todos" ? (
+        <EmptyState
+          icon={MessageSquareReply}
+          title="Nenhum resultado para esse filtro"
+          description="Tente outro status ou volte para “Todos os status”."
+        />
       ) : (
         <>
           <section className="space-y-3">
             <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Aguardando ({aguardando.length})</h2>
             {aguardando.length === 0 ? (
-              <p className="text-sm text-zinc-400">Nenhum cliente aguardando resposta no momento.</p>
+              <p className="text-sm text-zinc-400">
+                {filtro === "todos" ? "Nenhum cliente aguardando resposta no momento." : "Nenhum resultado para esse filtro."}
+              </p>
             ) : (
               <div className="overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800">
                 <table className="w-full text-sm">
@@ -215,6 +265,7 @@ export function PendentesResposta() {
                             <Button
                               variant="outline"
                               size="sm"
+                              className="whitespace-nowrap"
                               onClick={() => confirmar(item)}
                               loading={processando === item.id}
                             >
