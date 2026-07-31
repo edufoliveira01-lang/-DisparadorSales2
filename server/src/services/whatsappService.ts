@@ -293,15 +293,24 @@ class WhatsappManager {
     client.on("message_ack", (message: Message, ack: number) => {
       try {
         const messageId = message.id._serialized;
+        console.log(`[WhatsApp] Evento message_ack recebido: ID=${messageId}, ACK=${ack}`);
+        
         const log = updateLogAckByMessageId(messageId, ack);
         const pending = updatePendingReplyAckByMessageId(messageId, ack);
 
-        if (log) emitEvent("send:ack-update", log);
-        if (pending) emitEvent("pendingReply:ack-update", pending);
+        if (log) {
+          console.log(`[WhatsApp] Status do Log atualizado: ${messageId}`);
+          emitEvent("send:ack-update", log);
+        }
+        if (pending) {
+          console.log(`[WhatsApp] Status do Pendente atualizado: ${messageId}`);
+          emitEvent("pendingReply:ack-update", pending);
+        }
 
         // Se não encontrou nem log nem pendente, pode ser que o registro ainda não tenha sido
         // salvo no banco (race condition). Guardamos o ack para tentar aplicar logo em seguida.
         if (!log && !pending) {
+          console.log(`[WhatsApp] ACK órfão detectado (race condition), guardando: ${messageId}`);
           this.acksPendentes.set(messageId, ack);
           // Limpa do cache após 30 segundos para não vazar memória
           setTimeout(() => this.acksPendentes.delete(messageId), 30000);
@@ -453,12 +462,28 @@ class WhatsappManager {
         return sent.id._serialized;
       }
       
-      // Prioridade 2: Se o retorno foi vazio mas a mensagem foi enviada, o fallback via message_create 
-      // já deve ter capturado ou capturará o ID em breve.
+      // Prioridade 2: Fallback via message_create (evento disparado pela lib)
       const idFallback = await promessaIdFallback;
       if (idFallback) return idFallback;
 
-      // Se chegamos aqui, o envio pode ter falhado silenciosamente ou o ID nunca chegou.
+      // Prioridade 3: Verificação Ativa (Fetch-back)
+      // Se a lib falhou em retornar o ID e o evento não disparou, vamos buscar a última 
+      // mensagem enviada por nós nesse chat diretamente na base do WhatsApp.
+      console.log(`[WhatsApp] Tentando verificação ativa para ${chatId}...`);
+      await new Promise(r => setTimeout(r, 2000)); // Aguarda o WhatsApp processar
+      
+      const chat = await client.getChatById(chatId);
+      const messages = await chat.fetchMessages({ limit: 5 });
+      
+      // Procuramos a mensagem mais recente enviada por nós que corresponda ao texto
+      // (ou simplesmente a última enviada por nós se o texto for muito complexo)
+      const lastSent = messages.reverse().find(m => m.fromMe);
+      
+      if (lastSent && lastSent.id?._serialized) {
+        console.log(`[WhatsApp] ID capturado via verificação ativa: ${lastSent.id._serialized}`);
+        return lastSent.id._serialized;
+      }
+
       return null;
     } catch (err) {
       this.removerEnvioAguardando(chatId, mensagem);
