@@ -39,6 +39,9 @@ export function runMigrations(db: Database.Database): void {
       mensagem_enviada TEXT,
       status TEXT CHECK(status IN ('sucesso','falha')),
       erro TEXT,
+      whatsapp_message_id TEXT,
+      ack INTEGER,
+      ack_updated_at DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (contact_id) REFERENCES contacts(id)
     );
@@ -88,6 +91,21 @@ export function runMigrations(db: Database.Database): void {
   } catch {
     // Colunas já existem
   }
+
+  // Rastreamento de status de entrega/leitura (✓✓ do WhatsApp) por envio — cada ALTER isolado
+  // no seu próprio try/catch para não pular as colunas seguintes se uma já existir.
+  for (const stmt of [
+    "ALTER TABLE send_logs ADD COLUMN whatsapp_message_id TEXT",
+    "ALTER TABLE send_logs ADD COLUMN ack INTEGER",
+    "ALTER TABLE send_logs ADD COLUMN ack_updated_at DATETIME",
+  ]) {
+    try {
+      db.exec(stmt);
+    } catch {
+      // Coluna já existe
+    }
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_send_logs_whatsapp_message_id ON send_logs(whatsapp_message_id)");
 
   // Criar usuário padrão se não existir nenhum
   const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get() as { count: number };

@@ -7,6 +7,7 @@ import { emitEvent } from "../websocket";
 import { normalizePhone } from "../utils/phone";
 import { getSetting } from "./settingsService";
 import { moveCard } from "./trelloService";
+import { updateLogAckByMessageId } from "./logsService";
 import {
   findAwaitingByPhoneDigits,
   listPendingReplies,
@@ -255,6 +256,18 @@ class WhatsappManager {
       );
     });
 
+    // "message_ack" dispara a cada mudança no status de confirmação de uma mensagem NOSSA
+    // (✓ enviado ao servidor, ✓✓ cinza entregue no aparelho, ✓✓ azul lido). Associamos pelo id
+    // da mensagem do WhatsApp, salvo em send_logs no momento do envio (dispatchService).
+    client.on("message_ack", (message: Message, ack: number) => {
+      try {
+        const log = updateLogAckByMessageId(message.id._serialized, ack);
+        if (log) emitEvent("send:ack-update", log);
+      } catch (err) {
+        console.error("Erro ao processar confirmação de entrega/leitura:", err);
+      }
+    });
+
     client.initialize().catch((err) => {
       failAndCleanUp("falha", err?.message ?? String(err));
     });
@@ -351,12 +364,14 @@ class WhatsappManager {
     return result ? result._serialized : null;
   }
 
-  async sendMessage(chatId: string, mensagem: string): Promise<void> {
+  /** Envia a mensagem e retorna o id do WhatsApp, usado depois para rastrear entrega/leitura. */
+  async sendMessage(chatId: string, mensagem: string): Promise<string> {
     if (!this.client || this.status !== "conectado") {
       throw new Error("WhatsApp não está conectado.");
     }
     const client = this.client;
-    await this.comRetryTransitorio(() => client.sendMessage(chatId, mensagem));
+    const sent = await this.comRetryTransitorio(() => client.sendMessage(chatId, mensagem));
+    return sent.id._serialized;
   }
 
   /**

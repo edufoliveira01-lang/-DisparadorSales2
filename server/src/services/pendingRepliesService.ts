@@ -42,10 +42,28 @@ const cancelStmt = db.prepare(
 );
 const deleteStmt = db.prepare("DELETE FROM pending_replies WHERE id = ?");
 
-export function createPendingReply(cardId: string, cardNome: string | null, telefone: string): PendingReply {
-  const telefoneDigits = normalizePhone(telefone);
+/**
+ * telefoneExibicao é o número "para humano ler" (o telefone salvo no contato). chatIdDigits é
+ * o identificador que o WhatsApp de fato usa para essa conversa (resolvido via getNumberId no
+ * envio) — às vezes diferente do telefone por causa da ambiguidade do 9º dígito em números
+ * brasileiros, ou porque o WhatsApp migrou o contato para um "LID" (identificador interno, não
+ * o telefone). Usamos chatIdDigits só para casar com quem responde depois; telefoneExibicao é
+ * só para exibição na tela.
+ */
+export function createPendingReply(
+  cardId: string,
+  cardNome: string | null,
+  telefoneExibicao: string,
+  chatIdDigits: string
+): PendingReply {
+  const telefoneDigits = normalizePhone(chatIdDigits);
   cancelAwaitingForPhoneStmt.run(telefoneDigits);
-  const info = insertStmt.run({ card_id: cardId, card_nome: cardNome, telefone, telefone_digits: telefoneDigits });
+  const info = insertStmt.run({
+    card_id: cardId,
+    card_nome: cardNome,
+    telefone: telefoneExibicao,
+    telefone_digits: telefoneDigits,
+  });
   return getStmt.get(info.lastInsertRowid) as PendingReply;
 }
 
