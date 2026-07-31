@@ -40,6 +40,7 @@ const resolveStmt = db.prepare(
 const cancelStmt = db.prepare(
   `UPDATE pending_replies SET status = 'cancelado', resolved_at = CURRENT_TIMESTAMP WHERE id = ?`
 );
+const deleteStmt = db.prepare("DELETE FROM pending_replies WHERE id = ?");
 
 export function createPendingReply(cardId: string, cardNome: string | null, telefone: string): PendingReply {
   const telefoneDigits = normalizePhone(telefone);
@@ -68,4 +69,16 @@ export function resolvePendingReply(id: number, tipoResposta: TipoResposta, prev
 export function cancelPendingReply(id: number): PendingReply {
   cancelStmt.run(id);
   return getStmt.get(id) as PendingReply;
+}
+
+export function deletePendingReply(id: number): void {
+  deleteStmt.run(id);
+}
+
+/** Apaga em massa; ids inexistentes são ignorados. Retorna quantos registros foram de fato apagados. */
+export function deletePendingReplies(ids: number[]): number {
+  if (ids.length === 0) return 0;
+  const placeholders = ids.map(() => "?").join(",");
+  const info = db.prepare(`DELETE FROM pending_replies WHERE id IN (${placeholders})`).run(...ids);
+  return info.changes;
 }

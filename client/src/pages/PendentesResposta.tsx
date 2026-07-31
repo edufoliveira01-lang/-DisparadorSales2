@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, MessageSquareReply, RefreshCw, SmilePlus, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { CheckCircle2, MessageSquareReply, RefreshCw, SmilePlus, Trash2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type { PendingReply } from "@/lib/types";
 import { useToast } from "@/components/ui/Toast";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 
@@ -19,6 +20,8 @@ export function PendentesResposta() {
   const { show } = useToast();
   const [pendentes, setPendentes] = useState<PendingReply[] | null>(null);
   const [processando, setProcessando] = useState<number | null>(null);
+  const [selecionados, setSelecionados] = useState<Set<number>>(new Set());
+  const [apagandoSelecionados, setApagandoSelecionados] = useState(false);
 
   const carregar = useCallback(async () => {
     const data = await api.get<PendingReply[]>("/pending-replies");
@@ -59,8 +62,63 @@ export function PendentesResposta() {
     }
   }
 
-  const aguardando = pendentes?.filter((p) => p.status === "aguardando") ?? [];
-  const resolvidos = pendentes?.filter((p) => p.status !== "aguardando") ?? [];
+  async function apagar(item: PendingReply) {
+    setProcessando(item.id);
+    try {
+      await api.delete(`/pending-replies/${item.id}`);
+      show("Registro apagado.", "info");
+      setSelecionados((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+      carregar();
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao apagar registro.", "error");
+    } finally {
+      setProcessando(null);
+    }
+  }
+
+  async function apagarSelecionados() {
+    if (selecionados.size === 0) return;
+    setApagandoSelecionados(true);
+    try {
+      const ids = Array.from(selecionados);
+      await api.post("/pending-replies/apagar-em-massa", { ids });
+      show(`${ids.length} registro(s) apagado(s).`, "success");
+      setSelecionados(new Set());
+      carregar();
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao apagar registros selecionados.", "error");
+    } finally {
+      setApagandoSelecionados(false);
+    }
+  }
+
+  function alternarSelecionado(id: number) {
+    setSelecionados((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function alternarSelecionarTodos(itens: PendingReply[]) {
+    setSelecionados((prev) => {
+      const todosMarcados = itens.length > 0 && itens.every((i) => prev.has(i.id));
+      const next = new Set(prev);
+      for (const item of itens) {
+        if (todosMarcados) next.delete(item.id);
+        else next.add(item.id);
+      }
+      return next;
+    });
+  }
+
+  const aguardando = useMemo(() => pendentes?.filter((p) => p.status === "aguardando") ?? [], [pendentes]);
+  const resolvidos = useMemo(() => pendentes?.filter((p) => p.status !== "aguardando") ?? [], [pendentes]);
 
   return (
     <div className="space-y-6">
@@ -75,6 +133,22 @@ export function PendentesResposta() {
           <RefreshCw className="h-4 w-4" /> Atualizar
         </Button>
       </div>
+
+      {selecionados.size > 0 && (
+        <div className="flex items-center justify-between rounded-xl border border-accent-200 bg-accent-50 px-4 py-3 dark:border-accent-900 dark:bg-accent-900/20">
+          <p className="text-sm font-medium text-accent-800 dark:text-accent-300">
+            {selecionados.size} registro(s) selecionado(s)
+          </p>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setSelecionados(new Set())}>
+              Limpar seleção
+            </Button>
+            <Button variant="danger" size="sm" onClick={apagarSelecionados} loading={apagandoSelecionados}>
+              <Trash2 className="h-3.5 w-3.5" /> Apagar selecionados
+            </Button>
+          </div>
+        </div>
+      )}
 
       {pendentes === null ? (
         <div className="space-y-2">
@@ -99,6 +173,12 @@ export function PendentesResposta() {
                 <table className="w-full text-sm">
                   <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
                     <tr>
+                      <th className="w-10 px-5 py-3">
+                        <Checkbox
+                          checked={aguardando.length > 0 && aguardando.every((i) => selecionados.has(i.id))}
+                          onChange={() => alternarSelecionarTodos(aguardando)}
+                        />
+                      </th>
                       <th className="px-5 py-3">Enviado em</th>
                       <th className="px-5 py-3">Cliente</th>
                       <th className="px-5 py-3">Telefone</th>
@@ -109,6 +189,9 @@ export function PendentesResposta() {
                   <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                     {aguardando.map((item) => (
                       <tr key={item.id} className="bg-white dark:bg-zinc-900">
+                        <td className="px-5 py-3">
+                          <Checkbox checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />
+                        </td>
                         <td className="px-5 py-3 text-zinc-500 dark:text-zinc-400">
                           {new Date(item.created_at).toLocaleString("pt-BR")}
                         </td>
@@ -127,8 +210,23 @@ export function PendentesResposta() {
                             >
                               <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar manualmente
                             </Button>
-                            <Button variant="ghost" size="icon" onClick={() => cancelar(item)} disabled={processando === item.id}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Cancelar monitoramento"
+                              onClick={() => cancelar(item)}
+                              disabled={processando === item.id}
+                            >
                               <X className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Apagar (ex: cliente só reagiu e o sistema não detectou)"
+                              onClick={() => apagar(item)}
+                              disabled={processando === item.id}
+                            >
+                              <Trash2 className="h-4 w-4 text-red-500" />
                             </Button>
                           </div>
                         </td>
@@ -147,16 +245,26 @@ export function PendentesResposta() {
                 <table className="w-full text-sm">
                   <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
                     <tr>
+                      <th className="w-10 px-5 py-3">
+                        <Checkbox
+                          checked={resolvidos.length > 0 && resolvidos.every((i) => selecionados.has(i.id))}
+                          onChange={() => alternarSelecionarTodos(resolvidos)}
+                        />
+                      </th>
                       <th className="px-5 py-3">Resolvido em</th>
                       <th className="px-5 py-3">Cliente</th>
                       <th className="px-5 py-3">Telefone</th>
                       <th className="px-5 py-3">Como respondeu</th>
                       <th className="px-5 py-3">Status</th>
+                      <th className="px-5 py-3 text-right">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                     {resolvidos.map((item) => (
                       <tr key={item.id} className="bg-white dark:bg-zinc-900">
+                        <td className="px-5 py-3">
+                          <Checkbox checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />
+                        </td>
                         <td className="px-5 py-3 text-zinc-500 dark:text-zinc-400">
                           {item.resolved_at ? new Date(item.resolved_at).toLocaleString("pt-BR") : "—"}
                         </td>
@@ -177,6 +285,19 @@ export function PendentesResposta() {
                         </td>
                         <td className="px-5 py-3">
                           <Badge tone={STATUS_BADGE[item.status].tone}>{STATUS_BADGE[item.status].label}</Badge>
+                        </td>
+                        <td className="px-5 py-3">
+                          <div className="flex justify-end">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Apagar"
+                              onClick={() => apagar(item)}
+                              disabled={processando === item.id}
+                            >
+                              <Trash2 className="h-4 w-4 text-red-500" />
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     ))}

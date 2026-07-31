@@ -1,7 +1,14 @@
 import { Router } from "express";
 import { getSetting } from "../services/settingsService";
 import { moveCard, TrelloError } from "../services/trelloService";
-import { cancelPendingReply, getPendingReply, listPendingReplies, resolvePendingReply } from "../services/pendingRepliesService";
+import {
+  cancelPendingReply,
+  deletePendingReplies,
+  deletePendingReply,
+  getPendingReply,
+  listPendingReplies,
+  resolvePendingReply,
+} from "../services/pendingRepliesService";
 import { emitEvent } from "../websocket";
 
 export const pendingRepliesRouter = Router();
@@ -44,4 +51,26 @@ pendingRepliesRouter.post("/:id/cancelar", (req, res) => {
   const cancelled = cancelPendingReply(id);
   emitEvent("pendingReply:resolved", cancelled);
   res.json({ ok: true, log: cancelled });
+});
+
+// Apaga o registro em definitivo — útil quando o cliente só reagiu à mensagem durante uma
+// desconexão do WhatsApp: a reconciliação automática não detecta reações perdidas (só
+// mensagens de texto), então o pendente ficaria preso em "aguardando" sem essa opção manual.
+pendingRepliesRouter.delete("/:id", (req, res) => {
+  const id = Number(req.params.id);
+  const pending = getPendingReply(id);
+  if (!pending) return res.status(404).json({ error: "Registro não encontrado." });
+
+  deletePendingReply(id);
+  res.json({ ok: true });
+});
+
+pendingRepliesRouter.post("/apagar-em-massa", (req, res) => {
+  const { ids } = req.body as { ids?: number[] };
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: "Nenhum registro selecionado." });
+  }
+
+  const apagados = deletePendingReplies(ids.filter((id) => Number.isInteger(id)));
+  res.json({ ok: true, apagados });
 });
