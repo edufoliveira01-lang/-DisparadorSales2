@@ -435,23 +435,29 @@ class WhatsappManager {
     }
     const client = this.client;
 
-    // Registramos a intenção de capturar o ID via message_create ANTES de enviar, para evitar
-    // race condition onde a mensagem é criada e o evento disparado antes de começarmos a ouvir.
+    // Registramos a intenção de capturar o ID via message_create ANTES de enviar.
     const promessaIdFallback = this.aguardarIdViaMessageCreate(chatId, mensagem);
 
     try {
       const sent = await this.comRetryTransitorio(() => client.sendMessage(chatId, mensagem));
+      
+      // Prioridade 1: ID retornado diretamente pelo sendMessage
       if (sent?.id?._serialized) {
-        // Se o retorno direto funcionou, removemos do aguardo para não vazar memória
         this.removerEnvioAguardando(chatId, mensagem);
         return sent.id._serialized;
       }
+      
+      // Prioridade 2: Se o retorno foi vazio mas a mensagem foi enviada, o fallback via message_create 
+      // já deve ter capturado ou capturará o ID em breve.
+      const idFallback = await promessaIdFallback;
+      if (idFallback) return idFallback;
+
+      // Se chegamos aqui, o envio pode ter falhado silenciosamente ou o ID nunca chegou.
+      return null;
     } catch (err) {
       this.removerEnvioAguardando(chatId, mensagem);
       throw err;
     }
-
-    return promessaIdFallback;
   }
 
   private removerEnvioAguardando(chatId: string, texto: string) {
