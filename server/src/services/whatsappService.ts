@@ -54,6 +54,46 @@ function clearLegacyWebVersionCache(): void {
   }
 }
 
+const WA_VERSION_REPO_API = "https://api.github.com/repos/wppconnect-team/wa-version/contents/html";
+const WA_VERSION_RAW_BASE = "https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html";
+/** Nº de versões a pular a partir da mais antiga ainda disponível, como margem de segurança
+ * contra o repositório podar exatamente a que escolhemos entre a hora que listamos e a hora
+ * que de fato conectamos. */
+const WA_VERSION_MARGEM_SEGURANCA = 5;
+
+/**
+ * Resolve dinamicamente qual versão fixar no webVersionCache (ver comentário maior em
+ * iniciarTentativa). Fixar um arquivo específico por nome (como fizemos antes) quebra de novo
+ * assim que o wa-version poda esse arquivo do repositório — o repositório só mantém uma janela
+ * rolante de versões recentes, então qualquer nome fixo tem vida curta. Em vez disso, consultamos
+ * a listagem atual a cada tentativa de conexão e escolhemos a mais antiga ainda disponível (com
+ * uma pequena margem), o que se auto-corrige à medida que a janela avança.
+ */
+async function resolveWaVersionCache(): Promise<
+  { type: "remote"; remotePath: string; strict: false } | { type: "none" }
+> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    const res = await fetch(WA_VERSION_REPO_API, {
+      signal: controller.signal,
+      headers: { "User-Agent": "disparazap", Accept: "application/vnd.github+json" },
+    });
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const arquivos = (await res.json()) as { name: string }[];
+    const versoes = arquivos.map((a) => a.name).filter((nome) => nome.endsWith(".html")).sort();
+    if (versoes.length === 0) throw new Error("Nenhuma versão listada");
+
+    const escolhida = versoes[Math.min(WA_VERSION_MARGEM_SEGURANCA, versoes.length - 1)];
+    return { type: "remote", remotePath: `${WA_VERSION_RAW_BASE}/${escolhida}`, strict: false };
+  } catch (err) {
+    console.error("[WhatsApp] Não foi possível resolver versão fixa do WhatsApp Web, usando a mais recente:", err);
+    return { type: "none" };
+  }
+}
+
 // "Execution context was destroyed" / "Protocol error" são falhas conhecidas e
 // intermitentes do whatsapp-web.js (bug de terceiros, ainda sem correção definitiva
 // upstream) que costumam acontecer durante o carregamento inicial do WhatsApp Web,
@@ -124,7 +164,7 @@ class WhatsappManager {
     this.iniciarTentativa(this.geracao);
   }
 
-  private iniciarTentativa(minhaGeracao: number): void {
+  private async iniciarTentativa(minhaGeracao: number): Promise<void> {
     if (minhaGeracao !== this.geracao) return; // uma chamada mais recente (connect/disconnect) já assumiu
 
     clearStaleChromiumLocks();
@@ -150,14 +190,18 @@ class WhatsappManager {
     // isso reações/mensagens recebidas continuam funcionando (caminho diferente), mas o id de
     // mensagens enviadas por nós não.
     //
-    // A correção é fixar uma versão específica, hospedada pelo wa-version (mantido pela
-    // comunidade wppconnect, a referência oficialmente citada pelo próprio whatsapp-web.js
-    // para esse cenário). O repositório só mantém uma janela recente de builds — pegamos a
-    // mais antiga ainda disponível ali (bem mais conservadora que a build do dia, que é o que
-    // "none" nos dava), dando ao patch de Store uma chance melhor de bater com o formato que
-    // ele espera. "strict: false" garante que, se essa versão específica sair do ar, caímos de
-    // volta no comportamento anterior (usar a mais recente) em vez de travar para sempre — sem
-    // repetir o bug do cache local citado acima, já que aqui não persistimos nada em disco.
+    // A primeira correção foi fixar um arquivo de versão específico do wa-version (mantido pela
+    // comunidade wppconnect, referência oficial do whatsapp-web.js para esse cenário). Só que
+    // esse repositório poda os arquivos mais antigos com o tempo — a versão que fixamos por
+    // nome sumiu de lá poucos dias depois, e o problema voltou (strict:false caiu de volta para
+    // "mais recente"). A correção agora é resolver isso DINAMICAMENTE a cada tentativa de
+    // conexão via resolveWaVersionCache(): consultamos a listagem atual do repositório e
+    // escolhemos a mais antiga ainda disponível (com margem de segurança), então continuamos
+    // conservadores mesmo com a janela do repositório avançando. Se a consulta falhar por
+    // qualquer motivo, caímos no comportamento anterior (mais recente) em vez de travar.
+    const webVersionCache = await resolveWaVersionCache();
+    if (minhaGeracao !== this.geracao) return; // connect()/disconnect() aconteceu enquanto resolvíamos a versão
+
     const client = new Client({
       authStrategy: new LocalAuth({ dataPath: AUTH_DATA_PATH }),
       puppeteer: {
@@ -175,12 +219,7 @@ class WhatsappManager {
         ],
         protocolTimeout: 120000,
       },
-      webVersionCache: {
-        type: "remote",
-        remotePath:
-          "https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1040524532-alpha.html",
-        strict: false,
-      },
+      webVersionCache,
       // Quantas vezes o QR Code pode ser renovado (o WhatsApp Web troca a imagem sozinho a
       // cada ~20-30s) antes do whatsapp-web.js desistir e desconectar. Um valor generoso dá
       // mais tempo real para escanear em celulares mais lentos, sem travar para sempre — depois
