@@ -60,18 +60,32 @@ const WA_VERSION_RAW_BASE = "https://raw.githubusercontent.com/wppconnect-team/w
  * contra o repositório podar exatamente a que escolhemos entre a hora que listamos e a hora
  * que de fato conectamos. */
 const WA_VERSION_MARGEM_SEGURANCA = 5;
+/** Quanto tempo reaproveitar a mesma versão resolvida antes de consultar de novo. Sem isso, toda
+ * tentativa de conexão (inclusive os retries automáticos de iniciarTentativa, até
+ * MAX_TENTATIVAS_CONEXAO vezes) batia na API do GitHub — depois de algumas reconexões seguidas
+ * isso já é suficiente pra esbarrar no limite de requisições sem autenticação do GitHub (60/hora
+ * por IP), fazendo a consulta falhar e cair de volta em "none" (build mais recente), que é
+ * exatamente o bug que estamos evitando. */
+const WA_VERSION_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
+type WaVersionCache = { type: "remote"; remotePath: string; strict: false } | { type: "none" };
+let waVersionCacheResolvida: { valor: WaVersionCache; resolvidaEm: number } | null = null;
 
 /**
  * Resolve dinamicamente qual versão fixar no webVersionCache (ver comentário maior em
  * iniciarTentativa). Fixar um arquivo específico por nome (como fizemos antes) quebra de novo
  * assim que o wa-version poda esse arquivo do repositório — o repositório só mantém uma janela
  * rolante de versões recentes, então qualquer nome fixo tem vida curta. Em vez disso, consultamos
- * a listagem atual a cada tentativa de conexão e escolhemos a mais antiga ainda disponível (com
- * uma pequena margem), o que se auto-corrige à medida que a janela avança.
+ * a listagem atual e escolhemos a mais antiga ainda disponível (com uma pequena margem), o que se
+ * auto-corrige à medida que a janela avança — mas só a cada WA_VERSION_CACHE_TTL_MS, e se a
+ * consulta nova falhar (rede, rate limit) preferimos reaproveitar a última resolução boa que
+ * tivermos a cair em "none", que reintroduziria o bug do id._serialized undefined.
  */
-async function resolveWaVersionCache(): Promise<
-  { type: "remote"; remotePath: string; strict: false } | { type: "none" }
-> {
+async function resolveWaVersionCache(): Promise<WaVersionCache> {
+  if (waVersionCacheResolvida && Date.now() - waVersionCacheResolvida.resolvidaEm < WA_VERSION_CACHE_TTL_MS) {
+    return waVersionCacheResolvida.valor;
+  }
+
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
@@ -87,8 +101,18 @@ async function resolveWaVersionCache(): Promise<
     if (versoes.length === 0) throw new Error("Nenhuma versão listada");
 
     const escolhida = versoes[Math.min(WA_VERSION_MARGEM_SEGURANCA, versoes.length - 1)];
-    return { type: "remote", remotePath: `${WA_VERSION_RAW_BASE}/${escolhida}`, strict: false };
+    const resultado: WaVersionCache = { type: "remote", remotePath: `${WA_VERSION_RAW_BASE}/${escolhida}`, strict: false };
+    waVersionCacheResolvida = { valor: resultado, resolvidaEm: Date.now() };
+    console.log(`[WhatsApp] Versão fixa do WhatsApp Web resolvida: ${escolhida}`);
+    return resultado;
   } catch (err) {
+    if (waVersionCacheResolvida) {
+      console.error(
+        "[WhatsApp] Falha ao atualizar a versão fixa do WhatsApp Web, reaproveitando a última resolução válida:",
+        err
+      );
+      return waVersionCacheResolvida.valor;
+    }
     console.error("[WhatsApp] Não foi possível resolver versão fixa do WhatsApp Web, usando a mais recente:", err);
     return { type: "none" };
   }
