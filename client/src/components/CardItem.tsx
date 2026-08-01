@@ -55,21 +55,32 @@ export function CardItem({
         </div>
 
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate font-semibold text-zinc-900 dark:text-zinc-100">{card.nomeCliente}</h3>
-            <button
-              onClick={onEditarNome}
-              title="Editar nome do cliente"
-              className="text-zinc-400 hover:text-accent-600 dark:text-zinc-500 dark:hover:text-accent-400"
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <h3 className="truncate font-semibold text-zinc-900 dark:text-zinc-100">{card.nomeCliente}</h3>
+              <button
+                onClick={onEditarNome}
+                title="Editar nome do cliente"
+                className="text-zinc-400 hover:text-accent-600 dark:text-zinc-500 dark:hover:text-accent-400"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+              <Badge tone="accent">{card.pericias.length === 2 ? "2 perícias" : "1 perícia"}</Badge>
+              {card.incompleta && (
+                <Badge tone="warning">
+                  <AlertTriangle className="h-3 w-3" /> Descrição incompleta
+                </Badge>
+              )}
+            </div>
+            <Button
+              size="sm"
+              className="shrink-0"
+              onClick={onEnviar}
+              loading={enviando}
+              disabled={!temContatoEfetivo || card.pericias.length === 0}
             >
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
-            <Badge tone="accent">{card.pericias.length === 2 ? "2 perícias" : "1 perícia"}</Badge>
-            {card.incompleta && (
-              <Badge tone="warning">
-                <AlertTriangle className="h-3 w-3" /> Descrição incompleta
-              </Badge>
-            )}
+              <Send className="h-3.5 w-3.5" /> Enviar
+            </Button>
           </div>
 
           <p className="mt-0.5 truncate text-xs text-zinc-400">{card.cardNome}</p>
@@ -150,10 +161,6 @@ export function CardItem({
             {card.ultimoEnvio?.status === "falha" && <Badge tone="danger">Falhou: {card.ultimoEnvio.erro}</Badge>}
           </div>
         </div>
-
-        <Button size="sm" onClick={onEnviar} loading={enviando} disabled={!temContatoEfetivo || card.pericias.length === 0}>
-          <Send className="h-3.5 w-3.5" /> Enviar
-        </Button>
       </div>
     </div>
   );
