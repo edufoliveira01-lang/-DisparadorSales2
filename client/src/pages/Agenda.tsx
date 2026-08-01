@@ -10,6 +10,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Input, Label, Textarea } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Pagination } from "@/components/ui/Pagination";
+import { CardField, SelectableCard } from "@/components/ui/SelectableCard";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 
@@ -256,7 +257,32 @@ export function Agenda() {
         />
       ) : (
         <>
-          <div className="overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800">
+          <div className="space-y-3 md:hidden">
+            <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+              <Checkbox
+                checked={contatosPaginados.length > 0 && contatosPaginados.every((c) => selecionados.has(c.id))}
+                onChange={alternarSelecionarTodos}
+              />
+              <span>Selecionar todos nesta página</span>
+            </div>
+            {contatosPaginados.map((c) => (
+              <SelectableCard key={c.id} checked={selecionados.has(c.id)} onToggle={() => alternarSelecionado(c.id)}>
+                <p className="font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</p>
+                <CardField label="Telefone" value={formatPhoneDisplay(c.telefone)} />
+                {c.observacoes && <CardField label="Observações" value={c.observacoes} />}
+                <div className="flex justify-end gap-1 pt-1">
+                  <Button variant="ghost" size="icon" onClick={() => abrirEdicao(c)}>
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" onClick={() => setExcluirAlvo(c)} loading={excluindo === c.id}>
+                    <Trash2 className="h-4 w-4 text-red-500" />
+                  </Button>
+                </div>
+              </SelectableCard>
+            ))}
+          </div>
+
+          <div className="hidden overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 md:block">
             <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">
               <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">

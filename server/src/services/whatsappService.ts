@@ -100,8 +100,24 @@ async function resolveWaVersionCache(): Promise<
 // antes mesmo do QR Code aparecer. Na prática, tentar de novo quase sempre resolve —
 // então fazemos isso automaticamente em vez de exigir que o usuário clique de novo.
 const ERRO_TRANSITORIO = /execution context was destroyed|protocol error/i;
+
+// Retry de operações pontuais já em conexão estabelecida (ex: enviar mensagem que esbarrou
+// num "Protocol error" pontual) — precisa ser rápido, o usuário está esperando a ação terminar.
 const MAX_TENTATIVAS_AUTOMATICAS = 3;
 const INTERVALO_ENTRE_TENTATIVAS_MS = 3000;
+
+// Retry do fluxo de CONEXÃO/QR Code (iniciarTentativa) — deliberadamente mais generoso que o
+// de cima. O whatsapp-web.js trata qualquer estado do WhatsApp fora de
+// [CONNECTED, OPENING, PAIRING, TIMEOUT] como desconexão fatal e derruba o browser na hora, sem
+// nenhuma tolerância a oscilações passageiras (ex: UNPAIRED_IDLE/UNLAUNCHED por um instante) —
+// isso é comportamento fixo da lib (Client.js, onAppStateChangedEvent), não dá pra configurar.
+// Na prática isso aparece como "escaneei o QR mas ele deslogou e pediu pra escanear de novo",
+// às vezes mais de uma vez, principalmente em ambiente headless com CPU mais escassa (o
+// handshake de pareamento é uma rajada de operações de criptografia). Como não tem como evitar
+// esse comportamento da lib, damos mais fôlego para o retry automático (que já gera um QR novo
+// sozinho) se recuperar sem exigir clique manual do usuário.
+const MAX_TENTATIVAS_CONEXAO = 6;
+const INTERVALO_ENTRE_TENTATIVAS_CONEXAO_MS = 5000;
 
 /**
  * Tempo máximo aguardando o WhatsApp ficar pronto depois de "autenticado" (celular escaneou
@@ -242,11 +258,17 @@ class WhatsappManager {
 
       // O whatsapp-web.js costuma emitir "disconnected" de forma espúria durante o próprio
       // fluxo de pareamento (ex: "Max qrcode retries reached", ou uma oscilação momentânea
-      // do estado do socket logo após o QR ser escaneado, antes do evento "ready"). Se ainda
-      // não tínhamos chegado a "conectado" nesta tentativa, tratamos como falha transitória e
-      // tentamos de novo automaticamente — só paramos sem retry quando a desconexão acontece
-      // DEPOIS de já estar conectado (ex: logout pelo celular), que é uma desconexão real.
-      const aindaNaoConectouNestaTentativa = this.status !== "conectado";
+      // do estado do socket logo após o QR ser escaneado, antes do evento "ready") — a lib trata
+      // QUALQUER estado fora de [CONNECTED, OPENING, PAIRING, TIMEOUT] como desconexão fatal e
+      // já derruba o browser sozinha, sem nenhuma tolerância a oscilações passageiras (ver
+      // Client.js, onAppStateChangedEvent). Não tem como configurar isso na lib. Se ainda não
+      // tínhamos chegado a "conectado" nesta tentativa, tratamos como falha transitória e
+      // tentamos de novo automaticamente (com um QR novo) — só paramos sem retry quando a
+      // desconexão acontece DEPOIS de já estar conectado (ex: logout pelo celular), que é uma
+      // desconexão real.
+      const statusAntesDaFalha = this.status;
+      const aindaNaoConectouNestaTentativa = statusAntesDaFalha !== "conectado";
+      const falhaLogoAposEscanear = statusAntesDaFalha === "autenticado";
 
       try {
         await client.destroy();
@@ -258,17 +280,19 @@ class WhatsappManager {
 
       const deveTentarNovamente =
         minhaGeracao === this.geracao &&
-        this.tentativa < MAX_TENTATIVAS_AUTOMATICAS &&
+        this.tentativa < MAX_TENTATIVAS_CONEXAO &&
         (ERRO_TRANSITORIO.test(message) || aindaNaoConectouNestaTentativa);
 
       if (deveTentarNovamente) {
         this.tentativa++;
         this.setState({
           status: "inicializando",
-          lastError: `Falha temporária ao conectar (${message}), tentando novamente (${this.tentativa}/${MAX_TENTATIVAS_AUTOMATICAS})…`,
+          lastError: falhaLogoAposEscanear
+            ? `O WhatsApp desconectou logo após o escaneamento (${this.tentativa}/${MAX_TENTATIVAS_CONEXAO}) — gerando um novo QR Code automaticamente. Às vezes é preciso escanear mais de uma vez, é uma instabilidade conhecida e não indica erro no cadastro.`
+            : `Falha temporária ao conectar (${message}), tentando novamente (${this.tentativa}/${MAX_TENTATIVAS_CONEXAO})…`,
           qrDataUrl: null,
         });
-        setTimeout(() => this.iniciarTentativa(minhaGeracao), INTERVALO_ENTRE_TENTATIVAS_MS);
+        setTimeout(() => this.iniciarTentativa(minhaGeracao), INTERVALO_ENTRE_TENTATIVAS_CONEXAO_MS);
         return;
       }
 

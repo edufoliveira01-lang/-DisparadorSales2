@@ -1,13 +1,17 @@
 import { Router } from "express";
-import { 
-  getUserByUsername, 
-  hashPassword, 
-  createSession, 
-  getSession, 
+import {
+  getUserByUsername,
+  hashPassword,
+  createSession,
+  getSession,
   deleteSession,
   getUserById,
-  updateUser
+  updateUser,
+  generateRecoveryToken,
+  getUserByRecoveryToken,
+  clearRecoveryToken
 } from "../services/authService";
+import { sendRecoveryEmail } from "../services/emailService";
 
 export const authRouter = Router();
 

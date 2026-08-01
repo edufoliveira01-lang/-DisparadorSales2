@@ -21,6 +21,8 @@ export interface Template {
   nome: string;
   conteudo_1_pericia: string;
   conteudo_2_pericias: string;
+  conteudo_pericia_medica: string | null;
+  conteudo_pericia_social: string | null;
   modo_envio_2_pericias: "combinada" | "separadas";
   created_at: string;
 }

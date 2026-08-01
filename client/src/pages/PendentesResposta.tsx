@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Pagination } from "@/components/ui/Pagination";
+import { CardField, SelectableCard } from "@/components/ui/SelectableCard";
 import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -270,7 +271,60 @@ export function PendentesResposta() {
               </p>
             ) : (
               <>
-                <div className="overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800">
+                <div className="space-y-3 md:hidden">
+                  <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+                    <Checkbox
+                      checked={aguardandoPaginado.length > 0 && aguardandoPaginado.every((i) => selecionados.has(i.id))}
+                      onChange={() => alternarSelecionarTodos(aguardandoPaginado)}
+                    />
+                    <span>Selecionar todos nesta página</span>
+                  </div>
+                  {aguardandoPaginado.map((item) => (
+                    <SelectableCard key={item.id} checked={selecionados.has(item.id)} onToggle={() => alternarSelecionado(item.id)}>
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="font-medium text-zinc-900 dark:text-zinc-100">{item.card_nome || "—"}</p>
+                        <Badge tone={STATUS_BADGE[item.status].tone}>{STATUS_BADGE[item.status].label}</Badge>
+                      </div>
+                      <CardField
+                        label="Enviado em"
+                        value={new Date(item.created_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
+                      />
+                      <CardField label="Telefone" value={formatPhoneDisplay(item.telefone)} />
+                      <CardField label="Entrega" value={<AckIndicator ack={item.ack} />} />
+                      <div className="flex flex-wrap justify-end gap-1.5 pt-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="whitespace-nowrap"
+                          onClick={() => confirmar(item)}
+                          loading={processando === item.id}
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar manualmente
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Cancelar monitoramento"
+                          onClick={() => cancelar(item)}
+                          disabled={processando === item.id}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Apagar (ex: cliente só reagiu e o sistema não detectou)"
+                          onClick={() => setApagarAlvo(item)}
+                          disabled={processando === item.id}
+                        >
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </div>
+                    </SelectableCard>
+                  ))}
+                </div>
+
+                <div className="hidden overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 md:block">
                   <div className="overflow-x-auto">
                   <table className="w-full min-w-[820px] text-sm">
                     <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
@@ -356,7 +410,53 @@ export function PendentesResposta() {
           {resolvidos.length > 0 && (
             <section className="space-y-3">
               <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Histórico recente</h2>
-              <div className="overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800">
+
+              <div className="space-y-3 md:hidden">
+                <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+                  <Checkbox
+                    checked={resolvidosPaginado.length > 0 && resolvidosPaginado.every((i) => selecionados.has(i.id))}
+                    onChange={() => alternarSelecionarTodos(resolvidosPaginado)}
+                  />
+                  <span>Selecionar todos nesta página</span>
+                </div>
+                {resolvidosPaginado.map((item) => (
+                  <SelectableCard key={item.id} checked={selecionados.has(item.id)} onToggle={() => alternarSelecionado(item.id)}>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-medium text-zinc-900 dark:text-zinc-100">{item.card_nome || "—"}</p>
+                      <Badge tone={STATUS_BADGE[item.status].tone}>{STATUS_BADGE[item.status].label}</Badge>
+                    </div>
+                    <CardField
+                      label="Resolvido em"
+                      value={item.resolved_at ? new Date(item.resolved_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}
+                    />
+                    <CardField label="Telefone" value={formatPhoneDisplay(item.telefone)} />
+                    <CardField label="Entrega" value={<AckIndicator ack={item.ack} />} />
+                    <CardField
+                      label="Como respondeu"
+                      value={
+                        item.tipo_resposta === "reacao" ? (
+                          <span className="inline-flex items-center gap-1">
+                            <SmilePlus className="h-3.5 w-3.5" /> Reação {item.resposta_preview}
+                          </span>
+                        ) : item.tipo_resposta === "mensagem" ? (
+                          <span className="inline-flex items-center gap-1">
+                            <MessageSquareReply className="h-3.5 w-3.5" /> {item.resposta_preview || "Mensagem"}
+                          </span>
+                        ) : (
+                          "—"
+                        )
+                      }
+                    />
+                    <div className="flex justify-end pt-1">
+                      <Button variant="ghost" size="icon" title="Apagar" onClick={() => setApagarAlvo(item)} disabled={processando === item.id}>
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
+                    </div>
+                  </SelectableCard>
+                ))}
+              </div>
+
+              <div className="hidden overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 md:block">
                 <div className="overflow-x-auto">
                 <table className="w-full min-w-[900px] text-sm">
                   <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">

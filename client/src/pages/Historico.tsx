@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Pagination } from "@/components/ui/Pagination";
+import { CardField, SelectableCard } from "@/components/ui/SelectableCard";
 import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -189,7 +190,56 @@ export function Historico() {
         <EmptyState icon={HistoryIcon} title="Nenhum envio registrado ainda" description="Os envios feitos pelo Dashboard aparecerão aqui." />
       ) : (
         <>
-          <div className="overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800">
+          <div className="space-y-3 md:hidden">
+            <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+              <Checkbox
+                checked={logsPaginados.length > 0 && logsPaginados.every((l) => selecionados.has(l.id))}
+                onChange={alternarSelecionarTodos}
+              />
+              <span>Selecionar todos nesta página</span>
+            </div>
+            {logsPaginados.map((log) => (
+              <SelectableCard key={log.id} checked={selecionados.has(log.id)} onToggle={() => alternarSelecionado(log.id)}>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-medium text-zinc-900 dark:text-zinc-100">{log.card_nome || "—"}</p>
+                  {log.status === "sucesso" ? <Badge tone="success">Enviado</Badge> : <Badge tone="danger">Falhou</Badge>}
+                </div>
+                <CardField
+                  label="Data/hora"
+                  value={new Date(log.created_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
+                />
+                <CardField label="Telefone" value={log.telefone || "—"} />
+                <CardField label="Entrega" value={<AckIndicator ack={log.ack} />} />
+                {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
+                {expandido === log.id && log.mensagem_enviada && (
+                  <div className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/50">
+                    <p className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-400">Mensagem enviada</p>
+                    <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{log.mensagem_enviada}</p>
+                  </div>
+                )}
+                <div className="flex flex-wrap justify-end gap-1.5 pt-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setExpandido(expandido === log.id ? null : log.id)}
+                    disabled={!log.mensagem_enviada}
+                  >
+                    {expandido === log.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  </Button>
+                  {log.status === "falha" && (
+                    <Button variant="outline" size="sm" onClick={() => reenviar(log)} loading={reenviando === log.id}>
+                      <RotateCcw className="h-3.5 w-3.5" /> Reenviar
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="icon" title="Apagar" onClick={() => setApagarAlvo(log)} disabled={apagando === log.id}>
+                    <Trash2 className="h-4 w-4 text-red-500" />
+                  </Button>
+                </div>
+              </SelectableCard>
+            ))}
+          </div>
+
+          <div className="hidden overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 md:block">
             <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-sm">
               <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
