@@ -30,7 +30,13 @@ const EXEMPLO_PERICIAS: Pericia[] = [
   },
 ];
 
-function novoTemplateVazio(): Omit<Template, "id" | "created_at"> {
+/** Estado do formulário: campos opcionais do Template ficam "" em vez de null, para inputs controlados. */
+type TemplateForm = Omit<Template, "id" | "created_at" | "conteudo_pericia_medica" | "conteudo_pericia_social"> & {
+  conteudo_pericia_medica: string;
+  conteudo_pericia_social: string;
+};
+
+function novoTemplateVazio(): TemplateForm {
   return {
     nome: "Novo template",
     conteudo_1_pericia: "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n\nQualquer dúvida, estou à disposição!",
@@ -45,7 +51,7 @@ export function Templates() {
   const { show } = useToast();
   const [templates, setTemplates] = useState<Template[] | null>(null);
   const [selecionadoId, setSelecionadoId] = useState<number | null>(null);
-  const [form, setForm] = useState<Omit<Template, "id" | "created_at">>(novoTemplateVazio());
+  const [form, setForm] = useState<TemplateForm>(novoTemplateVazio());
   const [aba, setAba] = useState<"1" | "2">("1");
   const [preview1, setPreview1] = useState("");
   const [preview2, setPreview2] = useState<string[]>([]);
@@ -118,7 +124,7 @@ export function Templates() {
     }
   }
 
-  function inserirVariavel(campo: keyof Omit<Template, "id" | "created_at">, variavel: string) {
+  function inserirVariavel(campo: "conteudo_1_pericia" | "conteudo_2_pericias", variavel: string) {
     let ref: HTMLTextAreaElement | null = null;
     if (campo === "conteudo_1_pericia") ref = textarea1Ref.current;
     if (campo === "conteudo_2_pericias") ref = textarea2Ref.current;
@@ -144,16 +150,16 @@ export function Templates() {
     const timer = setTimeout(async () => {
       try {
         const r1 = await api.post<{ mensagens: string[] }>("/templates/preview", {
+          ...form,
           nome: EXEMPLO_PERICIAS[0].nome,
           pericias: [EXEMPLO_PERICIAS[0]],
-          ...form,
         });
         setPreview1(r1.mensagens[0] || "");
 
         const r2 = await api.post<{ mensagens: string[] }>("/templates/preview", {
+          ...form,
           nome: EXEMPLO_PERICIAS[0].nome,
           pericias: EXEMPLO_PERICIAS,
-          ...form,
         });
         setPreview2(r2.mensagens);
       } catch {

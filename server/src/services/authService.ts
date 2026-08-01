@@ -8,6 +8,13 @@ export interface User {
   password_hash: string;
 }
 
+interface UserWithRecovery extends User {
+  recovery_token: string | null;
+  recovery_expires: string | null;
+}
+
+const RECOVERY_TOKEN_DURATION_HOURS = 1;
+
 export interface Session {
   id: string;
   user_id: number;
@@ -33,6 +40,34 @@ export function updateUser(id: number, data: Partial<Omit<User, "id">>) {
   const fields = Object.keys(data).map(f => `${f} = ?`).join(", ");
   const values = Object.values(data);
   db.prepare(`UPDATE users SET ${fields} WHERE id = ?`).run(...values, id);
+}
+
+/** Gera um token de recuperação de senha (válido por 1h) e salva no usuário. */
+export function generateRecoveryToken(userId: number): string {
+  const token = crypto.randomBytes(32).toString("hex");
+  const expiresAt = new Date(Date.now() + RECOVERY_TOKEN_DURATION_HOURS * 60 * 60 * 1000).toISOString();
+
+  db.prepare("UPDATE users SET recovery_token = ?, recovery_expires = ? WHERE id = ?").run(token, expiresAt, userId);
+
+  return token;
+}
+
+/** Retorna o usuário dono do token, ou undefined se o token não existir ou já tiver expirado. */
+export function getUserByRecoveryToken(token: string): User | undefined {
+  const user = db.prepare("SELECT * FROM users WHERE recovery_token = ?").get(token) as UserWithRecovery | undefined;
+  if (!user) return undefined;
+
+  if (!user.recovery_expires || new Date(user.recovery_expires) < new Date()) {
+    clearRecoveryToken(user.id);
+    return undefined;
+  }
+
+  return user;
+}
+
+/** Invalida o token de recuperação — chamado após o uso (senha trocada) ou quando ele expira. */
+export function clearRecoveryToken(userId: number): void {
+  db.prepare("UPDATE users SET recovery_token = NULL, recovery_expires = NULL WHERE id = ?").run(userId);
 }
 
 export function createSession(userId: number): string {

@@ -106,8 +106,8 @@ templatesRouter.post("/preview", (req, res) => {
     templateData = {
       conteudo_1_pericia,
       conteudo_2_pericias,
-      conteudo_pericia_medica,
-      conteudo_pericia_social,
+      conteudo_pericia_medica: conteudo_pericia_medica ?? null,
+      conteudo_pericia_social: conteudo_pericia_social ?? null,
       modo_envio_2_pericias: modo_envio_2_pericias || "combinada",
     };
   }

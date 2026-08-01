@@ -5,9 +5,11 @@ export interface Pericia {
   local: string;
   nome: string;
   telefone: string;
+  /** Preenchido por parseCardDescriptionComOrigem (rota /cards); ausente no parse "puro". */
+  origem?: OrigemPericia;
 }
 
-type FieldName = keyof Pericia;
+type FieldName = keyof Omit<Pericia, "origem">;
 
 // Regex tolerantes: maiúsculas/minúsculas, acentuação opcional, ":" opcional,
 // espaços extras. Ancoradas no início da linha para não confundir com texto solto.
