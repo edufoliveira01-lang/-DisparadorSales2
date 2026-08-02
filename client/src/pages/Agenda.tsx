@@ -338,7 +338,7 @@ export function Agenda() {
                         <td className="px-5 py-3 text-center">
                           <Checkbox checked={selecionados.has(c.id)} onChange={() => alternarSelecionado(c.id)} />
                         </td>
-                        <td className="max-w-[240px] truncate px-5 py-3 text-center font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</td>
+                        <td className="max-w-[240px] truncate px-5 py-3 text-left font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</td>
                         <td className="whitespace-nowrap px-5 py-3 text-center text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(c.telefone)}</td>
                         <td className="px-5 py-3 text-center">
                           {c.observacoes && (
