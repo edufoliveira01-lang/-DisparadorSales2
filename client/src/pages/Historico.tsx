@@ -235,7 +235,7 @@ export function Historico() {
                       <span className="block truncate font-medium text-zinc-900 dark:text-zinc-100">{log.card_nome || "—"}</span>
                       <span className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
                         {log.telefone || "—"}
-                        <AckIndicator ack={log.ack} compact />
+                        <AckIndicator ack={log.ack} />
                       </span>
                     </span>
                     {aberto ? (
@@ -284,7 +284,7 @@ export function Historico() {
           {/* Desktop: tabela compacta de 6 colunas, detalhes num accordion por linha */}
           <div className="hidden overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 md:block">
             <table className="w-full text-sm">
-              <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
+              <thead className="bg-zinc-50 text-center text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
                 <tr>
                   <th className="w-10 px-5 py-3">
                     <Checkbox
@@ -296,7 +296,7 @@ export function Historico() {
                   <th className="px-5 py-3">Telefone</th>
                   <th className="px-5 py-3">Entrega</th>
                   <th className="w-16 px-5 py-3">Status</th>
-                  <th className="px-5 py-3 text-right">Ações</th>
+                  <th className="px-5 py-3">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -305,21 +305,21 @@ export function Historico() {
                   return (
                     <Fragment key={log.id}>
                       <tr className="bg-white dark:bg-zinc-900">
-                        <td className="px-5 py-3">
+                        <td className="px-5 py-3 text-center">
                           <Checkbox checked={selecionados.has(log.id)} onChange={() => alternarSelecionado(log.id)} />
                         </td>
-                        <td className="max-w-[240px] truncate px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">
+                        <td className="max-w-[240px] truncate px-5 py-3 text-center font-medium text-zinc-900 dark:text-zinc-100">
                           {log.card_nome || "—"}
                         </td>
-                        <td className="whitespace-nowrap px-5 py-3 text-zinc-600 dark:text-zinc-400">{log.telefone || "—"}</td>
-                        <td className="px-5 py-3">
+                        <td className="whitespace-nowrap px-5 py-3 text-center text-zinc-600 dark:text-zinc-400">{log.telefone || "—"}</td>
+                        <td className="px-5 py-3 text-center">
                           <AckIndicator ack={log.ack} />
                         </td>
-                        <td className="px-5 py-3">
+                        <td className="px-5 py-3 text-center">
                           <StatusIcon status={log.status} />
                         </td>
                         <td className="px-5 py-3">
-                          <div className="flex justify-end gap-1">
+                          <div className="flex justify-center gap-1">
                             <Button variant="ghost" size="icon" title="Ver detalhes" onClick={() => setExpandido(aberto ? null : log.id)}>
                               {aberto ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                             </Button>

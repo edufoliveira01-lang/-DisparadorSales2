@@ -315,7 +315,7 @@ export function Agenda() {
           {/* Desktop: nome + telefone + ícone de observação; texto completo no accordion */}
           <div className="hidden overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 md:block">
             <table className="w-full text-sm">
-              <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
+              <thead className="bg-zinc-50 text-center text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
                 <tr>
                   <th className="w-10 px-5 py-3">
                     <Checkbox
@@ -326,7 +326,7 @@ export function Agenda() {
                   <th className="px-5 py-3">Nome</th>
                   <th className="px-5 py-3">Telefone</th>
                   <th className="w-16 px-5 py-3">Obs.</th>
-                  <th className="px-5 py-3 text-right">Ações</th>
+                  <th className="px-5 py-3">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -335,12 +335,12 @@ export function Agenda() {
                   return (
                     <Fragment key={c.id}>
                       <tr className="bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800/50">
-                        <td className="px-5 py-3">
+                        <td className="px-5 py-3 text-center">
                           <Checkbox checked={selecionados.has(c.id)} onChange={() => alternarSelecionado(c.id)} />
                         </td>
-                        <td className="max-w-[240px] truncate px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</td>
-                        <td className="whitespace-nowrap px-5 py-3 text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(c.telefone)}</td>
-                        <td className="px-5 py-3">
+                        <td className="max-w-[240px] truncate px-5 py-3 text-center font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</td>
+                        <td className="whitespace-nowrap px-5 py-3 text-center text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(c.telefone)}</td>
+                        <td className="px-5 py-3 text-center">
                           {c.observacoes && (
                             <span title="Tem observação">
                               <StickyNote className="h-4 w-4 text-amber-500" />
@@ -348,7 +348,7 @@ export function Agenda() {
                           )}
                         </td>
                         <td className="px-5 py-3">
-                          <div className="flex justify-end gap-1">
+                          <div className="flex justify-center gap-1">
                             {c.observacoes && (
                               <Button variant="ghost" size="icon" title="Ver observação" onClick={() => setExpandido(aberto ? null : c.id)}>
                                 {aberto ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
