@@ -46,6 +46,43 @@ function clearStaleChromiumLocks(): void {
   }
 }
 
+/**
+ * LocalAuth.logout() apaga a pasta do profile inteira, então um login via QR Code novo sempre
+ * parte de um Chromium profile 100% limpo. Já um simples restart do servidor (reconectando com a
+ * sessão salva, sem logout) reaproveita o MESMO profile — e o profile do Chromium guarda um cache
+ * de Service Worker do site (web.whatsapp.com registra um), que sobrevive ao restart. Se esse
+ * cache tiver o bundle de uma versão antiga do WhatsApp Web (de antes de fixarmos
+ * webVersionCache, ou de antes do WhatsApp ter atualizado o build), o Service Worker responde as
+ * requisições de navegação com esse bundle desatualizado ANTES de bater na rede — ignorando por
+ * completo a versão que pinamos em webVersionCache. É exatamente esse cenário (build incompatível
+ * com o patch que o whatsapp-web.js injeta no Store) que já vimos quebrar message.id._serialized
+ * (ver comentário grande em iniciarTentativa) — e como message_ack também depende desse mesmo id
+ * para casar com o registro salvo em send_logs/pending_replies, o sintoma é a confirmação de
+ * entrega parar de ser capturada, mesmo com a conexão aparentemente normal, até o usuário fazer
+ * logout e escanear um QR novo (que começa do zero, sem esse cache).
+ *
+ * A correção é limpar só o cache de Service Worker/HTTP (nunca o Local Storage/IndexedDB, onde
+ * fica a sessão de login em si) antes de cada tentativa de conexão — assim toda reconexão, com ou
+ * sem QR novo, sempre busca o bundle da versão pinada direto da rede.
+ */
+function clearStaleServiceWorkerCache(): void {
+  if (!fs.existsSync(AUTH_DATA_PATH)) return;
+  const cacheDirNames = ["Service Worker", "Cache", "Code Cache"];
+  for (const sessionDir of fs.readdirSync(AUTH_DATA_PATH, { withFileTypes: true })) {
+    if (!sessionDir.isDirectory()) continue;
+    for (const cacheName of cacheDirNames) {
+      try {
+        fs.rmSync(path.join(AUTH_DATA_PATH, sessionDir.name, "Default", cacheName), {
+          recursive: true,
+          force: true,
+        });
+      } catch {
+        // limpeza best-effort
+      }
+    }
+  }
+}
+
 function clearLegacyWebVersionCache(): void {
   try {
     fs.rmSync(LEGACY_WEB_VERSION_CACHE_PATH, { recursive: true, force: true });
@@ -208,6 +245,7 @@ class WhatsappManager {
     if (minhaGeracao !== this.geracao) return; // uma chamada mais recente (connect/disconnect) já assumiu
 
     clearStaleChromiumLocks();
+    clearStaleServiceWorkerCache();
     this.setState({ status: "inicializando", lastError: null, qrDataUrl: null });
 
     // Configuração idêntica à usada no projeto anterior (que já validamos funcionando):

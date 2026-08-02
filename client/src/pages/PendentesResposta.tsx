@@ -344,7 +344,10 @@ export function PendentesResposta() {
                         </button>
 
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm text-zinc-500 dark:text-zinc-400">{formatPhoneDisplay(item.telefone)}</span>
+                          <span className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+                            {formatPhoneDisplay(item.telefone)}
+                            <AckIndicator ack={item.ack} compact />
+                          </span>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -358,9 +361,6 @@ export function PendentesResposta() {
 
                         {aberto && (
                           <div className="space-y-2 border-t border-zinc-100 pt-2 text-sm text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-                            <div className="flex items-center gap-2">
-                              <AckIndicator ack={item.ack} />
-                            </div>
                             <p>
                               <span className="text-zinc-400 dark:text-zinc-500">Enviado em: </span>
                               {new Date(item.created_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
@@ -528,7 +528,10 @@ export function PendentesResposta() {
                       </button>
 
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm text-zinc-500 dark:text-zinc-400">{formatPhoneDisplay(item.telefone)}</span>
+                        <span className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+                          {formatPhoneDisplay(item.telefone)}
+                          <AckIndicator ack={item.ack} respondido={item.status === "respondido"} compact />
+                        </span>
                         <Button variant="ghost" size="icon" title="Apagar" onClick={() => setApagarAlvo(item)} disabled={processando === item.id}>
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
@@ -538,7 +541,6 @@ export function PendentesResposta() {
                         <div className="space-y-2 border-t border-zinc-100 pt-2 text-sm text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
                           <div className="flex items-center gap-2">
                             <StatusIcon status={item.status} />
-                            <AckIndicator ack={item.ack} respondido={item.status === "respondido"} />
                           </div>
                           <p>
                             <span className="text-zinc-400 dark:text-zinc-500">Resolvido em: </span>
