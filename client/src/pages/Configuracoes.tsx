@@ -245,7 +245,7 @@ export function Configuracoes() {
         </Button>
       </div>
 
-      <CollapsibleCard icon={<Lock className="h-4 w-4 text-amber-500" />} title="Dados de Acesso">
+      <CollapsibleCard icon={<Lock className="h-4 w-4 text-amber-500" />} title="Dados de Acesso" storageKey="dados-acesso">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label>Usuário</Label>
@@ -279,6 +279,7 @@ export function Configuracoes() {
       <CollapsibleCard
         icon={<Trello className="h-4 w-4 text-blue-500" />}
         title="Integração com o Trello"
+        storageKey="trello"
         headerExtra={
           trelloOk && (
             <Badge tone="success">
@@ -393,6 +394,7 @@ export function Configuracoes() {
       <CollapsibleCard
         icon={<Wifi className="h-4 w-4 text-accent-500" />}
         title="Conexão com o WhatsApp"
+        storageKey="whatsapp"
         headerExtra={<Badge tone={whatsappTone as "success" | "danger" | "warning"}>{STATUS_LABEL[whatsapp.status]}</Badge>}
       >
           {whatsapp.status === "aguardando_qr" && whatsapp.qrDataUrl && (
@@ -446,7 +448,7 @@ export function Configuracoes() {
           </div>
       </CollapsibleCard>
 
-      <CollapsibleCard title="Intervalo entre envios">
+      <CollapsibleCard title="Intervalo entre envios" storageKey="intervalo">
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
             Ao enviar em lote, o sistema aguarda um tempo aleatório entre esses limites antes de cada mensagem, para reduzir o
             risco de bloqueio da conta.

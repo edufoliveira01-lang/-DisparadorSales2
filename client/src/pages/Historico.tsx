@@ -231,26 +231,25 @@ export function Historico() {
                     className="flex w-full items-center justify-between gap-2 text-left"
                     onClick={() => setExpandido(aberto ? null : log.id)}
                   >
-                    <span className="flex min-w-0 items-center gap-2">
-                      <StatusIcon status={log.status} />
-                      <span className="truncate font-medium text-zinc-900 dark:text-zinc-100">{log.card_nome || "—"}</span>
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium text-zinc-900 dark:text-zinc-100">{log.card_nome || "—"}</span>
+                      <span className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+                        {log.telefone || "—"}
+                        <AckIndicator ack={log.ack} compact />
+                      </span>
                     </span>
-                    <span className="flex shrink-0 items-center gap-2">
-                      <AckIndicator ack={log.ack} compact />
-                      {aberto ? <ChevronUp className="h-4 w-4 text-zinc-400" /> : <ChevronDown className="h-4 w-4 text-zinc-400" />}
-                    </span>
+                    {aberto ? (
+                      <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
+                    )}
                   </button>
 
                   {aberto && (
                     <div className="space-y-2 border-t border-zinc-100 pt-2 dark:border-zinc-800">
-                      <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                        <span className="text-zinc-400 dark:text-zinc-500">Telefone: </span>
-                        {log.telefone || "—"}
-                      </p>
-                      <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                        <span className="text-zinc-400 dark:text-zinc-500">Data/hora: </span>
-                        {formatarData(log)}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <StatusIcon status={log.status} />
+                      </div>
                       {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
                       {log.mensagem_enviada && (
                         <div className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/50">
@@ -258,12 +257,19 @@ export function Historico() {
                           <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{log.mensagem_enviada}</p>
                         </div>
                       )}
-                      <div className="flex flex-wrap justify-end gap-1.5 pt-1">
-                        {log.status === "falha" && (
-                          <Button variant="outline" size="sm" onClick={() => reenviar(log)} loading={reenviando === log.id}>
-                            <RotateCcw className="h-3.5 w-3.5" /> Reenviar
-                          </Button>
-                        )}
+                      {log.status === "falha" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                          onClick={() => reenviar(log)}
+                          loading={reenviando === log.id}
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" /> Reenviar
+                        </Button>
+                      )}
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        <p className="text-sm text-zinc-500 dark:text-zinc-400">{formatarData(log)}</p>
                         <Button variant="ghost" size="icon" title="Apagar" onClick={() => setApagarAlvo(log)} disabled={apagando === log.id}>
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>

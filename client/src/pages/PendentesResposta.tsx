@@ -316,8 +316,7 @@ export function PendentesResposta() {
               </p>
             ) : (
               <>
-                {/* Mobile: nome + entrega em destaque; ações de confirmar/cancelar sempre visíveis
-                    (é a ação mais usada da página); telefone e data ficam atrás do expandir. */}
+                {/* Mobile: apenas nome e telefone visíveis; demais detalhes e ações ficam atrás do expandir. */}
                 <div className="space-y-3 md:hidden">
                   <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
                     <Checkbox
@@ -337,44 +336,15 @@ export function PendentesResposta() {
                           <span className="min-w-0 truncate font-medium text-zinc-900 dark:text-zinc-100">
                             {item.card_nome || "—"}
                           </span>
-                          <span className="flex shrink-0 items-center gap-2">
-                            <AckIndicator ack={item.ack} compact />
-                            {aberto ? <ChevronUp className="h-4 w-4 text-zinc-400" /> : <ChevronDown className="h-4 w-4 text-zinc-400" />}
-                          </span>
+                          {aberto ? (
+                            <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
+                          )}
                         </button>
 
-                        {aberto && (
-                          <div className="space-y-1 border-t border-zinc-100 pt-2 text-sm text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-                            <p>
-                              <span className="text-zinc-400 dark:text-zinc-500">Telefone: </span>
-                              {formatPhoneDisplay(item.telefone)}
-                            </p>
-                            <p>
-                              <span className="text-zinc-400 dark:text-zinc-500">Enviado em: </span>
-                              {new Date(item.created_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
-                            </p>
-                          </div>
-                        )}
-
-                        <div className="flex flex-wrap justify-end gap-1.5 pt-1">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="whitespace-nowrap"
-                            onClick={() => confirmar(item)}
-                            loading={processando === item.id}
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar manualmente
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title="Cancelar monitoramento"
-                            onClick={() => cancelar(item)}
-                            disabled={processando === item.id}
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm text-zinc-500 dark:text-zinc-400">{formatPhoneDisplay(item.telefone)}</span>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -385,6 +355,38 @@ export function PendentesResposta() {
                             <Trash2 className="h-4 w-4 text-red-500" />
                           </Button>
                         </div>
+
+                        {aberto && (
+                          <div className="space-y-2 border-t border-zinc-100 pt-2 text-sm text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+                            <div className="flex items-center gap-2">
+                              <AckIndicator ack={item.ack} />
+                            </div>
+                            <p>
+                              <span className="text-zinc-400 dark:text-zinc-500">Enviado em: </span>
+                              {new Date(item.created_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
+                            </p>
+                            <div className="flex flex-wrap justify-end gap-1.5 pt-1">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="whitespace-nowrap"
+                                onClick={() => confirmar(item)}
+                                loading={processando === item.id}
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar manualmente
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                title="Cancelar monitoramento"
+                                onClick={() => cancelar(item)}
+                                disabled={processando === item.id}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                       </SelectableCard>
                     );
                   })}
@@ -515,22 +517,29 @@ export function PendentesResposta() {
                         className="flex w-full items-center justify-between gap-2 text-left"
                         onClick={() => setExpandido(aberto ? null : item.id)}
                       >
-                        <span className="flex min-w-0 items-center gap-2">
-                          <StatusIcon status={item.status} />
-                          <span className="truncate font-medium text-zinc-900 dark:text-zinc-100">{item.card_nome || "—"}</span>
+                        <span className="min-w-0 truncate font-medium text-zinc-900 dark:text-zinc-100">
+                          {item.card_nome || "—"}
                         </span>
-                        <span className="flex shrink-0 items-center gap-2">
-                          <AckIndicator ack={item.ack} respondido={item.status === "respondido"} compact />
-                          {aberto ? <ChevronUp className="h-4 w-4 text-zinc-400" /> : <ChevronDown className="h-4 w-4 text-zinc-400" />}
-                        </span>
+                        {aberto ? (
+                          <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
+                        )}
                       </button>
 
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm text-zinc-500 dark:text-zinc-400">{formatPhoneDisplay(item.telefone)}</span>
+                        <Button variant="ghost" size="icon" title="Apagar" onClick={() => setApagarAlvo(item)} disabled={processando === item.id}>
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </div>
+
                       {aberto && (
-                        <div className="space-y-1 border-t border-zinc-100 pt-2 text-sm text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-                          <p>
-                            <span className="text-zinc-400 dark:text-zinc-500">Telefone: </span>
-                            {formatPhoneDisplay(item.telefone)}
-                          </p>
+                        <div className="space-y-2 border-t border-zinc-100 pt-2 text-sm text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+                          <div className="flex items-center gap-2">
+                            <StatusIcon status={item.status} />
+                            <AckIndicator ack={item.ack} respondido={item.status === "respondido"} />
+                          </div>
                           <p>
                             <span className="text-zinc-400 dark:text-zinc-500">Resolvido em: </span>
                             {item.resolved_at
@@ -543,12 +552,6 @@ export function PendentesResposta() {
                           </p>
                         </div>
                       )}
-
-                      <div className="flex justify-end pt-1">
-                        <Button variant="ghost" size="icon" title="Apagar" onClick={() => setApagarAlvo(item)} disabled={processando === item.id}>
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
-                      </div>
                     </SelectableCard>
                   );
                 })}
