@@ -1,5 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, MessageSquareReply, RefreshCw, SmilePlus, Trash2, X } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  MessageSquareReply,
+  RefreshCw,
+  SmilePlus,
+  Trash2,
+  X,
+  XCircle,
+} from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay } from "@/lib/phone";
 import type { PendingReply } from "@/lib/types";
@@ -7,22 +18,15 @@ import { useToast } from "@/components/ui/Toast";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
 import { AckIndicator } from "@/components/AckIndicator";
 import { Button } from "@/components/ui/Button";
-import { Badge } from "@/components/ui/Badge";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Pagination } from "@/components/ui/Pagination";
-import { CardField, SelectableCard } from "@/components/ui/SelectableCard";
+import { SelectableCard } from "@/components/ui/SelectableCard";
 import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 
 const ITENS_POR_PAGINA = 20;
-
-const STATUS_BADGE: Record<PendingReply["status"], { label: string; tone: "warning" | "success" | "neutral" }> = {
-  aguardando: { label: "Aguardando resposta", tone: "warning" },
-  respondido: { label: "Concluído", tone: "success" },
-  cancelado: { label: "Substituído por novo envio", tone: "neutral" },
-};
 
 type Filtro = "todos" | "enviado" | "entregue" | "lido" | "respondido";
 
@@ -49,6 +53,46 @@ function combinaFiltro(item: PendingReply, filtro: Filtro): boolean {
   }
 }
 
+function StatusIcon({ status }: { status: PendingReply["status"] }) {
+  if (status === "respondido") {
+    return (
+      <span title="Concluído">
+        <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+      </span>
+    );
+  }
+  if (status === "cancelado") {
+    return (
+      <span title="Substituído por novo envio">
+        <XCircle className="h-4 w-4 text-zinc-400" />
+      </span>
+    );
+  }
+  return (
+    <span title="Aguardando resposta">
+      <Clock className="h-4 w-4 text-amber-500" />
+    </span>
+  );
+}
+
+function ComoRespondeu({ item }: { item: PendingReply }) {
+  if (item.tipo_resposta === "reacao") {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <SmilePlus className="h-3.5 w-3.5" /> Reação {item.resposta_preview}
+      </span>
+    );
+  }
+  if (item.tipo_resposta === "mensagem") {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <MessageSquareReply className="h-3.5 w-3.5" /> {item.resposta_preview || "Mensagem"}
+      </span>
+    );
+  }
+  return <>—</>;
+}
+
 export function PendentesResposta() {
   const { show } = useToast();
   const [pendentes, setPendentes] = useState<PendingReply[] | null>(null);
@@ -60,6 +104,7 @@ export function PendentesResposta() {
   const [paginaResolvidos, setPaginaResolvidos] = useState(0);
   const [apagarAlvo, setApagarAlvo] = useState<PendingReply | null>(null);
   const [confirmMassaAberto, setConfirmMassaAberto] = useState(false);
+  const [expandido, setExpandido] = useState<number | null>(null);
 
   const carregar = useCallback(async () => {
     const data = await api.get<PendingReply[]>("/pending-replies");
@@ -271,6 +316,8 @@ export function PendentesResposta() {
               </p>
             ) : (
               <>
+                {/* Mobile: nome + entrega em destaque; ações de confirmar/cancelar sempre visíveis
+                    (é a ação mais usada da página); telefone e data ficam atrás do expandir. */}
                 <div className="space-y-3 md:hidden">
                   <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
                     <Checkbox
@@ -279,54 +326,73 @@ export function PendentesResposta() {
                     />
                     <span>Selecionar todos nesta página</span>
                   </div>
-                  {aguardandoPaginado.map((item) => (
-                    <SelectableCard key={item.id} checked={selecionados.has(item.id)} onToggle={() => alternarSelecionado(item.id)}>
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="font-medium text-zinc-900 dark:text-zinc-100">{item.card_nome || "—"}</p>
-                        <Badge tone={STATUS_BADGE[item.status].tone}>{STATUS_BADGE[item.status].label}</Badge>
-                      </div>
-                      <CardField
-                        label="Enviado em"
-                        value={new Date(item.created_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
-                      />
-                      <CardField label="Telefone" value={formatPhoneDisplay(item.telefone)} />
-                      <CardField label="Entrega" value={<AckIndicator ack={item.ack} />} />
-                      <div className="flex flex-wrap justify-end gap-1.5 pt-1">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="whitespace-nowrap"
-                          onClick={() => confirmar(item)}
-                          loading={processando === item.id}
+                  {aguardandoPaginado.map((item) => {
+                    const aberto = expandido === item.id;
+                    return (
+                      <SelectableCard key={item.id} checked={selecionados.has(item.id)} onToggle={() => alternarSelecionado(item.id)}>
+                        <button
+                          className="flex w-full items-center justify-between gap-2 text-left"
+                          onClick={() => setExpandido(aberto ? null : item.id)}
                         >
-                          <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar manualmente
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Cancelar monitoramento"
-                          onClick={() => cancelar(item)}
-                          disabled={processando === item.id}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Apagar (ex: cliente só reagiu e o sistema não detectou)"
-                          onClick={() => setApagarAlvo(item)}
-                          disabled={processando === item.id}
-                        >
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
-                      </div>
-                    </SelectableCard>
-                  ))}
+                          <span className="min-w-0 truncate font-medium text-zinc-900 dark:text-zinc-100">
+                            {item.card_nome || "—"}
+                          </span>
+                          <span className="flex shrink-0 items-center gap-2">
+                            <AckIndicator ack={item.ack} compact />
+                            {aberto ? <ChevronUp className="h-4 w-4 text-zinc-400" /> : <ChevronDown className="h-4 w-4 text-zinc-400" />}
+                          </span>
+                        </button>
+
+                        {aberto && (
+                          <div className="space-y-1 border-t border-zinc-100 pt-2 text-sm text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+                            <p>
+                              <span className="text-zinc-400 dark:text-zinc-500">Telefone: </span>
+                              {formatPhoneDisplay(item.telefone)}
+                            </p>
+                            <p>
+                              <span className="text-zinc-400 dark:text-zinc-500">Enviado em: </span>
+                              {new Date(item.created_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
+                            </p>
+                          </div>
+                        )}
+
+                        <div className="flex flex-wrap justify-end gap-1.5 pt-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="whitespace-nowrap"
+                            onClick={() => confirmar(item)}
+                            loading={processando === item.id}
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar manualmente
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Cancelar monitoramento"
+                            onClick={() => cancelar(item)}
+                            disabled={processando === item.id}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Apagar (ex: cliente só reagiu e o sistema não detectou)"
+                            onClick={() => setApagarAlvo(item)}
+                            disabled={processando === item.id}
+                          >
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </Button>
+                        </div>
+                      </SelectableCard>
+                    );
+                  })}
                 </div>
 
+                {/* Desktop: tabela compacta de 6 colunas, "Enviado em" no accordion */}
                 <div className="hidden overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 md:block">
-                  <div className="overflow-x-auto">
-                  <table className="w-full min-w-[820px] text-sm">
+                  <table className="w-full text-sm">
                     <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
                       <tr>
                         <th className="w-10 px-5 py-3">
@@ -335,67 +401,89 @@ export function PendentesResposta() {
                             onChange={() => alternarSelecionarTodos(aguardandoPaginado)}
                           />
                         </th>
-                        <th className="whitespace-nowrap px-5 py-3">Enviado em</th>
-                        <th className="whitespace-nowrap px-5 py-3">Cliente</th>
-                        <th className="whitespace-nowrap px-5 py-3">Telefone</th>
-                        <th className="whitespace-nowrap px-5 py-3">Entrega</th>
-                        <th className="whitespace-nowrap px-5 py-3">Status</th>
-                        <th className="whitespace-nowrap px-5 py-3 text-right">Ações</th>
+                        <th className="px-5 py-3">Cliente</th>
+                        <th className="px-5 py-3">Telefone</th>
+                        <th className="px-5 py-3">Entrega</th>
+                        <th className="w-16 px-5 py-3">Status</th>
+                        <th className="px-5 py-3 text-right">Ações</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                      {aguardandoPaginado.map((item) => (
-                        <tr key={item.id} className="bg-white dark:bg-zinc-900">
-                          <td className="px-5 py-3">
-                            <Checkbox checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />
-                          </td>
-                          <td className="whitespace-nowrap px-5 py-3 text-zinc-500 dark:text-zinc-400">
-                            {new Date(item.created_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
-                          </td>
-                          <td className="whitespace-nowrap px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{item.card_nome || "—"}</td>
-                          <td className="whitespace-nowrap px-5 py-3 text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(item.telefone)}</td>
-                          <td className="px-5 py-3">
-                            <AckIndicator ack={item.ack} />
-                          </td>
-                          <td className="px-5 py-3">
-                            <Badge tone={STATUS_BADGE[item.status].tone}>{STATUS_BADGE[item.status].label}</Badge>
-                          </td>
-                          <td className="px-5 py-3">
-                            <div className="flex justify-end gap-1.5">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="whitespace-nowrap"
-                                onClick={() => confirmar(item)}
-                                loading={processando === item.id}
-                              >
-                                <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar manualmente
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                title="Cancelar monitoramento"
-                                onClick={() => cancelar(item)}
-                                disabled={processando === item.id}
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                title="Apagar (ex: cliente só reagiu e o sistema não detectou)"
-                                onClick={() => setApagarAlvo(item)}
-                                disabled={processando === item.id}
-                              >
-                                <Trash2 className="h-4 w-4 text-red-500" />
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                      {aguardandoPaginado.map((item) => {
+                        const aberto = expandido === item.id;
+                        return (
+                          <Fragment key={item.id}>
+                            <tr className="bg-white dark:bg-zinc-900">
+                              <td className="px-5 py-3">
+                                <Checkbox checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />
+                              </td>
+                              <td className="max-w-[220px] truncate px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">
+                                {item.card_nome || "—"}
+                              </td>
+                              <td className="whitespace-nowrap px-5 py-3 text-zinc-600 dark:text-zinc-400">
+                                {formatPhoneDisplay(item.telefone)}
+                              </td>
+                              <td className="px-5 py-3">
+                                <AckIndicator ack={item.ack} />
+                              </td>
+                              <td className="px-5 py-3">
+                                <StatusIcon status={item.status} />
+                              </td>
+                              <td className="px-5 py-3">
+                                <div className="flex justify-end gap-1.5">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    title="Ver detalhes"
+                                    onClick={() => setExpandido(aberto ? null : item.id)}
+                                  >
+                                    {aberto ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="whitespace-nowrap"
+                                    onClick={() => confirmar(item)}
+                                    loading={processando === item.id}
+                                  >
+                                    <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar manualmente
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    title="Cancelar monitoramento"
+                                    onClick={() => cancelar(item)}
+                                    disabled={processando === item.id}
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    title="Apagar (ex: cliente só reagiu e o sistema não detectou)"
+                                    onClick={() => setApagarAlvo(item)}
+                                    disabled={processando === item.id}
+                                  >
+                                    <Trash2 className="h-4 w-4 text-red-500" />
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                            {aberto && (
+                              <tr className="bg-zinc-50 dark:bg-zinc-800/30">
+                                <td colSpan={6} className="px-5 py-4">
+                                  <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                                    <span className="text-zinc-400 dark:text-zinc-500">Enviado em: </span>
+                                    {new Date(item.created_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
+                                  </p>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
-                  </div>
                 </div>
                 <Pagination
                   page={paginaAguardando}
@@ -419,46 +507,55 @@ export function PendentesResposta() {
                   />
                   <span>Selecionar todos nesta página</span>
                 </div>
-                {resolvidosPaginado.map((item) => (
-                  <SelectableCard key={item.id} checked={selecionados.has(item.id)} onToggle={() => alternarSelecionado(item.id)}>
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="font-medium text-zinc-900 dark:text-zinc-100">{item.card_nome || "—"}</p>
-                      <Badge tone={STATUS_BADGE[item.status].tone}>{STATUS_BADGE[item.status].label}</Badge>
-                    </div>
-                    <CardField
-                      label="Resolvido em"
-                      value={item.resolved_at ? new Date(item.resolved_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}
-                    />
-                    <CardField label="Telefone" value={formatPhoneDisplay(item.telefone)} />
-                    <CardField label="Entrega" value={<AckIndicator ack={item.ack} />} />
-                    <CardField
-                      label="Como respondeu"
-                      value={
-                        item.tipo_resposta === "reacao" ? (
-                          <span className="inline-flex items-center gap-1">
-                            <SmilePlus className="h-3.5 w-3.5" /> Reação {item.resposta_preview}
-                          </span>
-                        ) : item.tipo_resposta === "mensagem" ? (
-                          <span className="inline-flex items-center gap-1">
-                            <MessageSquareReply className="h-3.5 w-3.5" /> {item.resposta_preview || "Mensagem"}
-                          </span>
-                        ) : (
-                          "—"
-                        )
-                      }
-                    />
-                    <div className="flex justify-end pt-1">
-                      <Button variant="ghost" size="icon" title="Apagar" onClick={() => setApagarAlvo(item)} disabled={processando === item.id}>
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
-                    </div>
-                  </SelectableCard>
-                ))}
+                {resolvidosPaginado.map((item) => {
+                  const aberto = expandido === item.id;
+                  return (
+                    <SelectableCard key={item.id} checked={selecionados.has(item.id)} onToggle={() => alternarSelecionado(item.id)}>
+                      <button
+                        className="flex w-full items-center justify-between gap-2 text-left"
+                        onClick={() => setExpandido(aberto ? null : item.id)}
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <StatusIcon status={item.status} />
+                          <span className="truncate font-medium text-zinc-900 dark:text-zinc-100">{item.card_nome || "—"}</span>
+                        </span>
+                        <span className="flex shrink-0 items-center gap-2">
+                          <AckIndicator ack={item.ack} respondido={item.status === "respondido"} compact />
+                          {aberto ? <ChevronUp className="h-4 w-4 text-zinc-400" /> : <ChevronDown className="h-4 w-4 text-zinc-400" />}
+                        </span>
+                      </button>
+
+                      {aberto && (
+                        <div className="space-y-1 border-t border-zinc-100 pt-2 text-sm text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+                          <p>
+                            <span className="text-zinc-400 dark:text-zinc-500">Telefone: </span>
+                            {formatPhoneDisplay(item.telefone)}
+                          </p>
+                          <p>
+                            <span className="text-zinc-400 dark:text-zinc-500">Resolvido em: </span>
+                            {item.resolved_at
+                              ? new Date(item.resolved_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })
+                              : "—"}
+                          </p>
+                          <p>
+                            <span className="text-zinc-400 dark:text-zinc-500">Como respondeu: </span>
+                            <ComoRespondeu item={item} />
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="flex justify-end pt-1">
+                        <Button variant="ghost" size="icon" title="Apagar" onClick={() => setApagarAlvo(item)} disabled={processando === item.id}>
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </div>
+                    </SelectableCard>
+                  );
+                })}
               </div>
 
               <div className="hidden overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 md:block">
-                <div className="overflow-x-auto">
-                <table className="w-full min-w-[900px] text-sm">
+                <table className="w-full text-sm">
                   <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
                     <tr>
                       <th className="w-10 px-5 py-3">
@@ -467,63 +564,77 @@ export function PendentesResposta() {
                           onChange={() => alternarSelecionarTodos(resolvidosPaginado)}
                         />
                       </th>
-                      <th className="whitespace-nowrap px-5 py-3">Resolvido em</th>
-                      <th className="whitespace-nowrap px-5 py-3">Cliente</th>
-                      <th className="whitespace-nowrap px-5 py-3">Telefone</th>
-                      <th className="whitespace-nowrap px-5 py-3">Entrega</th>
-                      <th className="whitespace-nowrap px-5 py-3">Como respondeu</th>
-                      <th className="whitespace-nowrap px-5 py-3">Status</th>
-                      <th className="whitespace-nowrap px-5 py-3 text-right">Ações</th>
+                      <th className="px-5 py-3">Cliente</th>
+                      <th className="px-5 py-3">Telefone</th>
+                      <th className="px-5 py-3">Entrega</th>
+                      <th className="w-16 px-5 py-3">Status</th>
+                      <th className="px-5 py-3 text-right">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                    {resolvidosPaginado.map((item) => (
-                      <tr key={item.id} className="bg-white dark:bg-zinc-900">
-                        <td className="px-5 py-3">
-                          <Checkbox checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />
-                        </td>
-                        <td className="whitespace-nowrap px-5 py-3 text-zinc-500 dark:text-zinc-400">
-                          {item.resolved_at ? new Date(item.resolved_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}
-                        </td>
-                        <td className="whitespace-nowrap px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{item.card_nome || "—"}</td>
-                        <td className="whitespace-nowrap px-5 py-3 text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(item.telefone)}</td>
-                        <td className="px-5 py-3">
-                          <AckIndicator ack={item.ack} />
-                        </td>
-                        <td className="max-w-[220px] truncate px-5 py-3 text-zinc-600 dark:text-zinc-400">
-                          {item.tipo_resposta === "reacao" ? (
-                            <span className="inline-flex items-center gap-1">
-                              <SmilePlus className="h-3.5 w-3.5" /> Reação {item.resposta_preview}
-                            </span>
-                          ) : item.tipo_resposta === "mensagem" ? (
-                            <span className="inline-flex items-center gap-1 truncate">
-                              <MessageSquareReply className="h-3.5 w-3.5" /> {item.resposta_preview || "Mensagem"}
-                            </span>
-                          ) : (
-                            "—"
+                    {resolvidosPaginado.map((item) => {
+                      const aberto = expandido === item.id;
+                      return (
+                        <Fragment key={item.id}>
+                          <tr className="bg-white dark:bg-zinc-900">
+                            <td className="px-5 py-3">
+                              <Checkbox checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />
+                            </td>
+                            <td className="max-w-[240px] truncate px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">
+                              {item.card_nome || "—"}
+                            </td>
+                            <td className="whitespace-nowrap px-5 py-3 text-zinc-600 dark:text-zinc-400">
+                              {formatPhoneDisplay(item.telefone)}
+                            </td>
+                            <td className="px-5 py-3">
+                              <AckIndicator ack={item.ack} respondido={item.status === "respondido"} />
+                            </td>
+                            <td className="px-5 py-3">
+                              <StatusIcon status={item.status} />
+                            </td>
+                            <td className="px-5 py-3">
+                              <div className="flex justify-end gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  title="Ver detalhes"
+                                  onClick={() => setExpandido(aberto ? null : item.id)}
+                                >
+                                  {aberto ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  title="Apagar"
+                                  onClick={() => setApagarAlvo(item)}
+                                  disabled={processando === item.id}
+                                >
+                                  <Trash2 className="h-4 w-4 text-red-500" />
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                          {aberto && (
+                            <tr className="bg-zinc-50 dark:bg-zinc-800/30">
+                              <td colSpan={6} className="space-y-1 px-5 py-4">
+                                <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                                  <span className="text-zinc-400 dark:text-zinc-500">Resolvido em: </span>
+                                  {item.resolved_at
+                                    ? new Date(item.resolved_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })
+                                    : "—"}
+                                </p>
+                                <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                                  <span className="text-zinc-400 dark:text-zinc-500">Como respondeu: </span>
+                                  <ComoRespondeu item={item} />
+                                </p>
+                              </td>
+                            </tr>
                           )}
-                        </td>
-                        <td className="px-5 py-3">
-                          <Badge tone={STATUS_BADGE[item.status].tone}>{STATUS_BADGE[item.status].label}</Badge>
-                        </td>
-                        <td className="px-5 py-3">
-                          <div className="flex justify-end">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              title="Apagar"
-                              onClick={() => setApagarAlvo(item)}
-                              disabled={processando === item.id}
-                            >
-                              <Trash2 className="h-4 w-4 text-red-500" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                        </Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
-                </div>
               </div>
               <Pagination
                 page={paginaResolvidos}

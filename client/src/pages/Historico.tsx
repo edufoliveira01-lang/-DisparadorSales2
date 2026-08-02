@@ -1,21 +1,41 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronUp, History as HistoryIcon, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  History as HistoryIcon,
+  RefreshCw,
+  RotateCcw,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type { SendLog, Template } from "@/lib/types";
 import { useToast } from "@/components/ui/Toast";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
 import { AckIndicator } from "@/components/AckIndicator";
 import { Button } from "@/components/ui/Button";
-import { Badge } from "@/components/ui/Badge";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Pagination } from "@/components/ui/Pagination";
-import { CardField, SelectableCard } from "@/components/ui/SelectableCard";
+import { SelectableCard } from "@/components/ui/SelectableCard";
 import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 
 const ITENS_POR_PAGINA = 20;
+
+function StatusIcon({ status }: { status: SendLog["status"] }) {
+  return status === "sucesso" ? (
+    <span title="Enviado com sucesso">
+      <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+    </span>
+  ) : (
+    <span title="Falhou">
+      <XCircle className="h-4 w-4 text-red-500" />
+    </span>
+  );
+}
 
 export function Historico() {
   const { show } = useToast();
@@ -143,6 +163,10 @@ export function Historico() {
     });
   }
 
+  function formatarData(log: SendLog): string {
+    return new Date(log.created_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -190,6 +214,7 @@ export function Historico() {
         <EmptyState icon={HistoryIcon} title="Nenhum envio registrado ainda" description="Os envios feitos pelo Dashboard aparecerão aqui." />
       ) : (
         <>
+          {/* Mobile: cards compactos (nome + status + entrega), detalhes por trás do expandir */}
           <div className="space-y-3 md:hidden">
             <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
               <Checkbox
@@ -198,50 +223,61 @@ export function Historico() {
               />
               <span>Selecionar todos nesta página</span>
             </div>
-            {logsPaginados.map((log) => (
-              <SelectableCard key={log.id} checked={selecionados.has(log.id)} onToggle={() => alternarSelecionado(log.id)}>
-                <div className="flex items-start justify-between gap-2">
-                  <p className="font-medium text-zinc-900 dark:text-zinc-100">{log.card_nome || "—"}</p>
-                  {log.status === "sucesso" ? <Badge tone="success">Enviado</Badge> : <Badge tone="danger">Falhou</Badge>}
-                </div>
-                <CardField
-                  label="Data/hora"
-                  value={new Date(log.created_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
-                />
-                <CardField label="Telefone" value={log.telefone || "—"} />
-                <CardField label="Entrega" value={<AckIndicator ack={log.ack} />} />
-                {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
-                {expandido === log.id && log.mensagem_enviada && (
-                  <div className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/50">
-                    <p className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-400">Mensagem enviada</p>
-                    <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{log.mensagem_enviada}</p>
-                  </div>
-                )}
-                <div className="flex flex-wrap justify-end gap-1.5 pt-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setExpandido(expandido === log.id ? null : log.id)}
-                    disabled={!log.mensagem_enviada}
+            {logsPaginados.map((log) => {
+              const aberto = expandido === log.id;
+              return (
+                <SelectableCard key={log.id} checked={selecionados.has(log.id)} onToggle={() => alternarSelecionado(log.id)}>
+                  <button
+                    className="flex w-full items-center justify-between gap-2 text-left"
+                    onClick={() => setExpandido(aberto ? null : log.id)}
                   >
-                    {expandido === log.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                  </Button>
-                  {log.status === "falha" && (
-                    <Button variant="outline" size="sm" onClick={() => reenviar(log)} loading={reenviando === log.id}>
-                      <RotateCcw className="h-3.5 w-3.5" /> Reenviar
-                    </Button>
+                    <span className="flex min-w-0 items-center gap-2">
+                      <StatusIcon status={log.status} />
+                      <span className="truncate font-medium text-zinc-900 dark:text-zinc-100">{log.card_nome || "—"}</span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <AckIndicator ack={log.ack} compact />
+                      {aberto ? <ChevronUp className="h-4 w-4 text-zinc-400" /> : <ChevronDown className="h-4 w-4 text-zinc-400" />}
+                    </span>
+                  </button>
+
+                  {aberto && (
+                    <div className="space-y-2 border-t border-zinc-100 pt-2 dark:border-zinc-800">
+                      <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                        <span className="text-zinc-400 dark:text-zinc-500">Telefone: </span>
+                        {log.telefone || "—"}
+                      </p>
+                      <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                        <span className="text-zinc-400 dark:text-zinc-500">Data/hora: </span>
+                        {formatarData(log)}
+                      </p>
+                      {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
+                      {log.mensagem_enviada && (
+                        <div className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/50">
+                          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-400">Mensagem enviada</p>
+                          <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{log.mensagem_enviada}</p>
+                        </div>
+                      )}
+                      <div className="flex flex-wrap justify-end gap-1.5 pt-1">
+                        {log.status === "falha" && (
+                          <Button variant="outline" size="sm" onClick={() => reenviar(log)} loading={reenviando === log.id}>
+                            <RotateCcw className="h-3.5 w-3.5" /> Reenviar
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="icon" title="Apagar" onClick={() => setApagarAlvo(log)} disabled={apagando === log.id}>
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </div>
+                    </div>
                   )}
-                  <Button variant="ghost" size="icon" title="Apagar" onClick={() => setApagarAlvo(log)} disabled={apagando === log.id}>
-                    <Trash2 className="h-4 w-4 text-red-500" />
-                  </Button>
-                </div>
-              </SelectableCard>
-            ))}
+                </SelectableCard>
+              );
+            })}
           </div>
 
+          {/* Desktop: tabela compacta de 6 colunas, detalhes num accordion por linha */}
           <div className="hidden overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 md:block">
-            <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
+            <table className="w-full text-sm">
               <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
                 <tr>
                   <th className="w-10 px-5 py-3">
@@ -250,73 +286,76 @@ export function Historico() {
                       onChange={alternarSelecionarTodos}
                     />
                   </th>
-                  <th className="whitespace-nowrap px-5 py-3">Data/hora</th>
-                  <th className="whitespace-nowrap px-5 py-3">Cliente</th>
-                  <th className="whitespace-nowrap px-5 py-3">Telefone</th>
-                  <th className="whitespace-nowrap px-5 py-3">Status</th>
-                  <th className="whitespace-nowrap px-5 py-3">Entrega</th>
-                  <th className="whitespace-nowrap px-5 py-3 text-right">Ações</th>
+                  <th className="px-5 py-3">Cliente</th>
+                  <th className="px-5 py-3">Telefone</th>
+                  <th className="px-5 py-3">Entrega</th>
+                  <th className="w-16 px-5 py-3">Status</th>
+                  <th className="px-5 py-3 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {logsPaginados.map((log) => (
-                  <Fragment key={log.id}>
-                    <tr className="bg-white dark:bg-zinc-900">
-                      <td className="px-5 py-3">
-                        <Checkbox checked={selecionados.has(log.id)} onChange={() => alternarSelecionado(log.id)} />
-                      </td>
-                      <td className="whitespace-nowrap px-5 py-3 text-zinc-500 dark:text-zinc-400">
-                        {new Date(log.created_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
-                      </td>
-                      <td className="whitespace-nowrap px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{log.card_nome || "—"}</td>
-                      <td className="whitespace-nowrap px-5 py-3 text-zinc-600 dark:text-zinc-400">{log.telefone || "—"}</td>
-                      <td className="px-5 py-3">
-                        {log.status === "sucesso" ? <Badge tone="success">Enviado</Badge> : <Badge tone="danger">Falhou</Badge>}
-                        {log.erro && log.status === "falha" && <p className="mt-1 text-xs text-red-500">{log.erro}</p>}
-                      </td>
-                      <td className="px-5 py-3">
-                        <AckIndicator ack={log.ack} />
-                      </td>
-                      <td className="px-5 py-3">
-                        <div className="flex justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => setExpandido(expandido === log.id ? null : log.id)}
-                            disabled={!log.mensagem_enviada}
-                          >
-                            {expandido === log.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                          </Button>
-                          {log.status === "falha" && (
-                            <Button variant="outline" size="sm" onClick={() => reenviar(log)} loading={reenviando === log.id}>
-                              <RotateCcw className="h-3.5 w-3.5" /> Reenviar
+                {logsPaginados.map((log) => {
+                  const aberto = expandido === log.id;
+                  return (
+                    <Fragment key={log.id}>
+                      <tr className="bg-white dark:bg-zinc-900">
+                        <td className="px-5 py-3">
+                          <Checkbox checked={selecionados.has(log.id)} onChange={() => alternarSelecionado(log.id)} />
+                        </td>
+                        <td className="max-w-[240px] truncate px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">
+                          {log.card_nome || "—"}
+                        </td>
+                        <td className="whitespace-nowrap px-5 py-3 text-zinc-600 dark:text-zinc-400">{log.telefone || "—"}</td>
+                        <td className="px-5 py-3">
+                          <AckIndicator ack={log.ack} />
+                        </td>
+                        <td className="px-5 py-3">
+                          <StatusIcon status={log.status} />
+                        </td>
+                        <td className="px-5 py-3">
+                          <div className="flex justify-end gap-1">
+                            <Button variant="ghost" size="icon" title="Ver detalhes" onClick={() => setExpandido(aberto ? null : log.id)}>
+                              {aberto ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                             </Button>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title="Apagar"
-                            onClick={() => setApagarAlvo(log)}
-                            disabled={apagando === log.id}
-                          >
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                    {expandido === log.id && log.mensagem_enviada && (
-                      <tr className="bg-zinc-50 dark:bg-zinc-800/30">
-                        <td colSpan={7} className="px-5 py-4">
-                          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-400">Mensagem enviada</p>
-                          <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{log.mensagem_enviada}</p>
+                            {log.status === "falha" && (
+                              <Button variant="outline" size="sm" onClick={() => reenviar(log)} loading={reenviando === log.id}>
+                                <RotateCcw className="h-3.5 w-3.5" /> Reenviar
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Apagar"
+                              onClick={() => setApagarAlvo(log)}
+                              disabled={apagando === log.id}
+                            >
+                              <Trash2 className="h-4 w-4 text-red-500" />
+                            </Button>
+                          </div>
                         </td>
                       </tr>
-                    )}
-                  </Fragment>
-                ))}
+                      {aberto && (
+                        <tr className="bg-zinc-50 dark:bg-zinc-800/30">
+                          <td colSpan={6} className="space-y-2 px-5 py-4">
+                            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                              <span className="text-zinc-400 dark:text-zinc-500">Data/hora: </span>
+                              {formatarData(log)}
+                            </p>
+                            {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
+                            {log.mensagem_enviada && (
+                              <div>
+                                <p className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-400">Mensagem enviada</p>
+                                <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{log.mensagem_enviada}</p>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
-            </div>
           </div>
           <Pagination page={pagina} totalItems={logs.length} pageSize={ITENS_POR_PAGINA} onPageChange={setPagina} />
         </>
