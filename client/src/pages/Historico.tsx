@@ -308,7 +308,7 @@ export function Historico() {
                         <td className="px-5 py-3 text-center">
                           <Checkbox checked={selecionados.has(log.id)} onChange={() => alternarSelecionado(log.id)} />
                         </td>
-                        <td className="max-w-[240px] truncate px-5 py-3 text-center font-medium text-zinc-900 dark:text-zinc-100">
+                        <td className="max-w-[240px] truncate px-5 py-3 text-left font-medium text-zinc-900 dark:text-zinc-100">
                           {log.card_nome || "—"}
                         </td>
                         <td className="whitespace-nowrap px-5 py-3 text-center text-zinc-600 dark:text-zinc-400">{log.telefone || "—"}</td>

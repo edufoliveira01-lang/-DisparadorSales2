@@ -534,6 +534,16 @@ class WhatsappManager {
   /**
    * Tenta aplicar um ack que chegou antes do registro existir no banco.
    * Chamado por logsService/pendingRepliesService logo após o INSERT.
+   *
+   * dispatchService cria o pending_reply ANTES do send_log (precisa do pending para casar a
+   * resposta do cliente antes de logar o envio) — então, quando um ack chega bem cedo (antes de
+   * QUALQUER um dos dois existir), este método é chamado duas vezes em sequência para o mesmo
+   * messageId: uma vez pelo INSERT do pending, outra pelo INSERT do log. Importante: NÃO apagar
+   * a entrada do cache assim que um dos dois achar seu registro — se apagássemos aqui, a segunda
+   * chamada (log) chegaria com o cache já vazio e o Histórico nunca receberia esse ack, mesmo
+   * com o pending (que roda primeiro) tendo funcionado normalmente. As UPDATEs são idempotentes,
+   * então é seguro deixar a entrada disponível para as duas chamadas — quem efetivamente limpa o
+   * cache é só o setTimeout de 30s lá embaixo (em client.on("message_ack")).
    */
   processarAckPendente(messageId: string) {
     const ack = this.acksPendentes.get(messageId);
@@ -542,14 +552,8 @@ class WhatsappManager {
     const log = updateLogAckByMessageId(messageId, ack);
     const pending = updatePendingReplyAckByMessageId(messageId, ack);
 
-    if (log) {
-      emitEvent("send:ack-update", log);
-      this.acksPendentes.delete(messageId);
-    }
-    if (pending) {
-      emitEvent("pendingReply:ack-update", pending);
-      this.acksPendentes.delete(messageId);
-    }
+    if (log) emitEvent("send:ack-update", log);
+    if (pending) emitEvent("pendingReply:ack-update", pending);
   }
 
   /**

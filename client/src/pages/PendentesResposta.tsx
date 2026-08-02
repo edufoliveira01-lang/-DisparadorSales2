@@ -419,7 +419,7 @@ export function PendentesResposta() {
                               <td className="px-5 py-3 text-center">
                                 <Checkbox checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />
                               </td>
-                              <td className="max-w-[220px] truncate px-5 py-3 text-center font-medium text-zinc-900 dark:text-zinc-100">
+                              <td className="max-w-[220px] truncate px-5 py-3 text-left font-medium text-zinc-900 dark:text-zinc-100">
                                 {item.card_nome || "—"}
                               </td>
                               <td className="whitespace-nowrap px-5 py-3 text-center text-zinc-600 dark:text-zinc-400">
@@ -585,7 +585,7 @@ export function PendentesResposta() {
                             <td className="px-5 py-3 text-center">
                               <Checkbox checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />
                             </td>
-                            <td className="max-w-[240px] truncate px-5 py-3 text-center font-medium text-zinc-900 dark:text-zinc-100">
+                            <td className="max-w-[240px] truncate px-5 py-3 text-left font-medium text-zinc-900 dark:text-zinc-100">
                               {item.card_nome || "—"}
                             </td>
                             <td className="whitespace-nowrap px-5 py-3 text-center text-zinc-600 dark:text-zinc-400">
