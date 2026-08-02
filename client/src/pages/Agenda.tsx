@@ -258,8 +258,8 @@ export function Agenda() {
         />
       ) : (
         <>
-          {/* Mobile: nome + telefone em destaque; ícone indica observação preenchida; ações
-              (editar/apagar) sempre visíveis; texto da observação fica atrás do expandir. */}
+          {/* Mobile: nome em destaque (seta de expandir alinhada a ele); telefone + ícone de
+              observação + ações (editar/apagar) todos na mesma linha, sem espaço vazio. */}
           <div className="space-y-3 md:hidden">
             <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
               <Checkbox
@@ -276,34 +276,37 @@ export function Agenda() {
                     className="flex w-full items-center justify-between gap-2 text-left"
                     onClick={() => c.observacoes && setExpandido(aberto ? null : c.id)}
                   >
-                    <span className="min-w-0">
-                      <span className="block truncate font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</span>
-                      <span className="text-sm text-zinc-500 dark:text-zinc-400">{formatPhoneDisplay(c.telefone)}</span>
-                    </span>
-                    {c.observacoes && (
-                      <span className="flex shrink-0 items-center gap-2">
+                    <span className="block min-w-0 truncate font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</span>
+                    {c.observacoes &&
+                      (aberto ? (
+                        <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
+                      ))}
+                  </button>
+
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm text-zinc-500 dark:text-zinc-400">{formatPhoneDisplay(c.telefone)}</span>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {c.observacoes && (
                         <span title="Tem observação">
                           <StickyNote className="h-4 w-4 text-amber-500" />
                         </span>
-                        {aberto ? <ChevronUp className="h-4 w-4 text-zinc-400" /> : <ChevronDown className="h-4 w-4 text-zinc-400" />}
-                      </span>
-                    )}
-                  </button>
+                      )}
+                      <Button variant="ghost" size="icon" onClick={() => abrirEdicao(c)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => setExcluirAlvo(c)} loading={excluindo === c.id}>
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
+                    </div>
+                  </div>
 
                   {aberto && c.observacoes && (
                     <p className="border-t border-zinc-100 pt-2 text-sm text-zinc-600 dark:border-zinc-800 dark:text-zinc-300">
                       {c.observacoes}
                     </p>
                   )}
-
-                  <div className="flex justify-end gap-1 pt-1">
-                    <Button variant="ghost" size="icon" onClick={() => abrirEdicao(c)}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => setExcluirAlvo(c)} loading={excluindo === c.id}>
-                      <Trash2 className="h-4 w-4 text-red-500" />
-                    </Button>
-                  </div>
                 </SelectableCard>
               );
             })}
