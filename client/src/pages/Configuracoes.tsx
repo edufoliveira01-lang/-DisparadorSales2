@@ -5,7 +5,7 @@ import type { Settings, WhatsappState } from "@/lib/types";
 import { useWhatsapp } from "@/context/WhatsappContext";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
 import { useToast } from "@/components/ui/Toast";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { CollapsibleCard } from "@/components/ui/CollapsibleCard";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -245,13 +245,7 @@ export function Configuracoes() {
         </Button>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Lock className="h-4 w-4 text-amber-500" /> Dados de Acesso
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <CollapsibleCard icon={<Lock className="h-4 w-4 text-amber-500" />} title="Dados de Acesso">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label>Usuário</Label>
@@ -280,21 +274,19 @@ export function Configuracoes() {
               Atualizar dados de acesso
             </Button>
           </div>
-        </CardContent>
-      </Card>
+      </CollapsibleCard>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Trello className="h-4 w-4 text-blue-500" /> Integração com o Trello
-          </CardTitle>
-          {trelloOk && (
+      <CollapsibleCard
+        icon={<Trello className="h-4 w-4 text-blue-500" />}
+        title="Integração com o Trello"
+        headerExtra={
+          trelloOk && (
             <Badge tone="success">
               <CheckCircle2 className="h-3.5 w-3.5" /> Conectado
             </Badge>
-          )}
-        </CardHeader>
-        <CardContent className="space-y-4">
+          )
+        }
+      >
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label>API Key</Label>
@@ -396,17 +388,13 @@ export function Configuracoes() {
               Salvar integração
             </Button>
           </div>
-        </CardContent>
-      </Card>
+      </CollapsibleCard>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Wifi className="h-4 w-4 text-accent-500" /> Conexão com o WhatsApp
-          </CardTitle>
-          <Badge tone={whatsappTone as "success" | "danger" | "warning"}>{STATUS_LABEL[whatsapp.status]}</Badge>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <CollapsibleCard
+        icon={<Wifi className="h-4 w-4 text-accent-500" />}
+        title="Conexão com o WhatsApp"
+        headerExtra={<Badge tone={whatsappTone as "success" | "danger" | "warning"}>{STATUS_LABEL[whatsapp.status]}</Badge>}
+      >
           {whatsapp.status === "aguardando_qr" && whatsapp.qrDataUrl && (
             <div className="flex flex-col items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-6 dark:border-zinc-800 dark:bg-zinc-800/40">
               <img src={whatsapp.qrDataUrl} alt="QR Code do WhatsApp" className="h-56 w-56 rounded-lg bg-white p-2" />
@@ -456,14 +444,9 @@ export function Configuracoes() {
               </>
             )}
           </div>
-        </CardContent>
-      </Card>
+      </CollapsibleCard>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Intervalo entre envios</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <CollapsibleCard title="Intervalo entre envios">
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
             Ao enviar em lote, o sistema aguarda um tempo aleatório entre esses limites antes de cada mensagem, para reduzir o
             risco de bloqueio da conta.
@@ -483,8 +466,7 @@ export function Configuracoes() {
               Salvar intervalo
             </Button>
           </div>
-        </CardContent>
-      </Card>
+      </CollapsibleCard>
     </div>
   );
 }

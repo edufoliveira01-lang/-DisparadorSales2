@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Pencil, Plus, Search, Trash2, Upload, Users } from "lucide-react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronUp, Pencil, Plus, Search, StickyNote, Trash2, Upload, Users } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay, formatPhoneInput } from "@/lib/phone";
 import type { Contact } from "@/lib/types";
@@ -10,7 +10,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Input, Label, Textarea } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Pagination } from "@/components/ui/Pagination";
-import { CardField, SelectableCard } from "@/components/ui/SelectableCard";
+import { SelectableCard } from "@/components/ui/SelectableCard";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 
@@ -33,6 +33,7 @@ export function Agenda() {
   const [apagandoSelecionados, setApagandoSelecionados] = useState(false);
   const [excluirAlvo, setExcluirAlvo] = useState<Contact | null>(null);
   const [confirmMassaAberto, setConfirmMassaAberto] = useState(false);
+  const [expandido, setExpandido] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function carregar() {
@@ -257,6 +258,8 @@ export function Agenda() {
         />
       ) : (
         <>
+          {/* Mobile: nome + telefone em destaque; ícone indica observação preenchida; ações
+              (editar/apagar) sempre visíveis; texto da observação fica atrás do expandir. */}
           <div className="space-y-3 md:hidden">
             <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
               <Checkbox
@@ -265,26 +268,50 @@ export function Agenda() {
               />
               <span>Selecionar todos nesta página</span>
             </div>
-            {contatosPaginados.map((c) => (
-              <SelectableCard key={c.id} checked={selecionados.has(c.id)} onToggle={() => alternarSelecionado(c.id)}>
-                <p className="font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</p>
-                <CardField label="Telefone" value={formatPhoneDisplay(c.telefone)} />
-                {c.observacoes && <CardField label="Observações" value={c.observacoes} />}
-                <div className="flex justify-end gap-1 pt-1">
-                  <Button variant="ghost" size="icon" onClick={() => abrirEdicao(c)}>
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => setExcluirAlvo(c)} loading={excluindo === c.id}>
-                    <Trash2 className="h-4 w-4 text-red-500" />
-                  </Button>
-                </div>
-              </SelectableCard>
-            ))}
+            {contatosPaginados.map((c) => {
+              const aberto = expandido === c.id;
+              return (
+                <SelectableCard key={c.id} checked={selecionados.has(c.id)} onToggle={() => alternarSelecionado(c.id)}>
+                  <button
+                    className="flex w-full items-center justify-between gap-2 text-left"
+                    onClick={() => c.observacoes && setExpandido(aberto ? null : c.id)}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</span>
+                      <span className="text-sm text-zinc-500 dark:text-zinc-400">{formatPhoneDisplay(c.telefone)}</span>
+                    </span>
+                    {c.observacoes && (
+                      <span className="flex shrink-0 items-center gap-2">
+                        <span title="Tem observação">
+                          <StickyNote className="h-4 w-4 text-amber-500" />
+                        </span>
+                        {aberto ? <ChevronUp className="h-4 w-4 text-zinc-400" /> : <ChevronDown className="h-4 w-4 text-zinc-400" />}
+                      </span>
+                    )}
+                  </button>
+
+                  {aberto && c.observacoes && (
+                    <p className="border-t border-zinc-100 pt-2 text-sm text-zinc-600 dark:border-zinc-800 dark:text-zinc-300">
+                      {c.observacoes}
+                    </p>
+                  )}
+
+                  <div className="flex justify-end gap-1 pt-1">
+                    <Button variant="ghost" size="icon" onClick={() => abrirEdicao(c)}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => setExcluirAlvo(c)} loading={excluindo === c.id}>
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
+                  </div>
+                </SelectableCard>
+              );
+            })}
           </div>
 
+          {/* Desktop: nome + telefone + ícone de observação; texto completo no accordion */}
           <div className="hidden overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 md:block">
-            <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-sm">
+            <table className="w-full text-sm">
               <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
                 <tr>
                   <th className="w-10 px-5 py-3">
@@ -293,36 +320,59 @@ export function Agenda() {
                       onChange={alternarSelecionarTodos}
                     />
                   </th>
-                  <th className="whitespace-nowrap px-5 py-3">Nome</th>
-                  <th className="whitespace-nowrap px-5 py-3">Telefone</th>
-                  <th className="whitespace-nowrap px-5 py-3">Observações</th>
-                  <th className="whitespace-nowrap px-5 py-3 text-right">Ações</th>
+                  <th className="px-5 py-3">Nome</th>
+                  <th className="px-5 py-3">Telefone</th>
+                  <th className="w-16 px-5 py-3">Obs.</th>
+                  <th className="px-5 py-3 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {contatosPaginados.map((c) => (
-                  <tr key={c.id} className="bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800/50">
-                    <td className="px-5 py-3">
-                      <Checkbox checked={selecionados.has(c.id)} onChange={() => alternarSelecionado(c.id)} />
-                    </td>
-                    <td className="whitespace-nowrap px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</td>
-                    <td className="whitespace-nowrap px-5 py-3 text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(c.telefone)}</td>
-                    <td className="max-w-xs truncate px-5 py-3 text-zinc-500 dark:text-zinc-400">{c.observacoes || "—"}</td>
-                    <td className="px-5 py-3">
-                      <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => abrirEdicao(c)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => setExcluirAlvo(c)} loading={excluindo === c.id}>
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {contatosPaginados.map((c) => {
+                  const aberto = expandido === c.id;
+                  return (
+                    <Fragment key={c.id}>
+                      <tr className="bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800/50">
+                        <td className="px-5 py-3">
+                          <Checkbox checked={selecionados.has(c.id)} onChange={() => alternarSelecionado(c.id)} />
+                        </td>
+                        <td className="max-w-[240px] truncate px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</td>
+                        <td className="whitespace-nowrap px-5 py-3 text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(c.telefone)}</td>
+                        <td className="px-5 py-3">
+                          {c.observacoes && (
+                            <span title="Tem observação">
+                              <StickyNote className="h-4 w-4 text-amber-500" />
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-5 py-3">
+                          <div className="flex justify-end gap-1">
+                            {c.observacoes && (
+                              <Button variant="ghost" size="icon" title="Ver observação" onClick={() => setExpandido(aberto ? null : c.id)}>
+                                {aberto ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                              </Button>
+                            )}
+                            <Button variant="ghost" size="icon" onClick={() => abrirEdicao(c)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => setExcluirAlvo(c)} loading={excluindo === c.id}>
+                              <Trash2 className="h-4 w-4 text-red-500" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                      {aberto && c.observacoes && (
+                        <tr className="bg-zinc-50 dark:bg-zinc-800/30">
+                          <td colSpan={5} className="px-5 py-4">
+                            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-400">Observações</p>
+                            <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{c.observacoes}</p>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
-            </div>
           </div>
           <Pagination page={pagina} totalItems={filtrados.length} pageSize={ITENS_POR_PAGINA} onPageChange={setPagina} />
         </>
