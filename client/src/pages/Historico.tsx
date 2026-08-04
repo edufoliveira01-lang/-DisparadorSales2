@@ -1,19 +1,21 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import {
-  CheckCircle2,
   ChevronDown,
   ChevronUp,
   History as HistoryIcon,
+  MessageSquareReply,
   RefreshCw,
   RotateCcw,
+  SmilePlus,
   Trash2,
-  XCircle,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
+import { formatPhoneDisplay } from "@/lib/phone";
 import type { SendLog, Template } from "@/lib/types";
 import { useToast } from "@/components/ui/Toast";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
 import { AckIndicator } from "@/components/AckIndicator";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -25,16 +27,22 @@ import { EmptyState } from "@/components/ui/EmptyState";
 
 const ITENS_POR_PAGINA = 20;
 
-function StatusIcon({ status }: { status: SendLog["status"] }) {
-  return status === "sucesso" ? (
-    <span title="Enviado com sucesso">
-      <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-    </span>
-  ) : (
-    <span title="Falhou">
-      <XCircle className="h-4 w-4 text-red-500" />
-    </span>
-  );
+function ComoRespondeu({ log }: { log: SendLog }) {
+  if (log.resposta_tipo === "reacao") {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <SmilePlus className="h-3.5 w-3.5" /> Reação {log.resposta_preview}
+      </span>
+    );
+  }
+  if (log.resposta_tipo === "mensagem") {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <MessageSquareReply className="h-3.5 w-3.5" /> {log.resposta_preview || "Mensagem"}
+      </span>
+    );
+  }
+  return <>—</>;
 }
 
 export function Historico() {
@@ -66,6 +74,14 @@ export function Historico() {
 
   useSocketEvent<SendLog>("send:ack-update", (atualizado) => {
     setLogs((prev) => (prev ? prev.map((l) => (l.id === atualizado.id ? atualizado : l)) : prev));
+  });
+
+  // O evento de ack não cobre o desfecho do monitoramento de resposta (cliente respondeu,
+  // confirmação manual, cancelamento) — esses vêm de pending_replies, uma tabela separada.
+  // Como não sabemos aqui qual log corresponde ao pending resolvido, recarregamos a lista
+  // inteira para refletir o novo status/"Concluído" assim que ele acontece.
+  useSocketEvent("pendingReply:resolved", () => {
+    carregar();
   });
 
   const logsPaginados = useMemo(
@@ -234,8 +250,8 @@ export function Historico() {
                     <span className="min-w-0">
                       <span className="block truncate font-medium text-zinc-900 dark:text-zinc-100">{log.card_nome || "—"}</span>
                       <span className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-                        {log.telefone || "—"}
-                        <AckIndicator ack={log.ack} />
+                        {log.telefone ? formatPhoneDisplay(log.telefone) : "—"}
+                        <AckIndicator ack={log.ack} respondido={log.resposta_status === "respondido"} />
                       </span>
                     </span>
                     {aberto ? (
@@ -248,7 +264,7 @@ export function Historico() {
                   {aberto && (
                     <div className="space-y-2 border-t border-zinc-100 pt-2 dark:border-zinc-800">
                       <div className="flex items-center gap-2">
-                        <StatusIcon status={log.status} />
+                        <StatusBadge sendStatus={log.status} ack={log.ack} respostaStatus={log.resposta_status} />
                       </div>
                       {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
                       {log.mensagem_enviada && (
@@ -256,6 +272,18 @@ export function Historico() {
                           <p className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-400">Mensagem enviada</p>
                           <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{log.mensagem_enviada}</p>
                         </div>
+                      )}
+                      {log.resposta_resolved_at && (
+                        <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                          <span className="text-zinc-400 dark:text-zinc-500">Respondido em: </span>
+                          {new Date(log.resposta_resolved_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
+                        </p>
+                      )}
+                      {log.resposta_status === "respondido" && (
+                        <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                          <span className="text-zinc-400 dark:text-zinc-500">Como respondeu: </span>
+                          <ComoRespondeu log={log} />
+                        </p>
                       )}
                       {log.status === "falha" && (
                         <Button
@@ -269,7 +297,10 @@ export function Historico() {
                         </Button>
                       )}
                       <div className="flex items-center justify-between gap-2 pt-1">
-                        <p className="text-sm text-zinc-500 dark:text-zinc-400">{formatarData(log)}</p>
+                        <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                          <span className="text-zinc-400 dark:text-zinc-500">Enviado em: </span>
+                          {formatarData(log)}
+                        </p>
                         <Button variant="ghost" size="icon" title="Apagar" onClick={() => setApagarAlvo(log)} disabled={apagando === log.id}>
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
@@ -311,12 +342,14 @@ export function Historico() {
                         <td className="max-w-[240px] truncate px-5 py-3 text-left font-medium text-zinc-900 dark:text-zinc-100">
                           {log.card_nome || "—"}
                         </td>
-                        <td className="whitespace-nowrap px-5 py-3 text-center text-zinc-600 dark:text-zinc-400">{log.telefone || "—"}</td>
-                        <td className="px-5 py-3 text-center">
-                          <AckIndicator ack={log.ack} />
+                        <td className="whitespace-nowrap px-5 py-3 text-center text-zinc-600 dark:text-zinc-400">
+                          {log.telefone ? formatPhoneDisplay(log.telefone) : "—"}
                         </td>
                         <td className="px-5 py-3 text-center">
-                          <StatusIcon status={log.status} />
+                          <AckIndicator ack={log.ack} respondido={log.resposta_status === "respondido"} />
+                        </td>
+                        <td className="px-5 py-3 text-center">
+                          <StatusBadge sendStatus={log.status} ack={log.ack} respostaStatus={log.resposta_status} />
                         </td>
                         <td className="px-5 py-3">
                           <div className="flex justify-center gap-1">
@@ -344,9 +377,21 @@ export function Historico() {
                         <tr className="bg-zinc-50 dark:bg-zinc-800/30">
                           <td colSpan={6} className="space-y-2 px-5 py-4">
                             <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                              <span className="text-zinc-400 dark:text-zinc-500">Data/hora: </span>
+                              <span className="text-zinc-400 dark:text-zinc-500">Enviado em: </span>
                               {formatarData(log)}
                             </p>
+                            {log.resposta_resolved_at && (
+                              <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                                <span className="text-zinc-400 dark:text-zinc-500">Respondido em: </span>
+                                {new Date(log.resposta_resolved_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
+                              </p>
+                            )}
+                            {log.resposta_status === "respondido" && (
+                              <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                                <span className="text-zinc-400 dark:text-zinc-500">Como respondeu: </span>
+                                <ComoRespondeu log={log} />
+                              </p>
+                            )}
                             {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
                             {log.mensagem_enviada && (
                               <div>

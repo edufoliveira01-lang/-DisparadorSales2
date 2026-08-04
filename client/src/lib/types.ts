@@ -42,6 +42,12 @@ export interface SendLog {
   ack: number | null;
   ack_updated_at: string | null;
   created_at: string;
+  /** Dados do pending_reply correlato (mesmo whatsapp_message_id), quando esse envio estava sob
+   * monitoramento de resposta. Ausente/null quando nunca houve monitoramento para esse envio. */
+  resposta_status?: "aguardando" | "respondido" | "cancelado" | null;
+  resposta_resolved_at?: string | null;
+  resposta_tipo?: "mensagem" | "reacao" | null;
+  resposta_preview?: string | null;
 }
 
 export interface CardViewModel {
