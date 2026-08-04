@@ -18,6 +18,13 @@ export interface SendLog {
   ack: number | null;
   ack_updated_at: string | null;
   created_at: string;
+  /** Dados do pending_reply correlato (mesmo whatsapp_message_id), quando esse envio estava sob
+   * monitoramento de resposta (lista de confirmação configurada no Trello). Vem de um LEFT JOIN —
+   * undefined/null em todos quando não há (ou nunca houve) monitoramento para esse envio. */
+  resposta_status?: "aguardando" | "respondido" | "cancelado" | null;
+  resposta_resolved_at?: string | null;
+  resposta_tipo?: "mensagem" | "reacao" | null;
+  resposta_preview?: string | null;
 }
 
 export interface NewSendLog {
@@ -36,7 +43,20 @@ const insertStmt = db.prepare(
   `INSERT INTO send_logs (card_id, card_nome, contact_id, telefone, pericias_json, mensagem_enviada, status, erro, whatsapp_message_id)
    VALUES (@card_id, @card_nome, @contact_id, @telefone, @pericias_json, @mensagem_enviada, @status, @erro, @whatsapp_message_id)`
 );
-const listStmt = db.prepare("SELECT * FROM send_logs ORDER BY created_at DESC, id DESC");
+// LEFT JOIN pending_replies pelo mesmo whatsapp_message_id: quando esse envio estava sob
+// monitoramento de resposta, o Histórico passa a enxergar se/quando/como o cliente respondeu,
+// sem precisar de uma segunda consulta por linha.
+const listStmt = db.prepare(`
+  SELECT
+    send_logs.*,
+    pending_replies.status AS resposta_status,
+    pending_replies.resolved_at AS resposta_resolved_at,
+    pending_replies.tipo_resposta AS resposta_tipo,
+    pending_replies.resposta_preview AS resposta_preview
+  FROM send_logs
+  LEFT JOIN pending_replies ON pending_replies.whatsapp_message_id = send_logs.whatsapp_message_id
+  ORDER BY send_logs.created_at DESC, send_logs.id DESC
+`);
 const lastForCardStmt = db.prepare("SELECT * FROM send_logs WHERE card_id = ? ORDER BY created_at DESC, id DESC LIMIT 1");
 const getStmt = db.prepare("SELECT * FROM send_logs WHERE id = ?");
 const getByMessageIdStmt = db.prepare("SELECT * FROM send_logs WHERE whatsapp_message_id = ?");

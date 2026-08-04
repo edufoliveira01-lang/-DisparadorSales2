@@ -1,22 +1,12 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import {
-  CheckCircle2,
-  ChevronDown,
-  ChevronUp,
-  Clock,
-  MessageSquareReply,
-  RefreshCw,
-  SmilePlus,
-  Trash2,
-  X,
-  XCircle,
-} from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronUp, MessageSquareReply, RefreshCw, Trash2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay } from "@/lib/phone";
 import type { PendingReply } from "@/lib/types";
 import { useToast } from "@/components/ui/Toast";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
 import { AckIndicator } from "@/components/AckIndicator";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -28,14 +18,13 @@ import { EmptyState } from "@/components/ui/EmptyState";
 
 const ITENS_POR_PAGINA = 20;
 
-type Filtro = "todos" | "enviado" | "entregue" | "lido" | "respondido";
+type Filtro = "todos" | "enviado" | "entregue" | "lido";
 
 const FILTRO_OPTIONS: { value: Filtro; label: string }[] = [
   { value: "todos", label: "Todos os status" },
   { value: "enviado", label: "Enviado" },
   { value: "entregue", label: "Entregue" },
   { value: "lido", label: "Lido" },
-  { value: "respondido", label: "Respondido" },
 ];
 
 function combinaFiltro(item: PendingReply, filtro: Filtro): boolean {
@@ -48,49 +37,7 @@ function combinaFiltro(item: PendingReply, filtro: Filtro): boolean {
       return item.ack === 2;
     case "lido":
       return item.ack !== null && item.ack >= 3;
-    case "respondido":
-      return item.status === "respondido";
   }
-}
-
-function StatusIcon({ status }: { status: PendingReply["status"] }) {
-  if (status === "respondido") {
-    return (
-      <span title="Concluído">
-        <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-      </span>
-    );
-  }
-  if (status === "cancelado") {
-    return (
-      <span title="Substituído por novo envio">
-        <XCircle className="h-4 w-4 text-zinc-400" />
-      </span>
-    );
-  }
-  return (
-    <span title="Aguardando resposta">
-      <Clock className="h-4 w-4 text-amber-500" />
-    </span>
-  );
-}
-
-function ComoRespondeu({ item }: { item: PendingReply }) {
-  if (item.tipo_resposta === "reacao") {
-    return (
-      <span className="inline-flex items-center gap-1">
-        <SmilePlus className="h-3.5 w-3.5" /> Reação {item.resposta_preview}
-      </span>
-    );
-  }
-  if (item.tipo_resposta === "mensagem") {
-    return (
-      <span className="inline-flex items-center gap-1">
-        <MessageSquareReply className="h-3.5 w-3.5" /> {item.resposta_preview || "Mensagem"}
-      </span>
-    );
-  }
-  return <>—</>;
 }
 
 export function PendentesResposta() {
@@ -101,7 +48,6 @@ export function PendentesResposta() {
   const [apagandoSelecionados, setApagandoSelecionados] = useState(false);
   const [filtro, setFiltro] = useState<Filtro>("todos");
   const [paginaAguardando, setPaginaAguardando] = useState(0);
-  const [paginaResolvidos, setPaginaResolvidos] = useState(0);
   const [apagarAlvo, setApagarAlvo] = useState<PendingReply | null>(null);
   const [confirmMassaAberto, setConfirmMassaAberto] = useState(false);
   const [expandido, setExpandido] = useState<number | null>(null);
@@ -220,34 +166,20 @@ export function PendentesResposta() {
     () => pendentes?.filter((p) => p.status === "aguardando" && combinaFiltro(p, filtro)) ?? [],
     [pendentes, filtro]
   );
-  const resolvidos = useMemo(
-    () => pendentes?.filter((p) => p.status !== "aguardando" && combinaFiltro(p, filtro)) ?? [],
-    [pendentes, filtro]
-  );
 
   const aguardandoPaginado = useMemo(
     () => aguardando.slice(paginaAguardando * ITENS_POR_PAGINA, (paginaAguardando + 1) * ITENS_POR_PAGINA),
     [aguardando, paginaAguardando]
   );
-  const resolvidosPaginado = useMemo(
-    () => resolvidos.slice(paginaResolvidos * ITENS_POR_PAGINA, (paginaResolvidos + 1) * ITENS_POR_PAGINA),
-    [resolvidos, paginaResolvidos]
-  );
 
   useEffect(() => {
     setPaginaAguardando(0);
-    setPaginaResolvidos(0);
   }, [filtro]);
 
   useEffect(() => {
     const ultimaPagina = Math.max(0, Math.ceil(aguardando.length / ITENS_POR_PAGINA) - 1);
     if (paginaAguardando > ultimaPagina) setPaginaAguardando(ultimaPagina);
   }, [aguardando, paginaAguardando]);
-
-  useEffect(() => {
-    const ultimaPagina = Math.max(0, Math.ceil(resolvidos.length / ITENS_POR_PAGINA) - 1);
-    if (paginaResolvidos > ultimaPagina) setPaginaResolvidos(ultimaPagina);
-  }, [resolvidos, paginaResolvidos]);
 
   return (
     <div className="space-y-6">
@@ -300,7 +232,7 @@ export function PendentesResposta() {
           title="Nenhum monitoramento ativo"
           description='Configure uma "lista de confirmação" em Configurações → Trello para que envios passem a aparecer aqui.'
         />
-      ) : aguardando.length === 0 && resolvidos.length === 0 && filtro !== "todos" ? (
+      ) : aguardando.length === 0 && filtro !== "todos" ? (
         <EmptyState
           icon={MessageSquareReply}
           title="Nenhum resultado para esse filtro"
@@ -346,7 +278,7 @@ export function PendentesResposta() {
                         <div className="flex items-center justify-between gap-2">
                           <span className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
                             {formatPhoneDisplay(item.telefone)}
-                            <AckIndicator ack={item.ack} />
+                            <AckIndicator ack={item.ack} respondido={item.status === "respondido"} />
                           </span>
                           <Button
                             variant="ghost"
@@ -361,6 +293,9 @@ export function PendentesResposta() {
 
                         {aberto && (
                           <div className="space-y-2 border-t border-zinc-100 pt-2 text-sm text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+                            <div className="flex items-center gap-2">
+                              <StatusBadge ack={item.ack} respostaStatus={item.status} />
+                            </div>
                             <p>
                               <span className="text-zinc-400 dark:text-zinc-500">Enviado em: </span>
                               {new Date(item.created_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
@@ -426,10 +361,10 @@ export function PendentesResposta() {
                                 {formatPhoneDisplay(item.telefone)}
                               </td>
                               <td className="px-5 py-3 text-center">
-                                <AckIndicator ack={item.ack} />
+                                <AckIndicator ack={item.ack} respondido={item.status === "respondido"} />
                               </td>
                               <td className="px-5 py-3 text-center">
-                                <StatusIcon status={item.status} />
+                                <StatusBadge ack={item.ack} respostaStatus={item.status} />
                               </td>
                               <td className="px-5 py-3">
                                 <div className="flex justify-center gap-1.5">
@@ -496,159 +431,6 @@ export function PendentesResposta() {
               </>
             )}
           </section>
-
-          {resolvidos.length > 0 && (
-            <section className="space-y-3">
-              <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Histórico recente</h2>
-
-              <div className="space-y-3 md:hidden">
-                <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-                  <Checkbox
-                    checked={resolvidosPaginado.length > 0 && resolvidosPaginado.every((i) => selecionados.has(i.id))}
-                    onChange={() => alternarSelecionarTodos(resolvidosPaginado)}
-                  />
-                  <span>Selecionar todos nesta página</span>
-                </div>
-                {resolvidosPaginado.map((item) => {
-                  const aberto = expandido === item.id;
-                  return (
-                    <SelectableCard key={item.id} checked={selecionados.has(item.id)} onToggle={() => alternarSelecionado(item.id)}>
-                      <button
-                        className="flex w-full items-center justify-between gap-2 text-left"
-                        onClick={() => setExpandido(aberto ? null : item.id)}
-                      >
-                        <span className="min-w-0 truncate font-medium text-zinc-900 dark:text-zinc-100">
-                          {item.card_nome || "—"}
-                        </span>
-                        {aberto ? (
-                          <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
-                        )}
-                      </button>
-
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-                          {formatPhoneDisplay(item.telefone)}
-                          <AckIndicator ack={item.ack} respondido={item.status === "respondido"} />
-                        </span>
-                        <Button variant="ghost" size="icon" title="Apagar" onClick={() => setApagarAlvo(item)} disabled={processando === item.id}>
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
-                      </div>
-
-                      {aberto && (
-                        <div className="space-y-2 border-t border-zinc-100 pt-2 text-sm text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-                          <div className="flex items-center gap-2">
-                            <StatusIcon status={item.status} />
-                          </div>
-                          <p>
-                            <span className="text-zinc-400 dark:text-zinc-500">Resolvido em: </span>
-                            {item.resolved_at
-                              ? new Date(item.resolved_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })
-                              : "—"}
-                          </p>
-                          <p>
-                            <span className="text-zinc-400 dark:text-zinc-500">Como respondeu: </span>
-                            <ComoRespondeu item={item} />
-                          </p>
-                        </div>
-                      )}
-                    </SelectableCard>
-                  );
-                })}
-              </div>
-
-              <div className="hidden overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 md:block">
-                <table className="w-full text-sm">
-                  <thead className="bg-zinc-50 text-center text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
-                    <tr>
-                      <th className="w-10 px-5 py-3">
-                        <Checkbox
-                          checked={resolvidosPaginado.length > 0 && resolvidosPaginado.every((i) => selecionados.has(i.id))}
-                          onChange={() => alternarSelecionarTodos(resolvidosPaginado)}
-                        />
-                      </th>
-                      <th className="px-5 py-3">Cliente</th>
-                      <th className="px-5 py-3">Telefone</th>
-                      <th className="px-5 py-3">Entrega</th>
-                      <th className="w-16 px-5 py-3">Status</th>
-                      <th className="px-5 py-3">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                    {resolvidosPaginado.map((item) => {
-                      const aberto = expandido === item.id;
-                      return (
-                        <Fragment key={item.id}>
-                          <tr className="bg-white dark:bg-zinc-900">
-                            <td className="px-5 py-3 text-center">
-                              <Checkbox checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />
-                            </td>
-                            <td className="max-w-[240px] truncate px-5 py-3 text-left font-medium text-zinc-900 dark:text-zinc-100">
-                              {item.card_nome || "—"}
-                            </td>
-                            <td className="whitespace-nowrap px-5 py-3 text-center text-zinc-600 dark:text-zinc-400">
-                              {formatPhoneDisplay(item.telefone)}
-                            </td>
-                            <td className="px-5 py-3 text-center">
-                              <AckIndicator ack={item.ack} respondido={item.status === "respondido"} />
-                            </td>
-                            <td className="px-5 py-3 text-center">
-                              <StatusIcon status={item.status} />
-                            </td>
-                            <td className="px-5 py-3">
-                              <div className="flex justify-center gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  title="Ver detalhes"
-                                  onClick={() => setExpandido(aberto ? null : item.id)}
-                                >
-                                  {aberto ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  title="Apagar"
-                                  onClick={() => setApagarAlvo(item)}
-                                  disabled={processando === item.id}
-                                >
-                                  <Trash2 className="h-4 w-4 text-red-500" />
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
-                          {aberto && (
-                            <tr className="bg-zinc-50 dark:bg-zinc-800/30">
-                              <td colSpan={6} className="space-y-1 px-5 py-4">
-                                <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                                  <span className="text-zinc-400 dark:text-zinc-500">Resolvido em: </span>
-                                  {item.resolved_at
-                                    ? new Date(item.resolved_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })
-                                    : "—"}
-                                </p>
-                                <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                                  <span className="text-zinc-400 dark:text-zinc-500">Como respondeu: </span>
-                                  <ComoRespondeu item={item} />
-                                </p>
-                              </td>
-                            </tr>
-                          )}
-                        </Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <Pagination
-                page={paginaResolvidos}
-                totalItems={resolvidos.length}
-                pageSize={ITENS_POR_PAGINA}
-                onPageChange={setPaginaResolvidos}
-              />
-            </section>
-          )}
         </>
       )}
 
