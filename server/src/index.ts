@@ -16,6 +16,7 @@ import { trelloRouter } from "./routes/trello";
 import { whatsappRouter } from "./routes/whatsapp";
 import { initWebsocket } from "./websocket";
 import { whatsappManager } from "./services/whatsappService";
+import { verificarEntregasPendentes } from "./services/notificationService";
 
 const app = express();
 app.use(cors({
@@ -70,6 +71,14 @@ const port = Number(process.env.PORT) || 3333;
 httpServer.listen(port, () => {
   console.log(`Servidor do Disparador de Perícias rodando em http://localhost:${port}`);
 });
+
+// Verifica periodicamente envios com problema de entrega para notificar no Telegram (não faz
+// nada se a integração não estiver configurada). Roda pouco depois do start (não precisa
+// esperar meia hora após um restart pra pegar algo pendente) e depois a cada 30 minutos —
+// frequência de sobra para prazos de alerta medidos em horas.
+const INTERVALO_VERIFICACAO_MS = 30 * 60 * 1000;
+setTimeout(() => verificarEntregasPendentes().catch((err) => console.error("[Notificações] Erro na verificação inicial:", err)), 60_000);
+setInterval(() => verificarEntregasPendentes().catch((err) => console.error("[Notificações] Erro na verificação periódica:", err)), INTERVALO_VERIFICACAO_MS);
 
 async function shutdown() {
   console.log("Encerrando servidor...");

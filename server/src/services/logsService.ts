@@ -97,6 +97,31 @@ export function updateLogAckByMessageId(whatsappMessageId: string, ack: number):
   return getByMessageIdStmt.get(whatsappMessageId) as SendLog;
 }
 
+/**
+ * Envios com problema de entrega ainda não notificados: falha no envio (alerta imediato) ou
+ * "enviado" há mais de horasLimite horas sem confirmar entrega (ack ainda não chegou a 2).
+ * Usado pela verificação periódica que avisa no Telegram.
+ */
+export function listLogsPendentesDeAlerta(horasLimite: number): SendLog[] {
+  return db
+    .prepare(
+      `SELECT * FROM send_logs
+       WHERE alerta_entrega_enviado_em IS NULL
+         AND (
+           status = 'falha'
+           OR (status = 'sucesso' AND (ack IS NULL OR ack < 2) AND created_at <= datetime('now', '-' || ? || ' hours'))
+         )
+       ORDER BY created_at ASC`
+    )
+    .all(horasLimite) as SendLog[];
+}
+
+export function marcarAlertaEnviado(ids: number[]): void {
+  if (ids.length === 0) return;
+  const placeholders = ids.map(() => "?").join(",");
+  db.prepare(`UPDATE send_logs SET alerta_entrega_enviado_em = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`).run(...ids);
+}
+
 export function deleteLog(id: number): void {
   deleteStmt.run(id);
 }

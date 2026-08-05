@@ -1,11 +1,13 @@
 import { Router } from "express";
 import { getAllSettings, getSetting, setSetting } from "../services/settingsService";
+import { detectarChatId, enviarMensagemTelegram, TelegramError } from "../services/telegramService";
 
 export const settingsRouter = Router();
 
 const DEFAULTS: Record<string, string> = {
   send_interval_min: "5",
   send_interval_max: "15",
+  telegram_alerta_horas: "48",
 };
 
 settingsRouter.get("/", (_req, res) => {
@@ -30,6 +32,9 @@ settingsRouter.put("/", (req, res) => {
     "trello_move_list_nome",
     "trello_confirm_list_id",
     "trello_confirm_list_nome",
+    "telegram_bot_token",
+    "telegram_chat_id",
+    "telegram_alerta_horas",
   ];
 
   for (const key of allowedKeys) {
@@ -45,4 +50,43 @@ settingsRouter.get("/trello-status", (_req, res) => {
   const key = getSetting("trello_key");
   const token = getSetting("trello_token");
   res.json({ configurado: Boolean(key && token) });
+});
+
+function handleTelegramError(res: import("express").Response, err: unknown) {
+  if (err instanceof TelegramError) {
+    return res.status(err.status && err.status >= 400 && err.status < 500 ? err.status : 502).json({ error: err.message });
+  }
+  return res.status(502).json({ error: "Erro inesperado ao consultar o Telegram." });
+}
+
+// O Telegram só deixa um bot mandar mensagem pra alguém que já iniciou uma conversa com ele
+// (proteção contra spam) — então não tem como descobrir o chat_id sem o usuário mandar pelo
+// menos uma mensagem pro bot primeiro. getUpdates devolve o histórico recente de mensagens
+// recebidas, de onde extraímos o chat_id mais recente.
+settingsRouter.post("/telegram/detectar-chat-id", async (req, res) => {
+  try {
+    const token = (req.body?.token as string) || getSetting("telegram_bot_token") || "";
+    if (!token) return res.status(400).json({ error: "Informe o token do bot." });
+    const chatId = await detectarChatId(token);
+    if (!chatId) {
+      return res
+        .status(404)
+        .json({ error: "Nenhuma conversa encontrada. Mande uma mensagem qualquer para o bot no Telegram e tente de novo." });
+    }
+    res.json({ chatId });
+  } catch (err) {
+    handleTelegramError(res, err);
+  }
+});
+
+settingsRouter.post("/telegram/testar", async (req, res) => {
+  try {
+    const token = (req.body?.token as string) || getSetting("telegram_bot_token") || "";
+    const chatId = (req.body?.chatId as string) || getSetting("telegram_chat_id") || "";
+    if (!token || !chatId) return res.status(400).json({ error: "Configure o token do bot e o chat_id antes de testar." });
+    await enviarMensagemTelegram(token, chatId, "🔔 Teste do DisparaZap: as notificações estão funcionando!");
+    res.json({ ok: true });
+  } catch (err) {
+    handleTelegramError(res, err);
+  }
 });

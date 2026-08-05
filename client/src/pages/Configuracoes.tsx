@@ -1,5 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, KeyRound, Loader2, Lock, LogOut, QrCode, Square, Trello, Unplug, User, Wifi, WifiOff } from "lucide-react";
+import {
+  Bell,
+  CheckCircle2,
+  KeyRound,
+  Loader2,
+  Lock,
+  LogOut,
+  QrCode,
+  Search,
+  Send,
+  Square,
+  Trello,
+  Unplug,
+  User,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type { Settings, WhatsappState } from "@/lib/types";
 import { useWhatsapp } from "@/context/WhatsappContext";
@@ -56,6 +72,13 @@ export function Configuracoes() {
   const [senhaAtual, setSenhaAtual] = useState("");
   const [salvandoUsuario, setSalvandoUsuario] = useState(false);
 
+  const [telegramToken, setTelegramToken] = useState("");
+  const [telegramChatId, setTelegramChatId] = useState("");
+  const [telegramAlertaHoras, setTelegramAlertaHoras] = useState("48");
+  const [detectandoChatId, setDetectandoChatId] = useState(false);
+  const [testandoTelegram, setTestandoTelegram] = useState(false);
+  const [salvandoTelegram, setSalvandoTelegram] = useState(false);
+
   const loadSettings = useCallback(async () => {
     const me = await api.get<{ user: { username: string, email: string | null } }>("/auth/me");
     setUsuario(me.user.username);
@@ -65,6 +88,8 @@ export function Configuracoes() {
     setSettings(data);
     setIntervalMin(data.send_interval_min ?? "5");
     setIntervalMax(data.send_interval_max ?? "15");
+    setTelegramAlertaHoras(data.telegram_alerta_horas ?? "48");
+    if (data.telegram_chat_id) setTelegramChatId(data.telegram_chat_id);
     if (data.trello_board_id) setBoardId(data.trello_board_id);
     if (data.trello_list_id) setListId(data.trello_list_id);
     if (data.trello_move_list_id) setMoveListId(data.trello_move_list_id);
@@ -221,6 +246,53 @@ export function Configuracoes() {
       show(err instanceof ApiError ? err.message : "Erro ao atualizar dados.", "error");
     } finally {
       setSalvandoUsuario(false);
+    }
+  }
+
+  async function handleDetectarChatId() {
+    setDetectandoChatId(true);
+    try {
+      const payload: Record<string, string> = {};
+      if (telegramToken) payload.token = telegramToken;
+      const { chatId } = await api.post<{ chatId: string }>("/settings/telegram/detectar-chat-id", payload);
+      setTelegramChatId(chatId);
+      show("Chat encontrado! Confira e salve para confirmar.", "success");
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao detectar o chat_id.", "error");
+    } finally {
+      setDetectandoChatId(false);
+    }
+  }
+
+  async function handleTestarTelegram() {
+    setTestandoTelegram(true);
+    try {
+      const payload: Record<string, string> = { chatId: telegramChatId };
+      if (telegramToken) payload.token = telegramToken;
+      await api.post("/settings/telegram/testar", payload);
+      show("Mensagem de teste enviada! Confira o Telegram.", "success");
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao enviar mensagem de teste.", "error");
+    } finally {
+      setTestandoTelegram(false);
+    }
+  }
+
+  async function handleSalvarTelegram() {
+    setSalvandoTelegram(true);
+    try {
+      const payload: Record<string, string> = {
+        telegram_chat_id: telegramChatId,
+        telegram_alerta_horas: telegramAlertaHoras,
+      };
+      if (telegramToken) payload.telegram_bot_token = telegramToken;
+      await api.put("/settings", payload);
+      show("Configurações de notificação salvas.", "success");
+      loadSettings();
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao salvar configurações de notificação.", "error");
+    } finally {
+      setSalvandoTelegram(false);
     }
   }
 
@@ -445,6 +517,80 @@ export function Configuracoes() {
                 )}
               </>
             )}
+          </div>
+      </CollapsibleCard>
+
+      <CollapsibleCard
+        icon={<Bell className="h-4 w-4 text-rose-500" />}
+        title="Notificações"
+        storageKey="notificacoes"
+        headerExtra={
+          settings?.telegram_bot_token_configurado &&
+          settings?.telegram_chat_id && (
+            <Badge tone="success">
+              <CheckCircle2 className="h-3.5 w-3.5" /> Ativo
+            </Badge>
+          )
+        }
+      >
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            Receba um aviso no Telegram sempre que uma mensagem falhar no envio, ou ficar "enviada" sem confirmar entrega além
+            do prazo abaixo — pra você decidir o que fazer (reenviar, ligar pro cliente, etc).
+          </p>
+
+          <div>
+            <Label>Token do bot</Label>
+            <Input
+              type="password"
+              placeholder={settings?.telegram_bot_token_configurado ? "•••••••••••• (já configurado)" : "Cole o token do @BotFather"}
+              value={telegramToken}
+              onChange={(e) => setTelegramToken(e.target.value)}
+            />
+            <p className="mt-1 text-xs text-zinc-400">
+              Crie um bot conversando com <span className="font-medium">@BotFather</span> no Telegram e envie <code>/newbot</code>.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-end">
+            <div>
+              <Label>Chat ID</Label>
+              <Input
+                value={telegramChatId}
+                onChange={(e) => setTelegramChatId(e.target.value)}
+                placeholder="Detectado automaticamente"
+              />
+            </div>
+            <Button variant="outline" onClick={handleDetectarChatId} loading={detectandoChatId}>
+              <Search className="h-4 w-4" /> Detectar automaticamente
+            </Button>
+          </div>
+          <p className="text-xs text-zinc-400">
+            Antes de detectar, mande qualquer mensagem para o seu bot no Telegram — sem isso, ele não tem permissão para te
+            notificar (proteção contra spam do próprio Telegram).
+          </p>
+
+          <div className="max-w-xs">
+            <Label>Alertar após quantas horas sem confirmar entrega</Label>
+            <Input
+              type="number"
+              min={1}
+              value={telegramAlertaHoras}
+              onChange={(e) => setTelegramAlertaHoras(e.target.value)}
+            />
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={handleTestarTelegram}
+              loading={testandoTelegram}
+              disabled={!telegramChatId || (!telegramToken && !settings?.telegram_bot_token_configurado)}
+            >
+              <Send className="h-4 w-4" /> Enviar teste
+            </Button>
+            <Button onClick={handleSalvarTelegram} loading={salvandoTelegram} disabled={!telegramChatId}>
+              Salvar notificações
+            </Button>
           </div>
       </CollapsibleCard>
 
