@@ -137,6 +137,25 @@ export function runMigrations(db: Database.Database): void {
     db.prepare("INSERT INTO settings (chave, valor) VALUES ('alerta_backfill_feito', '1')").run();
   }
 
+  // Mesma ideia acima, mas para o alerta de "cliente não respondeu": marca quando já avisamos
+  // no Telegram sobre um pendente parado em "aguardando" há mais tempo que o prazo configurado.
+  try {
+    db.exec("ALTER TABLE pending_replies ADD COLUMN alerta_resposta_enviado_em DATETIME");
+  } catch {
+    // Coluna já existe
+  }
+
+  // Mesmo backfill de uma vez só, agora para pendentes de resposta: sem isso, todo pendente
+  // "aguardando" já parado há muito tempo (de antes desse alerta existir) dispararia um alerta
+  // retroativo em massa assim que o usuário configurasse o prazo de resposta.
+  const backfillRespostaFeito = db.prepare("SELECT 1 FROM settings WHERE chave = 'resposta_alerta_backfill_feito'").get();
+  if (!backfillRespostaFeito) {
+    db.exec(
+      "UPDATE pending_replies SET alerta_resposta_enviado_em = CURRENT_TIMESTAMP WHERE alerta_resposta_enviado_em IS NULL"
+    );
+    db.prepare("INSERT INTO settings (chave, valor) VALUES ('resposta_alerta_backfill_feito', '1')").run();
+  }
+
   // Criar usuário padrão se não existir nenhum
   const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get() as { count: number };
   if (userCount.count === 0) {

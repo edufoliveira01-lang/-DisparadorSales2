@@ -1,5 +1,14 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, ChevronDown, ChevronUp, MessageSquareReply, RefreshCw, Trash2, X } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  MessageCircleQuestion,
+  MessageSquareReply,
+  RefreshCw,
+  Trash2,
+  X,
+} from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay } from "@/lib/phone";
 import type { PendingReply } from "@/lib/types";
@@ -90,6 +99,18 @@ export function PendentesResposta() {
       carregar();
     } catch (err) {
       show(err instanceof ApiError ? err.message : "Erro ao cancelar monitoramento.", "error");
+    } finally {
+      setProcessando(null);
+    }
+  }
+
+  async function cobrar(item: PendingReply) {
+    setProcessando(item.id);
+    try {
+      await api.post(`/pending-replies/${item.id}/cobrar`);
+      show(`Mensagem de cobrança enviada para ${item.card_nome || "cliente"}.`, "success");
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao enviar mensagem de cobrança.", "error");
     } finally {
       setProcessando(null);
     }
@@ -308,7 +329,16 @@ export function PendentesResposta() {
                                 onClick={() => confirmar(item)}
                                 loading={processando === item.id}
                               >
-                                <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar manualmente
+                                <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                title="Perguntar se recebeu / cobrar resposta"
+                                onClick={() => cobrar(item)}
+                                disabled={processando === item.id}
+                              >
+                                <MessageCircleQuestion className="h-4 w-4" />
                               </Button>
                               <Button
                                 variant="ghost"
@@ -383,7 +413,16 @@ export function PendentesResposta() {
                                     onClick={() => confirmar(item)}
                                     loading={processando === item.id}
                                   >
-                                    <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar manualmente
+                                    <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    title="Perguntar se recebeu / cobrar resposta"
+                                    onClick={() => cobrar(item)}
+                                    disabled={processando === item.id}
+                                  >
+                                    <MessageCircleQuestion className="h-4 w-4" />
                                   </Button>
                                   <Button
                                     variant="ghost"

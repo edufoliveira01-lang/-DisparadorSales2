@@ -8,6 +8,7 @@ const DEFAULTS: Record<string, string> = {
   send_interval_min: "5",
   send_interval_max: "15",
   telegram_alerta_horas: "48",
+  telegram_alerta_horas_resposta: "48",
 };
 
 settingsRouter.get("/", (_req, res) => {
@@ -35,6 +36,7 @@ settingsRouter.put("/", (req, res) => {
     "telegram_bot_token",
     "telegram_chat_id",
     "telegram_alerta_horas",
+    "telegram_alerta_horas_resposta",
   ];
 
   for (const key of allowedKeys) {

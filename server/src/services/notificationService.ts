@@ -1,4 +1,9 @@
 import { listLogsPendentesDeAlerta, marcarAlertaEnviado, type SendLog } from "./logsService";
+import {
+  listPendingRepliesPendentesDeAlerta,
+  marcarAlertaRespostaEnviado,
+  type PendingReply,
+} from "./pendingRepliesService";
 import { getSetting } from "./settingsService";
 import { enviarMensagemTelegram } from "./telegramService";
 
@@ -17,16 +22,22 @@ function formatarTelefone(raw: string | null): string {
   return `(${ddd}) ${rest.slice(0, splitAt)}-${rest.slice(splitAt)}`;
 }
 
-function motivoDoAlerta(log: SendLog, horasLimite: number): string {
+function lerHorasLimite(chave: string): number {
+  const configuradas = Number(getSetting(chave));
+  return Number.isFinite(configuradas) && configuradas > 0 ? configuradas : HORAS_PADRAO;
+}
+
+function motivoDoAlertaEntrega(log: SendLog, horasLimite: number): string {
   if (log.status === "falha") {
     return `Falha no envio${log.erro ? `: ${log.erro}` : "."}`;
   }
   return `Enviado, mas sem confirmação de entrega há mais de ${horasLimite}h.`;
 }
 
-function montarMensagem(logs: SendLog[], horasLimite: number): string {
+function montarMensagemEntrega(logs: SendLog[], horasLimite: number): string {
   const linhas = logs.map(
-    (log) => `• ${log.card_nome || "Cliente sem nome"} (${formatarTelefone(log.telefone)})\n  ${motivoDoAlerta(log, horasLimite)}`
+    (log) =>
+      `• ${log.card_nome || "Cliente sem nome"} (${formatarTelefone(log.telefone)})\n  ${motivoDoAlertaEntrega(log, horasLimite)}`
   );
   const titulo =
     logs.length === 1
@@ -35,28 +46,64 @@ function montarMensagem(logs: SendLog[], horasLimite: number): string {
   return `${titulo}\n\n${linhas.join("\n\n")}\n\nConfira em Histórico no DisparaZap.`;
 }
 
+function montarMensagemResposta(pendentes: PendingReply[], horasLimite: number): string {
+  const linhas = pendentes.map(
+    (p) => `• ${p.card_nome || "Cliente sem nome"} (${formatarTelefone(p.telefone)})\n  Sem resposta há mais de ${horasLimite}h.`
+  );
+  const titulo =
+    pendentes.length === 1
+      ? "🕑 1 cliente ainda não respondeu ao DisparaZap:"
+      : `🕑 ${pendentes.length} clientes ainda não responderam ao DisparaZap:`;
+  return `${titulo}\n\n${linhas.join("\n\n")}\n\nConfira em Pendentes de Resposta no DisparaZap.`;
+}
+
 /**
- * Verificação periódica: avisa no Telegram sobre envios com problema de entrega (falha
- * imediata, ou "enviado" sem confirmar entrega além do prazo configurado) ainda não
- * notificados. Roda de forma silenciosa se o Telegram não estiver configurado — a
- * funcionalidade é totalmente opcional.
+ * Avisa no Telegram sobre envios com problema de entrega (falha imediata, ou "enviado" sem
+ * confirmar entrega além do prazo configurado) ainda não notificados.
  */
-export async function verificarEntregasPendentes(): Promise<void> {
-  const token = getSetting("telegram_bot_token");
-  const chatId = getSetting("telegram_chat_id");
-  if (!token || !chatId) return;
-
-  const horasConfiguradas = Number(getSetting("telegram_alerta_horas"));
-  const horasLimite = Number.isFinite(horasConfiguradas) && horasConfiguradas > 0 ? horasConfiguradas : HORAS_PADRAO;
-
+async function verificarEntregasPendentes(token: string, chatId: string): Promise<void> {
+  const horasLimite = lerHorasLimite("telegram_alerta_horas");
   const logs = listLogsPendentesDeAlerta(horasLimite);
   if (logs.length === 0) return;
 
   try {
-    await enviarMensagemTelegram(token, chatId, montarMensagem(logs, horasLimite));
+    await enviarMensagemTelegram(token, chatId, montarMensagemEntrega(logs, horasLimite));
     marcarAlertaEnviado(logs.map((log) => log.id));
     console.log(`[Notificações] Alerta enviado ao Telegram sobre ${logs.length} envio(s) com problema de entrega.`);
   } catch (err) {
-    console.error("[Notificações] Erro ao enviar alerta ao Telegram:", err);
+    console.error("[Notificações] Erro ao enviar alerta de entrega ao Telegram:", err);
   }
+}
+
+/**
+ * Avisa no Telegram sobre pendentes de resposta parados em "aguardando" além do prazo
+ * configurado (separado do prazo de entrega — cliente pode ter recebido e simplesmente não
+ * respondido ainda).
+ */
+async function verificarRespostasPendentes(token: string, chatId: string): Promise<void> {
+  const horasLimite = lerHorasLimite("telegram_alerta_horas_resposta");
+  const pendentes = listPendingRepliesPendentesDeAlerta(horasLimite);
+  if (pendentes.length === 0) return;
+
+  try {
+    await enviarMensagemTelegram(token, chatId, montarMensagemResposta(pendentes, horasLimite));
+    marcarAlertaRespostaEnviado(pendentes.map((p) => p.id));
+    console.log(`[Notificações] Alerta enviado ao Telegram sobre ${pendentes.length} pendente(s) sem resposta.`);
+  } catch (err) {
+    console.error("[Notificações] Erro ao enviar alerta de resposta ao Telegram:", err);
+  }
+}
+
+/**
+ * Verificação periódica combinada: dispara os dois alertas (entrega e resposta) acima. Roda de
+ * forma silenciosa se o Telegram não estiver configurado — a funcionalidade é totalmente
+ * opcional.
+ */
+export async function verificarNotificacoesPendentes(): Promise<void> {
+  const token = getSetting("telegram_bot_token");
+  const chatId = getSetting("telegram_chat_id");
+  if (!token || !chatId) return;
+
+  await verificarEntregasPendentes(token, chatId);
+  await verificarRespostasPendentes(token, chatId);
 }
