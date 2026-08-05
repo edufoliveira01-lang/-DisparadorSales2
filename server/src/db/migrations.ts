@@ -124,6 +124,19 @@ export function runMigrations(db: Database.Database): void {
     // Coluna já existe
   }
 
+  // Envios de antes do recurso de notificação existir nunca vão ter "ack" preenchido (o
+  // rastreamento de entrega é mais recente que eles) — sem essa marcação, a primeira
+  // verificação periódica trataria TODOS esses registros antigos como "sem confirmar entrega"
+  // e disparariam um alerta retroativo enorme assim que o usuário configurasse o Telegram. Como
+  // isso é só um problema na primeira vez, marcamos como "já alertado" uma única vez (guardado
+  // em settings) tudo que já existia até aqui — dali em diante, só envios novos entram na
+  // verificação normal.
+  const backfillFeito = db.prepare("SELECT 1 FROM settings WHERE chave = 'alerta_backfill_feito'").get();
+  if (!backfillFeito) {
+    db.exec("UPDATE send_logs SET alerta_entrega_enviado_em = CURRENT_TIMESTAMP WHERE alerta_entrega_enviado_em IS NULL");
+    db.prepare("INSERT INTO settings (chave, valor) VALUES ('alerta_backfill_feito', '1')").run();
+  }
+
   // Criar usuário padrão se não existir nenhum
   const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get() as { count: number };
   if (userCount.count === 0) {
