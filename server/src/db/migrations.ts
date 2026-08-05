@@ -115,6 +115,15 @@ export function runMigrations(db: Database.Database): void {
   db.exec("CREATE INDEX IF NOT EXISTS idx_send_logs_whatsapp_message_id ON send_logs(whatsapp_message_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_pending_replies_whatsapp_message_id ON pending_replies(whatsapp_message_id)");
 
+  // Marca quando um alerta de "entrega com problema" (falha no envio, ou entregue não
+  // confirmada após X horas) já foi mandado pro Telegram, pra não notificar o mesmo envio
+  // de novo a cada verificação periódica.
+  try {
+    db.exec("ALTER TABLE send_logs ADD COLUMN alerta_entrega_enviado_em DATETIME");
+  } catch {
+    // Coluna já existe
+  }
+
   // Criar usuário padrão se não existir nenhum
   const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get() as { count: number };
   if (userCount.count === 0) {

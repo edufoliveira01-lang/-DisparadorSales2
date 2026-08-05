@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { db } from "../db";
 
-const ENCRYPTED_KEYS = new Set(["trello_token"]);
+const ENCRYPTED_KEYS = new Set(["trello_token", "telegram_bot_token"]);
 
 function getEncryptionKey(): Buffer {
   const secret = process.env.ENCRYPTION_KEY || "chave-padrao-nao-segura-troque-no-env";

@@ -83,6 +83,9 @@ export interface Settings {
   send_interval_min: string;
   send_interval_max: string;
   template_ativo_id?: string;
+  telegram_bot_token_configurado?: string;
+  telegram_chat_id?: string;
+  telegram_alerta_horas: string;
 }
 
 export interface PendingReply {
