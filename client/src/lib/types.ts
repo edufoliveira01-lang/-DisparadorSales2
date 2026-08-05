@@ -86,6 +86,7 @@ export interface Settings {
   telegram_bot_token_configurado?: string;
   telegram_chat_id?: string;
   telegram_alerta_horas: string;
+  telegram_alerta_horas_resposta: string;
 }
 
 export interface PendingReply {

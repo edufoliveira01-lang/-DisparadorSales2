@@ -9,6 +9,7 @@ import {
   listPendingReplies,
   resolvePendingReply,
 } from "../services/pendingRepliesService";
+import { whatsappManager } from "../services/whatsappService";
 import { emitEvent } from "../websocket";
 
 export const pendingRepliesRouter = Router();
@@ -40,6 +41,30 @@ pendingRepliesRouter.post("/:id/confirmar", async (req, res) => {
     }
   }
   res.json({ ok: true, log: resolved });
+});
+
+// Cobrança manual: manda uma nova mensagem perguntando se o cliente recebeu o envio anterior e
+// que ainda aguardamos retorno — não muda o status do pendente (continua "aguardando"), é só um
+// empurrãozinho pra quem esqueceu de responder.
+pendingRepliesRouter.post("/:id/cobrar", async (req, res) => {
+  const id = Number(req.params.id);
+  const pending = getPendingReply(id);
+  if (!pending) return res.status(404).json({ error: "Registro não encontrado." });
+  if (pending.status !== "aguardando") return res.status(400).json({ error: "Este registro já foi resolvido." });
+  if (!whatsappManager.isReady()) return res.status(400).json({ error: "WhatsApp não está conectado." });
+
+  try {
+    const chatId = await whatsappManager.resolveChatId(pending.telefone_digits);
+    if (!chatId) return res.status(400).json({ error: "Este telefone não foi encontrado no WhatsApp." });
+
+    const texto = pending.card_nome
+      ? `Olá ${pending.card_nome}! Só confirmando: você recebeu nossa mensagem anterior? Ainda estamos aguardando seu retorno 🙂`
+      : "Olá! Só confirmando: você recebeu nossa mensagem anterior? Ainda estamos aguardando seu retorno 🙂";
+    await whatsappManager.sendMessage(chatId, texto);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(502).json({ error: (err as Error).message || "Erro ao enviar mensagem de cobrança." });
+  }
 });
 
 pendingRepliesRouter.post("/:id/cancelar", (req, res) => {

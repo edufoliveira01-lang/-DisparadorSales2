@@ -20,6 +20,7 @@ export interface PendingReply {
   ack_updated_at: string | null;
   created_at: string;
   resolved_at: string | null;
+  alerta_resposta_enviado_em: string | null;
 }
 
 // Só um pendente "aguardando" por telefone: se um novo disparo for feito para o mesmo
@@ -103,6 +104,30 @@ export function listPendingReplies(): PendingReply[] {
 
 export function getPendingReply(id: number): PendingReply | undefined {
   return getStmt.get(id) as PendingReply | undefined;
+}
+
+/**
+ * Pendentes ainda "aguardando" há mais de horasLimite horas, ainda não notificados no Telegram.
+ * Usado pela verificação periódica que avisa sobre clientes que não responderam.
+ */
+export function listPendingRepliesPendentesDeAlerta(horasLimite: number): PendingReply[] {
+  return db
+    .prepare(
+      `SELECT * FROM pending_replies
+       WHERE status = 'aguardando'
+         AND alerta_resposta_enviado_em IS NULL
+         AND created_at <= datetime('now', '-' || ? || ' hours')
+       ORDER BY created_at ASC`
+    )
+    .all(horasLimite) as PendingReply[];
+}
+
+export function marcarAlertaRespostaEnviado(ids: number[]): void {
+  if (ids.length === 0) return;
+  const placeholders = ids.map(() => "?").join(",");
+  db.prepare(
+    `UPDATE pending_replies SET alerta_resposta_enviado_em = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`
+  ).run(...ids);
 }
 
 export function resolvePendingReply(id: number, tipoResposta: TipoResposta, preview: string | null): PendingReply {

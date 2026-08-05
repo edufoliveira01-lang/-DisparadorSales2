@@ -75,6 +75,7 @@ export function Configuracoes() {
   const [telegramToken, setTelegramToken] = useState("");
   const [telegramChatId, setTelegramChatId] = useState("");
   const [telegramAlertaHoras, setTelegramAlertaHoras] = useState("48");
+  const [telegramAlertaHorasResposta, setTelegramAlertaHorasResposta] = useState("48");
   const [detectandoChatId, setDetectandoChatId] = useState(false);
   const [testandoTelegram, setTestandoTelegram] = useState(false);
   const [salvandoTelegram, setSalvandoTelegram] = useState(false);
@@ -89,6 +90,7 @@ export function Configuracoes() {
     setIntervalMin(data.send_interval_min ?? "5");
     setIntervalMax(data.send_interval_max ?? "15");
     setTelegramAlertaHoras(data.telegram_alerta_horas ?? "48");
+    setTelegramAlertaHorasResposta(data.telegram_alerta_horas_resposta ?? "48");
     if (data.telegram_chat_id) setTelegramChatId(data.telegram_chat_id);
     if (data.trello_board_id) setBoardId(data.trello_board_id);
     if (data.trello_list_id) setListId(data.trello_list_id);
@@ -284,6 +286,7 @@ export function Configuracoes() {
       const payload: Record<string, string> = {
         telegram_chat_id: telegramChatId,
         telegram_alerta_horas: telegramAlertaHoras,
+        telegram_alerta_horas_resposta: telegramAlertaHorasResposta,
       };
       if (telegramToken) payload.telegram_bot_token = telegramToken;
       await api.put("/settings", payload);
@@ -534,8 +537,9 @@ export function Configuracoes() {
         }
       >
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            Receba um aviso no Telegram sempre que uma mensagem falhar no envio, ou ficar "enviada" sem confirmar entrega além
-            do prazo abaixo — pra você decidir o que fazer (reenviar, ligar pro cliente, etc).
+            Receba um aviso no Telegram sempre que uma mensagem falhar no envio, ficar "enviada" sem confirmar entrega, ou um
+            cliente não responder dentro dos prazos abaixo — pra você decidir o que fazer (reenviar, cobrar, ligar pro
+            cliente, etc).
           </p>
 
           <div>
@@ -569,14 +573,25 @@ export function Configuracoes() {
             notificar (proteção contra spam do próprio Telegram).
           </p>
 
-          <div className="max-w-xs">
-            <Label>Alertar após quantas horas sem confirmar entrega</Label>
-            <Input
-              type="number"
-              min={1}
-              value={telegramAlertaHoras}
-              onChange={(e) => setTelegramAlertaHoras(e.target.value)}
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md">
+            <div>
+              <Label>Alertar após quantas horas sem confirmar entrega</Label>
+              <Input
+                type="number"
+                min={1}
+                value={telegramAlertaHoras}
+                onChange={(e) => setTelegramAlertaHoras(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Alertar após quantas horas sem resposta do cliente</Label>
+              <Input
+                type="number"
+                min={1}
+                value={telegramAlertaHorasResposta}
+                onChange={(e) => setTelegramAlertaHorasResposta(e.target.value)}
+              />
+            </div>
           </div>
 
           <div className="flex flex-wrap justify-end gap-2">
