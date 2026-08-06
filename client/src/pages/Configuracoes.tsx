@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Bell,
   CheckCircle2,
+  Database,
+  Download,
   KeyRound,
   Loader2,
   Lock,
@@ -12,6 +14,7 @@ import {
   Square,
   Trello,
   Unplug,
+  Upload,
   User,
   Wifi,
   WifiOff,
@@ -26,6 +29,7 @@ import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Badge } from "@/components/ui/Badge";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 interface TrelloBoard {
   id: string;
@@ -71,6 +75,11 @@ export function Configuracoes() {
   const [novaSenha, setNovaSenha] = useState("");
   const [senhaAtual, setSenhaAtual] = useState("");
   const [salvandoUsuario, setSalvandoUsuario] = useState(false);
+
+  const [restaurando, setRestaurando] = useState(false);
+  const [arquivoRestore, setArquivoRestore] = useState<File | null>(null);
+  const [confirmRestoreOpen, setConfirmRestoreOpen] = useState(false);
+  const backupInputRef = useRef<HTMLInputElement>(null);
 
   const [telegramToken, setTelegramToken] = useState("");
   const [telegramChatId, setTelegramChatId] = useState("");
@@ -302,6 +311,43 @@ export function Configuracoes() {
   async function handleLogout() {
     await api.post("/auth/logout");
     window.location.href = "/login";
+  }
+
+  function handleBaixarBackup() {
+    window.open("/api/backup/download", "_blank");
+  }
+
+  function handleArquivoBackupSelecionado(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setArquivoRestore(file);
+    setConfirmRestoreOpen(true);
+  }
+
+  async function handleConfirmarRestore() {
+    if (!arquivoRestore) return;
+    setRestaurando(true);
+    try {
+      const buffer = await arquivoRestore.arrayBuffer();
+      const response = await fetch("/api/backup/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: buffer,
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(body?.error || "Erro ao restaurar backup.");
+      }
+      show("Backup restaurado! O sistema está reiniciando — a página vai recarregar em instantes.", "success");
+      setConfirmRestoreOpen(false);
+      setArquivoRestore(null);
+      setTimeout(() => window.location.reload(), 5000);
+    } catch (err) {
+      show(err instanceof Error ? err.message : "Erro ao restaurar backup.", "error");
+    } finally {
+      setRestaurando(false);
+    }
   }
 
   const whatsappTone = whatsapp.status === "conectado" ? "success" : whatsapp.status === "falha" ? "danger" : "warning";
@@ -630,6 +676,48 @@ export function Configuracoes() {
             </Button>
           </div>
       </CollapsibleCard>
+
+      <CollapsibleCard icon={<Database className="h-4 w-4 text-emerald-500" />} title="Backup" storageKey="backup">
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            Baixe uma cópia completa dos dados do sistema (contatos, templates, histórico de envios, pendentes de resposta e
+            configurações) para guardar em local seguro. Em caso de problema, restaure esse arquivo para voltar tudo ao
+            estado do backup.
+          </p>
+
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={handleBaixarBackup}>
+              <Download className="h-4 w-4" /> Baixar backup
+            </Button>
+            <Button variant="outline" onClick={() => backupInputRef.current?.click()}>
+              <Upload className="h-4 w-4" /> Restaurar backup
+            </Button>
+            <input
+              ref={backupInputRef}
+              type="file"
+              accept=".sqlite3,application/octet-stream"
+              className="hidden"
+              onChange={handleArquivoBackupSelecionado}
+            />
+          </div>
+
+          <p className="text-xs text-zinc-400">
+            Restaurar substitui <span className="font-medium">todos</span> os dados atuais pelo conteúdo do arquivo e reinicia
+            o sistema automaticamente.
+          </p>
+      </CollapsibleCard>
+
+      <ConfirmDialog
+        open={confirmRestoreOpen}
+        title="Restaurar backup"
+        message={`Isso vai substituir TODOS os dados atuais (contatos, templates, histórico, pendentes de resposta e configurações) pelo conteúdo de "${arquivoRestore?.name}". Essa ação não pode ser desfeita e o sistema será reiniciado em seguida. Deseja continuar?`}
+        confirmLabel="Restaurar e substituir tudo"
+        loading={restaurando}
+        onConfirm={handleConfirmarRestore}
+        onCancel={() => {
+          setConfirmRestoreOpen(false);
+          setArquivoRestore(null);
+        }}
+      />
     </div>
   );
 }
