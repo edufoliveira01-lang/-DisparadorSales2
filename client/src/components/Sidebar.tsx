@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
+  ChevronDown,
   LayoutDashboard,
   Users,
   MessageSquareText,
@@ -40,6 +42,7 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
 export function Sidebar({ open, onNavigate }: SidebarProps) {
   const location = useLocation();
   const templatesAtivo = location.pathname.startsWith("/templates");
+  const [templatesAberto, setTemplatesAberto] = useState(templatesAtivo);
 
   return (
     <aside
@@ -67,36 +70,44 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
         ))}
 
         <div>
-          <div
+          <button
+            type="button"
+            onClick={() => setTemplatesAberto((v) => !v)}
+            aria-expanded={templatesAberto}
             className={cn(
-              "flex items-center gap-3 px-3 py-2.5 text-sm font-medium",
-              templatesAtivo ? "text-accent-700 dark:text-accent-300" : "text-zinc-600 dark:text-zinc-400"
+              "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+              templatesAtivo
+                ? "text-accent-700 dark:text-accent-300"
+                : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
             )}
           >
             <MessageSquareText className="h-5 w-5" />
-            Templates
-          </div>
-          <div className="ml-4 space-y-1 border-l border-zinc-200 pl-3 dark:border-zinc-800">
-            {subitensTemplates.map(({ to, label, icon: Icon, end }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={end}
-                onClick={onNavigate}
-                className={({ isActive }) =>
-                  cn(
-                    "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors",
-                    isActive
-                      ? "bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300"
-                      : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-                  )
-                }
-              >
-                <Icon className="h-4 w-4" />
-                {label}
-              </NavLink>
-            ))}
-          </div>
+            <span className="flex-1 text-left">Templates</span>
+            <ChevronDown className={cn("h-4 w-4 shrink-0 transition-transform", templatesAberto && "rotate-180")} />
+          </button>
+          {templatesAberto && (
+            <div className="ml-4 space-y-1 border-l border-zinc-200 pl-3 dark:border-zinc-800">
+              {subitensTemplates.map(({ to, label, icon: Icon, end }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={end}
+                  onClick={onNavigate}
+                  className={({ isActive }) =>
+                    cn(
+                      "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors",
+                      isActive
+                        ? "bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300"
+                        : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                    )
+                  }
+                >
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </NavLink>
+              ))}
+            </div>
+          )}
         </div>
 
         {itemsDepoisTemplates.map(({ to, label, icon: Icon }) => (
@@ -108,7 +119,7 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
       </nav>
 
       <div className="border-t border-zinc-200 px-5 py-4 text-xs text-zinc-400 dark:border-zinc-800">
-        Uso 100% local · v2.26.0
+        Uso 100% local · v2.26.1
       </div>
     </aside>
   );
