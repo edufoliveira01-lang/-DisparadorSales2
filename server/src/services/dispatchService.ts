@@ -102,6 +102,24 @@ function randomDelayMs(minSec: number, maxSec: number): number {
   return (min + Math.random() * (max - min)) * 1000;
 }
 
+// Quanto tempo esperar por uma reconexão manual do WhatsApp antes de desistir de vez do lote.
+// O whatsappManager não reconecta sozinho depois de uma queda inesperada (só reagenda QR
+// enquanto ainda está no meio de uma tentativa de conexão) — o usuário precisa clicar em
+// "Conectar WhatsApp" de novo. Esse prazo dá tempo real pra isso acontecer (inclusive pra quem
+// só vai notar pelo alerta do Telegram) sem travar o processo do servidor indefinidamente se a
+// queda for definitiva (ex: sessão desconectada do celular).
+const TEMPO_LIMITE_RECONEXAO_MS = 15 * 60 * 1000;
+const INTERVALO_VERIFICACAO_RECONEXAO_MS = 5000;
+
+async function aguardarReconexao(timeoutMs: number): Promise<boolean> {
+  const inicio = Date.now();
+  while (Date.now() - inicio < timeoutMs) {
+    if (whatsappManager.isReady()) return true;
+    await new Promise((resolve) => setTimeout(resolve, INTERVALO_VERIFICACAO_RECONEXAO_MS));
+  }
+  return whatsappManager.isReady();
+}
+
 export async function dispatchBatch(
   items: SendItem[],
   templateId: number,
@@ -112,12 +130,23 @@ export async function dispatchBatch(
 
   for (let i = 0; i < items.length; i++) {
     if (!whatsappManager.isReady()) {
-      emitEvent("send:batch-paused", {
-        reason: "O WhatsApp desconectou durante o envio em lote. Reconecte e tente novamente para os cards restantes.",
+      emitEvent("send:batch-waiting-reconnect", {
+        reason: "O WhatsApp desconectou durante o envio em lote. Aguardando reconexão para continuar automaticamente...",
         enviados: i,
         total: items.length,
       });
-      return;
+
+      const reconectou = await aguardarReconexao(TEMPO_LIMITE_RECONEXAO_MS);
+      if (!reconectou) {
+        emitEvent("send:batch-paused", {
+          reason: "O WhatsApp continua desconectado. Reconecte e tente novamente para os cards restantes.",
+          enviados: i,
+          total: items.length,
+        });
+        return;
+      }
+
+      emitEvent("send:batch-resumed", { enviados: i, total: items.length });
     }
 
     try {

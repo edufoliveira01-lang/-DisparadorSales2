@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { getAllSettings, getSetting, setSetting } from "../services/settingsService";
 import { detectarChatId, enviarMensagemTelegram, TelegramError } from "../services/telegramService";
+import { COBRANCA_MENSAGEM_PADRAO } from "../services/templateService";
 
 export const settingsRouter = Router();
 
@@ -9,6 +10,7 @@ const DEFAULTS: Record<string, string> = {
   send_interval_max: "15",
   telegram_alerta_horas: "48",
   telegram_alerta_horas_resposta: "48",
+  cobranca_mensagem: COBRANCA_MENSAGEM_PADRAO,
 };
 
 settingsRouter.get("/", (_req, res) => {
@@ -28,7 +30,6 @@ settingsRouter.put("/", (req, res) => {
     "send_interval_min",
     "send_interval_max",
     "template_ativo_id",
-    "auto_sync_minutos",
     "trello_move_list_id",
     "trello_move_list_nome",
     "trello_confirm_list_id",
@@ -37,6 +38,7 @@ settingsRouter.put("/", (req, res) => {
     "telegram_chat_id",
     "telegram_alerta_horas",
     "telegram_alerta_horas_resposta",
+    "cobranca_mensagem",
   ];
 
   for (const key of allowedKeys) {

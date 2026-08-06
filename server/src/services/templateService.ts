@@ -2,6 +2,9 @@ import Handlebars from "handlebars";
 import { db } from "../db";
 import type { Pericia } from "./parserService";
 
+export const COBRANCA_MENSAGEM_PADRAO =
+  "Olá {{NOME}}! Só confirmando: você recebeu nossa mensagem anterior? Ainda estamos aguardando seu retorno 🙂";
+
 export interface Template {
   id: number;
   nome: string;
@@ -100,4 +103,18 @@ export function renderMessages(
 
   const compiled = Handlebars.compile(template.conteudo_2_pericias, { noEscape: true });
   return [compiled({ NOME: nome, PERICIAS: pericias.map(periciaToVars) })];
+}
+
+/**
+ * Renderiza a mensagem de cobrança (usada no botão "Cobrar resposta" de Pendentes de Resposta).
+ * Diferente dos templates de perícia, é um texto único e opcional — quando não há dados de
+ * perícia disponíveis para o card (ex: log antigo sem pericias_json), as variáveis de perícia
+ * ficam em branco em vez de quebrar a renderização.
+ */
+export function renderCobranca(mensagem: string, nome: string, pericia: Pericia | null): string {
+  const compiled = Handlebars.compile(mensagem, { noEscape: true });
+  return compiled({
+    NOME: nome,
+    ...(pericia ? periciaToVars(pericia) : { TIPO_PERICIA: "", DATA: "", HORARIO: "", LOCAL: "" }),
+  });
 }

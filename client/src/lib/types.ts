@@ -87,6 +87,7 @@ export interface Settings {
   telegram_chat_id?: string;
   telegram_alerta_horas: string;
   telegram_alerta_horas_resposta: string;
+  cobranca_mensagem: string;
 }
 
 export interface PendingReply {

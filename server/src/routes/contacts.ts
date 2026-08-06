@@ -46,6 +46,29 @@ contactsRouter.post("/apagar-em-massa", (req, res) => {
   res.json({ ok: true, apagados });
 });
 
+function csvEscape(value: string): string {
+  if (/[",\n\r]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+// Contraparte do "Importar CSV/vCard": exporta no mesmo formato de CSV que o import reconhece
+// (headers "nome"/"telefone"/"observacoes"), então o arquivo serve tanto como backup quanto
+// como forma de levar os contatos para outra instalação.
+contactsRouter.get("/export", (_req, res) => {
+  const contatos = listContacts();
+  const linhas = [
+    "nome,telefone,observacoes",
+    ...contatos.map((c) => [c.nome, c.telefone, c.observacoes || ""].map(csvEscape).join(",")),
+  ];
+  // BOM no início: sem isso, o Excel abre acentos/caracteres especiais corrompidos em CSV UTF-8.
+  const csv = "﻿" + linhas.join("\r\n");
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", 'attachment; filename="contatos-disparazap.csv"');
+  res.send(csv);
+});
+
 contactsRouter.get("/match/:nome", (req, res) => {
   const contacts = listContacts();
   res.json(matchContact(req.params.nome, contacts));

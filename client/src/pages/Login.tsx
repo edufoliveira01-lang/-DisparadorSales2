@@ -149,7 +149,7 @@ export function Login() {
                     required
                   />
                   <p className="text-xs text-zinc-500">
-                    Um link será enviado para o e-mail cadastrado neste usuário.
+                    Um link será enviado pelo Telegram (se configurado) ou para o e-mail cadastrado neste usuário.
                   </p>
                 </div>
                 <Button type="submit" className="w-full" loading={carregando}>
@@ -197,7 +197,7 @@ export function Login() {
         </Card>
         
         <p className="text-center text-xs text-zinc-400">
-          Uso 100% local · v2.23.0
+          Uso 100% local · v2.24.0
         </p>
       </div>
     </div>
