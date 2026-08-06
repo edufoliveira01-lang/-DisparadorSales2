@@ -5,6 +5,7 @@ import cookieParser from "cookie-parser";
 import http from "node:http";
 import { cardsRouter } from "./routes/cards";
 import { authRouter } from "./routes/auth";
+import { backupRouter } from "./routes/backup";
 import { getSession } from "./services/authService";
 import { contactsRouter } from "./routes/contacts";
 import { logsRouter } from "./routes/logs";
@@ -46,6 +47,7 @@ app.use("/api", (req, res, next) => {
 });
 
 app.use("/api/settings", settingsRouter);
+app.use("/api/backup", backupRouter);
 app.use("/api/trello", trelloRouter);
 app.use("/api/contacts", contactsRouter);
 app.use("/api/templates", templatesRouter);
