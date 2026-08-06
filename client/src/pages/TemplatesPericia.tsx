@@ -1,34 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { MessageCircleQuestion, MessageSquareText, Plus, Save, Trash2 } from "lucide-react";
+import { MessageSquareText, Plus, Save, Trash2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import type { Pericia, Settings, Template } from "@/lib/types";
+import type { Template } from "@/lib/types";
+import { VARIAVEIS, EXEMPLO_PERICIAS } from "@/lib/templateSamples";
 import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Input, Label, Textarea } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { cn } from "@/lib/utils";
-
-const VARIAVEIS = ["NOME", "TIPO_PERICIA", "DATA", "HORARIO", "LOCAL"];
-
-const EXEMPLO_PERICIAS: Pericia[] = [
-  {
-    tipo: "Perícia Médica",
-    data: "15/07/2026",
-    horario: "14:30",
-    local: "Rua Exemplo, 123 - Centro",
-    nome: "Maria da Silva",
-    telefone: "(11) 99999-8888",
-  },
-  {
-    tipo: "Perícia Social",
-    data: "16/07/2026",
-    horario: "09:00",
-    local: "Fórum Central, sala 4",
-    nome: "Maria da Silva",
-    telefone: "(11) 99999-8888",
-  },
-];
 
 /** Estado do formulário: campos opcionais do Template ficam "" em vez de null, para inputs controlados. */
 type TemplateForm = Omit<Template, "id" | "created_at" | "conteudo_pericia_medica" | "conteudo_pericia_social"> & {
@@ -47,7 +27,7 @@ function novoTemplateVazio(): TemplateForm {
   };
 }
 
-export function Templates() {
+export function TemplatesPericia() {
   const { show } = useToast();
   const [templates, setTemplates] = useState<Template[] | null>(null);
   const [selecionadoId, setSelecionadoId] = useState<number | null>(null);
@@ -58,12 +38,8 @@ export function Templates() {
   const [salvando, setSalvando] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
 
-  const [cobrancaMensagem, setCobrancaMensagem] = useState("");
-  const [salvandoCobranca, setSalvandoCobranca] = useState(false);
-
   const textarea1Ref = useRef<HTMLTextAreaElement>(null);
   const textarea2Ref = useRef<HTMLTextAreaElement>(null);
-  const textareaCobrancaRef = useRef<HTMLTextAreaElement>(null);
 
   async function carregar() {
     const data = await api.get<Template[]>("/templates");
@@ -75,48 +51,8 @@ export function Templates() {
 
   useEffect(() => {
     carregar();
-    api.get<Settings>("/settings").then((data) => setCobrancaMensagem(data.cobranca_mensagem ?? ""));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  function inserirVariavelCobranca(variavel: string) {
-    const ref = textareaCobrancaRef.current;
-    const placeholder = `{{${variavel}}}`;
-    if (!ref) {
-      setCobrancaMensagem((v) => v + placeholder);
-      return;
-    }
-    const start = ref.selectionStart ?? ref.value.length;
-    const end = ref.selectionEnd ?? ref.value.length;
-    const novoValor = cobrancaMensagem.slice(0, start) + placeholder + cobrancaMensagem.slice(end);
-    setCobrancaMensagem(novoValor);
-    requestAnimationFrame(() => {
-      ref.focus();
-      ref.setSelectionRange(start + placeholder.length, start + placeholder.length);
-    });
-  }
-
-  async function salvarCobranca() {
-    setSalvandoCobranca(true);
-    try {
-      await api.put("/settings", { cobranca_mensagem: cobrancaMensagem });
-      show("Mensagem de cobrança salva.", "success");
-    } catch (err) {
-      show(err instanceof ApiError ? err.message : "Erro ao salvar mensagem de cobrança.", "error");
-    } finally {
-      setSalvandoCobranca(false);
-    }
-  }
-
-  function previewCobranca(): string {
-    const exemplo = EXEMPLO_PERICIAS[0];
-    return cobrancaMensagem
-      .replace(/\{\{NOME\}\}/g, exemplo.nome)
-      .replace(/\{\{TIPO_PERICIA\}\}/g, exemplo.tipo)
-      .replace(/\{\{DATA\}\}/g, exemplo.data)
-      .replace(/\{\{HORARIO\}\}/g, exemplo.horario)
-      .replace(/\{\{LOCAL\}\}/g, exemplo.local);
-  }
 
   function selecionarTemplate(t: Template) {
     setSelecionadoId(t.id);
@@ -217,8 +153,8 @@ export function Templates() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Templates</h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Edite as mensagens enviadas aos clientes.</p>
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Mensagens de Perícia</h1>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Edite as mensagens de agendamento enviadas aos clientes.</p>
         </div>
         <Button onClick={novoTemplate} className="self-start">
           <Plus className="h-4 w-4" /> Novo template
@@ -400,49 +336,6 @@ export function Templates() {
           </Card>
         </div>
       </div>
-
-      <Card>
-        <CardContent className="space-y-4 pt-5">
-          <div className="flex items-center gap-2">
-            <MessageCircleQuestion className="h-4 w-4 text-accent-500" />
-            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Mensagem de Cobrança</h2>
-          </div>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            Enviada pelo botão "Cobrar resposta" em Pendentes de Resposta, perguntando ao cliente se recebeu o envio
-            anterior. {"{{TIPO_PERICIA}}"}, {"{{DATA}}"}, {"{{HORARIO}}"} e {"{{LOCAL}}"} ficam em branco se o sistema não
-            encontrar mais os dados originais do envio.
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {VARIAVEIS.map((v) => (
-              <button
-                key={v}
-                onClick={() => inserirVariavelCobranca(v)}
-                className="rounded-md bg-zinc-100 px-2 py-1 text-xs font-mono text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
-              >
-                {`{{${v}}}`}
-              </button>
-            ))}
-          </div>
-          <Textarea
-            ref={textareaCobrancaRef}
-            rows={4}
-            value={cobrancaMensagem}
-            onChange={(e) => setCobrancaMensagem(e.target.value)}
-            className="font-mono text-[13px]"
-          />
-          <div>
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">Pré-visualização</p>
-            <div className="whitespace-pre-wrap rounded-2xl rounded-tl-none bg-accent-50 px-4 py-3 text-sm text-zinc-800 dark:bg-accent-900/20 dark:text-zinc-200">
-              {previewCobranca() || "…"}
-            </div>
-          </div>
-          <div className="flex justify-end">
-            <Button onClick={salvarCobranca} loading={salvandoCobranca}>
-              <Save className="h-4 w-4" /> Salvar mensagem de cobrança
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }
