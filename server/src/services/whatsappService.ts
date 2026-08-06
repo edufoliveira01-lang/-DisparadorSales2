@@ -6,6 +6,7 @@ import { dataDir } from "../db";
 import { emitEvent } from "../websocket";
 import { normalizePhone } from "../utils/phone";
 import { getSetting } from "./settingsService";
+import { enviarMensagemTelegram } from "./telegramService";
 import { moveCard } from "./trelloService";
 import { updateLogAckByMessageId } from "./logsService";
 import {
@@ -209,6 +210,11 @@ class WhatsappManager {
   private enviosAguardandoId: EnvioAguardandoId[] = [];
   /** Acks que chegaram antes do log ser persistido no banco (race condition). */
   private acksPendentes = new Map<string, number>();
+  /** true quando a desconexão em curso foi pedida pelo usuário (disconnect/stop) ou pelo
+   * encerramento do processo (shutdown) — nesses casos não faz sentido alertar no Telegram, já
+   * que quem desconectou sabe disso. false é o padrão: qualquer queda que chegue em
+   * failAndCleanUp sem essa flag é inesperada (o WhatsApp caiu sozinho) e merece aviso. */
+  private desconexaoManual = false;
 
   onChange(listener: Listener) {
     this.listeners.add(listener);
@@ -238,6 +244,7 @@ class WhatsappManager {
     clearLegacyWebVersionCache();
     this.geracao++;
     this.tentativa = 0;
+    this.desconexaoManual = false;
     this.iniciarTentativa(this.geracao);
   }
 
@@ -358,6 +365,11 @@ class WhatsappManager {
         return;
       }
 
+      if (!this.desconexaoManual) {
+        this.notificarDesconexaoInesperada(message).catch((err) =>
+          console.error("[Notificações] Erro ao enviar alerta de desconexão ao Telegram:", err)
+        );
+      }
       this.setState({ status, lastError: message, qrDataUrl: null });
     };
 
@@ -485,6 +497,7 @@ class WhatsappManager {
 
   async stop(): Promise<void> {
     this.geracao++; // cancela qualquer retry automático pendente
+    this.desconexaoManual = true;
     if (this.client) {
       try {
         await this.client.destroy();
@@ -498,6 +511,7 @@ class WhatsappManager {
 
   async disconnect(): Promise<void> {
     this.geracao++; // cancela qualquer retry automático pendente
+    this.desconexaoManual = true;
     if (!this.client) {
       this.setState({ status: "desconectado", qrDataUrl: null, lastError: null });
       return;
@@ -522,6 +536,7 @@ class WhatsappManager {
    */
   async shutdown(): Promise<void> {
     this.geracao++; // cancela qualquer retry automático pendente
+    this.desconexaoManual = true;
     if (!this.client) return;
     try {
       await this.client.destroy();
@@ -529,6 +544,22 @@ class WhatsappManager {
       // best-effort — estamos encerrando de qualquer forma
     }
     this.client = null;
+  }
+
+  /**
+   * Avisa no Telegram quando o WhatsApp cai sozinho (não por ação do usuário) — sem isso, nada
+   * mais é enviado até alguém notar e reconectar manualmente pela tela, e não tem outro jeito de
+   * saber disso a distância. Silencioso se a integração não estiver configurada.
+   */
+  private async notificarDesconexaoInesperada(motivo: string) {
+    const token = getSetting("telegram_bot_token");
+    const chatId = getSetting("telegram_chat_id");
+    if (!token || !chatId) return;
+    await enviarMensagemTelegram(
+      token,
+      chatId,
+      `🔌 O WhatsApp do DisparaZap desconectou inesperadamente.\n\nMotivo: ${motivo}\n\nNenhuma mensagem será enviada até reconectar. Acesse Configurações → Conexão com o WhatsApp para reconectar.`
+    );
   }
 
   /**

@@ -12,6 +12,8 @@ import {
   clearRecoveryToken
 } from "../services/authService";
 import { sendRecoveryEmail } from "../services/emailService";
+import { getSetting } from "../services/settingsService";
+import { enviarMensagemTelegram } from "../services/telegramService";
 
 export const authRouter = Router();
 
@@ -106,19 +108,48 @@ authRouter.put("/update", (req, res) => {
 authRouter.post("/forgot-password", async (req, res) => {
   const { username } = req.body;
   if (!username) return res.status(400).json({ error: "Informe o usuário." });
-  
+
   const user = getUserByUsername(username);
   if (!user) {
     return res.status(404).json({ error: "Usuário não encontrado." });
   }
-  
-  if (!user.email) {
-    return res.status(400).json({ error: "Este usuário não possui um e-mail de recuperação cadastrado. Acesse o sistema com a senha padrão e configure um e-mail." });
+
+  // Telegram é o canal preferido (mais simples de configurar que SMTP, e já costuma estar
+  // pronto por causa das notificações de entrega/resposta). E-mail continua como alternativa
+  // pra quem não usa o Telegram.
+  const telegramToken = getSetting("telegram_bot_token");
+  const telegramChatId = getSetting("telegram_chat_id");
+  const telegramConfigurado = Boolean(telegramToken && telegramChatId);
+
+  if (!telegramConfigurado && !user.email) {
+    return res.status(400).json({
+      error:
+        "Nenhum canal de recuperação configurado. Configure o Telegram em Configurações → Notificações, ou cadastre um e-mail de recuperação.",
+    });
   }
-  
+
+  const token = generateRecoveryToken(user.id);
+
+  if (telegramConfigurado) {
+    try {
+      const recoveryUrl = `${process.env.APP_URL || "http://localhost:3333"}/login?token=${token}`;
+      await enviarMensagemTelegram(
+        telegramToken!,
+        telegramChatId!,
+        `🔑 Recuperação de senha do DisparaZap solicitada.\n\nDefina uma nova senha (link expira em 1h):\n${recoveryUrl}\n\nSe não foi você, ignore esta mensagem.`
+      );
+      return res.json({ message: "Link de recuperação enviado no Telegram." });
+    } catch (err) {
+      console.error("[Auth] Erro ao enviar recuperação via Telegram:", err);
+      if (!user.email) {
+        return res.status(502).json({ error: "Falha ao enviar pelo Telegram, e nenhum e-mail de recuperação está configurado." });
+      }
+      // cai para e-mail abaixo
+    }
+  }
+
   try {
-    const token = generateRecoveryToken(user.id);
-    await sendRecoveryEmail(user.email, token);
+    await sendRecoveryEmail(user.email!, token);
     res.json({ message: "E-mail de recuperação enviado com sucesso." });
   } catch (err) {
     console.error("[Auth] Erro na recuperação:", err);

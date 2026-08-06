@@ -43,7 +43,9 @@ export function Dashboard() {
   const [preview, setPreview] = useState<{ card: CardViewModel; mensagens: string[] } | null>(null);
   const [batchConfirm, setBatchConfirm] = useState(false);
   const [batchLoading, setBatchLoading] = useState(false);
-  const [batchProgress, setBatchProgress] = useState<{ ativo: boolean; total: number } | null>(null);
+  const [batchProgress, setBatchProgress] = useState<{ ativo: boolean; total: number; aguardandoReconexao?: boolean } | null>(
+    null
+  );
 
   const [cadastro, setCadastro] = useState<{
     card: CardViewModel;
@@ -95,6 +97,14 @@ export function Dashboard() {
   useSocketEvent<{ total: number }>("send:batch-started", ({ total }) => {
     setBatchProgress({ ativo: true, total });
     show(`Envio em lote iniciado (${total} card${total > 1 ? "s" : ""}).`, "info");
+  });
+  useSocketEvent<{ reason: string; total: number }>("send:batch-waiting-reconnect", ({ reason, total }) => {
+    setBatchProgress({ ativo: true, total, aguardandoReconexao: true });
+    show(reason, "error");
+  });
+  useSocketEvent("send:batch-resumed", () => {
+    setBatchProgress((prev) => (prev ? { ...prev, aguardandoReconexao: false } : prev));
+    show("WhatsApp reconectado — envio em lote retomado automaticamente.", "success");
   });
   useSocketEvent<{ reason: string }>("send:batch-paused", ({ reason }) => {
     setBatchProgress(null);
@@ -403,7 +413,13 @@ export function Dashboard() {
             </div>
           </div>
 
-          {batchProgress?.ativo && (
+          {batchProgress?.ativo && batchProgress.aguardandoReconexao && (
+            <div className="flex items-center gap-2 rounded-xl bg-amber-50 px-4 py-2.5 text-sm text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+              <WifiOff className="h-4 w-4" /> WhatsApp desconectou — aguardando reconexão para continuar o envio em lote
+              automaticamente.
+            </div>
+          )}
+          {batchProgress?.ativo && !batchProgress.aguardandoReconexao && (
             <div className="flex items-center gap-2 rounded-xl bg-accent-50 px-4 py-2.5 text-sm text-accent-700 dark:bg-accent-900/20 dark:text-accent-300">
               <RefreshCw className="h-4 w-4 animate-spin" /> Enviando em lote… acompanhe os status atualizando em tempo real.
             </div>

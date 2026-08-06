@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Pencil, Plus, Search, StickyNote, Trash2, Upload, Users } from "lucide-react";
+import { ChevronDown, ChevronUp, Download, Pencil, Plus, Search, StickyNote, Trash2, Upload, Users } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay, formatPhoneInput } from "@/lib/phone";
 import type { Contact } from "@/lib/types";
@@ -212,6 +212,9 @@ export function Agenda() {
           />
           <Button variant="outline" onClick={() => fileInputRef.current?.click()} loading={importando}>
             <Upload className="h-4 w-4" /> Importar CSV/vCard
+          </Button>
+          <Button variant="outline" onClick={() => window.open("/api/contacts/export", "_blank")}>
+            <Download className="h-4 w-4" /> Exportar CSV
           </Button>
           <Button onClick={abrirNovo}>
             <Plus className="h-4 w-4" /> Adicionar contato

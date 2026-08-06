@@ -1,5 +1,8 @@
 import { Router } from "express";
+import { getLastStatusForCard } from "../services/logsService";
+import { type Pericia, sortPericiasByDate } from "../services/parserService";
 import { getSetting } from "../services/settingsService";
+import { COBRANCA_MENSAGEM_PADRAO, renderCobranca } from "../services/templateService";
 import { moveCard, TrelloError } from "../services/trelloService";
 import {
   cancelPendingReply,
@@ -11,6 +14,21 @@ import {
 } from "../services/pendingRepliesService";
 import { whatsappManager } from "../services/whatsappService";
 import { emitEvent } from "../websocket";
+
+/** Perícia mais próxima do card, usada para preencher {{TIPO_PERICIA}}/{{DATA}}/{{HORARIO}}/
+ * {{LOCAL}} na mensagem de cobrança — null quando o log original não tem esses dados (ex: log
+ * bem antigo) ou não existe mais. */
+function periciaMaisRelevante(cardId: string): Pericia | null {
+  const log = getLastStatusForCard(cardId);
+  if (!log?.pericias_json) return null;
+  try {
+    const pericias = JSON.parse(log.pericias_json) as Pericia[];
+    if (pericias.length === 0) return null;
+    return sortPericiasByDate(pericias)[0];
+  } catch {
+    return null;
+  }
+}
 
 export const pendingRepliesRouter = Router();
 
@@ -57,9 +75,9 @@ pendingRepliesRouter.post("/:id/cobrar", async (req, res) => {
     const chatId = await whatsappManager.resolveChatId(pending.telefone_digits);
     if (!chatId) return res.status(400).json({ error: "Este telefone não foi encontrado no WhatsApp." });
 
-    const texto = pending.card_nome
-      ? `Olá ${pending.card_nome}! Só confirmando: você recebeu nossa mensagem anterior? Ainda estamos aguardando seu retorno 🙂`
-      : "Olá! Só confirmando: você recebeu nossa mensagem anterior? Ainda estamos aguardando seu retorno 🙂";
+    const mensagemConfigurada = getSetting("cobranca_mensagem") || COBRANCA_MENSAGEM_PADRAO;
+    const pericia = periciaMaisRelevante(pending.card_id);
+    const texto = renderCobranca(mensagemConfigurada, pending.card_nome || "", pericia);
     await whatsappManager.sendMessage(chatId, texto);
     res.json({ ok: true });
   } catch (err) {
