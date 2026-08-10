@@ -96,6 +96,7 @@ export interface PendingReply {
   card_nome: string | null;
   telefone: string;
   telefone_digits: string;
+  whatsapp_chat_id: string | null;
   status: "aguardando" | "respondido" | "cancelado";
   tipo_resposta: "mensagem" | "reacao" | null;
   resposta_preview: string | null;

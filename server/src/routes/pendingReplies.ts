@@ -72,7 +72,10 @@ pendingRepliesRouter.post("/:id/cobrar", async (req, res) => {
   if (!whatsappManager.isReady()) return res.status(400).json({ error: "WhatsApp não está conectado." });
 
   try {
-    const chatId = await whatsappManager.resolveChatId(pending.telefone_digits);
+    // Preferimos o chat id completo já resolvido no envio original (funciona mesmo quando o
+    // contato usa "LID" em vez de telefone). Só re-resolvemos via telefone_digits para
+    // registros antigos, criados antes desse campo existir.
+    const chatId = pending.whatsapp_chat_id || (await whatsappManager.resolveChatId(pending.telefone_digits));
     if (!chatId) return res.status(400).json({ error: "Este telefone não foi encontrado no WhatsApp." });
 
     const mensagemConfigurada = getSetting("cobranca_mensagem") || COBRANCA_MENSAGEM_PADRAO;

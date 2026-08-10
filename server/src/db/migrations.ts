@@ -105,6 +105,13 @@ export function runMigrations(db: Database.Database): void {
     "ALTER TABLE pending_replies ADD COLUMN whatsapp_message_id TEXT",
     "ALTER TABLE pending_replies ADD COLUMN ack INTEGER",
     "ALTER TABLE pending_replies ADD COLUMN ack_updated_at DATETIME",
+    // Id completo do chat (com domínio, ex: "5511999999999@c.us" ou "123456789@lid"), guardado
+    // à parte de telefone_digits porque este último só serve para CASAR o remetente de uma
+    // resposta recebida (comparação de dígitos, sem domínio). Reenviar uma nova mensagem (ex:
+    // "Cobrar resposta") exige o id completo — telefone_digits sozinho não é suficiente quando o
+    // contato foi resolvido como "LID" (identificador interno do WhatsApp, não um telefone de
+    // verdade), caso em que tentar tratá-lo como telefone faz o WhatsApp não encontrar ninguém.
+    "ALTER TABLE pending_replies ADD COLUMN whatsapp_chat_id TEXT",
   ]) {
     try {
       db.exec(stmt);

@@ -756,10 +756,17 @@ class WhatsappManager {
   }
 
   private async verificarMensagemPerdida(client: Client, pendente: PendingReply): Promise<void> {
-    const numberId = await this.comRetryTransitorio(() => client.getNumberId(pendente.telefone_digits));
-    if (!numberId) return;
+    // Preferimos o chat id completo já resolvido no envio original (funciona mesmo quando o
+    // contato usa "LID" em vez de telefone). Só re-resolvemos via telefone_digits para
+    // registros antigos, criados antes desse campo existir.
+    let chatIdSerialized = pendente.whatsapp_chat_id;
+    if (!chatIdSerialized) {
+      const numberId = await this.comRetryTransitorio(() => client.getNumberId(pendente.telefone_digits));
+      if (!numberId) return;
+      chatIdSerialized = numberId._serialized;
+    }
 
-    const chat = await client.getChatById(numberId._serialized);
+    const chat = await client.getChatById(chatIdSerialized);
     const mensagens = await chat.fetchMessages({ limit: 50, fromMe: false });
 
     // created_at do SQLite vem como "YYYY-MM-DD HH:MM:SS" em UTC, sem indicação de fuso —
@@ -768,7 +775,7 @@ class WhatsappManager {
     const resposta = mensagens.find((m) => m.timestamp * 1000 >= criadoEmMs);
     if (!resposta) return;
 
-    await this.resolvePendingReplyForPhone(numberId._serialized, "mensagem", resposta.body ? resposta.body.slice(0, 300) : null);
+    await this.resolvePendingReplyForPhone(chatIdSerialized, "mensagem", resposta.body ? resposta.body.slice(0, 300) : null);
   }
 
   /**
