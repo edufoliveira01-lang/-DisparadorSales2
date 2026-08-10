@@ -11,6 +11,7 @@ export interface PendingReply {
   card_nome: string | null;
   telefone: string;
   telefone_digits: string;
+  whatsapp_chat_id: string | null;
   status: PendingReplyStatus;
   tipo_resposta: TipoResposta | null;
   resposta_preview: string | null;
@@ -30,8 +31,8 @@ const cancelAwaitingForPhoneStmt = db.prepare(
   `UPDATE pending_replies SET status = 'cancelado', resolved_at = CURRENT_TIMESTAMP WHERE telefone_digits = ? AND status = 'aguardando'`
 );
 const insertStmt = db.prepare(
-  `INSERT INTO pending_replies (card_id, card_nome, telefone, telefone_digits, whatsapp_message_id, status)
-   VALUES (@card_id, @card_nome, @telefone, @telefone_digits, @whatsapp_message_id, 'aguardando')`
+  `INSERT INTO pending_replies (card_id, card_nome, telefone, telefone_digits, whatsapp_chat_id, whatsapp_message_id, status)
+   VALUES (@card_id, @card_nome, @telefone, @telefone_digits, @whatsapp_chat_id, @whatsapp_message_id, 'aguardando')`
 );
 const getStmt = db.prepare("SELECT * FROM pending_replies WHERE id = ?");
 const getByMessageIdStmt = db.prepare("SELECT * FROM pending_replies WHERE whatsapp_message_id = ?");
@@ -65,6 +66,7 @@ export function createPendingReply(
   cardNome: string | null,
   telefoneExibicao: string,
   chatIdDigits: string,
+  whatsappChatId: string,
   whatsappMessageId: string | null = null
 ): PendingReply {
   const telefoneDigits = normalizePhone(chatIdDigits);
@@ -74,6 +76,7 @@ export function createPendingReply(
     card_nome: cardNome,
     telefone: telefoneExibicao,
     telefone_digits: telefoneDigits,
+    whatsapp_chat_id: whatsappChatId,
     whatsapp_message_id: whatsappMessageId,
   });
   const pending = getStmt.get(info.lastInsertRowid) as PendingReply;
