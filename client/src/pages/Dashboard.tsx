@@ -37,6 +37,7 @@ export function Dashboard() {
   const [periciasOverrides, setPericiasOverrides] = useState<Record<string, Pericia[]>>({});
   const [modoOverrides, setModoOverrides] = useState<Record<string, ModoEnvio>>({});
   const [mensagensAudiencia, setMensagensAudiencia] = useState({ presencial: "", online: "" });
+  const [intervaloEnvio, setIntervaloEnvio] = useState({ min: 5, max: 15 });
   const [enviandoCardId, setEnviandoCardId] = useState<string | null>(null);
 
   const [busca, setBusca] = useState("");
@@ -86,6 +87,10 @@ export function Dashboard() {
       setMensagensAudiencia({
         presencial: data.audiencia_presencial_mensagem ?? "",
         online: data.audiencia_online_mensagem ?? "",
+      });
+      setIntervaloEnvio({
+        min: Number(data.send_interval_min) || 5,
+        max: Number(data.send_interval_max) || 15,
       });
     });
   }, [carregarCards]);
@@ -384,7 +389,12 @@ export function Dashboard() {
           modo: modoEfetivo(card),
         };
       });
-      await api.post("/send/batch", { items, templateId });
+      await api.post("/send/batch", {
+        items,
+        templateId,
+        intervalMinSec: intervaloEnvio.min,
+        intervalMaxSec: intervaloEnvio.max,
+      });
       setBatchConfirm(false);
     } catch (err) {
       show(err instanceof ApiError ? err.message : "Erro ao iniciar envio em lote.", "error");
