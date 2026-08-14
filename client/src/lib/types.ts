@@ -9,7 +9,7 @@ export interface Pericia {
   origem?: "medica" | "social" | "geral" | "audiencia";
 }
 
-export type ModoEnvio = "template" | "audiencia_presencial" | "audiencia_online";
+export type ModoEnvio = "template" | "audiencia_presencial" | "audiencia_online" | "audiencia_hibrida";
 
 export interface Contact {
   id: number;
@@ -93,6 +93,7 @@ export interface Settings {
   cobranca_mensagem: string;
   audiencia_presencial_mensagem: string;
   audiencia_online_mensagem: string;
+  audiencia_hibrida_mensagem: string;
 }
 
 export interface PendingReply {

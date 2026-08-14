@@ -11,6 +11,9 @@ export const AUDIENCIA_PRESENCIAL_MENSAGEM_PADRAO =
 export const AUDIENCIA_ONLINE_MENSAGEM_PADRAO =
   "Olá {{NOME}}! Passando para confirmar sua audiência online (videoconferência):\n\n📅 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n🔗 Link de acesso: {{LOCAL}}\n⚖️ Processo: {{PROCESSO}}\n\nEntre no link com alguns minutos de antecedência e certifique-se de estar em um local silencioso e com boa conexão de internet. Qualquer dúvida, estou à disposição!";
 
+export const AUDIENCIA_HIBRIDA_MENSAGEM_PADRAO =
+  "Olá {{NOME}}! Passando para confirmar sua audiência híbrida (presencial ou por videoconferência):\n\n📅 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local/Link: {{LOCAL}}\n⚖️ Processo: {{PROCESSO}}\n\nMe avise com antecedência qual forma de participação você prefere. Qualquer dúvida, estou à disposição!";
+
 export interface Template {
   id: number;
   nome: string;

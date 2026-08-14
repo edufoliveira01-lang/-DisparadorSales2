@@ -1,5 +1,6 @@
 import { AlertTriangle, Calendar, CheckCircle2, Clock, Gavel, MapPin, MessageCircle, Pencil, Send, UserPlus, XCircle } from "lucide-react";
 import type { CardViewModel, ModoEnvio } from "@/lib/types";
+import { classificarModalidadeAudiencia, type ModalidadeAudiencia } from "@/lib/audiencia";
 import { Badge } from "@/components/ui/Badge";
 import { cn, formatPlaceholder } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
@@ -29,7 +30,16 @@ const MODO_LABEL: Record<ModoEnvio, string> = {
   template: "Perícia (template selecionado)",
   audiencia_presencial: "Audiência · Presencial",
   audiencia_online: "Audiência · Online",
+  audiencia_hibrida: "Audiência · Híbrida",
 };
+
+const MODALIDADE_LABEL: Record<ModalidadeAudiencia, string> = {
+  presencial: "PRESENCIAL",
+  online: "ONLINE",
+  hibrida: "HÍBRIDA",
+};
+
+const OPCOES_MODO_AUDIENCIA: ModoEnvio[] = ["audiencia_presencial", "audiencia_online", "audiencia_hibrida"];
 
 export function CardItem({
   card,
@@ -61,7 +71,9 @@ export function CardItem({
         "rounded-2xl border bg-white p-5 shadow-card transition-shadow hover:shadow-md dark:bg-zinc-900",
         temNaoIdentificado
           ? "border-amber-400 bg-amber-50/30 dark:border-amber-500/50 dark:bg-amber-900/10"
-          : "border-zinc-200 dark:border-zinc-800"
+          : temAudiencia
+            ? "border-blue-300 bg-blue-50/30 dark:border-blue-500/50 dark:bg-blue-900/10"
+            : "border-zinc-200 dark:border-zinc-800"
       )}
     >
       <div className="flex items-start gap-3">
@@ -109,7 +121,11 @@ export function CardItem({
             {card.pericias.map((p, i) => (
               <div key={i} className="flex items-start justify-between gap-2 rounded-xl bg-zinc-50 p-3 text-sm dark:bg-zinc-800/50">
                 <div className="min-w-0">
-                  <p className="font-medium text-zinc-700 dark:text-zinc-200">{formatPlaceholder(p.tipo) || "(tipo não identificado)"}</p>
+                  <p className="font-medium text-zinc-700 dark:text-zinc-200">
+                    {p.origem === "audiencia"
+                      ? `AUDIÊNCIA - ${MODALIDADE_LABEL[classificarModalidadeAudiencia(p.tipo)]}`
+                      : formatPlaceholder(p.tipo) || "(tipo não identificado)"}
+                  </p>
                   <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
                     <span className="flex items-center gap-1">
                       <Calendar className="h-3.5 w-3.5" /> {formatPlaceholder(p.data)}
@@ -146,9 +162,11 @@ export function CardItem({
                 onChange={(e) => onChangeModo(e.target.value as ModoEnvio)}
                 className="w-56 text-xs"
               >
-                <option value="audiencia_presencial">{MODO_LABEL.audiencia_presencial}</option>
-                <option value="audiencia_online">{MODO_LABEL.audiencia_online}</option>
-                <option value="template">{MODO_LABEL.template}</option>
+                {OPCOES_MODO_AUDIENCIA.map((opcao) => (
+                  <option key={opcao} value={opcao}>
+                    {MODO_LABEL[opcao]}
+                  </option>
+                ))}
               </Select>
             </div>
           )}

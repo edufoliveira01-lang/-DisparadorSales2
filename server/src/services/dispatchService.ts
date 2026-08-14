@@ -1,6 +1,7 @@
 import { emitEvent } from "../websocket";
 import { sortPericiasByDate, type Pericia } from "./parserService";
 import {
+  AUDIENCIA_HIBRIDA_MENSAGEM_PADRAO,
   AUDIENCIA_ONLINE_MENSAGEM_PADRAO,
   AUDIENCIA_PRESENCIAL_MENSAGEM_PADRAO,
   getTemplate,
@@ -13,7 +14,16 @@ import { getSetting } from "./settingsService";
 import { moveCard } from "./trelloService";
 import { createPendingReply } from "./pendingRepliesService";
 
-export type ModoEnvio = "template" | "audiencia_presencial" | "audiencia_online";
+export type ModoEnvio = "template" | "audiencia_presencial" | "audiencia_online" | "audiencia_hibrida";
+
+const CONFIGURACAO_AUDIENCIA: Record<
+  Exclude<ModoEnvio, "template">,
+  { chaveSetting: string; padrao: string }
+> = {
+  audiencia_presencial: { chaveSetting: "audiencia_presencial_mensagem", padrao: AUDIENCIA_PRESENCIAL_MENSAGEM_PADRAO },
+  audiencia_online: { chaveSetting: "audiencia_online_mensagem", padrao: AUDIENCIA_ONLINE_MENSAGEM_PADRAO },
+  audiencia_hibrida: { chaveSetting: "audiencia_hibrida_mensagem", padrao: AUDIENCIA_HIBRIDA_MENSAGEM_PADRAO },
+};
 
 export interface SendItem {
   cardId: string;
@@ -50,12 +60,10 @@ export async function dispatchSingle(item: SendItem, templateId: number | null):
     const sortedPericias = sortPericiasByDate(item.pericias);
 
     let mensagens: string[];
-    if (modo === "audiencia_presencial" || modo === "audiencia_online") {
+    if (modo !== "template") {
       if (sortedPericias.length === 0) throw new Error("Nenhuma perícia válida para gerar mensagem.");
-      const mensagemConfigurada =
-        modo === "audiencia_online"
-          ? getSetting("audiencia_online_mensagem") || AUDIENCIA_ONLINE_MENSAGEM_PADRAO
-          : getSetting("audiencia_presencial_mensagem") || AUDIENCIA_PRESENCIAL_MENSAGEM_PADRAO;
+      const { chaveSetting, padrao } = CONFIGURACAO_AUDIENCIA[modo];
+      const mensagemConfigurada = getSetting(chaveSetting) || padrao;
       mensagens = [renderAudiencia(mensagemConfigurada, item.nomeCliente, sortedPericias[0])];
     } else {
       mensagens = renderMessages(template!, item.nomeCliente, sortedPericias);

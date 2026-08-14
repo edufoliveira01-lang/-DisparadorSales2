@@ -20,6 +20,12 @@ import { CardItem } from "@/components/CardItem";
 type FiltroStatus = "todos" | "enviado" | "nao_enviado" | "falhou";
 type FiltroTipo = "todos" | "medica" | "social" | "ambas" | "audiencia";
 
+const MODALIDADE_POR_MODO: Record<Exclude<ModoEnvio, "template">, "presencial" | "online" | "hibrida"> = {
+  audiencia_presencial: "presencial",
+  audiencia_online: "online",
+  audiencia_hibrida: "hibrida",
+};
+
 export function Dashboard() {
   const { show } = useToast();
   const navigate = useNavigate();
@@ -36,7 +42,7 @@ export function Dashboard() {
   const [nomeOverrides, setNomeOverrides] = useState<Record<string, string>>({});
   const [periciasOverrides, setPericiasOverrides] = useState<Record<string, Pericia[]>>({});
   const [modoOverrides, setModoOverrides] = useState<Record<string, ModoEnvio>>({});
-  const [mensagensAudiencia, setMensagensAudiencia] = useState({ presencial: "", online: "" });
+  const [mensagensAudiencia, setMensagensAudiencia] = useState({ presencial: "", online: "", hibrida: "" });
   const [intervaloEnvio, setIntervaloEnvio] = useState({ min: 5, max: 15 });
   const [enviandoCardId, setEnviandoCardId] = useState<string | null>(null);
 
@@ -87,6 +93,7 @@ export function Dashboard() {
       setMensagensAudiencia({
         presencial: data.audiencia_presencial_mensagem ?? "",
         online: data.audiencia_online_mensagem ?? "",
+        hibrida: data.audiencia_hibrida_mensagem ?? "",
       });
       setIntervaloEnvio({
         min: Number(data.send_interval_min) || 5,
@@ -157,7 +164,10 @@ export function Dashboard() {
   function modoDetectado(card: CardViewModel): ModoEnvio {
     const pericia = periciasEfetivas(card).find((p) => p.origem === "audiencia");
     if (!pericia) return "template";
-    return classificarModalidadeAudiencia(pericia.tipo) === "online" ? "audiencia_online" : "audiencia_presencial";
+    const modalidade = classificarModalidadeAudiencia(pericia.tipo);
+    if (modalidade === "online") return "audiencia_online";
+    if (modalidade === "hibrida") return "audiencia_hibrida";
+    return "audiencia_presencial";
   }
 
   /** Modo efetivo: usa o override manual se o usuário tiver ajustado, senão o detectado automaticamente. */
@@ -299,13 +309,13 @@ export function Dashboard() {
     const modo = modoEfetivo(card);
     const cardComOverrides = cardEfetivo(card);
 
-    if (modo === "audiencia_presencial" || modo === "audiencia_online") {
+    if (modo !== "template") {
       const pericia = cardComOverrides.pericias[0];
       if (!pericia) {
         show("Nenhuma perícia identificada para gerar mensagem.", "error");
         return;
       }
-      const mensagemConfigurada = modo === "audiencia_online" ? mensagensAudiencia.online : mensagensAudiencia.presencial;
+      const mensagemConfigurada = mensagensAudiencia[MODALIDADE_POR_MODO[modo]];
       const mensagem = renderAudienciaLocal(mensagemConfigurada, cardComOverrides.nomeCliente, pericia);
       setPreview({ card: cardComOverrides, mensagens: [mensagem], modo });
       return;
