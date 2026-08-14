@@ -6,6 +6,7 @@ import {
   MessageSquareReply,
   RefreshCw,
   RotateCcw,
+  Search,
   SmilePlus,
   Trash2,
 } from "lucide-react";
@@ -19,6 +20,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { Input, Label } from "@/components/ui/Input";
 import { Pagination } from "@/components/ui/Pagination";
 import { SelectableCard } from "@/components/ui/SelectableCard";
 import { Select } from "@/components/ui/Select";
@@ -26,6 +28,20 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 
 const ITENS_POR_PAGINA = 20;
+
+type Ordenacao = "recentes" | "antigos" | "az" | "za";
+
+const ORDENACAO_OPTIONS: { value: Ordenacao; label: string }[] = [
+  { value: "recentes", label: "Mais recentes primeiro" },
+  { value: "antigos", label: "Mais antigos primeiro" },
+  { value: "az", label: "Nome (A-Z)" },
+  { value: "za", label: "Nome (Z-A)" },
+];
+
+/** Data local (America/Sao_Paulo) no formato YYYY-MM-DD, para comparar com o valor de um <input type="date">. */
+function dataLocalYMD(createdAtUtc: string): string {
+  return new Date(createdAtUtc + "Z").toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+}
 
 function ComoRespondeu({ log }: { log: SendLog }) {
   if (log.resposta_tipo === "reacao") {
@@ -58,6 +74,10 @@ export function Historico() {
   const [apagandoSelecionados, setApagandoSelecionados] = useState(false);
   const [apagarAlvo, setApagarAlvo] = useState<SendLog | null>(null);
   const [confirmMassaAberto, setConfirmMassaAberto] = useState(false);
+  const [busca, setBusca] = useState("");
+  const [ordenacao, setOrdenacao] = useState<Ordenacao>("recentes");
+  const [dataDe, setDataDe] = useState("");
+  const [dataAte, setDataAte] = useState("");
 
   async function carregar() {
     const data = await api.get<SendLog[]>("/logs");
@@ -84,16 +104,50 @@ export function Historico() {
     carregar();
   });
 
+  const logsFiltrados = useMemo(() => {
+    if (!logs) return [];
+    const termo = busca.trim().toLowerCase();
+    const termoDigits = termo.replace(/\D/g, "");
+    const filtrados = logs.filter((log) => {
+      if (termo) {
+        const nomeMatch = (log.card_nome || "").toLowerCase().includes(termo);
+        const telefoneMatch = termoDigits.length > 0 && (log.telefone || "").replace(/\D/g, "").includes(termoDigits);
+        if (!nomeMatch && !telefoneMatch) return false;
+      }
+      if (dataDe || dataAte) {
+        const dataLog = dataLocalYMD(log.created_at);
+        if (dataDe && dataLog < dataDe) return false;
+        if (dataAte && dataLog > dataAte) return false;
+      }
+      return true;
+    });
+    return [...filtrados].sort((a, b) => {
+      switch (ordenacao) {
+        case "recentes":
+          return b.created_at.localeCompare(a.created_at);
+        case "antigos":
+          return a.created_at.localeCompare(b.created_at);
+        case "az":
+          return (a.card_nome || "").localeCompare(b.card_nome || "", "pt-BR");
+        case "za":
+          return (b.card_nome || "").localeCompare(a.card_nome || "", "pt-BR");
+      }
+    });
+  }, [logs, busca, dataDe, dataAte, ordenacao]);
+
   const logsPaginados = useMemo(
-    () => (logs ?? []).slice(pagina * ITENS_POR_PAGINA, (pagina + 1) * ITENS_POR_PAGINA),
-    [logs, pagina]
+    () => logsFiltrados.slice(pagina * ITENS_POR_PAGINA, (pagina + 1) * ITENS_POR_PAGINA),
+    [logsFiltrados, pagina]
   );
 
   useEffect(() => {
-    if (!logs) return;
-    const ultimaPagina = Math.max(0, Math.ceil(logs.length / ITENS_POR_PAGINA) - 1);
+    const ultimaPagina = Math.max(0, Math.ceil(logsFiltrados.length / ITENS_POR_PAGINA) - 1);
     if (pagina > ultimaPagina) setPagina(ultimaPagina);
-  }, [logs, pagina]);
+  }, [logsFiltrados, pagina]);
+
+  useEffect(() => {
+    setPagina(0);
+  }, [busca, dataDe, dataAte, ordenacao]);
 
   async function reenviar(log: SendLog) {
     if (!templateId) {
@@ -204,6 +258,36 @@ export function Historico() {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="relative min-w-[200px] flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+          <Input
+            placeholder="Buscar por nome ou telefone…"
+            className="pl-9"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+          />
+        </div>
+        <div>
+          <Label className="text-xs">De</Label>
+          <Input type="date" value={dataDe} onChange={(e) => setDataDe(e.target.value)} className="w-36" />
+        </div>
+        <div>
+          <Label className="text-xs">Até</Label>
+          <Input type="date" value={dataAte} onChange={(e) => setDataAte(e.target.value)} className="w-36" />
+        </div>
+        <div className="w-full sm:w-56">
+          <Label className="text-xs">Ordenar por</Label>
+          <Select value={ordenacao} onChange={(e) => setOrdenacao(e.target.value as Ordenacao)}>
+            {ORDENACAO_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </Select>
+        </div>
+      </div>
+
       {selecionados.size > 0 && (
         <div className="flex items-center justify-between rounded-xl border border-accent-200 bg-accent-50 px-4 py-3 dark:border-accent-900 dark:bg-accent-900/20">
           <p className="text-sm font-medium text-accent-800 dark:text-accent-300">
@@ -228,6 +312,12 @@ export function Historico() {
         </div>
       ) : logs.length === 0 ? (
         <EmptyState icon={HistoryIcon} title="Nenhum envio registrado ainda" description="Os envios feitos pelo Dashboard aparecerão aqui." />
+      ) : logsFiltrados.length === 0 ? (
+        <EmptyState
+          icon={HistoryIcon}
+          title="Nenhum resultado para esses filtros"
+          description="Tente ajustar a busca, o período ou a ordenação."
+        />
       ) : (
         <>
           {/* Mobile: cards compactos (nome + status + entrega), detalhes por trás do expandir */}
@@ -335,8 +425,11 @@ export function Historico() {
                   const aberto = expandido === log.id;
                   return (
                     <Fragment key={log.id}>
-                      <tr className="bg-white dark:bg-zinc-900">
-                        <td className="px-5 py-3 text-center">
+                      <tr
+                        className="cursor-pointer bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800/40"
+                        onClick={() => setExpandido(aberto ? null : log.id)}
+                      >
+                        <td className="px-5 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                           <Checkbox checked={selecionados.has(log.id)} onChange={() => alternarSelecionado(log.id)} />
                         </td>
                         <td className="max-w-[240px] truncate px-5 py-3 text-left font-medium text-zinc-900 dark:text-zinc-100">
@@ -351,7 +444,7 @@ export function Historico() {
                         <td className="px-5 py-3 text-center">
                           <StatusBadge sendStatus={log.status} ack={log.ack} respostaStatus={log.resposta_status} />
                         </td>
-                        <td className="px-5 py-3">
+                        <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
                           <div className="flex justify-center gap-1">
                             <Button variant="ghost" size="icon" title="Ver detalhes" onClick={() => setExpandido(aberto ? null : log.id)}>
                               {aberto ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -408,7 +501,7 @@ export function Historico() {
               </tbody>
             </table>
           </div>
-          <Pagination page={pagina} totalItems={logs.length} pageSize={ITENS_POR_PAGINA} onPageChange={setPagina} />
+          <Pagination page={pagina} totalItems={logsFiltrados.length} pageSize={ITENS_POR_PAGINA} onPageChange={setPagina} />
         </>
       )}
 

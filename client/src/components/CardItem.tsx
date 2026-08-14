@@ -92,7 +92,7 @@ export function CardItem({
               >
                 <Pencil className="h-3.5 w-3.5" />
               </button>
-              <Badge tone="accent">{card.pericias.length === 2 ? "2 perícias" : "1 perícia"}</Badge>
+              {!temAudiencia && <Badge tone="accent">{card.pericias.length === 2 ? "2 perícias" : "1 perícia"}</Badge>}
               {modo !== "template" && (
                 <Badge tone="info">
                   <Gavel className="h-3 w-3" /> {MODO_LABEL[modo]}
@@ -190,6 +190,13 @@ export function CardItem({
                 <Badge tone="warning">Talvez: {card.sugestaoContato.nome}?</Badge>
                 <button onClick={onUsarSugestao} className="text-xs font-medium text-accent-600 hover:underline">
                   Usar este contato
+                </button>
+                <span className="text-xs text-zinc-300 dark:text-zinc-600">ou</span>
+                <button
+                  onClick={onCadastrarContato}
+                  className="flex items-center gap-1 text-xs font-medium text-accent-600 hover:underline"
+                >
+                  <UserPlus className="h-3.5 w-3.5" /> Cadastrar outro
                 </button>
               </div>
             ) : (

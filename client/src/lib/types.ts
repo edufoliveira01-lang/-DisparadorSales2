@@ -91,6 +91,7 @@ export interface Settings {
   telegram_alerta_horas: string;
   telegram_alerta_horas_resposta: string;
   cobranca_mensagem: string;
+  cobranca_audiencia_mensagem: string;
   audiencia_presencial_mensagem: string;
   audiencia_online_mensagem: string;
   audiencia_hibrida_mensagem: string;
