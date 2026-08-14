@@ -1,11 +1,19 @@
 import { emitEvent } from "../websocket";
 import { sortPericiasByDate, type Pericia } from "./parserService";
-import { getTemplate, renderMessages } from "./templateService";
+import {
+  AUDIENCIA_ONLINE_MENSAGEM_PADRAO,
+  AUDIENCIA_PRESENCIAL_MENSAGEM_PADRAO,
+  getTemplate,
+  renderAudiencia,
+  renderMessages,
+} from "./templateService";
 import { createLog, type SendLog } from "./logsService";
 import { whatsappManager } from "./whatsappService";
 import { getSetting } from "./settingsService";
 import { moveCard } from "./trelloService";
 import { createPendingReply } from "./pendingRepliesService";
+
+export type ModoEnvio = "template" | "audiencia_presencial" | "audiencia_online";
 
 export interface SendItem {
   cardId: string;
@@ -14,15 +22,24 @@ export interface SendItem {
   telefone: string;
   contactId: number | null;
   pericias: Pericia[];
+  /** "template" (padrão) usa o template de perícia selecionado; os outros dois ignoram o
+   * template e mandam a mensagem de audiência configurada em Templates > Audiência. */
+  modo?: ModoEnvio;
 }
 
 function onlyDigits(value: string): string {
   return value.replace(/\D/g, "");
 }
 
-export async function dispatchSingle(item: SendItem, templateId: number): Promise<SendLog> {
-  const template = getTemplate(templateId);
-  if (!template) throw new Error("Template não encontrado.");
+export async function dispatchSingle(item: SendItem, templateId: number | null): Promise<SendLog> {
+  const modo: ModoEnvio = item.modo ?? "template";
+
+  let template: ReturnType<typeof getTemplate>;
+  if (modo === "template") {
+    if (!templateId) throw new Error("Selecione um template de mensagem.");
+    template = getTemplate(templateId);
+    if (!template) throw new Error("Template não encontrado.");
+  }
 
   try {
     if (!whatsappManager.isReady()) throw new Error("WhatsApp não está conectado.");
@@ -31,7 +48,18 @@ export async function dispatchSingle(item: SendItem, templateId: number): Promis
     if (!chatId) throw new Error("Este telefone não foi encontrado no WhatsApp.");
 
     const sortedPericias = sortPericiasByDate(item.pericias);
-    const mensagens = renderMessages(template, item.nomeCliente, sortedPericias);
+
+    let mensagens: string[];
+    if (modo === "audiencia_presencial" || modo === "audiencia_online") {
+      if (sortedPericias.length === 0) throw new Error("Nenhuma perícia válida para gerar mensagem.");
+      const mensagemConfigurada =
+        modo === "audiencia_online"
+          ? getSetting("audiencia_online_mensagem") || AUDIENCIA_ONLINE_MENSAGEM_PADRAO
+          : getSetting("audiencia_presencial_mensagem") || AUDIENCIA_PRESENCIAL_MENSAGEM_PADRAO;
+      mensagens = [renderAudiencia(mensagemConfigurada, item.nomeCliente, sortedPericias[0])];
+    } else {
+      mensagens = renderMessages(template!, item.nomeCliente, sortedPericias);
+    }
     if (mensagens.length === 0) throw new Error("Nenhuma perícia válida para gerar mensagem.");
 
     // Guarda o id da última mensagem enviada para rastrear entrega/leitura (✓✓) no Histórico.
@@ -122,7 +150,7 @@ async function aguardarReconexao(timeoutMs: number): Promise<boolean> {
 
 export async function dispatchBatch(
   items: SendItem[],
-  templateId: number,
+  templateId: number | null,
   intervalMinSec: number,
   intervalMaxSec: number
 ): Promise<void> {

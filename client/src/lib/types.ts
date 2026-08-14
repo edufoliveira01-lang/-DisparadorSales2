@@ -5,8 +5,11 @@ export interface Pericia {
   local: string;
   nome: string;
   telefone: string;
-  origem?: "medica" | "social" | "geral";
+  processo?: string;
+  origem?: "medica" | "social" | "geral" | "audiencia";
 }
+
+export type ModoEnvio = "template" | "audiencia_presencial" | "audiencia_online";
 
 export interface Contact {
   id: number;
@@ -88,6 +91,8 @@ export interface Settings {
   telegram_alerta_horas: string;
   telegram_alerta_horas_resposta: string;
   cobranca_mensagem: string;
+  audiencia_presencial_mensagem: string;
+  audiencia_online_mensagem: string;
 }
 
 export interface PendingReply {

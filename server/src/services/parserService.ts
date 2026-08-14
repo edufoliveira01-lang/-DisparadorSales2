@@ -5,6 +5,8 @@ export interface Pericia {
   local: string;
   nome: string;
   telefone: string;
+  /** Número do processo — só relevante para audiências, opcional nos demais casos. */
+  processo?: string;
   /** Preenchido por parseCardDescriptionComOrigem (rota /cards); ausente no parse "puro". */
   origem?: OrigemPericia;
 }
@@ -22,6 +24,7 @@ const FIELD_PATTERNS: Record<FieldName, RegExp> = {
   local: /^[ \t]*LOCAL\b\s*:?[ \t]*(.+)$/im,
   nome: /^[ \t]*NOME\b\s*:?[ \t]*(.+)$/im,
   telefone: /^[ \t]*TELEFONE\b\s*:?[ \t]*(.+)$/im,
+  processo: /^[ \t]*PROCESSO\b\s*:?[ \t]*(.+)$/im,
 };
 
 // Cabeçalhos de bloco: só contam quando ocupam a linha inteira (opcionalmente com
@@ -29,6 +32,10 @@ const FIELD_PATTERNS: Record<FieldName, RegExp> = {
 // apenas como valor de um campo (ex: "TIPO: PERÍCIA MÉDICA;").
 const MEDICA_HEADER = /^[ \t]*PER[IÍ]CIA\s+M[EÉ]DICA\s*:?[ \t]*$/im;
 const SOCIAL_HEADER = /^[ \t]*PER[IÍ]CIA\s+SOCIAL\s*:?[ \t]*$/im;
+// Audiência tem um formato diferente: o campo TIPO não descreve a especialidade, e sim se é
+// presencial ou online (ver classificarModalidadeAudiencia) — por isso o cabeçalho "AUDIÊNCIA"
+// em linha própria é o único jeito de reconhecer o bloco.
+const AUDIENCIA_HEADER = /^[ \t]*AUDI[EÊ]NCIA\s*:?[ \t]*$/im;
 
 // Muitos cards colam, após os campos estruturados, o texto bruto do e-mail/intimação
 // original (para referência). Tudo a partir desse marcador é ignorado pelo parser.
@@ -55,6 +62,7 @@ function extractPericiaFromBlock(block: string): Pericia {
     local: extractField(block, FIELD_PATTERNS.local),
     nome: extractField(block, FIELD_PATTERNS.nome),
     telefone: extractField(block, FIELD_PATTERNS.telefone),
+    processo: extractField(block, FIELD_PATTERNS.processo),
   };
 }
 
@@ -63,7 +71,7 @@ export function isPericiaCompleta(pericia: Pericia): boolean {
   return Boolean(pericia.tipo && pericia.data && pericia.horario && pericia.local && pericia.nome);
 }
 
-export type OrigemPericia = "medica" | "social" | "geral";
+export type OrigemPericia = "medica" | "social" | "geral" | "audiencia";
 export interface PericiaComOrigem extends Pericia {
   origem: OrigemPericia;
 }
@@ -72,6 +80,18 @@ function detectarOrigemPorTipo(valorTipo: string): OrigemPericia {
   if (/M[EÉ]DI/i.test(valorTipo)) return "medica";
   if (/SOCIAL/i.test(valorTipo)) return "social";
   return "geral";
+}
+
+export type ModalidadeAudiencia = "presencial" | "online";
+
+/**
+ * Numa audiência, o campo TIPO não descreve uma especialidade — descreve se é presencial ou
+ * online (ex: "TIPO: ONLINE" / "TIPO: PRESENCIAL"). Qualquer menção a "ONLINE" classifica como
+ * online; na ausência de uma indicação clara, assume presencial (o caso mais comum) e deixa o
+ * usuário corrigir manualmente na tela de Dashboard se for o caso.
+ */
+export function classificarModalidadeAudiencia(tipo: string): ModalidadeAudiencia {
+  return /ONLINE/i.test(tipo) ? "online" : "presencial";
 }
 
 interface BlockStart {
@@ -106,10 +126,12 @@ export function parseCardDescriptionComOrigem(description: string): PericiaComOr
 
   const medicaRe = new RegExp(MEDICA_HEADER.source, "gim");
   const socialRe = new RegExp(SOCIAL_HEADER.source, "gim");
+  const audienciaRe = new RegExp(AUDIENCIA_HEADER.source, "gim");
   const headerMatches: { origem: OrigemPericia; index: number; end: number }[] = [];
   for (const [re, origem] of [
     [medicaRe, "medica"],
     [socialRe, "social"],
+    [audienciaRe, "audiencia"],
   ] as const) {
     let m: RegExpExecArray | null;
     while ((m = re.exec(description))) {

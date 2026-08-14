@@ -1,7 +1,11 @@
 import { Router } from "express";
 import { getAllSettings, getSetting, setSetting } from "../services/settingsService";
 import { detectarChatId, enviarMensagemTelegram, TelegramError } from "../services/telegramService";
-import { COBRANCA_MENSAGEM_PADRAO } from "../services/templateService";
+import {
+  AUDIENCIA_ONLINE_MENSAGEM_PADRAO,
+  AUDIENCIA_PRESENCIAL_MENSAGEM_PADRAO,
+  COBRANCA_MENSAGEM_PADRAO,
+} from "../services/templateService";
 
 export const settingsRouter = Router();
 
@@ -11,6 +15,8 @@ const DEFAULTS: Record<string, string> = {
   telegram_alerta_horas: "48",
   telegram_alerta_horas_resposta: "48",
   cobranca_mensagem: COBRANCA_MENSAGEM_PADRAO,
+  audiencia_presencial_mensagem: AUDIENCIA_PRESENCIAL_MENSAGEM_PADRAO,
+  audiencia_online_mensagem: AUDIENCIA_ONLINE_MENSAGEM_PADRAO,
 };
 
 settingsRouter.get("/", (_req, res) => {
@@ -39,6 +45,8 @@ settingsRouter.put("/", (req, res) => {
     "telegram_alerta_horas",
     "telegram_alerta_horas_resposta",
     "cobranca_mensagem",
+    "audiencia_presencial_mensagem",
+    "audiencia_online_mensagem",
   ];
 
   for (const key of allowedKeys) {

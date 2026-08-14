@@ -6,6 +6,7 @@ import {
   Users,
   MessageSquareText,
   MessageCircleQuestion,
+  Gavel,
   History,
   MessageSquareReply,
   Settings,
@@ -23,6 +24,7 @@ const itemsDepoisTemplates = [
 
 const subitensTemplates = [
   { to: "/templates", label: "Mensagens de Perícia", icon: MessageSquareText, end: true },
+  { to: "/templates/audiencia", label: "Mensagens de Audiência", icon: Gavel },
   { to: "/templates/cobranca", label: "Mensagem de Cobrança", icon: MessageCircleQuestion },
 ];
 
@@ -119,7 +121,7 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
       </nav>
 
       <div className="border-t border-zinc-200 px-5 py-4 text-xs text-zinc-400 dark:border-zinc-800">
-        Uso 100% local · v2.26.2
+        Uso 100% local · v2.27.0
       </div>
     </aside>
   );
