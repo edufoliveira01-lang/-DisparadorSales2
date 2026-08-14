@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  classificarModalidadeAudiencia,
   extractNomeFromCardTitle,
   isPericiaCompleta,
   parseCardDescription,
@@ -26,6 +27,7 @@ NOME: João da Silva
       local: "Rua das Flores, 100",
       nome: "João da Silva",
       telefone: "",
+      processo: "",
     });
   });
 
@@ -127,6 +129,7 @@ HORÁRIO: 11:15
       local: "Hospital Central",
       nome: "Pedro Alves",
       telefone: "",
+      processo: "",
     });
   });
 
@@ -147,6 +150,7 @@ nome Fulano de Tal
       local: "Posto de Saúde",
       nome: "Fulano de Tal",
       telefone: "",
+      processo: "",
     });
   });
 
@@ -218,6 +222,7 @@ NOME: Nome B
       local: "Local B",
       nome: "Nome B",
       telefone: "",
+      processo: "",
     });
   });
 
@@ -244,6 +249,7 @@ ADVOGADO: ANTONIO MESSIAS SALES JUNIOR - OAB 346457/SP`;
       local: "sede deste Juizado Especial Federal, AVENIDA ANTONIO EMMERICH, 1238 - VILA CASCATINHA - SÃO VICENTE",
       nome: "GENI DE FATIMA FURTADO",
       telefone: "",
+      processo: "5001306-35.2026.4.03.6321",
     });
     expect(isPericiaCompleta(result[0])).toBe(true);
   });
@@ -277,6 +283,7 @@ texto da intimação original que deve ser ignorado...`;
       local: "sede deste Juizado Especial Federal, AVENIDA ANTONIO EMMERICH, 1238 - VILA CASCATINHA - SÃO VICENTE",
       nome: "GENI DE FATIMA FURTADO",
       telefone: "",
+      processo: "5001306-35.2026.4.03.6321",
       origem: "medica",
     });
     expect(result[1]).toEqual({
@@ -286,6 +293,7 @@ texto da intimação original que deve ser ignorado...`;
       local: "residência do autor",
       nome: "GENI DE FATIMA FURTADO",
       telefone: "",
+      processo: "5001306-35.2026.4.03.6321",
       origem: "social",
     });
     expect(result.every(isPericiaCompleta)).toBe(true);
@@ -307,6 +315,60 @@ NOME: Fulano de Tal;
       local: "Rua A, 123",
       nome: "Fulano de Tal",
       telefone: "",
+      processo: "",
     });
+  });
+
+  it("reconhece o cabeçalho AUDIÊNCIA, extrai PROCESSO e classifica como online pelo campo TIPO", () => {
+    const desc = `AUDIÊNCIA
+TIPO: ONLINE;
+DATA: 03/09/2026;
+HORÁRIO: 15:00;
+LOCAL: https://meet.google.com/abc-defg-hij;
+NOME: CREIDE AUGUSTA;
+PROCESSO: 5004217-88.2024.4.03.6321;
+PROFISSIONAL/PERITO: PROFISSIONAL_NAO_IDENTIFICADO`;
+
+    const result = parseCardDescriptionComOrigem(desc);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({
+      tipo: "ONLINE",
+      data: "03/09/2026",
+      horario: "15:00",
+      local: "https://meet.google.com/abc-defg-hij",
+      nome: "CREIDE AUGUSTA",
+      telefone: "",
+      processo: "5004217-88.2024.4.03.6321",
+      origem: "audiencia",
+    });
+    expect(classificarModalidadeAudiencia(result[0].tipo)).toBe("online");
+  });
+
+  it("classifica audiência como presencial quando o campo TIPO não menciona 'online'", () => {
+    const desc = `AUDIÊNCIA
+TIPO: TIPO_NAO_IDENTIFICADO;
+DATA: 03/09/2026;
+HORÁRIO: 15:00;
+LOCAL: Avenida Antônio Emmerich, nº 1238, Vila São Jorge, São Vicente/SP;
+NOME: CREIDE AUGUSTA;
+PROCESSO: 5004217-88.2024.4.03.6321;
+PROFISSIONAL/PERITO: PROFISSIONAL_NAO_IDENTIFICADO`;
+
+    const result = parseCardDescriptionComOrigem(desc);
+    expect(result[0].origem).toBe("audiencia");
+    expect(classificarModalidadeAudiencia(result[0].tipo)).toBe("presencial");
+  });
+
+  it("não confunde 'AUDIÊNCIA' aparecendo dentro do NOME com o cabeçalho do bloco", () => {
+    const desc = `TIPO DE PERÍCIA: Ortopédica;
+DATA: 10/08/2026;
+HORÁRIO: 14:00;
+LOCAL: Rua Exemplo, 100;
+NOME: [AUDIÊNCIA] Fulano de Tal;
+`;
+    const result = parseCardDescriptionComOrigem(desc);
+    expect(result).toHaveLength(1);
+    expect(result[0].origem).toBe("geral");
+    expect(result[0].nome).toBe("[AUDIÊNCIA] Fulano de Tal");
   });
 });

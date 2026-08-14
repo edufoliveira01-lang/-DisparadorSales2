@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { Inbox, RefreshCw, Search, Send, WifiOff } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay, formatPhoneInput } from "@/lib/phone";
-import type { CardViewModel, Contact, Pericia, Template } from "@/lib/types";
+import type { CardViewModel, Contact, ModoEnvio, Pericia, Settings, Template } from "@/lib/types";
+import { classificarModalidadeAudiencia } from "@/lib/audiencia";
 import { useWhatsapp } from "@/context/WhatsappContext";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
 import { useToast } from "@/components/ui/Toast";
@@ -17,7 +18,7 @@ import { Badge } from "@/components/ui/Badge";
 import { CardItem } from "@/components/CardItem";
 
 type FiltroStatus = "todos" | "enviado" | "nao_enviado" | "falhou";
-type FiltroTipo = "todos" | "medica" | "social" | "ambas";
+type FiltroTipo = "todos" | "medica" | "social" | "ambas" | "audiencia";
 
 export function Dashboard() {
   const { show } = useToast();
@@ -34,13 +35,15 @@ export function Dashboard() {
   const [contatoOverrides, setContatoOverrides] = useState<Record<string, Contact>>({});
   const [nomeOverrides, setNomeOverrides] = useState<Record<string, string>>({});
   const [periciasOverrides, setPericiasOverrides] = useState<Record<string, Pericia[]>>({});
+  const [modoOverrides, setModoOverrides] = useState<Record<string, ModoEnvio>>({});
+  const [mensagensAudiencia, setMensagensAudiencia] = useState({ presencial: "", online: "" });
   const [enviandoCardId, setEnviandoCardId] = useState<string | null>(null);
 
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>("todos");
   const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>("todos");
 
-  const [preview, setPreview] = useState<{ card: CardViewModel; mensagens: string[] } | null>(null);
+  const [preview, setPreview] = useState<{ card: CardViewModel; mensagens: string[]; modo: ModoEnvio } | null>(null);
   const [batchConfirm, setBatchConfirm] = useState(false);
   const [batchLoading, setBatchLoading] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{ ativo: boolean; total: number; aguardandoReconexao?: boolean } | null>(
@@ -78,6 +81,12 @@ export function Dashboard() {
     api.get<Template[]>("/templates").then((data) => {
       setTemplates(data);
       if (data.length > 0) setTemplateId(data[0].id);
+    });
+    api.get<Settings>("/settings").then((data) => {
+      setMensagensAudiencia({
+        presencial: data.audiencia_presencial_mensagem ?? "",
+        online: data.audiencia_online_mensagem ?? "",
+      });
     });
   }, [carregarCards]);
 
@@ -134,6 +143,32 @@ export function Dashboard() {
     return { ...card, nomeCliente: nomeEfetivo(card), pericias: periciasEfetivas(card) };
   }
 
+  /** true quando o card tem uma perícia marcada como audiência (cabeçalho "AUDIÊNCIA" no card do Trello). */
+  function temAudiencia(card: CardViewModel): boolean {
+    return periciasEfetivas(card).some((p) => p.origem === "audiencia");
+  }
+
+  /** Modo de envio detectado automaticamente a partir da descrição do card. */
+  function modoDetectado(card: CardViewModel): ModoEnvio {
+    const pericia = periciasEfetivas(card).find((p) => p.origem === "audiencia");
+    if (!pericia) return "template";
+    return classificarModalidadeAudiencia(pericia.tipo) === "online" ? "audiencia_online" : "audiencia_presencial";
+  }
+
+  /** Modo efetivo: usa o override manual se o usuário tiver ajustado, senão o detectado automaticamente. */
+  function modoEfetivo(card: CardViewModel): ModoEnvio {
+    return modoOverrides[card.cardId] ?? modoDetectado(card);
+  }
+
+  function renderAudienciaLocal(mensagem: string, nome: string, pericia: Pericia): string {
+    return mensagem
+      .replace(/\{\{NOME\}\}/g, nome)
+      .replace(/\{\{DATA\}\}/g, pericia.data)
+      .replace(/\{\{HORARIO\}\}/g, pericia.horario)
+      .replace(/\{\{LOCAL\}\}/g, pericia.local)
+      .replace(/\{\{PROCESSO\}\}/g, pericia.processo || "");
+  }
+
   const cardsFiltrados = useMemo(() => {
     if (!cards) return [];
     const termo = busca.trim().toLowerCase();
@@ -150,6 +185,7 @@ export function Dashboard() {
         if (filtroTipo === "ambas" && card.pericias.length < 2) return false;
         if (filtroTipo === "medica" && !origens.includes("medica")) return false;
         if (filtroTipo === "social" && !origens.includes("social")) return false;
+        if (filtroTipo === "audiencia" && !origens.includes("audiencia")) return false;
       }
       return true;
     });
@@ -255,27 +291,42 @@ export function Dashboard() {
       show("Cadastre o contato deste cliente antes de enviar.", "error");
       return;
     }
+    const modo = modoEfetivo(card);
+    const cardComOverrides = cardEfetivo(card);
+
+    if (modo === "audiencia_presencial" || modo === "audiencia_online") {
+      const pericia = cardComOverrides.pericias[0];
+      if (!pericia) {
+        show("Nenhuma perícia identificada para gerar mensagem.", "error");
+        return;
+      }
+      const mensagemConfigurada = modo === "audiencia_online" ? mensagensAudiencia.online : mensagensAudiencia.presencial;
+      const mensagem = renderAudienciaLocal(mensagemConfigurada, cardComOverrides.nomeCliente, pericia);
+      setPreview({ card: cardComOverrides, mensagens: [mensagem], modo });
+      return;
+    }
+
     if (!templateId) {
       show("Selecione um template de mensagem.", "error");
       return;
     }
-    const cardComOverrides = cardEfetivo(card);
     try {
       const { mensagens } = await api.post<{ mensagens: string[] }>("/templates/preview", {
         templateId,
         nome: cardComOverrides.nomeCliente,
         pericias: cardComOverrides.pericias,
       });
-      setPreview({ card: cardComOverrides, mensagens });
+      setPreview({ card: cardComOverrides, mensagens, modo: "template" });
     } catch (err) {
       show(err instanceof ApiError ? err.message : "Erro ao gerar pré-visualização.", "error");
     }
   }
 
   async function confirmarEnvioIndividual() {
-    if (!preview || !templateId) return;
+    if (!preview) return;
     const contato = contatoEfetivo(preview.card);
     if (!contato) return;
+    if (preview.modo === "template" && !templateId) return;
 
     setEnviandoCardId(preview.card.cardId);
     setPreview(null);
@@ -286,7 +337,8 @@ export function Dashboard() {
         telefone: contato.telefone,
         contactId: contato.id,
         pericias: preview.card.pericias,
-        templateId,
+        templateId: preview.modo === "template" ? templateId : undefined,
+        modo: preview.modo,
       });
       show(`Mensagem enviada para ${preview.card.nomeCliente}.`, "success");
       // Recarregar cards para refletir possível movimentação no Trello
@@ -318,7 +370,6 @@ export function Dashboard() {
   }
 
   async function confirmarBatch() {
-    if (!templateId) return;
     setBatchLoading(true);
     try {
       const items = cardsSelecionadosValidos.map((card) => {
@@ -330,6 +381,7 @@ export function Dashboard() {
           telefone: contato.telefone,
           contactId: contato.id,
           pericias: cardComOverrides.pericias,
+          modo: modoEfetivo(card),
         };
       });
       await api.post("/send/batch", { items, templateId });
@@ -389,6 +441,7 @@ export function Dashboard() {
               <option value="medica">Só Médica</option>
               <option value="social">Só Social</option>
               <option value="ambas">Ambas (2 perícias)</option>
+              <option value="audiencia">Só Audiência</option>
             </Select>
             <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="w-52">
               {templates.map((t) => (
@@ -457,6 +510,9 @@ export function Dashboard() {
                   onEditarPericia={(index) => abrirEdicaoPericia(card, index)}
                   onUsarSugestao={() => usarSugestao(card)}
                   enviando={enviandoCardId === card.cardId}
+                  temAudiencia={temAudiencia(card)}
+                  modo={modoEfetivo(card)}
+                  onChangeModo={(modo) => setModoOverrides((prev) => ({ ...prev, [card.cardId]: modo }))}
                 />
               ))}
             </div>

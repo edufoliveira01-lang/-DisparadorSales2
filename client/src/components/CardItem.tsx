@@ -1,9 +1,10 @@
-import { AlertTriangle, Calendar, CheckCircle2, Clock, MapPin, MessageCircle, Pencil, Send, UserPlus, XCircle } from "lucide-react";
-import type { CardViewModel } from "@/lib/types";
+import { AlertTriangle, Calendar, CheckCircle2, Clock, Gavel, MapPin, MessageCircle, Pencil, Send, UserPlus, XCircle } from "lucide-react";
+import type { CardViewModel, ModoEnvio } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
 import { cn, formatPlaceholder } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { Select } from "@/components/ui/Select";
 
 interface CardItemProps {
   card: CardViewModel;
@@ -17,7 +18,18 @@ interface CardItemProps {
   onEditarPericia: (index: number) => void;
   onUsarSugestao: () => void;
   enviando: boolean;
+  /** true quando o card tem uma perícia marcada como audiência (cabeçalho "AUDIÊNCIA" no Trello). */
+  temAudiencia: boolean;
+  /** Modo de envio efetivo (auto-detectado ou ajustado manualmente). */
+  modo: ModoEnvio;
+  onChangeModo: (modo: ModoEnvio) => void;
 }
+
+const MODO_LABEL: Record<ModoEnvio, string> = {
+  template: "Perícia (template selecionado)",
+  audiencia_presencial: "Audiência · Presencial",
+  audiencia_online: "Audiência · Online",
+};
 
 export function CardItem({
   card,
@@ -31,6 +43,9 @@ export function CardItem({
   onEditarPericia,
   onUsarSugestao,
   enviando,
+  temAudiencia,
+  modo,
+  onChangeModo,
 }: CardItemProps) {
   const temNaoIdentificado = card.pericias.some(
     (p) =>
@@ -66,6 +81,11 @@ export function CardItem({
                 <Pencil className="h-3.5 w-3.5" />
               </button>
               <Badge tone="accent">{card.pericias.length === 2 ? "2 perícias" : "1 perícia"}</Badge>
+              {modo !== "template" && (
+                <Badge tone="info">
+                  <Gavel className="h-3 w-3" /> {MODO_LABEL[modo]}
+                </Badge>
+              )}
               {card.incompleta && (
                 <Badge tone="warning">
                   <AlertTriangle className="h-3 w-3" /> Descrição incompleta
@@ -117,6 +137,21 @@ export function CardItem({
               </p>
             )}
           </div>
+
+          {temAudiencia && (
+            <div className="mt-3 flex items-center gap-2">
+              <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Enviar como:</label>
+              <Select
+                value={modo}
+                onChange={(e) => onChangeModo(e.target.value as ModoEnvio)}
+                className="w-56 text-xs"
+              >
+                <option value="audiencia_presencial">{MODO_LABEL.audiencia_presencial}</option>
+                <option value="audiencia_online">{MODO_LABEL.audiencia_online}</option>
+                <option value="template">{MODO_LABEL.template}</option>
+              </Select>
+            </div>
+          )}
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {temContatoEfetivo ? (

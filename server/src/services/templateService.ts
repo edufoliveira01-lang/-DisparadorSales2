@@ -5,6 +5,12 @@ import type { Pericia } from "./parserService";
 export const COBRANCA_MENSAGEM_PADRAO =
   "Olá {{NOME}}! Só confirmando: você recebeu nossa mensagem anterior? Ainda estamos aguardando seu retorno 🙂";
 
+export const AUDIENCIA_PRESENCIAL_MENSAGEM_PADRAO =
+  "Olá {{NOME}}! Passando para confirmar sua audiência presencial:\n\n📅 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n⚖️ Processo: {{PROCESSO}}\n\nPor favor, compareça com 15 minutos de antecedência e leve seus documentos pessoais. Qualquer dúvida, estou à disposição!";
+
+export const AUDIENCIA_ONLINE_MENSAGEM_PADRAO =
+  "Olá {{NOME}}! Passando para confirmar sua audiência online (videoconferência):\n\n📅 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n🔗 Link de acesso: {{LOCAL}}\n⚖️ Processo: {{PROCESSO}}\n\nEntre no link com alguns minutos de antecedência e certifique-se de estar em um local silencioso e com boa conexão de internet. Qualquer dúvida, estou à disposição!";
+
 export interface Template {
   id: number;
   nome: string;
@@ -117,4 +123,10 @@ export function renderCobranca(mensagem: string, nome: string, pericia: Pericia 
     NOME: nome,
     ...(pericia ? periciaToVars(pericia) : { TIPO_PERICIA: "", DATA: "", HORARIO: "", LOCAL: "" }),
   });
+}
+
+/** Renderiza a mensagem de audiência (presencial ou online), incluindo o número do processo. */
+export function renderAudiencia(mensagem: string, nome: string, pericia: Pericia): string {
+  const compiled = Handlebars.compile(mensagem, { noEscape: true });
+  return compiled({ NOME: nome, ...periciaToVars(pericia), PROCESSO: pericia.processo || "" });
 }
