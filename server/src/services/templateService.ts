@@ -5,6 +5,9 @@ import type { Pericia } from "./parserService";
 export const COBRANCA_MENSAGEM_PADRAO =
   "Olá {{NOME}}! Só confirmando: você recebeu nossa mensagem anterior? Ainda estamos aguardando seu retorno 🙂";
 
+export const COBRANCA_AUDIENCIA_MENSAGEM_PADRAO =
+  "Olá {{NOME}}! Só confirmando: você recebeu nosso aviso sobre a audiência do dia {{DATA}} às {{HORARIO}}? Ainda estamos aguardando seu retorno 🙂";
+
 export const AUDIENCIA_PRESENCIAL_MENSAGEM_PADRAO =
   "Olá {{NOME}}! Passando para confirmar sua audiência presencial:\n\n📅 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n⚖️ Processo: {{PROCESSO}}\n\nPor favor, compareça com 15 minutos de antecedência e leve seus documentos pessoais. Qualquer dúvida, estou à disposição!";
 
@@ -73,7 +76,7 @@ export function deleteTemplate(id: number): void {
 }
 
 function periciaToVars(p: Pericia) {
-  return { TIPO_PERICIA: p.tipo, DATA: p.data, HORARIO: p.horario, LOCAL: p.local };
+  return { TIPO_PERICIA: p.tipo, DATA: p.data, HORARIO: p.horario, LOCAL: p.local, PROCESSO: p.processo || "" };
 }
 
 /**
@@ -124,12 +127,12 @@ export function renderCobranca(mensagem: string, nome: string, pericia: Pericia 
   const compiled = Handlebars.compile(mensagem, { noEscape: true });
   return compiled({
     NOME: nome,
-    ...(pericia ? periciaToVars(pericia) : { TIPO_PERICIA: "", DATA: "", HORARIO: "", LOCAL: "" }),
+    ...(pericia ? periciaToVars(pericia) : { TIPO_PERICIA: "", DATA: "", HORARIO: "", LOCAL: "", PROCESSO: "" }),
   });
 }
 
-/** Renderiza a mensagem de audiência (presencial ou online), incluindo o número do processo. */
+/** Renderiza a mensagem de audiência (presencial, online ou híbrida), incluindo o número do processo. */
 export function renderAudiencia(mensagem: string, nome: string, pericia: Pericia): string {
   const compiled = Handlebars.compile(mensagem, { noEscape: true });
-  return compiled({ NOME: nome, ...periciaToVars(pericia), PROCESSO: pericia.processo || "" });
+  return compiled({ NOME: nome, ...periciaToVars(pericia) });
 }

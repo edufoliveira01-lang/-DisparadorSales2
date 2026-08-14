@@ -5,6 +5,7 @@ import {
   AUDIENCIA_HIBRIDA_MENSAGEM_PADRAO,
   AUDIENCIA_ONLINE_MENSAGEM_PADRAO,
   AUDIENCIA_PRESENCIAL_MENSAGEM_PADRAO,
+  COBRANCA_AUDIENCIA_MENSAGEM_PADRAO,
   COBRANCA_MENSAGEM_PADRAO,
 } from "../services/templateService";
 
@@ -16,6 +17,7 @@ const DEFAULTS: Record<string, string> = {
   telegram_alerta_horas: "48",
   telegram_alerta_horas_resposta: "48",
   cobranca_mensagem: COBRANCA_MENSAGEM_PADRAO,
+  cobranca_audiencia_mensagem: COBRANCA_AUDIENCIA_MENSAGEM_PADRAO,
   audiencia_presencial_mensagem: AUDIENCIA_PRESENCIAL_MENSAGEM_PADRAO,
   audiencia_online_mensagem: AUDIENCIA_ONLINE_MENSAGEM_PADRAO,
   audiencia_hibrida_mensagem: AUDIENCIA_HIBRIDA_MENSAGEM_PADRAO,
@@ -47,6 +49,7 @@ settingsRouter.put("/", (req, res) => {
     "telegram_alerta_horas",
     "telegram_alerta_horas_resposta",
     "cobranca_mensagem",
+    "cobranca_audiencia_mensagem",
     "audiencia_presencial_mensagem",
     "audiencia_online_mensagem",
     "audiencia_hibrida_mensagem",

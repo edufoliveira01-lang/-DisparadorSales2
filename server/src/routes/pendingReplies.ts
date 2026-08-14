@@ -2,7 +2,7 @@ import { Router } from "express";
 import { getLastStatusForCard } from "../services/logsService";
 import { type Pericia, sortPericiasByDate } from "../services/parserService";
 import { getSetting } from "../services/settingsService";
-import { COBRANCA_MENSAGEM_PADRAO, renderCobranca } from "../services/templateService";
+import { COBRANCA_AUDIENCIA_MENSAGEM_PADRAO, COBRANCA_MENSAGEM_PADRAO, renderCobranca } from "../services/templateService";
 import { moveCard, TrelloError } from "../services/trelloService";
 import {
   cancelPendingReply,
@@ -78,8 +78,11 @@ pendingRepliesRouter.post("/:id/cobrar", async (req, res) => {
     const chatId = pending.whatsapp_chat_id || (await whatsappManager.resolveChatId(pending.telefone_digits));
     if (!chatId) return res.status(400).json({ error: "Este telefone não foi encontrado no WhatsApp." });
 
-    const mensagemConfigurada = getSetting("cobranca_mensagem") || COBRANCA_MENSAGEM_PADRAO;
     const pericia = periciaMaisRelevante(pending.card_id);
+    const ehAudiencia = pericia?.origem === "audiencia";
+    const mensagemConfigurada = ehAudiencia
+      ? getSetting("cobranca_audiencia_mensagem") || COBRANCA_AUDIENCIA_MENSAGEM_PADRAO
+      : getSetting("cobranca_mensagem") || COBRANCA_MENSAGEM_PADRAO;
     const texto = renderCobranca(mensagemConfigurada, pending.card_nome || "", pericia);
     await whatsappManager.sendMessage(chatId, texto);
     res.json({ ok: true });

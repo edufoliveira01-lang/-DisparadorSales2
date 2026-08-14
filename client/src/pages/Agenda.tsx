@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, Download, Pencil, Plus, Search, StickyNote, Trash2, Upload, Users } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay, formatPhoneInput } from "@/lib/phone";
+import { cn } from "@/lib/utils";
 import type { Contact } from "@/lib/types";
 import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
@@ -337,8 +338,14 @@ export function Agenda() {
                   const aberto = expandido === c.id;
                   return (
                     <Fragment key={c.id}>
-                      <tr className="bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800/50">
-                        <td className="px-5 py-3 text-center">
+                      <tr
+                        className={cn(
+                          "bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800/50",
+                          c.observacoes && "cursor-pointer"
+                        )}
+                        onClick={c.observacoes ? () => setExpandido(aberto ? null : c.id) : undefined}
+                      >
+                        <td className="px-5 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                           <Checkbox checked={selecionados.has(c.id)} onChange={() => alternarSelecionado(c.id)} />
                         </td>
                         <td className="max-w-[240px] truncate px-5 py-3 text-left font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</td>
@@ -350,7 +357,7 @@ export function Agenda() {
                             </span>
                           )}
                         </td>
-                        <td className="px-5 py-3">
+                        <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
                           <div className="flex justify-center gap-1">
                             {c.observacoes && (
                               <Button variant="ghost" size="icon" title="Ver observação" onClick={() => setExpandido(aberto ? null : c.id)}>

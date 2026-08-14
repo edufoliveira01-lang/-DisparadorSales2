@@ -6,6 +6,7 @@ import {
   MessageCircleQuestion,
   MessageSquareReply,
   RefreshCw,
+  Search,
   Trash2,
   X,
 } from "lucide-react";
@@ -19,6 +20,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { Input, Label } from "@/components/ui/Input";
 import { Pagination } from "@/components/ui/Pagination";
 import { SelectableCard } from "@/components/ui/SelectableCard";
 import { Select } from "@/components/ui/Select";
@@ -49,6 +51,20 @@ function combinaFiltro(item: PendingReply, filtro: Filtro): boolean {
   }
 }
 
+type Ordenacao = "recentes" | "antigos" | "az" | "za";
+
+const ORDENACAO_OPTIONS: { value: Ordenacao; label: string }[] = [
+  { value: "recentes", label: "Mais recentes primeiro" },
+  { value: "antigos", label: "Mais antigos primeiro" },
+  { value: "az", label: "Nome (A-Z)" },
+  { value: "za", label: "Nome (Z-A)" },
+];
+
+/** Data local (America/Sao_Paulo) no formato YYYY-MM-DD, para comparar com o valor de um <input type="date">. */
+function dataLocalYMD(createdAtUtc: string): string {
+  return new Date(createdAtUtc + "Z").toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+}
+
 export function PendentesResposta() {
   const { show } = useToast();
   const [pendentes, setPendentes] = useState<PendingReply[] | null>(null);
@@ -60,6 +76,10 @@ export function PendentesResposta() {
   const [apagarAlvo, setApagarAlvo] = useState<PendingReply | null>(null);
   const [confirmMassaAberto, setConfirmMassaAberto] = useState(false);
   const [expandido, setExpandido] = useState<number | null>(null);
+  const [busca, setBusca] = useState("");
+  const [ordenacao, setOrdenacao] = useState<Ordenacao>("recentes");
+  const [dataDe, setDataDe] = useState("");
+  const [dataAte, setDataAte] = useState("");
 
   const carregar = useCallback(async () => {
     const data = await api.get<PendingReply[]>("/pending-replies");
@@ -183,10 +203,36 @@ export function PendentesResposta() {
     });
   }
 
-  const aguardando = useMemo(
-    () => pendentes?.filter((p) => p.status === "aguardando" && combinaFiltro(p, filtro)) ?? [],
-    [pendentes, filtro]
-  );
+  const aguardando = useMemo(() => {
+    const base = pendentes?.filter((p) => p.status === "aguardando" && combinaFiltro(p, filtro)) ?? [];
+    const termo = busca.trim().toLowerCase();
+    const termoDigits = termo.replace(/\D/g, "");
+    const filtrados = base.filter((item) => {
+      if (termo) {
+        const nomeMatch = (item.card_nome || "").toLowerCase().includes(termo);
+        const telefoneMatch = termoDigits.length > 0 && (item.telefone || "").replace(/\D/g, "").includes(termoDigits);
+        if (!nomeMatch && !telefoneMatch) return false;
+      }
+      if (dataDe || dataAte) {
+        const dataItem = dataLocalYMD(item.created_at);
+        if (dataDe && dataItem < dataDe) return false;
+        if (dataAte && dataItem > dataAte) return false;
+      }
+      return true;
+    });
+    return [...filtrados].sort((a, b) => {
+      switch (ordenacao) {
+        case "recentes":
+          return b.created_at.localeCompare(a.created_at);
+        case "antigos":
+          return a.created_at.localeCompare(b.created_at);
+        case "az":
+          return (a.card_nome || "").localeCompare(b.card_nome || "", "pt-BR");
+        case "za":
+          return (b.card_nome || "").localeCompare(a.card_nome || "", "pt-BR");
+      }
+    });
+  }, [pendentes, filtro, busca, dataDe, dataAte, ordenacao]);
 
   const aguardandoPaginado = useMemo(
     () => aguardando.slice(paginaAguardando * ITENS_POR_PAGINA, (paginaAguardando + 1) * ITENS_POR_PAGINA),
@@ -195,7 +241,7 @@ export function PendentesResposta() {
 
   useEffect(() => {
     setPaginaAguardando(0);
-  }, [filtro]);
+  }, [filtro, busca, dataDe, dataAte, ordenacao]);
 
   useEffect(() => {
     const ultimaPagina = Math.max(0, Math.ceil(aguardando.length / ITENS_POR_PAGINA) - 1);
@@ -222,6 +268,36 @@ export function PendentesResposta() {
           <Button variant="outline" onClick={carregar}>
             <RefreshCw className="h-4 w-4" /> Atualizar
           </Button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="relative min-w-[200px] flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+          <Input
+            placeholder="Buscar por nome ou telefone…"
+            className="pl-9"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+          />
+        </div>
+        <div>
+          <Label className="text-xs">De</Label>
+          <Input type="date" value={dataDe} onChange={(e) => setDataDe(e.target.value)} className="w-36" />
+        </div>
+        <div>
+          <Label className="text-xs">Até</Label>
+          <Input type="date" value={dataAte} onChange={(e) => setDataAte(e.target.value)} className="w-36" />
+        </div>
+        <div className="w-full sm:w-56">
+          <Label className="text-xs">Ordenar por</Label>
+          <Select value={ordenacao} onChange={(e) => setOrdenacao(e.target.value as Ordenacao)}>
+            {ORDENACAO_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </Select>
         </div>
       </div>
 
@@ -253,20 +329,18 @@ export function PendentesResposta() {
           title="Nenhum monitoramento ativo"
           description='Configure uma "lista de confirmação" em Configurações → Trello para que envios passem a aparecer aqui.'
         />
-      ) : aguardando.length === 0 && filtro !== "todos" ? (
+      ) : aguardando.length === 0 && (filtro !== "todos" || busca || dataDe || dataAte) ? (
         <EmptyState
           icon={MessageSquareReply}
-          title="Nenhum resultado para esse filtro"
-          description="Tente outro status ou volte para “Todos os status”."
+          title="Nenhum resultado para esses filtros"
+          description="Tente ajustar o status, a busca ou o período."
         />
       ) : (
         <>
           <section className="space-y-3">
             <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Aguardando ({aguardando.length})</h2>
             {aguardando.length === 0 ? (
-              <p className="text-sm text-zinc-400">
-                {filtro === "todos" ? "Nenhum cliente aguardando resposta no momento." : "Nenhum resultado para esse filtro."}
-              </p>
+              <p className="text-sm text-zinc-400">Nenhum cliente aguardando resposta no momento.</p>
             ) : (
               <>
                 {/* Mobile: apenas nome e telefone visíveis; demais detalhes e ações ficam atrás do expandir. */}
@@ -380,8 +454,11 @@ export function PendentesResposta() {
                         const aberto = expandido === item.id;
                         return (
                           <Fragment key={item.id}>
-                            <tr className="bg-white dark:bg-zinc-900">
-                              <td className="px-5 py-3 text-center">
+                            <tr
+                              className="cursor-pointer bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800/40"
+                              onClick={() => setExpandido(aberto ? null : item.id)}
+                            >
+                              <td className="px-5 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                                 <Checkbox checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />
                               </td>
                               <td className="max-w-[220px] truncate px-5 py-3 text-left font-medium text-zinc-900 dark:text-zinc-100">
@@ -396,7 +473,7 @@ export function PendentesResposta() {
                               <td className="px-5 py-3 text-center">
                                 <StatusBadge ack={item.ack} respostaStatus={item.status} />
                               </td>
-                              <td className="px-5 py-3">
+                              <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
                                 <div className="flex justify-center gap-1.5">
                                   <Button
                                     variant="ghost"
