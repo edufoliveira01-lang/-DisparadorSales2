@@ -2,6 +2,7 @@ import { Router } from "express";
 import { getAllSettings, getSetting, setSetting } from "../services/settingsService";
 import { detectarChatId, enviarMensagemTelegram, TelegramError } from "../services/telegramService";
 import {
+  AUDIENCIA_HIBRIDA_MENSAGEM_PADRAO,
   AUDIENCIA_ONLINE_MENSAGEM_PADRAO,
   AUDIENCIA_PRESENCIAL_MENSAGEM_PADRAO,
   COBRANCA_MENSAGEM_PADRAO,
@@ -17,6 +18,7 @@ const DEFAULTS: Record<string, string> = {
   cobranca_mensagem: COBRANCA_MENSAGEM_PADRAO,
   audiencia_presencial_mensagem: AUDIENCIA_PRESENCIAL_MENSAGEM_PADRAO,
   audiencia_online_mensagem: AUDIENCIA_ONLINE_MENSAGEM_PADRAO,
+  audiencia_hibrida_mensagem: AUDIENCIA_HIBRIDA_MENSAGEM_PADRAO,
 };
 
 settingsRouter.get("/", (_req, res) => {
@@ -47,6 +49,7 @@ settingsRouter.put("/", (req, res) => {
     "cobranca_mensagem",
     "audiencia_presencial_mensagem",
     "audiencia_online_mensagem",
+    "audiencia_hibrida_mensagem",
   ];
 
   for (const key of allowedKeys) {

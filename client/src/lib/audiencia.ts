@@ -2,6 +2,8 @@ import type { Pericia } from "@/lib/types";
 
 export const VARIAVEIS_AUDIENCIA = ["NOME", "DATA", "HORARIO", "LOCAL", "PROCESSO"];
 
+export type ModalidadeAudiencia = "presencial" | "online" | "hibrida";
+
 export const EXEMPLO_AUDIENCIA_PRESENCIAL: Pericia = {
   tipo: "PRESENCIAL",
   data: "03/09/2026",
@@ -19,7 +21,18 @@ export const EXEMPLO_AUDIENCIA_ONLINE: Pericia = {
   local: "https://meet.google.com/abc-defg-hij",
 };
 
+export const EXEMPLO_AUDIENCIA_HIBRIDA: Pericia = {
+  ...EXEMPLO_AUDIENCIA_PRESENCIAL,
+  tipo: "HÍBRIDA",
+  local: "Avenida Antônio Emmerich, nº 1238, Vila São Jorge, São Vicente/SP ou https://meet.google.com/abc-defg-hij",
+};
+
+const MODALIDADE_ONLINE_RE = /ONLINE|VIRTUAL|VIDEOCONFER[EÊ]NCIA|TELEPRESENCIAL/i;
+const MODALIDADE_HIBRIDA_RE = /H[IÍ]BRID[OA]/i;
+
 /** Espelha classificarModalidadeAudiencia do backend (server/src/services/parserService.ts). */
-export function classificarModalidadeAudiencia(tipo: string): "presencial" | "online" {
-  return /ONLINE/i.test(tipo) ? "online" : "presencial";
+export function classificarModalidadeAudiencia(tipo: string): ModalidadeAudiencia {
+  if (MODALIDADE_HIBRIDA_RE.test(tipo)) return "hibrida";
+  if (MODALIDADE_ONLINE_RE.test(tipo)) return "online";
+  return "presencial";
 }

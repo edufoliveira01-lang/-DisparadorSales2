@@ -82,16 +82,22 @@ function detectarOrigemPorTipo(valorTipo: string): OrigemPericia {
   return "geral";
 }
 
-export type ModalidadeAudiencia = "presencial" | "online";
+export type ModalidadeAudiencia = "presencial" | "online" | "hibrida";
+
+const MODALIDADE_ONLINE_RE = /ONLINE|VIRTUAL|VIDEOCONFER[EÊ]NCIA|TELEPRESENCIAL/i;
+const MODALIDADE_HIBRIDA_RE = /H[IÍ]BRID[OA]/i;
 
 /**
- * Numa audiência, o campo TIPO não descreve uma especialidade — descreve se é presencial ou
- * online (ex: "TIPO: ONLINE" / "TIPO: PRESENCIAL"). Qualquer menção a "ONLINE" classifica como
- * online; na ausência de uma indicação clara, assume presencial (o caso mais comum) e deixa o
- * usuário corrigir manualmente na tela de Dashboard se for o caso.
+ * Numa audiência, o campo TIPO não descreve uma especialidade — descreve a modalidade
+ * (ex: "TIPO: ONLINE" / "TIPO: PRESENCIAL" / "TIPO: HÍBRIDA"). "Online", "virtual", "por
+ * videoconferência" e "telepresencial" classificam como online; "híbrida" como híbrida; na
+ * ausência de uma indicação clara, assume presencial (o caso mais comum) e deixa o usuário
+ * corrigir manualmente na tela de Dashboard se for o caso.
  */
 export function classificarModalidadeAudiencia(tipo: string): ModalidadeAudiencia {
-  return /ONLINE/i.test(tipo) ? "online" : "presencial";
+  if (MODALIDADE_HIBRIDA_RE.test(tipo)) return "hibrida";
+  if (MODALIDADE_ONLINE_RE.test(tipo)) return "online";
+  return "presencial";
 }
 
 interface BlockStart {

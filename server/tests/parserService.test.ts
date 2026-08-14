@@ -344,7 +344,7 @@ PROFISSIONAL/PERITO: PROFISSIONAL_NAO_IDENTIFICADO`;
     expect(classificarModalidadeAudiencia(result[0].tipo)).toBe("online");
   });
 
-  it("classifica audiência como presencial quando o campo TIPO não menciona 'online'", () => {
+  it("classifica audiência como presencial quando o campo TIPO não menciona nenhuma modalidade conhecida", () => {
     const desc = `AUDIÊNCIA
 TIPO: TIPO_NAO_IDENTIFICADO;
 DATA: 03/09/2026;
@@ -357,6 +357,25 @@ PROFISSIONAL/PERITO: PROFISSIONAL_NAO_IDENTIFICADO`;
     const result = parseCardDescriptionComOrigem(desc);
     expect(result[0].origem).toBe("audiencia");
     expect(classificarModalidadeAudiencia(result[0].tipo)).toBe("presencial");
+  });
+
+  it.each(["online", "ONLINE", "Virtual", "Por Videoconferência", "videoconferencia", "Telepresencial"])(
+    "classifica '%s' como modalidade online, independente de maiúsculas/minúsculas",
+    (tipo) => {
+      expect(classificarModalidadeAudiencia(tipo)).toBe("online");
+    }
+  );
+
+  it.each(["hibrida", "HÍBRIDA", "Híbrida", "hibrido", "HÍBRIDO"])(
+    "classifica '%s' como modalidade híbrida, independente de maiúsculas/minúsculas e gênero",
+    (tipo) => {
+      expect(classificarModalidadeAudiencia(tipo)).toBe("hibrida");
+    }
+  );
+
+  it("classifica explicitamente 'presencial' como presencial", () => {
+    expect(classificarModalidadeAudiencia("presencial")).toBe("presencial");
+    expect(classificarModalidadeAudiencia("PRESENCIAL")).toBe("presencial");
   });
 
   it("não confunde 'AUDIÊNCIA' aparecendo dentro do NOME com o cabeçalho do bloco", () => {
