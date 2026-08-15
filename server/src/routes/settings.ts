@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { getAllSettings, getSetting, setSetting } from "../services/settingsService";
 import { detectarChatId, enviarMensagemTelegram, TelegramError } from "../services/telegramService";
+import { enviarMensagemWhapi, WhapiError } from "../services/whapiService";
 import {
   AUDIENCIA_HIBRIDA_MENSAGEM_PADRAO,
   AUDIENCIA_ONLINE_MENSAGEM_PADRAO,
@@ -48,6 +49,9 @@ settingsRouter.put("/", (req, res) => {
     "telegram_chat_id",
     "telegram_alerta_horas",
     "telegram_alerta_horas_resposta",
+    "whapi_token",
+    "whapi_api_url",
+    "whapi_numero_notificacao",
     "cobranca_mensagem",
     "cobranca_audiencia_mensagem",
     "audiencia_presencial_mensagem",
@@ -106,5 +110,27 @@ settingsRouter.post("/telegram/testar", async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     handleTelegramError(res, err);
+  }
+});
+
+function handleWhapiError(res: import("express").Response, err: unknown) {
+  if (err instanceof WhapiError) {
+    return res.status(err.status && err.status >= 400 && err.status < 500 ? err.status : 502).json({ error: err.message });
+  }
+  return res.status(502).json({ error: "Erro inesperado ao consultar a Whapi." });
+}
+
+settingsRouter.post("/whapi/testar", async (req, res) => {
+  try {
+    const apiUrl = (req.body?.apiUrl as string) || getSetting("whapi_api_url") || "";
+    const token = (req.body?.token as string) || getSetting("whapi_token") || "";
+    const numero = (req.body?.numero as string) || getSetting("whapi_numero_notificacao") || "";
+    if (!apiUrl || !token || !numero) {
+      return res.status(400).json({ error: "Configure a URL da API, o token e o número de notificação antes de testar." });
+    }
+    await enviarMensagemWhapi(apiUrl, token, numero, "🔔 Teste do DisparaZap: as notificações via WhatsApp (Whapi) estão funcionando!");
+    res.json({ ok: true });
+  } catch (err) {
+    handleWhapiError(res, err);
   }
 });

@@ -8,6 +8,7 @@ import {
   Loader2,
   Lock,
   LogOut,
+  MessageCircle,
   QrCode,
   Search,
   Send,
@@ -89,6 +90,12 @@ export function Configuracoes() {
   const [testandoTelegram, setTestandoTelegram] = useState(false);
   const [salvandoTelegram, setSalvandoTelegram] = useState(false);
 
+  const [whapiApiUrl, setWhapiApiUrl] = useState("");
+  const [whapiToken, setWhapiToken] = useState("");
+  const [whapiNumero, setWhapiNumero] = useState("");
+  const [testandoWhapi, setTestandoWhapi] = useState(false);
+  const [salvandoWhapi, setSalvandoWhapi] = useState(false);
+
   const loadSettings = useCallback(async () => {
     const me = await api.get<{ user: { username: string, email: string | null } }>("/auth/me");
     setUsuario(me.user.username);
@@ -101,6 +108,8 @@ export function Configuracoes() {
     setTelegramAlertaHoras(data.telegram_alerta_horas ?? "48");
     setTelegramAlertaHorasResposta(data.telegram_alerta_horas_resposta ?? "48");
     if (data.telegram_chat_id) setTelegramChatId(data.telegram_chat_id);
+    if (data.whapi_api_url) setWhapiApiUrl(data.whapi_api_url);
+    if (data.whapi_numero_notificacao) setWhapiNumero(data.whapi_numero_notificacao);
     if (data.trello_board_id) setBoardId(data.trello_board_id);
     if (data.trello_list_id) setListId(data.trello_list_id);
     if (data.trello_move_list_id) setMoveListId(data.trello_move_list_id);
@@ -305,6 +314,38 @@ export function Configuracoes() {
       show(err instanceof ApiError ? err.message : "Erro ao salvar configurações de notificação.", "error");
     } finally {
       setSalvandoTelegram(false);
+    }
+  }
+
+  async function handleTestarWhapi() {
+    setTestandoWhapi(true);
+    try {
+      const payload: Record<string, string> = { apiUrl: whapiApiUrl, numero: whapiNumero };
+      if (whapiToken) payload.token = whapiToken;
+      await api.post("/settings/whapi/testar", payload);
+      show("Mensagem de teste enviada! Confira o WhatsApp.", "success");
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao enviar mensagem de teste.", "error");
+    } finally {
+      setTestandoWhapi(false);
+    }
+  }
+
+  async function handleSalvarWhapi() {
+    setSalvandoWhapi(true);
+    try {
+      const payload: Record<string, string> = {
+        whapi_api_url: whapiApiUrl,
+        whapi_numero_notificacao: whapiNumero,
+      };
+      if (whapiToken) payload.whapi_token = whapiToken;
+      await api.put("/settings", payload);
+      show("Configurações da Whapi salvas.", "success");
+      loadSettings();
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao salvar configurações da Whapi.", "error");
+    } finally {
+      setSalvandoWhapi(false);
     }
   }
 
@@ -651,6 +692,68 @@ export function Configuracoes() {
             </Button>
             <Button onClick={handleSalvarTelegram} loading={salvandoTelegram} disabled={!telegramChatId}>
               Salvar notificações
+            </Button>
+          </div>
+      </CollapsibleCard>
+
+      <CollapsibleCard
+        icon={<MessageCircle className="h-4 w-4 text-emerald-500" />}
+        title="Notificações por WhatsApp (Whapi)"
+        storageKey="notificacoes-whapi"
+        headerExtra={
+          settings?.whapi_token_configurado &&
+          settings?.whapi_numero_notificacao && (
+            <Badge tone="success">
+              <CheckCircle2 className="h-3.5 w-3.5" /> Ativo
+            </Badge>
+          )
+        }
+      >
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            Além (ou no lugar) do Telegram, você pode receber os mesmos alertas direto no WhatsApp de um número escolhido,
+            usando uma conta na <span className="font-medium">Whapi</span>.
+          </p>
+
+          <div>
+            <Label>URL da API</Label>
+            <Input
+              placeholder="https://gate.whapi.cloud"
+              value={whapiApiUrl}
+              onChange={(e) => setWhapiApiUrl(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <Label>Token</Label>
+            <Input
+              type="password"
+              placeholder={settings?.whapi_token_configurado ? "•••••••••••• (já configurado)" : "Token do canal na Whapi"}
+              value={whapiToken}
+              onChange={(e) => setWhapiToken(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <Label>Número para receber as notificações</Label>
+            <Input
+              placeholder="Ex: 5511999999999"
+              value={whapiNumero}
+              onChange={(e) => setWhapiNumero(e.target.value)}
+            />
+            <p className="mt-1 text-xs text-zinc-400">Formato internacional, só números (DDI + DDD + número).</p>
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={handleTestarWhapi}
+              loading={testandoWhapi}
+              disabled={!whapiApiUrl || !whapiNumero || (!whapiToken && !settings?.whapi_token_configurado)}
+            >
+              <Send className="h-4 w-4" /> Enviar teste
+            </Button>
+            <Button onClick={handleSalvarWhapi} loading={salvandoWhapi} disabled={!whapiApiUrl || !whapiNumero}>
+              Salvar
             </Button>
           </div>
       </CollapsibleCard>

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay } from "@/lib/phone";
+import { cn } from "@/lib/utils";
 import type { SendLog, Template } from "@/lib/types";
 import { useToast } from "@/components/ui/Toast";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
@@ -38,9 +39,21 @@ const ORDENACAO_OPTIONS: { value: Ordenacao; label: string }[] = [
   { value: "za", label: "Nome (Z-A)" },
 ];
 
+const LETRAS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+
 /** Data local (America/Sao_Paulo) no formato YYYY-MM-DD, para comparar com o valor de um <input type="date">. */
 function dataLocalYMD(createdAtUtc: string): string {
   return new Date(createdAtUtc + "Z").toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+}
+
+/** Primeira letra do nome, maiúscula e sem acento, para comparar com o filtro alfabético. */
+function inicialSemAcento(nome: string): string {
+  return (nome || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .charAt(0)
+    .toUpperCase();
 }
 
 function ComoRespondeu({ log }: { log: SendLog }) {
@@ -78,6 +91,7 @@ export function Historico() {
   const [ordenacao, setOrdenacao] = useState<Ordenacao>("recentes");
   const [dataDe, setDataDe] = useState("");
   const [dataAte, setDataAte] = useState("");
+  const [letra, setLetra] = useState<string | null>(null);
 
   async function carregar() {
     const data = await api.get<SendLog[]>("/logs");
@@ -119,6 +133,7 @@ export function Historico() {
         if (dataDe && dataLog < dataDe) return false;
         if (dataAte && dataLog > dataAte) return false;
       }
+      if (letra && inicialSemAcento(log.card_nome || "") !== letra) return false;
       return true;
     });
     return [...filtrados].sort((a, b) => {
@@ -133,7 +148,7 @@ export function Historico() {
           return (b.card_nome || "").localeCompare(a.card_nome || "", "pt-BR");
       }
     });
-  }, [logs, busca, dataDe, dataAte, ordenacao]);
+  }, [logs, busca, dataDe, dataAte, letra, ordenacao]);
 
   const logsPaginados = useMemo(
     () => logsFiltrados.slice(pagina * ITENS_POR_PAGINA, (pagina + 1) * ITENS_POR_PAGINA),
@@ -147,7 +162,7 @@ export function Historico() {
 
   useEffect(() => {
     setPagina(0);
-  }, [busca, dataDe, dataAte, ordenacao]);
+  }, [busca, dataDe, dataAte, letra, ordenacao]);
 
   async function reenviar(log: SendLog) {
     if (!templateId) {
@@ -288,6 +303,34 @@ export function Historico() {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-1 rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+        <button
+          onClick={() => setLetra(null)}
+          className={cn(
+            "rounded-md px-2 py-1 text-xs font-medium transition-colors",
+            letra === null
+              ? "bg-accent-500 text-white"
+              : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          )}
+        >
+          Todos
+        </button>
+        {LETRAS.map((l) => (
+          <button
+            key={l}
+            onClick={() => setLetra(letra === l ? null : l)}
+            className={cn(
+              "h-7 w-7 rounded-md text-xs font-medium transition-colors",
+              letra === l
+                ? "bg-accent-500 text-white"
+                : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            )}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+
       {selecionados.size > 0 && (
         <div className="flex items-center justify-between rounded-xl border border-accent-200 bg-accent-50 px-4 py-3 dark:border-accent-900 dark:bg-accent-900/20">
           <p className="text-sm font-medium text-accent-800 dark:text-accent-300">
@@ -316,7 +359,7 @@ export function Historico() {
         <EmptyState
           icon={HistoryIcon}
           title="Nenhum resultado para esses filtros"
-          description="Tente ajustar a busca, o período ou a ordenação."
+          description="Tente ajustar a busca, o período, a letra ou a ordenação."
         />
       ) : (
         <>

@@ -90,6 +90,9 @@ export interface Settings {
   telegram_chat_id?: string;
   telegram_alerta_horas: string;
   telegram_alerta_horas_resposta: string;
+  whapi_token_configurado?: string;
+  whapi_api_url?: string;
+  whapi_numero_notificacao?: string;
   cobranca_mensagem: string;
   cobranca_audiencia_mensagem: string;
   audiencia_presencial_mensagem: string;
