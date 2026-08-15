@@ -6,6 +6,7 @@ import {
 } from "./pendingRepliesService";
 import { getSetting } from "./settingsService";
 import { enviarMensagemTelegram } from "./telegramService";
+import { enviarMensagemWhapi } from "./whapiService";
 
 const HORAS_PADRAO = 48;
 
@@ -57,53 +58,88 @@ function montarMensagemResposta(pendentes: PendingReply[], horasLimite: number):
   return `${titulo}\n\n${linhas.join("\n\n")}\n\nConfira em Pendentes de Resposta no DisparaZap.`;
 }
 
+interface CanalNotificacao {
+  nome: string;
+  enviar: (texto: string) => Promise<void>;
+}
+
+/** Monta a lista de canais de notificação configurados (Telegram e/ou Whapi) — cada um é opcional
+ * e independente, então o usuário pode ligar um, o outro, ou os dois ao mesmo tempo. */
+function canaisConfigurados(): CanalNotificacao[] {
+  const canais: CanalNotificacao[] = [];
+
+  const telegramToken = getSetting("telegram_bot_token");
+  const telegramChatId = getSetting("telegram_chat_id");
+  if (telegramToken && telegramChatId) {
+    canais.push({ nome: "Telegram", enviar: (texto) => enviarMensagemTelegram(telegramToken, telegramChatId, texto) });
+  }
+
+  const whapiToken = getSetting("whapi_token");
+  const whapiApiUrl = getSetting("whapi_api_url");
+  const whapiNumero = getSetting("whapi_numero_notificacao");
+  if (whapiToken && whapiApiUrl && whapiNumero) {
+    canais.push({ nome: "Whapi", enviar: (texto) => enviarMensagemWhapi(whapiApiUrl, whapiToken, whapiNumero, texto) });
+  }
+
+  return canais;
+}
+
+/** Manda a mesma mensagem para todos os canais configurados, sem deixar a falha de um bloquear os
+ * demais. Devolve true se pelo menos um canal confirmou o envio. */
+async function enviarParaTodosOsCanais(canais: CanalNotificacao[], texto: string): Promise<boolean> {
+  let algumSucesso = false;
+  for (const canal of canais) {
+    try {
+      await canal.enviar(texto);
+      algumSucesso = true;
+    } catch (err) {
+      console.error(`[Notificações] Erro ao enviar alerta pelo canal ${canal.nome}:`, err);
+    }
+  }
+  return algumSucesso;
+}
+
 /**
- * Avisa no Telegram sobre envios com problema de entrega (falha imediata, ou "enviado" sem
- * confirmar entrega além do prazo configurado) ainda não notificados.
+ * Avisa sobre envios com problema de entrega (falha imediata, ou "enviado" sem confirmar entrega
+ * além do prazo configurado) ainda não notificados.
  */
-async function verificarEntregasPendentes(token: string, chatId: string): Promise<void> {
+async function verificarEntregasPendentes(canais: CanalNotificacao[]): Promise<void> {
   const horasLimite = lerHorasLimite("telegram_alerta_horas");
   const logs = listLogsPendentesDeAlerta(horasLimite);
   if (logs.length === 0) return;
 
-  try {
-    await enviarMensagemTelegram(token, chatId, montarMensagemEntrega(logs, horasLimite));
+  const enviado = await enviarParaTodosOsCanais(canais, montarMensagemEntrega(logs, horasLimite));
+  if (enviado) {
     marcarAlertaEnviado(logs.map((log) => log.id));
-    console.log(`[Notificações] Alerta enviado ao Telegram sobre ${logs.length} envio(s) com problema de entrega.`);
-  } catch (err) {
-    console.error("[Notificações] Erro ao enviar alerta de entrega ao Telegram:", err);
+    console.log(`[Notificações] Alerta enviado sobre ${logs.length} envio(s) com problema de entrega.`);
   }
 }
 
 /**
- * Avisa no Telegram sobre pendentes de resposta parados em "aguardando" além do prazo
- * configurado (separado do prazo de entrega — cliente pode ter recebido e simplesmente não
- * respondido ainda).
+ * Avisa sobre pendentes de resposta parados em "aguardando" além do prazo configurado (separado
+ * do prazo de entrega — cliente pode ter recebido e simplesmente não respondido ainda).
  */
-async function verificarRespostasPendentes(token: string, chatId: string): Promise<void> {
+async function verificarRespostasPendentes(canais: CanalNotificacao[]): Promise<void> {
   const horasLimite = lerHorasLimite("telegram_alerta_horas_resposta");
   const pendentes = listPendingRepliesPendentesDeAlerta(horasLimite);
   if (pendentes.length === 0) return;
 
-  try {
-    await enviarMensagemTelegram(token, chatId, montarMensagemResposta(pendentes, horasLimite));
+  const enviado = await enviarParaTodosOsCanais(canais, montarMensagemResposta(pendentes, horasLimite));
+  if (enviado) {
     marcarAlertaRespostaEnviado(pendentes.map((p) => p.id));
-    console.log(`[Notificações] Alerta enviado ao Telegram sobre ${pendentes.length} pendente(s) sem resposta.`);
-  } catch (err) {
-    console.error("[Notificações] Erro ao enviar alerta de resposta ao Telegram:", err);
+    console.log(`[Notificações] Alerta enviado sobre ${pendentes.length} pendente(s) sem resposta.`);
   }
 }
 
 /**
- * Verificação periódica combinada: dispara os dois alertas (entrega e resposta) acima. Roda de
- * forma silenciosa se o Telegram não estiver configurado — a funcionalidade é totalmente
- * opcional.
+ * Verificação periódica combinada: dispara os dois alertas (entrega e resposta) acima em todos os
+ * canais configurados. Roda de forma silenciosa se nenhum canal estiver configurado — a
+ * funcionalidade é totalmente opcional.
  */
 export async function verificarNotificacoesPendentes(): Promise<void> {
-  const token = getSetting("telegram_bot_token");
-  const chatId = getSetting("telegram_chat_id");
-  if (!token || !chatId) return;
+  const canais = canaisConfigurados();
+  if (canais.length === 0) return;
 
-  await verificarEntregasPendentes(token, chatId);
-  await verificarRespostasPendentes(token, chatId);
+  await verificarEntregasPendentes(canais);
+  await verificarRespostasPendentes(canais);
 }
