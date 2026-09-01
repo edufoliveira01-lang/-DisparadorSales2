@@ -3,6 +3,7 @@ import { normalizePhone } from "../utils/phone";
 import { parseBrazilianDate, type Pericia } from "./parserService";
 
 export type PericiaAgendadaStatus = "ativa" | "substituida";
+export type PericiaAgendadaFonte = "whatsapp" | "trello_sync";
 
 export interface PericiaAgendada {
   id: number;
@@ -19,6 +20,7 @@ export interface PericiaAgendada {
   data_hora_ms: number;
   status: PericiaAgendadaStatus;
   substituida_por_id: number | null;
+  fonte: PericiaAgendadaFonte;
   created_at: string;
 }
 
@@ -29,9 +31,10 @@ function chave(valor: string | null | undefined): string {
 
 const insertStmt = db.prepare(
   `INSERT INTO pericias_agendadas
-     (card_id, tipo, tipo_chave, origem, nome, nome_chave, telefone, telefone_digits, processo, processo_chave, data, horario, local, data_hora_ms, status)
-   VALUES (@card_id, @tipo, @tipo_chave, @origem, @nome, @nome_chave, @telefone, @telefone_digits, @processo, @processo_chave, @data, @horario, @local, @data_hora_ms, 'ativa')`
+     (card_id, tipo, tipo_chave, origem, nome, nome_chave, telefone, telefone_digits, processo, processo_chave, data, horario, local, data_hora_ms, fonte, status)
+   VALUES (@card_id, @tipo, @tipo_chave, @origem, @nome, @nome_chave, @telefone, @telefone_digits, @processo, @processo_chave, @data, @horario, @local, @data_hora_ms, @fonte, 'ativa')`
 );
+const deleteStmt = db.prepare("DELETE FROM pericias_agendadas WHERE id = ?");
 const getStmt = db.prepare("SELECT * FROM pericias_agendadas WHERE id = ?");
 const findAtivasPorChaveStmt = db.prepare(
   `SELECT * FROM pericias_agendadas
@@ -57,7 +60,11 @@ const deleteAntigasStmt = db.prepare(
  * Retorna null quando a data/horário da perícia não pôde ser reconhecida — sem uma data válida
  * não há como posicionar a perícia no calendário, então essa entrada é simplesmente ignorada.
  */
-export function registrarPericiaAgendada(cardId: string, pericia: Pericia): PericiaAgendada | null {
+export function registrarPericiaAgendada(
+  cardId: string,
+  pericia: Pericia,
+  fonte: PericiaAgendadaFonte = "whatsapp"
+): PericiaAgendada | null {
   const dataHoraMs = parseBrazilianDate(pericia.data, pericia.horario);
   if (!Number.isFinite(dataHoraMs)) return null;
 
@@ -83,6 +90,7 @@ export function registrarPericiaAgendada(cardId: string, pericia: Pericia): Peri
     horario: pericia.horario || null,
     local: pericia.local || null,
     data_hora_ms: dataHoraMs,
+    fonte,
   });
   const nova = getStmt.get(info.lastInsertRowid) as PericiaAgendada;
 
@@ -91,6 +99,12 @@ export function registrarPericiaAgendada(cardId: string, pericia: Pericia): Peri
   }
 
   return nova;
+}
+
+/** Apaga em definitivo. Retorna false se o id não existia. */
+export function deletePericiaAgendada(id: number): boolean {
+  const info = deleteStmt.run(id);
+  return info.changes > 0;
 }
 
 /** Todas as entradas (ativas e substituídas) — a tela decide o que mostrar por padrão. */

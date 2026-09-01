@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, History, RefreshCw, Search } from "lucide-react";
+import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, History, RefreshCw, Search, Trash2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { cn } from "@/lib/utils";
@@ -8,6 +8,7 @@ import { useToast } from "@/components/ui/Toast";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
@@ -95,6 +96,8 @@ export function Calendario() {
   const [tipoFiltro, setTipoFiltro] = useState("todos");
   const [mostrarSubstituidas, setMostrarSubstituidas] = useState(false);
   const [diaSelecionado, setDiaSelecionado] = useState<string | null>(null);
+  const [apagarAlvo, setApagarAlvo] = useState<PericiaAgendada | null>(null);
+  const [apagando, setApagando] = useState<number | null>(null);
 
   const carregar = useCallback(async () => {
     setErro(null);
@@ -111,6 +114,23 @@ export function Calendario() {
   useEffect(() => {
     carregar();
   }, [carregar]);
+
+  async function confirmarApagar() {
+    if (!apagarAlvo) return;
+    const alvo = apagarAlvo;
+    setApagarAlvo(null);
+    setApagando(alvo.id);
+    try {
+      await api.delete(`/pericias-agendadas/${alvo.id}`);
+      show(`"${alvo.nome}" removido do calendário.`, "info");
+      setDiaSelecionado(null);
+      carregar();
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao apagar o evento.", "error");
+    } finally {
+      setApagando(null);
+    }
+  }
 
   const porId = useMemo(() => {
     const map = new Map<number, PericiaAgendada>();
@@ -175,8 +195,9 @@ export function Calendario() {
         <div>
           <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Calendário de Perícias</h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            Perícias já comunicadas ao cliente por WhatsApp. Reagendamentos (mesmo tipo, nome, processo e telefone)
-            substituem o agendamento anterior automaticamente.
+            Perícias já comunicadas ao cliente por WhatsApp, mais o que foi importado manualmente do Trello (badge
+            "Importado"). Reagendamentos (mesmo tipo, nome, processo e telefone) substituem o agendamento anterior
+            automaticamente.
           </p>
         </div>
       </div>
@@ -317,7 +338,7 @@ export function Calendario() {
                     </p>
                     <div className="space-y-2">
                       {itens.map((p) => (
-                        <PericiaLinha key={p.id} pericia={p} />
+                        <PericiaLinha key={p.id} pericia={p} onExcluir={() => setApagarAlvo(p)} excluindo={apagando === p.id} />
                       ))}
                     </div>
                   </div>
@@ -337,10 +358,25 @@ export function Calendario() {
       >
         <div className="space-y-3">
           {periciasDoDiaSelecionado.map((p) => (
-            <PericiaLinha key={p.id} pericia={p} substituidaPor={p.substituida_por_id ? porId.get(p.substituida_por_id) ?? null : null} />
+            <PericiaLinha
+              key={p.id}
+              pericia={p}
+              substituidaPor={p.substituida_por_id ? porId.get(p.substituida_por_id) ?? null : null}
+              onExcluir={() => setApagarAlvo(p)}
+              excluindo={apagando === p.id}
+            />
           ))}
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={apagarAlvo !== null}
+        title="Apagar evento do calendário?"
+        message={`Isso vai remover em definitivo "${apagarAlvo?.nome}" (${apagarAlvo?.data}${apagarAlvo?.horario ? ` às ${apagarAlvo.horario}` : ""}) do calendário. Essa ação não pode ser desfeita.`}
+        loading={apagando === apagarAlvo?.id}
+        onConfirm={confirmarApagar}
+        onCancel={() => setApagarAlvo(null)}
+      />
     </div>
   );
 }
@@ -350,7 +386,17 @@ function formatarTituloDia(ymd: string): string {
   return `${dia} de ${NOMES_MES[mes - 1]} de ${ano}`;
 }
 
-function PericiaLinha({ pericia, substituidaPor }: { pericia: PericiaAgendada; substituidaPor?: PericiaAgendada | null }) {
+function PericiaLinha({
+  pericia,
+  substituidaPor,
+  onExcluir,
+  excluindo,
+}: {
+  pericia: PericiaAgendada;
+  substituidaPor?: PericiaAgendada | null;
+  onExcluir?: () => void;
+  excluindo?: boolean;
+}) {
   const origem = pericia.origem ?? "geral";
   return (
     <div
@@ -370,7 +416,13 @@ function PericiaLinha({ pericia, substituidaPor }: { pericia: PericiaAgendada; s
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <Badge tone={ORIGEM_TONE[origem] ?? "neutral"}>{ORIGEM_LABEL[origem] ?? pericia.tipo}</Badge>
+          {pericia.fonte === "trello_sync" && <Badge tone="neutral">Importado</Badge>}
           {pericia.status === "substituida" && <Badge tone="neutral">Substituída</Badge>}
+          {onExcluir && (
+            <Button variant="ghost" size="icon" title="Apagar" onClick={onExcluir} disabled={excluindo}>
+              <Trash2 className="h-4 w-4 text-red-500" />
+            </Button>
+          )}
         </div>
       </div>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
