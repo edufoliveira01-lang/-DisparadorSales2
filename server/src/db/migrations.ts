@@ -198,7 +198,7 @@ export function runMigrations(db: Database.Database): void {
   // módulo importa `db` de "../db", que só termina de inicializar depois que runMigrations(db)
   // retorna — nesse ponto ele ainda nem existe.
   const periciasBackfillFeito = db.prepare("SELECT 1 FROM settings WHERE chave = 'pericias_agendadas_backfill_feito'").get();
-  if (!periciasBackfillFeito) {
+  if (!periciasBackfillFeito) try {
     const logsComPericias = db
       .prepare("SELECT card_id, pericias_json FROM send_logs WHERE status = 'sucesso' AND pericias_json IS NOT NULL ORDER BY created_at ASC")
       .all() as { card_id: string; pericias_json: string }[];
@@ -225,38 +225,54 @@ export function runMigrations(db: Database.Database): void {
       }
 
       for (const pericia of pericias) {
-        const dataHoraMs = parseBrazilianDate(pericia.data, pericia.horario);
-        if (!Number.isFinite(dataHoraMs)) continue; // sem data reconhecível, não dá pra calendarizar
+        // Envios antigos (de antes de certos campos serem obrigatórios no parser, ou com dados
+        // preenchidos manualmente) podem não ter tipo/nome/telefone — colunas NOT NULL na tabela.
+        // Pula esses silenciosamente em vez de deixar o INSERT falhar e derrubar a migração
+        // inteira (e, com ela, o boot do servidor).
+        if (!pericia.tipo || !pericia.nome || !pericia.telefone) continue;
 
-        const tipoChave = chaveNormalizada(pericia.tipo);
-        const nomeChave = chaveNormalizada(pericia.nome);
-        const telefoneDigits = normalizePhone(pericia.telefone);
-        const processoChave = chaveNormalizada(pericia.processo);
+        try {
+          const dataHoraMs = parseBrazilianDate(pericia.data, pericia.horario);
+          if (!Number.isFinite(dataHoraMs)) continue; // sem data reconhecível, não dá pra calendarizar
 
-        const anteriores = buscarAtivasPorChave.all(tipoChave, nomeChave, telefoneDigits, processoChave) as { id: number }[];
-        const info = inserirPericiaAgendada.run({
-          card_id: log.card_id,
-          tipo: pericia.tipo,
-          tipo_chave: tipoChave,
-          origem: pericia.origem ?? null,
-          nome: pericia.nome,
-          nome_chave: nomeChave,
-          telefone: pericia.telefone,
-          telefone_digits: telefoneDigits,
-          processo: pericia.processo || null,
-          processo_chave: processoChave,
-          data: pericia.data,
-          horario: pericia.horario || null,
-          local: pericia.local || null,
-          data_hora_ms: dataHoraMs,
-        });
-        for (const anterior of anteriores) {
-          marcarSubstituida.run(info.lastInsertRowid, anterior.id);
+          const tipoChave = chaveNormalizada(pericia.tipo);
+          const nomeChave = chaveNormalizada(pericia.nome);
+          const telefoneDigits = normalizePhone(pericia.telefone);
+          const processoChave = chaveNormalizada(pericia.processo);
+
+          const anteriores = buscarAtivasPorChave.all(tipoChave, nomeChave, telefoneDigits, processoChave) as { id: number }[];
+          const info = inserirPericiaAgendada.run({
+            card_id: log.card_id,
+            tipo: pericia.tipo,
+            tipo_chave: tipoChave,
+            origem: pericia.origem ?? null,
+            nome: pericia.nome,
+            nome_chave: nomeChave,
+            telefone: pericia.telefone,
+            telefone_digits: telefoneDigits,
+            processo: pericia.processo || null,
+            processo_chave: processoChave,
+            data: pericia.data,
+            horario: pericia.horario || null,
+            local: pericia.local || null,
+            data_hora_ms: dataHoraMs,
+          });
+          for (const anterior of anteriores) {
+            marcarSubstituida.run(info.lastInsertRowid, anterior.id);
+          }
+        } catch (err) {
+          // Última rede de segurança: qualquer erro inesperado num registro histórico específico
+          // não pode travar o boot do servidor. Loga e segue para o próximo.
+          console.error(`[Backfill do calendário] Ignorando perícia do card ${log.card_id} após erro:`, err);
         }
       }
     }
 
     db.prepare("INSERT INTO settings (chave, valor) VALUES ('pericias_agendadas_backfill_feito', '1')").run();
+  } catch (err) {
+    // Não marca a flag como concluída — tenta de novo no próximo restart. Mas sob nenhuma
+    // circunstância um erro aqui pode impedir o servidor de subir.
+    console.error("[Backfill do calendário] Falha inesperada, backfill não concluído (será retentado no próximo restart):", err);
   }
 
   // Criar usuário padrão se não existir nenhum
