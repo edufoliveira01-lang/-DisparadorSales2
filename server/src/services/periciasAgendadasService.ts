@@ -38,10 +38,23 @@ const deleteStmt = db.prepare("DELETE FROM pericias_agendadas WHERE id = ?");
 const getStmt = db.prepare("SELECT * FROM pericias_agendadas WHERE id = ?");
 const findDuplicadaStmt = db.prepare(
   `SELECT * FROM pericias_agendadas
-   WHERE card_id = ? AND tipo_chave = ? AND nome_chave = ?
-     AND telefone_digits = ? AND processo_chave = ? AND data_hora_ms = ?
-     AND COALESCE(local, '') = ? AND COALESCE(origem, '') = ?
-   ORDER BY id DESC LIMIT 1`
+   WHERE tipo_chave = ? AND nome_chave = ? AND data_hora_ms = ?
+   ORDER BY CASE WHEN status = 'ativa' THEN 0 ELSE 1 END, id DESC LIMIT 1`
+);
+const mergeDuplicadaStmt = db.prepare(
+  `UPDATE pericias_agendadas SET
+     card_id = CASE WHEN @fonte = 'whatsapp' THEN @card_id ELSE card_id END,
+     origem = CASE
+       WHEN (origem IS NULL OR origem = '' OR origem = 'geral') AND @origem <> '' THEN @origem
+       ELSE origem
+     END,
+     telefone = CASE WHEN telefone_digits = '' AND @telefone_digits <> '' THEN @telefone ELSE telefone END,
+     telefone_digits = CASE WHEN telefone_digits = '' THEN @telefone_digits ELSE telefone_digits END,
+     processo = CASE WHEN processo_chave = '' AND @processo_chave <> '' THEN @processo ELSE processo END,
+     processo_chave = CASE WHEN processo_chave = '' THEN @processo_chave ELSE processo_chave END,
+     local = CASE WHEN (local IS NULL OR local = '') AND @local <> '' THEN @local ELSE local END,
+     fonte = CASE WHEN @fonte = 'whatsapp' THEN 'whatsapp' ELSE fonte END
+   WHERE id = @id`
 );
 const findAtivasPorChaveStmt = db.prepare(
   `SELECT * FROM pericias_agendadas
@@ -81,8 +94,8 @@ export type ResultadoRegistroPericia =
 
 /**
  * Versão detalhada do registro. Além de validar a data, torna a operação idempotente:
- * importar novamente o mesmo card, tipo, cliente e data/hora devolve a entrada existente
- * em vez de criar um novo evento.
+ * eventos com o mesmo tipo, cliente, data e horário são o mesmo compromisso, mesmo que
+ * venham de cards/fontes diferentes ou tenham campos complementares distintos.
  */
 export function registrarPericiaAgendadaComResultado(
   cardId: string,
@@ -97,19 +110,25 @@ export function registrarPericiaAgendadaComResultado(
   const telefoneDigits = normalizePhone(pericia.telefone);
   const processoChave = chave(pericia.processo);
 
-  // O card do Trello é a identidade estável do compromisso. A combinação abaixo impede
-  // duplicações mesmo quando telefone/processo estão ausentes ou foram escritos de outro jeito.
-  const duplicada = findDuplicadaStmt.get(
-    cardId,
-    tipoChave,
-    nomeChave,
-    telefoneDigits,
-    processoChave,
-    dataHoraMs,
-    pericia.local || "",
-    pericia.origem || ""
-  ) as PericiaAgendada | undefined;
-  if (duplicada) return { status: "duplicada", pericia: duplicada };
+  // A identidade do evento é o que o usuário enxerga no calendário. Card, fonte, processo,
+  // telefone e local são dados complementares e não podem gerar uma segunda entrada.
+  const duplicada = findDuplicadaStmt.get(tipoChave, nomeChave, dataHoraMs) as PericiaAgendada | undefined;
+  if (duplicada) {
+    // Aproveita uma nova fonte para completar campos que estavam vazios, sem substituir dados
+    // já preenchidos. Um envio real por WhatsApp prevalece sobre a marca de importação manual.
+    mergeDuplicadaStmt.run({
+      id: duplicada.id,
+      card_id: cardId,
+      origem: pericia.origem || "",
+      telefone: pericia.telefone || "",
+      telefone_digits: telefoneDigits,
+      processo: pericia.processo || "",
+      processo_chave: processoChave,
+      local: pericia.local || "",
+      fonte,
+    });
+    return { status: "duplicada", pericia: getStmt.get(duplicada.id) as PericiaAgendada };
+  }
 
   // Sem telefone e processo, restringe a busca de reagendamento ao mesmo card para não unir
   // por engano duas pessoas homônimas importadas de cartões diferentes.

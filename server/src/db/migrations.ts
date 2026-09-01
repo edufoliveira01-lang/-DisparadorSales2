@@ -352,18 +352,121 @@ export function runMigrations(db: Database.Database): void {
     }
   }
 
+  // A primeira versão ainda considerava card, telefone, processo, local e origem. Na prática,
+  // isso deixava dois itens visualmente idênticos quando um vinha do WhatsApp e outro do Trello.
+  // A v2 usa somente os quatro dados centrais exibidos: tipo, cliente, data e horário.
+  db.exec("DROP INDEX IF EXISTS idx_pericias_agendadas_evento_unico");
+  const deduplicacaoSemanticaFeita = db
+    .prepare("SELECT 1 FROM settings WHERE chave = 'pericias_agendadas_deduplicacao_v2_feita'")
+    .get();
+  if (!deduplicacaoSemanticaFeita) {
+    type LinhaCalendarioV2 = {
+      id: number;
+      card_id: string;
+      tipo_chave: string;
+      nome_chave: string;
+      telefone: string;
+      telefone_digits: string;
+      processo: string | null;
+      processo_chave: string;
+      local: string | null;
+      origem: string | null;
+      fonte: "whatsapp" | "trello_sync";
+      status: "ativa" | "substituida";
+      data_hora_ms: number;
+      substituida_por_id: number | null;
+    };
+
+    const linhas = db
+      .prepare(
+        `SELECT id, card_id, tipo_chave, nome_chave, telefone, telefone_digits, processo,
+                processo_chave, local, origem, fonte, status, data_hora_ms, substituida_por_id
+         FROM pericias_agendadas ORDER BY id DESC`
+      )
+      .all() as LinhaCalendarioV2[];
+    const grupos = new Map<string, LinhaCalendarioV2[]>();
+
+    for (const linha of linhas) {
+      const chaveEvento = JSON.stringify([linha.tipo_chave, linha.nome_chave, linha.data_hora_ms]);
+      const grupo = grupos.get(chaveEvento);
+      if (grupo) grupo.push(linha);
+      else grupos.set(chaveEvento, [linha]);
+    }
+
+    const pontuacao = (linha: LinhaCalendarioV2) =>
+      (linha.status === "ativa" ? 100 : 0) +
+      (linha.processo_chave ? 8 : 0) +
+      (linha.telefone_digits ? 4 : 0) +
+      (linha.local ? 2 : 0) +
+      (linha.fonte === "whatsapp" ? 1 : 0);
+
+    const limparRepetidasSemanticas = db.transaction(() => {
+      for (const grupo of grupos.values()) {
+        if (grupo.length < 2) continue;
+
+        const manter = grupo.reduce((melhor, atual) => {
+          const diferenca = pontuacao(atual) - pontuacao(melhor);
+          return diferenca > 0 || (diferenca === 0 && atual.id > melhor.id) ? atual : melhor;
+        });
+        const whatsapp = grupo.find((linha) => linha.fonte === "whatsapp");
+        const comTelefone = grupo.find((linha) => linha.telefone_digits);
+        const comProcesso = grupo.find((linha) => linha.processo_chave);
+        const comLocal = grupo.find((linha) => linha.local);
+        const comOrigemEspecifica = grupo.find((linha) => linha.origem && linha.origem !== "geral");
+        const existeAtiva = grupo.some((linha) => linha.status === "ativa");
+
+        // Consolida no registro mantido os dados complementares encontrados nas demais cópias.
+        db.prepare(
+          `UPDATE pericias_agendadas SET
+             card_id = ?, telefone = ?, telefone_digits = ?, processo = ?, processo_chave = ?,
+             local = ?, origem = ?, fonte = ?, status = ?,
+             substituida_por_id = CASE WHEN ? = 'ativa' THEN NULL ELSE substituida_por_id END
+           WHERE id = ?`
+        ).run(
+          whatsapp?.card_id || manter.card_id,
+          comTelefone?.telefone || manter.telefone,
+          comTelefone?.telefone_digits || manter.telefone_digits,
+          comProcesso?.processo || manter.processo,
+          comProcesso?.processo_chave || manter.processo_chave,
+          comLocal?.local || manter.local,
+          comOrigemEspecifica?.origem || manter.origem,
+          whatsapp ? "whatsapp" : manter.fonte,
+          existeAtiva ? "ativa" : manter.status,
+          existeAtiva ? "ativa" : manter.status,
+          manter.id
+        );
+
+        const repetidas = grupo.filter((linha) => linha.id !== manter.id).sort((a, b) => a.id - b.id);
+        for (const linha of repetidas) {
+          db.prepare(
+            "UPDATE pericias_agendadas SET substituida_por_id = ? WHERE substituida_por_id = ? AND id <> ?"
+          ).run(manter.id, linha.id, manter.id);
+          db.prepare(
+            `UPDATE pericias_agendadas SET substituida_por_id = ?
+             WHERE id = ? AND substituida_por_id = ?`
+          ).run(linha.substituida_por_id === manter.id ? null : linha.substituida_por_id, manter.id, linha.id);
+          db.prepare("DELETE FROM pericias_agendadas WHERE id = ?").run(linha.id);
+        }
+      }
+    });
+
+    try {
+      limparRepetidasSemanticas();
+      db.prepare("INSERT INTO settings (chave, valor) VALUES ('pericias_agendadas_deduplicacao_v2_feita', '1')").run();
+    } catch (err) {
+      console.error("[Calendário] Não foi possível consolidar eventos duplicados:", err);
+    }
+  }
+
   try {
     db.exec(
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_pericias_agendadas_evento_unico
-       ON pericias_agendadas(
-         card_id, tipo_chave, nome_chave, telefone_digits, processo_chave,
-         data_hora_ms, COALESCE(local, ''), COALESCE(origem, '')
-       )`
+       ON pericias_agendadas(tipo_chave, nome_chave, data_hora_ms)`
     );
   } catch (err) {
-    // Se um banco muito antigo tiver uma inconsistência fora do padrão esperado, o servidor
-    // continua subindo. A verificação idempotente do serviço ainda impede novas duplicações.
-    console.error("[Calendário] Não foi possível criar o índice antiduplicação:", err);
+    // Se a limpeza não puder concluir, o servidor continua subindo e tenta novamente no próximo
+    // restart. A verificação do serviço ainda impede novas duplicações no uso normal.
+    console.error("[Calendário] Não foi possível criar o índice antiduplicação v2:", err);
   }
 
   // Criar usuário padrão se não existir nenhum
