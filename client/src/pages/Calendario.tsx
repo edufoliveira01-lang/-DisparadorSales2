@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, History, Search } from "lucide-react";
-import { api } from "@/lib/api";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, History, RefreshCw, Search } from "lucide-react";
+import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { cn } from "@/lib/utils";
 import type { PericiaAgendada } from "@/lib/types";
+import { useToast } from "@/components/ui/Toast";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -83,7 +84,9 @@ function montarGrade(ano: number, mes: number): Celula[] {
 const MAX_VISIVEIS_NA_CELULA = 3;
 
 export function Calendario() {
+  const { show } = useToast();
   const [pericias, setPericias] = useState<PericiaAgendada[] | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
   const [{ ano, mes }, setAnoMes] = useState(() => {
     const [y, m] = hojeYMD().split("-").map(Number);
     return { ano: y, mes: m };
@@ -93,9 +96,21 @@ export function Calendario() {
   const [mostrarSubstituidas, setMostrarSubstituidas] = useState(false);
   const [diaSelecionado, setDiaSelecionado] = useState<string | null>(null);
 
+  const carregar = useCallback(async () => {
+    setErro(null);
+    try {
+      const data = await api.get<PericiaAgendada[]>("/pericias-agendadas");
+      setPericias(data);
+    } catch (err) {
+      const mensagem = err instanceof ApiError ? err.message : "Erro ao carregar o calendário de perícias.";
+      setErro(mensagem);
+      show(mensagem, "error");
+    }
+  }, [show]);
+
   useEffect(() => {
-    api.get<PericiaAgendada[]>("/pericias-agendadas").then(setPericias);
-  }, []);
+    carregar();
+  }, [carregar]);
 
   const porId = useMemo(() => {
     const map = new Map<number, PericiaAgendada>();
@@ -202,7 +217,18 @@ export function Calendario() {
         </div>
       </div>
 
-      {pericias === null ? (
+      {erro ? (
+        <EmptyState
+          icon={AlertTriangle}
+          title="Não foi possível carregar o calendário"
+          description={erro}
+          action={
+            <Button variant="outline" onClick={carregar}>
+              <RefreshCw className="h-4 w-4" /> Tentar de novo
+            </Button>
+          }
+        />
+      ) : pericias === null ? (
         <Skeleton className="h-[560px] w-full" />
       ) : pericias.length === 0 ? (
         <EmptyState
