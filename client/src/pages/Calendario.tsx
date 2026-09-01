@@ -21,18 +21,68 @@ const NOMES_MES = [
 ];
 const DIAS_SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
-const ORIGEM_TONE: Record<string, "info" | "accent" | "warning" | "neutral"> = {
-  medica: "info",
-  social: "accent",
-  audiencia: "warning",
-  geral: "neutral",
-};
-const ORIGEM_LABEL: Record<string, string> = {
-  medica: "Médica",
-  social: "Social",
-  audiencia: "Audiência",
-  geral: "Geral",
-};
+interface TipoCalendario {
+  chave: string;
+  rotulo: string;
+  audiencia: boolean;
+  identificado: boolean;
+}
+
+function textoComparavel(valor: string | null | undefined): string {
+  return (valor || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+}
+
+function rotuloNormalizado(valor: string): string {
+  const limpo = valor.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim().toLocaleLowerCase("pt-BR");
+  return limpo ? limpo.charAt(0).toLocaleUpperCase("pt-BR") + limpo.slice(1) : "Tipo não identificado";
+}
+
+/** Consolida as variações antigas do banco em categorias estáveis para filtro e cor. */
+function classificarTipo(pericia: PericiaAgendada): TipoCalendario {
+  const tipo = textoComparavel(pericia.tipo);
+  const origem = textoComparavel(pericia.origem);
+  const nome = textoComparavel(pericia.nome);
+  const nomeIndicaAudiencia = ["AUDIENCIA", "[AUDIENCIA]", "ONLINE", "[ONLINE]"].includes(nome);
+
+  if (tipo.includes("AUDIENCIA") || tipo.includes("ONLINE") || origem === "AUDIENCIA" || nomeIndicaAudiencia) {
+    return { chave: "audiencia", rotulo: "Audiência", audiencia: true, identificado: true };
+  }
+  if (tipo.includes("SOCIAL") || origem === "SOCIAL") {
+    return { chave: "pericia_social", rotulo: "Perícia social", audiencia: false, identificado: true };
+  }
+  if (tipo.includes("MEDICA") || origem === "MEDICA") {
+    return { chave: "pericia_medica", rotulo: "Perícia médica", audiencia: false, identificado: true };
+  }
+  if (!tipo || tipo.includes("TIPO NAO IDENTIFICADO")) {
+    return { chave: "tipo_nao_identificado", rotulo: "Tipo não identificado", audiencia: false, identificado: false };
+  }
+  if (tipo === "PERICIA") {
+    return { chave: "pericia", rotulo: "Perícia", audiencia: false, identificado: true };
+  }
+
+  return {
+    chave: `outro:${tipo}`,
+    rotulo: rotuloNormalizado(pericia.tipo),
+    audiencia: false,
+    identificado: true,
+  };
+}
+
+function classesEventoCalendario(pericia: PericiaAgendada): string {
+  if (pericia.status === "substituida") {
+    return "bg-zinc-100 text-zinc-400 line-through dark:bg-zinc-800 dark:text-zinc-600";
+  }
+  if (classificarTipo(pericia).audiencia) {
+    return "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300";
+  }
+  return "bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300";
+}
 
 /** "YYYY-MM-DD" no fuso de São Paulo, para agrupar por dia independente do fuso do navegador. */
 function diaLocalYMD(dataHoraMs: number): string {
@@ -139,9 +189,12 @@ export function Calendario() {
   }, [pericias]);
 
   const tiposDisponiveis = useMemo(() => {
-    const set = new Set<string>();
-    for (const p of pericias ?? []) if (p.tipo) set.add(p.tipo);
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+    const porChave = new Map<string, TipoCalendario>();
+    for (const p of pericias ?? []) {
+      const categoria = classificarTipo(p);
+      porChave.set(categoria.chave, categoria);
+    }
+    return Array.from(porChave.values()).sort((a, b) => a.rotulo.localeCompare(b.rotulo, "pt-BR"));
   }, [pericias]);
 
   const filtradas = useMemo(() => {
@@ -150,7 +203,7 @@ export function Calendario() {
     const termoDigits = termo.replace(/\D/g, "");
     return pericias.filter((p) => {
       if (!mostrarSubstituidas && p.status === "substituida") return false;
-      if (tipoFiltro !== "todos" && p.tipo !== tipoFiltro) return false;
+      if (tipoFiltro !== "todos" && classificarTipo(p).chave !== tipoFiltro) return false;
       if (termo) {
         const nomeMatch = p.nome.toLowerCase().includes(termo);
         const processoMatch = (p.processo || "").toLowerCase().includes(termo);
@@ -196,8 +249,7 @@ export function Calendario() {
           <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Calendário de Perícias</h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
             Perícias já comunicadas ao cliente por WhatsApp, mais o que foi importado manualmente do Trello (badge
-            "Importado"). Reagendamentos (mesmo tipo, nome, processo e telefone) substituem o agendamento anterior
-            automaticamente.
+            "Importado"). Eventos com o mesmo tipo, nome, data e horário são consolidados automaticamente.
           </p>
         </div>
       </div>
@@ -225,9 +277,9 @@ export function Calendario() {
           </div>
           <Select value={tipoFiltro} onChange={(e) => setTipoFiltro(e.target.value)} className="w-44">
             <option value="todos">Todos os tipos</option>
-            {tiposDisponiveis.map((t) => (
-              <option key={t} value={t}>
-                {t}
+            {tiposDisponiveis.map((tipo) => (
+              <option key={tipo.chave} value={tipo.chave}>
+                {tipo.rotulo}
               </option>
             ))}
           </Select>
@@ -303,9 +355,7 @@ export function Calendario() {
                           key={p.id}
                           className={cn(
                             "truncate rounded px-1 py-0.5 text-[11px] leading-tight",
-                            p.status === "substituida"
-                              ? "bg-zinc-100 text-zinc-400 line-through dark:bg-zinc-800 dark:text-zinc-600"
-                              : "bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300"
+                            classesEventoCalendario(p)
                           )}
                           title={`${p.horario ?? ""} · ${p.nome}`}
                         >
@@ -397,7 +447,7 @@ function PericiaLinha({
   onExcluir?: () => void;
   excluindo?: boolean;
 }) {
-  const origem = pericia.origem ?? "geral";
+  const tipo = classificarTipo(pericia);
   return (
     <div
       className={cn(
@@ -415,7 +465,7 @@ function PericiaLinha({
           <p className="text-xs text-zinc-500 dark:text-zinc-400">{formatPhoneDisplay(pericia.telefone)}</p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          <Badge tone={ORIGEM_TONE[origem] ?? "neutral"}>{ORIGEM_LABEL[origem] ?? pericia.tipo}</Badge>
+          <Badge tone={tipo.audiencia ? "info" : tipo.identificado ? "accent" : "neutral"}>{tipo.rotulo}</Badge>
           {pericia.fonte === "trello_sync" && <Badge tone="neutral">Importado</Badge>}
           {pericia.status === "substituida" && <Badge tone="neutral">Substituída</Badge>}
           {onExcluir && (
