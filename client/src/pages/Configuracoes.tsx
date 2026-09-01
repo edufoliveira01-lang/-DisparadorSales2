@@ -42,6 +42,21 @@ interface TrelloList {
   id: string;
   name: string;
 }
+interface CartaoIgnoradoTrello {
+  cardId: string;
+  titulo: string;
+  url: string;
+  motivos: string[];
+}
+interface ResultadoImportacaoTrello {
+  totalCards: number;
+  cardsImportados: number;
+  periciasImportadas: number;
+  periciasDuplicadas: number;
+  periciasIgnoradas: number;
+  cardsIgnorados: number;
+  ignorados: CartaoIgnoradoTrello[];
+}
 
 const STATUS_LABEL: Record<WhatsappState["status"], string> = {
   desconectado: "Desconectado",
@@ -68,6 +83,7 @@ export function Configuracoes() {
   const [arquivoListId, setArquivoListId] = useState("");
   const [salvandoTrello, setSalvandoTrello] = useState(false);
   const [sincronizandoTrello, setSincronizandoTrello] = useState(false);
+  const [resultadoImportacaoTrello, setResultadoImportacaoTrello] = useState<ResultadoImportacaoTrello | null>(null);
 
   const whatsapp = useWhatsapp();
 
@@ -220,15 +236,17 @@ export function Configuracoes() {
   async function handleSincronizarTrello() {
     setSincronizandoTrello(true);
     try {
-      const resultado = await api.post<{ totalCards: number; periciasImportadas: number; periciasIgnoradas: number }>(
-        "/pericias-agendadas/sincronizar-trello"
-      );
+      const resultado = await api.post<ResultadoImportacaoTrello>("/pericias-agendadas/sincronizar-trello");
+      setResultadoImportacaoTrello(resultado);
+      const partes = [`${resultado.periciasImportadas} novo(s) evento(s)`];
+      if (resultado.periciasDuplicadas > 0) partes.push(`${resultado.periciasDuplicadas} já existente(s)`);
+      if (resultado.cardsIgnorados > 0) partes.push(`${resultado.cardsIgnorados} card(s) com pendência`);
       show(
-        `${resultado.periciasImportadas} perícia(s) importada(s) de ${resultado.totalCards} card(s)` +
-          (resultado.periciasIgnoradas > 0 ? ` · ${resultado.periciasIgnoradas} ignorada(s) (sem dados suficientes)` : "."),
+        `${partes.join(" · ")} em ${resultado.totalCards} card(s).`,
         "success"
       );
     } catch (err) {
+      setResultadoImportacaoTrello(null);
       show(err instanceof ApiError ? err.message : "Erro ao sincronizar com o Trello.", "error");
     } finally {
       setSincronizandoTrello(false);
@@ -587,15 +605,54 @@ export function Configuracoes() {
             </p>
           )}
           {settings?.trello_arquivo_list_id && (
-            <div className="flex flex-col gap-2 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-between">
-              <p className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-                <History className="h-3.5 w-3.5 shrink-0" /> Traz os cards da lista de casos antigos direto para o
-                Calendário — útil para registros de antes desse sistema existir. Não é automático; clique sempre que
-                quiser atualizar.
-              </p>
-              <Button variant="outline" size="sm" onClick={handleSincronizarTrello} loading={sincronizandoTrello} className="shrink-0">
-                <RefreshCw className="h-3.5 w-3.5" /> Importar agora
-              </Button>
+            <div className="space-y-3">
+              <div className="flex flex-col gap-2 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-between">
+                <p className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                  <History className="h-3.5 w-3.5 shrink-0" /> Traz os cards da lista de casos antigos direto para o
+                  Calendário. Cards sem descrição usam o título e o vencimento. A importação pode ser repetida sem
+                  duplicar eventos.
+                </p>
+                <Button variant="outline" size="sm" onClick={handleSincronizarTrello} loading={sincronizandoTrello} className="shrink-0">
+                  <RefreshCw className="h-3.5 w-3.5" /> Importar agora
+                </Button>
+              </div>
+
+              {resultadoImportacaoTrello && (
+                <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900/40">
+                  <p className="font-medium text-zinc-800 dark:text-zinc-200">Resultado da última importação</p>
+                  <div className="mt-2 grid gap-2 text-zinc-600 dark:text-zinc-400 sm:grid-cols-4">
+                    <span><strong className="text-zinc-900 dark:text-zinc-100">{resultadoImportacaoTrello.totalCards}</strong> cards analisados</span>
+                    <span><strong className="text-emerald-600 dark:text-emerald-400">{resultadoImportacaoTrello.periciasImportadas}</strong> eventos novos</span>
+                    <span><strong className="text-blue-600 dark:text-blue-400">{resultadoImportacaoTrello.periciasDuplicadas}</strong> já existentes</span>
+                    <span><strong className="text-amber-600 dark:text-amber-400">{resultadoImportacaoTrello.cardsIgnorados}</strong> cards com pendência</span>
+                  </div>
+
+                  {resultadoImportacaoTrello.ignorados.length > 0 && (
+                    <details className="mt-3" open>
+                      <summary className="cursor-pointer font-medium text-amber-700 dark:text-amber-400">
+                        Ver cartões não importados e os dados ausentes
+                      </summary>
+                      <div className="mt-2 max-h-72 space-y-2 overflow-y-auto pr-1">
+                        {resultadoImportacaoTrello.ignorados.map((card) => (
+                          <div key={card.cardId} className="rounded-md border border-amber-200 bg-white p-2 dark:border-amber-900/60 dark:bg-zinc-900">
+                            <a
+                              href={card.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="font-medium text-accent-600 hover:underline dark:text-accent-400"
+                            >
+                              {card.titulo || `Card ${card.cardId}`}
+                            </a>
+                            <ul className="mt-1 list-disc space-y-0.5 pl-4 text-zinc-600 dark:text-zinc-400">
+                              {card.motivos.map((motivo) => <li key={motivo}>{motivo}</li>)}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

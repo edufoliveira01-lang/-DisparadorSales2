@@ -280,6 +280,92 @@ export function runMigrations(db: Database.Database): void {
     console.error("[Backfill do calendário] Falha inesperada, backfill não concluído (será retentado no próximo restart):", err);
   }
 
+  // Versões anteriores criavam uma nova linha a cada importação manual do mesmo card. Remove
+  // essas repetições exatas uma única vez e cria uma proteção permanente no banco. A identidade
+  // usa card + tipo + cliente + instante, permitindo reagendamentos reais em outra data/hora.
+  const deduplicacaoCalendarioFeita = db
+    .prepare("SELECT 1 FROM settings WHERE chave = 'pericias_agendadas_deduplicacao_v1_feita'")
+    .get();
+  if (!deduplicacaoCalendarioFeita) {
+    type LinhaCalendario = {
+      id: number;
+      card_id: string;
+      tipo_chave: string;
+      nome_chave: string;
+      telefone_digits: string;
+      processo_chave: string;
+      local: string | null;
+      origem: string | null;
+      data_hora_ms: number;
+      substituida_por_id: number | null;
+    };
+
+    const linhas = db
+      .prepare(
+        `SELECT id, card_id, tipo_chave, nome_chave, telefone_digits, processo_chave,
+                local, origem, data_hora_ms, substituida_por_id
+         FROM pericias_agendadas ORDER BY id DESC`
+      )
+      .all() as LinhaCalendario[];
+    const manterPorChave = new Map<string, LinhaCalendario>();
+    const repetidas: { linha: LinhaCalendario; manter: LinhaCalendario }[] = [];
+
+    for (const linha of linhas) {
+      const chaveEvento = JSON.stringify([
+        linha.card_id,
+        linha.tipo_chave,
+        linha.nome_chave,
+        linha.telefone_digits,
+        linha.processo_chave,
+        linha.local || "",
+        linha.origem || "",
+        linha.data_hora_ms,
+      ]);
+      const manter = manterPorChave.get(chaveEvento);
+      if (manter) repetidas.push({ linha, manter });
+      else manterPorChave.set(chaveEvento, linha);
+    }
+
+    const limparRepetidas = db.transaction(() => {
+      // Apaga da mais antiga para a mais nova. Assim, numa cadeia A -> B -> C, A sai antes
+      // de B e nenhuma referência estrangeira fica pendurada.
+      repetidas.sort((a, b) => a.linha.id - b.linha.id);
+      for (const { linha, manter } of repetidas) {
+        db.prepare(
+          "UPDATE pericias_agendadas SET substituida_por_id = ? WHERE substituida_por_id = ? AND id <> ?"
+        ).run(manter.id, linha.id, manter.id);
+
+        // Proteção para bancos alterados manualmente em que o registro mantido aponte para
+        // uma repetição mais antiga. O normal é o registro mais novo não apontar para trás.
+        db.prepare(
+          "UPDATE pericias_agendadas SET substituida_por_id = NULL WHERE id = ? AND substituida_por_id = ?"
+        ).run(manter.id, linha.id);
+        db.prepare("DELETE FROM pericias_agendadas WHERE id = ?").run(linha.id);
+      }
+    });
+
+    try {
+      limparRepetidas();
+      db.prepare("INSERT INTO settings (chave, valor) VALUES ('pericias_agendadas_deduplicacao_v1_feita', '1')").run();
+    } catch (err) {
+      console.error("[Calendário] Não foi possível limpar eventos duplicados:", err);
+    }
+  }
+
+  try {
+    db.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_pericias_agendadas_evento_unico
+       ON pericias_agendadas(
+         card_id, tipo_chave, nome_chave, telefone_digits, processo_chave,
+         data_hora_ms, COALESCE(local, ''), COALESCE(origem, '')
+       )`
+    );
+  } catch (err) {
+    // Se um banco muito antigo tiver uma inconsistência fora do padrão esperado, o servidor
+    // continua subindo. A verificação idempotente do serviço ainda impede novas duplicações.
+    console.error("[Calendário] Não foi possível criar o índice antiduplicação:", err);
+  }
+
   // Criar usuário padrão se não existir nenhum
   const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get() as { count: number };
   if (userCount.count === 0) {

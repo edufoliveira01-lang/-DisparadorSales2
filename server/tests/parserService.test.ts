@@ -92,6 +92,12 @@ NOME: Maria Souza
     expect(nome).toBe("JOÃO DA SILVA");
   });
 
+  it("extrai o nome quando o título tem apenas tipo e cliente", () => {
+    const title = "P. SOCIAL - MARIA DE SOUZA";
+    const nome = extractNomeFromCardTitle(title);
+    expect(nome).toBe("MARIA DE SOUZA");
+  });
+
   it("mantém o título original se não seguir o padrão de hífens", () => {
     const title = "Card Urgente de Maria";
     const nome = extractNomeFromCardTitle(title);
