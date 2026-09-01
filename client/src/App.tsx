@@ -3,6 +3,7 @@ import { Layout } from "@/components/Layout";
 import { WhatsappProvider } from "@/context/WhatsappContext";
 import { Dashboard } from "@/pages/Dashboard";
 import { Agenda } from "@/pages/Agenda";
+import { Calendario } from "@/pages/Calendario";
 import { TemplatesPericia } from "@/pages/TemplatesPericia";
 import { TemplatesCobranca } from "@/pages/TemplatesCobranca";
 import { TemplatesAudiencia } from "@/pages/TemplatesAudiencia";
@@ -29,6 +30,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/agenda" element={<Agenda />} />
+          <Route path="/calendario" element={<Calendario />} />
           <Route path="/templates" element={<TemplatesPericia />} />
           <Route path="/templates/cobranca" element={<TemplatesCobranca />} />
           <Route path="/templates/audiencia" element={<TemplatesAudiencia />} />

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
+  CalendarDays,
   ChevronDown,
   LayoutDashboard,
   Users,
@@ -14,7 +15,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const itemsAntesTemplates = [{ to: "/", label: "Dashboard", icon: LayoutDashboard, end: true }, { to: "/agenda", label: "Agenda", icon: Users }];
+const itemsAntesTemplates = [
+  { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
+  { to: "/agenda", label: "Agenda", icon: Users },
+  { to: "/calendario", label: "Calendário", icon: CalendarDays },
+];
 
 const itemsDepoisTemplates = [
   { to: "/historico", label: "Histórico", icon: History },

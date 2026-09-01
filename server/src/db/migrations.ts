@@ -68,6 +68,32 @@ export function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_pending_replies_telefone_digits ON pending_replies(telefone_digits);
     CREATE INDEX IF NOT EXISTS idx_pending_replies_status ON pending_replies(status);
 
+    CREATE TABLE IF NOT EXISTS pericias_agendadas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      card_id TEXT NOT NULL,
+      tipo TEXT NOT NULL,
+      tipo_chave TEXT NOT NULL,
+      origem TEXT,
+      nome TEXT NOT NULL,
+      nome_chave TEXT NOT NULL,
+      telefone TEXT NOT NULL,
+      telefone_digits TEXT NOT NULL,
+      processo TEXT,
+      processo_chave TEXT NOT NULL,
+      data TEXT NOT NULL,
+      horario TEXT,
+      local TEXT,
+      data_hora_ms INTEGER NOT NULL,
+      status TEXT CHECK(status IN ('ativa','substituida')) DEFAULT 'ativa',
+      substituida_por_id INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (substituida_por_id) REFERENCES pericias_agendadas(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pericias_agendadas_data_hora ON pericias_agendadas(data_hora_ms);
+    CREATE INDEX IF NOT EXISTS idx_pericias_agendadas_status ON pericias_agendadas(status);
+    CREATE INDEX IF NOT EXISTS idx_pericias_agendadas_chave ON pericias_agendadas(tipo_chave, nome_chave, telefone_digits, processo_chave);
+
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT UNIQUE NOT NULL,
