@@ -454,7 +454,9 @@ function PericiaLinha({
         "rounded-xl border p-3 text-sm",
         pericia.status === "substituida"
           ? "border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/30"
-          : "border-zinc-200 dark:border-zinc-800"
+          : tipo.audiencia
+            ? "border-blue-300 border-l-4 border-l-blue-500 bg-blue-50/70 shadow-sm dark:border-blue-800 dark:border-l-blue-400 dark:bg-blue-950/30"
+            : "border-zinc-200 dark:border-zinc-800"
       )}
     >
       <div className="flex items-start justify-between gap-2">
