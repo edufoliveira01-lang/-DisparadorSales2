@@ -1,4 +1,6 @@
 import type Database from "better-sqlite3";
+import { parseBrazilianDate, type Pericia } from "../services/parserService";
+import { normalizePhone } from "../utils/phone";
 
 export function runMigrations(db: Database.Database): void {
   db.pragma("journal_mode = WAL");
@@ -187,6 +189,74 @@ export function runMigrations(db: Database.Database): void {
       "UPDATE pending_replies SET alerta_resposta_enviado_em = CURRENT_TIMESTAMP WHERE alerta_resposta_enviado_em IS NULL"
     );
     db.prepare("INSERT INTO settings (chave, valor) VALUES ('resposta_alerta_backfill_feito', '1')").run();
+  }
+
+  // Backfill de uma vez só: popula pericias_agendadas a partir do histórico de envios já
+  // existente (send_logs) — sem isso, o calendário nasceria vazio para quem já usava o sistema
+  // antes dessa feature existir, mesmo tendo anos de envios no Histórico. Implementado aqui com
+  // SQL direto (em vez de chamar periciasAgendadasService) para evitar import circular: aquele
+  // módulo importa `db` de "../db", que só termina de inicializar depois que runMigrations(db)
+  // retorna — nesse ponto ele ainda nem existe.
+  const periciasBackfillFeito = db.prepare("SELECT 1 FROM settings WHERE chave = 'pericias_agendadas_backfill_feito'").get();
+  if (!periciasBackfillFeito) {
+    const logsComPericias = db
+      .prepare("SELECT card_id, pericias_json FROM send_logs WHERE status = 'sucesso' AND pericias_json IS NOT NULL ORDER BY created_at ASC")
+      .all() as { card_id: string; pericias_json: string }[];
+
+    const inserirPericiaAgendada = db.prepare(
+      `INSERT INTO pericias_agendadas
+         (card_id, tipo, tipo_chave, origem, nome, nome_chave, telefone, telefone_digits, processo, processo_chave, data, horario, local, data_hora_ms, status)
+       VALUES (@card_id, @tipo, @tipo_chave, @origem, @nome, @nome_chave, @telefone, @telefone_digits, @processo, @processo_chave, @data, @horario, @local, @data_hora_ms, 'ativa')`
+    );
+    const buscarAtivasPorChave = db.prepare(
+      `SELECT id FROM pericias_agendadas WHERE status = 'ativa' AND tipo_chave = ? AND nome_chave = ? AND telefone_digits = ? AND processo_chave = ?`
+    );
+    const marcarSubstituida = db.prepare(
+      "UPDATE pericias_agendadas SET status = 'substituida', substituida_por_id = ? WHERE id = ?"
+    );
+    const chaveNormalizada = (valor: string | null | undefined) => (valor || "").trim().toLowerCase().replace(/\s+/g, " ");
+
+    for (const log of logsComPericias) {
+      let pericias: Pericia[];
+      try {
+        pericias = JSON.parse(log.pericias_json);
+      } catch {
+        continue; // registro antigo com JSON corrompido/inválido — ignora
+      }
+
+      for (const pericia of pericias) {
+        const dataHoraMs = parseBrazilianDate(pericia.data, pericia.horario);
+        if (!Number.isFinite(dataHoraMs)) continue; // sem data reconhecível, não dá pra calendarizar
+
+        const tipoChave = chaveNormalizada(pericia.tipo);
+        const nomeChave = chaveNormalizada(pericia.nome);
+        const telefoneDigits = normalizePhone(pericia.telefone);
+        const processoChave = chaveNormalizada(pericia.processo);
+
+        const anteriores = buscarAtivasPorChave.all(tipoChave, nomeChave, telefoneDigits, processoChave) as { id: number }[];
+        const info = inserirPericiaAgendada.run({
+          card_id: log.card_id,
+          tipo: pericia.tipo,
+          tipo_chave: tipoChave,
+          origem: pericia.origem ?? null,
+          nome: pericia.nome,
+          nome_chave: nomeChave,
+          telefone: pericia.telefone,
+          telefone_digits: telefoneDigits,
+          processo: pericia.processo || null,
+          processo_chave: processoChave,
+          data: pericia.data,
+          horario: pericia.horario || null,
+          local: pericia.local || null,
+          data_hora_ms: dataHoraMs,
+        });
+        for (const anterior of anteriores) {
+          marcarSubstituida.run(info.lastInsertRowid, anterior.id);
+        }
+      }
+    }
+
+    db.prepare("INSERT INTO settings (chave, valor) VALUES ('pericias_agendadas_backfill_feito', '1')").run();
   }
 
   // Criar usuário padrão se não existir nenhum
