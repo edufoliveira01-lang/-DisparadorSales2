@@ -36,12 +36,26 @@ const insertStmt = db.prepare(
 );
 const deleteStmt = db.prepare("DELETE FROM pericias_agendadas WHERE id = ?");
 const getStmt = db.prepare("SELECT * FROM pericias_agendadas WHERE id = ?");
+const findDuplicadaStmt = db.prepare(
+  `SELECT * FROM pericias_agendadas
+   WHERE card_id = ? AND tipo_chave = ? AND nome_chave = ?
+     AND telefone_digits = ? AND processo_chave = ? AND data_hora_ms = ?
+     AND COALESCE(local, '') = ? AND COALESCE(origem, '') = ?
+   ORDER BY id DESC LIMIT 1`
+);
 const findAtivasPorChaveStmt = db.prepare(
   `SELECT * FROM pericias_agendadas
    WHERE status = 'ativa' AND tipo_chave = ? AND nome_chave = ? AND telefone_digits = ? AND processo_chave = ?`
 );
+const findAtivasPorCardStmt = db.prepare(
+  `SELECT * FROM pericias_agendadas
+   WHERE status = 'ativa' AND card_id = ? AND tipo_chave = ? AND nome_chave = ?`
+);
 const supersedeStmt = db.prepare(
   `UPDATE pericias_agendadas SET status = 'substituida', substituida_por_id = ? WHERE id = ?`
+);
+const relinkSubstituidasStmt = db.prepare(
+  "UPDATE pericias_agendadas SET substituida_por_id = ? WHERE substituida_por_id = ?"
 );
 const listStmt = db.prepare("SELECT * FROM pericias_agendadas ORDER BY data_hora_ms ASC");
 const deleteAntigasStmt = db.prepare(
@@ -60,20 +74,48 @@ const deleteAntigasStmt = db.prepare(
  * Retorna null quando a data/horário da perícia não pôde ser reconhecida — sem uma data válida
  * não há como posicionar a perícia no calendário, então essa entrada é simplesmente ignorada.
  */
-export function registrarPericiaAgendada(
+export type ResultadoRegistroPericia =
+  | { status: "criada"; pericia: PericiaAgendada }
+  | { status: "duplicada"; pericia: PericiaAgendada }
+  | { status: "data_invalida"; pericia: null };
+
+/**
+ * Versão detalhada do registro. Além de validar a data, torna a operação idempotente:
+ * importar novamente o mesmo card, tipo, cliente e data/hora devolve a entrada existente
+ * em vez de criar um novo evento.
+ */
+export function registrarPericiaAgendadaComResultado(
   cardId: string,
   pericia: Pericia,
   fonte: PericiaAgendadaFonte = "whatsapp"
-): PericiaAgendada | null {
+): ResultadoRegistroPericia {
   const dataHoraMs = parseBrazilianDate(pericia.data, pericia.horario);
-  if (!Number.isFinite(dataHoraMs)) return null;
+  if (!Number.isFinite(dataHoraMs)) return { status: "data_invalida", pericia: null };
 
   const tipoChave = chave(pericia.tipo);
   const nomeChave = chave(pericia.nome);
   const telefoneDigits = normalizePhone(pericia.telefone);
   const processoChave = chave(pericia.processo);
 
-  const anteriores = findAtivasPorChaveStmt.all(tipoChave, nomeChave, telefoneDigits, processoChave) as PericiaAgendada[];
+  // O card do Trello é a identidade estável do compromisso. A combinação abaixo impede
+  // duplicações mesmo quando telefone/processo estão ausentes ou foram escritos de outro jeito.
+  const duplicada = findDuplicadaStmt.get(
+    cardId,
+    tipoChave,
+    nomeChave,
+    telefoneDigits,
+    processoChave,
+    dataHoraMs,
+    pericia.local || "",
+    pericia.origem || ""
+  ) as PericiaAgendada | undefined;
+  if (duplicada) return { status: "duplicada", pericia: duplicada };
+
+  // Sem telefone e processo, restringe a busca de reagendamento ao mesmo card para não unir
+  // por engano duas pessoas homônimas importadas de cartões diferentes.
+  const anteriores = telefoneDigits || processoChave
+    ? (findAtivasPorChaveStmt.all(tipoChave, nomeChave, telefoneDigits, processoChave) as PericiaAgendada[])
+    : (findAtivasPorCardStmt.all(cardId, tipoChave, nomeChave) as PericiaAgendada[]);
 
   const info = insertStmt.run({
     card_id: cardId,
@@ -98,13 +140,29 @@ export function registrarPericiaAgendada(
     supersedeStmt.run(nova.id, anterior.id);
   }
 
-  return nova;
+  return { status: "criada", pericia: nova };
+}
+
+export function registrarPericiaAgendada(
+  cardId: string,
+  pericia: Pericia,
+  fonte: PericiaAgendadaFonte = "whatsapp"
+): PericiaAgendada | null {
+  return registrarPericiaAgendadaComResultado(cardId, pericia, fonte).pericia;
 }
 
 /** Apaga em definitivo. Retorna false se o id não existia. */
 export function deletePericiaAgendada(id: number): boolean {
-  const info = deleteStmt.run(id);
-  return info.changes > 0;
+  return db.transaction((registroId: number) => {
+    const atual = getStmt.get(registroId) as PericiaAgendada | undefined;
+    if (!atual) return false;
+
+    // Entradas substituídas apontam para a mais nova por FK. Antes de apagar, redireciona
+    // essas referências para o próximo evento da cadeia (ou limpa a referência), evitando
+    // SQLITE_CONSTRAINT_FOREIGNKEY e preservando o histórico restante.
+    relinkSubstituidasStmt.run(atual.substituida_por_id ?? null, registroId);
+    return deleteStmt.run(registroId).changes > 0;
+  })(id);
 }
 
 /** Todas as entradas (ativas e substituídas) — a tela decide o que mostrar por padrão. */

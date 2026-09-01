@@ -34,7 +34,14 @@ periciasAgendadasRouter.post("/sincronizar-trello", async (_req, res) => {
 
 periciasAgendadasRouter.delete("/:id", (req, res) => {
   const id = Number(req.params.id);
-  const apagou = deletePericiaAgendada(id);
-  if (!apagou) return res.status(404).json({ error: "Registro não encontrado." });
-  res.json({ ok: true });
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "Identificador de evento inválido." });
+
+  try {
+    const apagou = deletePericiaAgendada(id);
+    if (!apagou) return res.status(404).json({ error: "Registro não encontrado." });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(`[Calendário] Erro ao apagar evento ${id}:`, err);
+    res.status(500).json({ error: "Não foi possível apagar o evento do calendário." });
+  }
 });

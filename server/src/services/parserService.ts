@@ -191,7 +191,7 @@ export function extractNomeFromCardTitle(title: string): string {
   // Geralmente o nome é a penúltima ou antepenúltima parte.
   const parts = title.split(" - ").map((p) => p.trim());
 
-  if (parts.length >= 3) {
+  if (parts.length >= 2) {
     // Procura por uma parte que contenha apenas letras e espaços (nome)
     // Ignora partes que pareçam data (xx/xx/xxxx), horário (xx:xx) ou processo (números e pontos)
     for (let i = parts.length - 1; i >= 0; i--) {
