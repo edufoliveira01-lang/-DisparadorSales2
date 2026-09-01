@@ -10,6 +10,7 @@ import { getSession } from "./services/authService";
 import { contactsRouter } from "./routes/contacts";
 import { logsRouter } from "./routes/logs";
 import { pendingRepliesRouter } from "./routes/pendingReplies";
+import { periciasAgendadasRouter } from "./routes/periciasAgendadas";
 import { sendRouter } from "./routes/send";
 import { settingsRouter } from "./routes/settings";
 import { templatesRouter } from "./routes/templates";
@@ -18,6 +19,7 @@ import { whatsappRouter } from "./routes/whatsapp";
 import { initWebsocket } from "./websocket";
 import { whatsappManager } from "./services/whatsappService";
 import { verificarNotificacoesPendentes } from "./services/notificationService";
+import { podarPericiasAgendadasAntigas } from "./services/periciasAgendadasService";
 
 const app = express();
 app.use(cors({
@@ -56,6 +58,7 @@ app.use("/api/cards", cardsRouter);
 app.use("/api/send", sendRouter);
 app.use("/api/logs", logsRouter);
 app.use("/api/pending-replies", pendingRepliesRouter);
+app.use("/api/pericias-agendadas", periciasAgendadasRouter);
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
@@ -87,6 +90,22 @@ setInterval(
   () => verificarNotificacoesPendentes().catch((err) => console.error("[Notificações] Erro na verificação periódica:", err)),
   INTERVALO_VERIFICACAO_MS
 );
+
+// Poda diária do calendário de perícias agendadas: mantém só os últimos 3 meses, para não
+// crescer para sempre e para limitar a janela em que comparamos reagendamentos. Não afeta
+// send_logs (Histórico) nem pending_replies — são tabelas independentes, com retenção própria.
+const DIAS_RETENCAO_PERICIAS_AGENDADAS = 90;
+const INTERVALO_PODA_PERICIAS_MS = 24 * 60 * 60 * 1000;
+function podarPericiasAgendadas(): void {
+  try {
+    const apagadas = podarPericiasAgendadasAntigas(DIAS_RETENCAO_PERICIAS_AGENDADAS);
+    if (apagadas > 0) console.log(`[Calendário] ${apagadas} perícia(s) agendada(s) com mais de 3 meses removida(s).`);
+  } catch (err) {
+    console.error("[Calendário] Erro ao podar perícias agendadas antigas:", err);
+  }
+}
+setTimeout(podarPericiasAgendadas, 90_000);
+setInterval(podarPericiasAgendadas, INTERVALO_PODA_PERICIAS_MS);
 
 async function shutdown() {
   console.log("Encerrando servidor...");

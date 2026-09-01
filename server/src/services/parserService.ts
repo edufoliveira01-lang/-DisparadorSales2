@@ -214,7 +214,8 @@ export function extractNomeFromCardTitle(title: string): string {
  * Extrai 1 ou 2 perícias da descrição de um card do Trello.
  * Veja `parseCardDescriptionComOrigem` para os formatos suportados.
  */
-function parseBrazilianDate(dateStr: string, timeStr: string): number {
+/** Retorna Infinity para datas/horários ausentes ou não reconhecidos (nunca lança). */
+export function parseBrazilianDate(dateStr: string, timeStr: string): number {
   try {
     const dateMatch = dateStr.match(/(\d{2})\/(\d{2})\/(\d{4})/);
     if (!dateMatch) return Infinity;

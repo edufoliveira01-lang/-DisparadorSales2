@@ -100,6 +100,24 @@ export interface Settings {
   audiencia_hibrida_mensagem: string;
 }
 
+export interface PericiaAgendada {
+  id: number;
+  card_id: string;
+  tipo: string;
+  origem: "medica" | "social" | "geral" | "audiencia" | null;
+  nome: string;
+  telefone: string;
+  telefone_digits: string;
+  processo: string | null;
+  data: string;
+  horario: string | null;
+  local: string | null;
+  data_hora_ms: number;
+  status: "ativa" | "substituida";
+  substituida_por_id: number | null;
+  created_at: string;
+}
+
 export interface PendingReply {
   id: number;
   card_id: string;

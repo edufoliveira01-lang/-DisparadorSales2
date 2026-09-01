@@ -13,6 +13,7 @@ import { whatsappManager } from "./whatsappService";
 import { getSetting } from "./settingsService";
 import { moveCard } from "./trelloService";
 import { createPendingReply } from "./pendingRepliesService";
+import { registrarPericiaAgendada } from "./periciasAgendadasService";
 
 export type ModoEnvio = "template" | "audiencia_presencial" | "audiencia_online" | "audiencia_hibrida";
 
@@ -100,6 +101,14 @@ export async function dispatchSingle(item: SendItem, templateId: number | null):
     const confirmListId = getSetting("trello_confirm_list_id");
     if (confirmListId) {
       createPendingReply(item.cardId, item.nomeCliente, item.telefone, chatId.split("@")[0], chatId, ultimoMessageId);
+    }
+
+    // Alimenta o calendário de perícias agendadas só com o que foi de fato comunicado ao
+    // cliente nesta mensagem — no modo audiência, só sortedPericias[0] é usada em renderAudiencia,
+    // as demais (se houver) não entraram na mensagem enviada.
+    const periciasComunicadas = modo === "template" ? sortedPericias : sortedPericias.slice(0, 1);
+    for (const pericia of periciasComunicadas) {
+      registrarPericiaAgendada(item.cardId, pericia);
     }
 
     const log = createLog({
