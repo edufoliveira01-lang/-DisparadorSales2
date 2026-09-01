@@ -83,6 +83,8 @@ export interface Settings {
   trello_move_list_nome?: string;
   trello_confirm_list_id?: string;
   trello_confirm_list_nome?: string;
+  trello_arquivo_list_id?: string;
+  trello_arquivo_list_nome?: string;
   send_interval_min: string;
   send_interval_max: string;
   template_ativo_id?: string;
@@ -115,6 +117,7 @@ export interface PericiaAgendada {
   data_hora_ms: number;
   status: "ativa" | "substituida";
   substituida_por_id: number | null;
+  fonte: "whatsapp" | "trello_sync";
   created_at: string;
 }
 

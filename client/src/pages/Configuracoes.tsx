@@ -4,12 +4,14 @@ import {
   CheckCircle2,
   Database,
   Download,
+  History,
   KeyRound,
   Loader2,
   Lock,
   LogOut,
   MessageCircle,
   QrCode,
+  RefreshCw,
   Search,
   Send,
   Square,
@@ -63,7 +65,9 @@ export function Configuracoes() {
   const [listId, setListId] = useState("");
   const [moveListId, setMoveListId] = useState("");
   const [confirmListId, setConfirmListId] = useState("");
+  const [arquivoListId, setArquivoListId] = useState("");
   const [salvandoTrello, setSalvandoTrello] = useState(false);
+  const [sincronizandoTrello, setSincronizandoTrello] = useState(false);
 
   const whatsapp = useWhatsapp();
 
@@ -114,6 +118,7 @@ export function Configuracoes() {
     if (data.trello_list_id) setListId(data.trello_list_id);
     if (data.trello_move_list_id) setMoveListId(data.trello_move_list_id);
     if (data.trello_confirm_list_id) setConfirmListId(data.trello_confirm_list_id);
+    if (data.trello_arquivo_list_id) setArquivoListId(data.trello_arquivo_list_id);
 
     if (data.trello_key && data.trello_token_configurado) {
       setTrelloOk(true);
@@ -160,6 +165,7 @@ export function Configuracoes() {
     setListId("");
     setMoveListId("");
     setConfirmListId("");
+    setArquivoListId("");
     setLists([]);
     if (!id) return;
     try {
@@ -184,6 +190,7 @@ export function Configuracoes() {
       const list = lists.find((l) => l.id === listId);
       const moveList = lists.find((l) => l.id === moveListId);
       const confirmList = lists.find((l) => l.id === confirmListId);
+      const arquivoList = lists.find((l) => l.id === arquivoListId);
       const payload: Record<string, string> = {
         trello_board_id: boardId,
         trello_board_nome: board?.name || "",
@@ -193,6 +200,8 @@ export function Configuracoes() {
         trello_move_list_nome: moveList?.name || "",
         trello_confirm_list_id: confirmListId,
         trello_confirm_list_nome: confirmList?.name || "",
+        trello_arquivo_list_id: arquivoListId,
+        trello_arquivo_list_nome: arquivoList?.name || "",
       };
       // Só inclui key/token se o usuário digitou algo novo — do contrário, o campo some do
       // corpo da requisição e o backend mantém a credencial já salva em vez de apagá-la.
@@ -205,6 +214,24 @@ export function Configuracoes() {
       show(err instanceof ApiError ? err.message : "Erro ao salvar configurações.", "error");
     } finally {
       setSalvandoTrello(false);
+    }
+  }
+
+  async function handleSincronizarTrello() {
+    setSincronizandoTrello(true);
+    try {
+      const resultado = await api.post<{ totalCards: number; periciasImportadas: number; periciasIgnoradas: number }>(
+        "/pericias-agendadas/sincronizar-trello"
+      );
+      show(
+        `${resultado.periciasImportadas} perícia(s) importada(s) de ${resultado.totalCards} card(s)` +
+          (resultado.periciasIgnoradas > 0 ? ` · ${resultado.periciasIgnoradas} ignorada(s) (sem dados suficientes)` : "."),
+        "success"
+      );
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao sincronizar com o Trello.", "error");
+    } finally {
+      setSincronizandoTrello(false);
     }
   }
 
@@ -536,6 +563,20 @@ export function Configuracoes() {
                   ))}
                 </Select>
               </div>
+              <div>
+                <Label>Lista de casos antigos (para importar no calendário):</Label>
+                <Select value={arquivoListId} onChange={(e) => setArquivoListId(e.target.value)} disabled={!boardId && lists.length === 0}>
+                  <option value="">Não sincronizar</option>
+                  {settings?.trello_arquivo_list_id && !lists.find((l) => l.id === settings.trello_arquivo_list_id) && (
+                    <option value={settings.trello_arquivo_list_id}>{settings.trello_arquivo_list_nome} (atual)</option>
+                  )}
+                  {lists.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
             </div>
           )}
           {confirmListId && (
@@ -544,6 +585,18 @@ export function Configuracoes() {
               aquele número: quando o cliente responder ou reagir à mensagem, o cartão é movido automaticamente para a lista
               acima. Acompanhe em <span className="font-medium">Pendentes de Resposta</span>.
             </p>
+          )}
+          {settings?.trello_arquivo_list_id && (
+            <div className="flex flex-col gap-2 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-between">
+              <p className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                <History className="h-3.5 w-3.5 shrink-0" /> Traz os cards da lista de casos antigos direto para o
+                Calendário — útil para registros de antes desse sistema existir. Não é automático; clique sempre que
+                quiser atualizar.
+              </p>
+              <Button variant="outline" size="sm" onClick={handleSincronizarTrello} loading={sincronizandoTrello} className="shrink-0">
+                <RefreshCw className="h-3.5 w-3.5" /> Importar agora
+              </Button>
+            </div>
           )}
 
           <div className="flex justify-end">

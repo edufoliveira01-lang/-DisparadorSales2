@@ -88,6 +88,7 @@ export function runMigrations(db: Database.Database): void {
       data_hora_ms INTEGER NOT NULL,
       status TEXT CHECK(status IN ('ativa','substituida')) DEFAULT 'ativa',
       substituida_por_id INTEGER,
+      fonte TEXT CHECK(fonte IN ('whatsapp','trello_sync')) DEFAULT 'whatsapp',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (substituida_por_id) REFERENCES pericias_agendadas(id)
     );
@@ -140,6 +141,10 @@ export function runMigrations(db: Database.Database): void {
     // contato foi resolvido como "LID" (identificador interno do WhatsApp, não um telefone de
     // verdade), caso em que tentar tratá-lo como telefone faz o WhatsApp não encontrar ninguém.
     "ALTER TABLE pending_replies ADD COLUMN whatsapp_chat_id TEXT",
+    // Sem CHECK aqui (diferente da definição em CREATE TABLE, para instalações novas) — SQLite
+    // é mais restritivo sobre o que aceita em ADD COLUMN, e o código nunca grava outro valor
+    // além de 'whatsapp'/'trello_sync' de qualquer forma.
+    "ALTER TABLE pericias_agendadas ADD COLUMN fonte TEXT DEFAULT 'whatsapp'",
   ]) {
     try {
       db.exec(stmt);

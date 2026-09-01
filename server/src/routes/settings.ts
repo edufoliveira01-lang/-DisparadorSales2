@@ -45,6 +45,8 @@ settingsRouter.put("/", (req, res) => {
     "trello_move_list_nome",
     "trello_confirm_list_id",
     "trello_confirm_list_nome",
+    "trello_arquivo_list_id",
+    "trello_arquivo_list_nome",
     "telegram_bot_token",
     "telegram_chat_id",
     "telegram_alerta_horas",
