@@ -243,23 +243,26 @@ export function Calendario() {
   const periciasDoDiaSelecionado = diaSelecionado ? porDia.get(diaSelecionado) ?? [] : [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Calendário de Perícias</h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 md:text-2xl">Calendário de Perícias</h1>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400 md:hidden">
+            Consulte perícias e audiências agendadas ou importadas.
+          </p>
+          <p className="mt-1 hidden text-sm text-zinc-500 dark:text-zinc-400 md:block">
             Perícias já comunicadas ao cliente por WhatsApp, mais o que foi importado manualmente do Trello (badge
             "Importado"). Eventos com o mesmo tipo, nome, data e horário são consolidados automaticamente.
           </p>
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-zinc-50/70 p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/40 md:flex-row md:items-center md:justify-between md:rounded-none md:border-0 md:bg-transparent md:p-0 md:shadow-none md:dark:bg-transparent">
+        <div className="grid w-full grid-cols-[2.25rem_minmax(0,1fr)_2.25rem_auto] items-center gap-2 md:flex md:w-auto">
           <Button variant="outline" size="icon" onClick={irParaMesAnterior} title="Mês anterior">
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <span className="w-40 text-center text-base font-semibold text-zinc-900 dark:text-zinc-100">
+          <span className="min-w-0 text-center text-base font-semibold text-zinc-900 dark:text-zinc-100 md:w-40">
             {NOMES_MES[mes - 1]} {ano}
           </span>
           <Button variant="outline" size="icon" onClick={irParaProximoMes} title="Próximo mês">
@@ -270,12 +273,12 @@ export function Calendario() {
           </Button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative w-full max-w-[220px]">
+        <div className="grid w-full grid-cols-2 items-center gap-2 md:flex md:w-auto md:flex-wrap">
+          <div className="relative col-span-2 w-full md:col-auto md:max-w-[220px]">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
             <Input placeholder="Nome, telefone ou processo…" className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
           </div>
-          <Select value={tipoFiltro} onChange={(e) => setTipoFiltro(e.target.value)} className="w-44">
+          <Select value={tipoFiltro} onChange={(e) => setTipoFiltro(e.target.value)} className="w-full min-w-0 md:w-44">
             <option value="todos">Todos os tipos</option>
             {tiposDisponiveis.map((tipo) => (
               <option key={tipo.chave} value={tipo.chave}>
@@ -283,9 +286,9 @@ export function Calendario() {
               </option>
             ))}
           </Select>
-          <label className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+          <label className="flex h-10 min-w-0 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-2.5 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 md:h-auto md:border-0 md:bg-transparent md:px-0 md:text-sm md:dark:bg-transparent">
             <Checkbox checked={mostrarSubstituidas} onChange={() => setMostrarSubstituidas((v) => !v)} />
-            Mostrar substituídas
+            <span className="leading-tight">Mostrar substituídas</span>
           </label>
         </div>
       </div>
@@ -381,7 +384,7 @@ export function Calendario() {
                 if (itens.length === 0) return null;
                 const ehHoje = key === hoje;
                 return (
-                  <div key={key} className="rounded-2xl border border-zinc-200 p-3 dark:border-zinc-800">
+                  <div key={key} className="rounded-2xl border border-zinc-200 bg-zinc-50/60 p-3 dark:border-zinc-800 dark:bg-zinc-900/30">
                     <p className={cn("mb-2 text-sm font-semibold", ehHoje ? "text-accent-600 dark:text-accent-400" : "text-zinc-700 dark:text-zinc-300")}>
                       {cel.dia} de {NOMES_MES[cel.mes - 1]}
                       {ehHoje && " · Hoje"}
@@ -456,31 +459,36 @@ function PericiaLinha({
           ? "border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/30"
           : tipo.audiencia
             ? "border-blue-300 border-l-4 border-l-blue-500 bg-blue-50/70 shadow-sm dark:border-blue-800 dark:border-l-blue-400 dark:bg-blue-950/30"
-            : "border-zinc-200 dark:border-zinc-800"
+            : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 md:bg-transparent md:dark:bg-transparent"
       )}
     >
-      <div className="flex items-start justify-between gap-2">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 md:flex md:justify-between">
         <div className="min-w-0">
-          <p className={cn("truncate font-medium text-zinc-900 dark:text-zinc-100", pericia.status === "substituida" && "line-through opacity-60")}>
+          <p
+            className={cn(
+              "break-words font-semibold leading-snug text-zinc-900 dark:text-zinc-100 md:truncate md:font-medium",
+              pericia.status === "substituida" && "line-through opacity-60"
+            )}
+          >
             {pericia.nome}
           </p>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">{formatPhoneDisplay(pericia.telefone)}</p>
+          <p className="mt-0.5 whitespace-nowrap text-xs text-zinc-500 dark:text-zinc-400">{formatPhoneDisplay(pericia.telefone)}</p>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="col-span-2 flex w-full flex-wrap items-center gap-1.5 pt-1 md:w-auto md:shrink-0 md:pt-0">
           <Badge tone={tipo.audiencia ? "info" : tipo.identificado ? "accent" : "neutral"}>{tipo.rotulo}</Badge>
           {pericia.fonte === "trello_sync" && <Badge tone="neutral">Importado</Badge>}
           {pericia.status === "substituida" && <Badge tone="neutral">Substituída</Badge>}
           {onExcluir && (
-            <Button variant="ghost" size="icon" title="Apagar" onClick={onExcluir} disabled={excluindo}>
+            <Button className="ml-auto md:ml-0" variant="ghost" size="icon" title="Apagar" onClick={onExcluir} disabled={excluindo}>
               <Trash2 className="h-4 w-4 text-red-500" />
             </Button>
           )}
         </div>
       </div>
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+      <div className="mt-2 flex flex-col items-start gap-1 text-xs text-zinc-500 dark:text-zinc-400 md:flex-row md:flex-wrap md:gap-x-4">
         {pericia.horario && <span>🕐 {pericia.horario}</span>}
-        {pericia.local && <span className="truncate">📍 {pericia.local}</span>}
-        {pericia.processo && <span>Processo: {pericia.processo}</span>}
+        {pericia.local && <span className="break-words leading-relaxed md:truncate">📍 {pericia.local}</span>}
+        {pericia.processo && <span className="break-all md:break-normal">Processo: {pericia.processo}</span>}
       </div>
       {pericia.status === "substituida" && substituidaPor && (
         <p className="mt-2 flex items-center gap-1 text-xs text-accent-600 dark:text-accent-400">
