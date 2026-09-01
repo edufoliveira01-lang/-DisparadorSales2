@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, History, RefreshCw, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, History, RefreshCw, Search, Trash2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { cn } from "@/lib/utils";
@@ -146,6 +146,7 @@ export function Calendario() {
   const [tipoFiltro, setTipoFiltro] = useState("todos");
   const [mostrarSubstituidas, setMostrarSubstituidas] = useState(false);
   const [diaSelecionado, setDiaSelecionado] = useState<string | null>(null);
+  const [diasExpandidos, setDiasExpandidos] = useState<Set<string>>(() => new Set([hojeYMD()]));
   const [apagarAlvo, setApagarAlvo] = useState<PericiaAgendada | null>(null);
   const [apagando, setApagando] = useState<number | null>(null);
 
@@ -238,6 +239,14 @@ export function Calendario() {
   function irParaHoje() {
     const [y, m] = hojeYMD().split("-").map(Number);
     setAnoMes({ ano: y, mes: m });
+  }
+  function alternarDiaExpandido(dia: string) {
+    setDiasExpandidos((atuais) => {
+      const proximos = new Set(atuais);
+      if (proximos.has(dia)) proximos.delete(dia);
+      else proximos.add(dia);
+      return proximos;
+    });
   }
 
   const periciasDoDiaSelecionado = diaSelecionado ? porDia.get(diaSelecionado) ?? [] : [];
@@ -383,17 +392,42 @@ export function Calendario() {
                 const itens = porDia.get(key) ?? [];
                 if (itens.length === 0) return null;
                 const ehHoje = key === hoje;
+                const expandido = diasExpandidos.has(key);
                 return (
-                  <div key={key} className="rounded-2xl border border-zinc-200 bg-zinc-50/60 p-3 dark:border-zinc-800 dark:bg-zinc-900/30">
-                    <p className={cn("mb-2 text-sm font-semibold", ehHoje ? "text-accent-600 dark:text-accent-400" : "text-zinc-700 dark:text-zinc-300")}>
-                      {cel.dia} de {NOMES_MES[cel.mes - 1]}
-                      {ehHoje && " · Hoje"}
-                    </p>
-                    <div className="space-y-2">
-                      {itens.map((p) => (
-                        <PericiaLinha key={p.id} pericia={p} onExcluir={() => setApagarAlvo(p)} excluindo={apagando === p.id} />
-                      ))}
-                    </div>
+                  <div key={key} className="overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50/60 dark:border-zinc-800 dark:bg-zinc-900/30">
+                    <button
+                      type="button"
+                      onClick={() => alternarDiaExpandido(key)}
+                      aria-expanded={expandido}
+                      aria-controls={`eventos-dia-${key}`}
+                      className="flex min-h-12 w-full items-center gap-2 px-3 py-3 text-left transition-colors hover:bg-zinc-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-500 dark:hover:bg-zinc-800/50"
+                    >
+                      <span
+                        className={cn(
+                          "min-w-0 flex-1 text-sm font-semibold",
+                          ehHoje ? "text-accent-600 dark:text-accent-400" : "text-zinc-700 dark:text-zinc-300"
+                        )}
+                      >
+                        {cel.dia} de {NOMES_MES[cel.mes - 1]}
+                        {ehHoje && " · Hoje"}
+                      </span>
+                      <span className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">
+                        {itens.length} {itens.length === 1 ? "evento" : "eventos"}
+                      </span>
+                      <ChevronDown
+                        className={cn(
+                          "h-4 w-4 shrink-0 text-zinc-400 transition-transform duration-200",
+                          expandido && "rotate-180"
+                        )}
+                      />
+                    </button>
+                    {expandido && (
+                      <div id={`eventos-dia-${key}`} className="space-y-2 border-t border-zinc-200 px-3 py-3 dark:border-zinc-800">
+                        {itens.map((p) => (
+                          <PericiaLinha key={p.id} pericia={p} onExcluir={() => setApagarAlvo(p)} excluindo={apagando === p.id} />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}
