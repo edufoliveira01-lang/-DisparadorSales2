@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderMessages } from "../src/services/templateService";
+import { renderMessages } from "../src/services/templateRenderer";
 import type { Pericia } from "../src/services/parserService";
 
 const template = {
@@ -9,7 +9,17 @@ const template = {
   modo_envio_2_pericias: "combinada" as const,
 };
 
-const p1: Pericia = { tipo: "Médica", data: "01/01/2026", horario: "10:00", local: "Local A", nome: "Ana" };
+const p1: Pericia = {
+  tipo: "Médica",
+  data: "01/01/2026",
+  horario: "10:00",
+  local: "Local A",
+  nome: "Ana",
+  telefone: "(11) 99999-9999",
+  whatsapp: "SIM",
+  processo: "5001306-35.2026.4.03.6321",
+  profissionalPerito: "Dra. Maria Souza",
+};
 const p2: Pericia = { tipo: "Social", data: "02/01/2026", horario: "11:00", local: "Local B", nome: "Ana" };
 
 describe("renderMessages", () => {
@@ -35,5 +45,18 @@ describe("renderMessages", () => {
 
   it("retorna array vazio quando não há perícias", () => {
     expect(renderMessages(template, "Ana", [])).toEqual([]);
+  });
+
+  it("renderiza telefone, WhatsApp, processo e profissional/perito", () => {
+    const completo = {
+      ...template,
+      conteudo_1_pericia:
+        "{{NOME}} | {{TELEFONE}} | {{WHATSAPP}} | {{PROCESSO}} | {{PROFISSIONAL_PERITO}}",
+    };
+    const result = renderMessages(completo, "Ana", [p1]);
+
+    expect(result[0]).toBe(
+      "Ana | (11) 99999-9999 | SIM | 5001306-35.2026.4.03.6321 | Dra. Maria Souza"
+    );
   });
 });

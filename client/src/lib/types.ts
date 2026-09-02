@@ -5,7 +5,9 @@ export interface Pericia {
   local: string;
   nome: string;
   telefone: string;
+  whatsapp?: string;
   processo?: string;
+  profissionalPerito?: string;
   origem?: "medica" | "social" | "geral" | "audiencia";
 }
 
@@ -15,6 +17,7 @@ export interface Contact {
   id: number;
   nome: string;
   telefone: string;
+  processo: string | null;
   observacoes: string | null;
   created_at: string;
 }
@@ -63,6 +66,7 @@ export interface CardViewModel {
   nomeCliente: string;
   contato: Contact | null;
   sugestaoContato: Contact | null;
+  criterioContato: "nome_processo" | "somente_nome" | "nome_aproximado" | "processo_divergente" | "telefone_card" | null;
   ultimoEnvio: { status: "sucesso" | "falha"; data: string; erro: string | null } | null;
 }
 

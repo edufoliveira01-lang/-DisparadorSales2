@@ -94,10 +94,14 @@ export function TemplatesAudiencia() {
   function preview(): string {
     return mensagem
       .replace(/\{\{NOME\}\}/g, exemplo.nome)
+      .replace(/\{\{TIPO_PERICIA\}\}/g, exemplo.tipo)
       .replace(/\{\{DATA\}\}/g, exemplo.data)
       .replace(/\{\{HORARIO\}\}/g, exemplo.horario)
       .replace(/\{\{LOCAL\}\}/g, exemplo.local)
-      .replace(/\{\{PROCESSO\}\}/g, exemplo.processo || "");
+      .replace(/\{\{TELEFONE\}\}/g, exemplo.telefone || "")
+      .replace(/\{\{WHATSAPP\}\}/g, exemplo.whatsapp || "")
+      .replace(/\{\{PROCESSO\}\}/g, exemplo.processo || "")
+      .replace(/\{\{PROFISSIONAL_PERITO\}\}/g, exemplo.profissionalPerito || "");
   }
 
   return (

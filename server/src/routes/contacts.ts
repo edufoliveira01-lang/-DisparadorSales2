@@ -10,11 +10,16 @@ contactsRouter.get("/", (_req, res) => {
 });
 
 contactsRouter.post("/", (req, res) => {
-  const { nome, telefone, observacoes } = req.body as { nome?: string; telefone?: string; observacoes?: string };
+  const { nome, telefone, processo, observacoes } = req.body as {
+    nome?: string;
+    telefone?: string;
+    processo?: string;
+    observacoes?: string;
+  };
   if (!nome?.trim() || !telefone?.trim()) {
     return res.status(400).json({ error: "Nome e telefone são obrigatórios." });
   }
-  res.status(201).json(createContact(nome, telefone, observacoes));
+  res.status(201).json(createContact(nome, telefone, observacoes, processo));
 });
 
 contactsRouter.put("/:id", (req, res) => {
@@ -22,11 +27,16 @@ contactsRouter.put("/:id", (req, res) => {
   const existing = getContact(id);
   if (!existing) return res.status(404).json({ error: "Contato não encontrado." });
 
-  const { nome, telefone, observacoes } = req.body as { nome?: string; telefone?: string; observacoes?: string };
+  const { nome, telefone, processo, observacoes } = req.body as {
+    nome?: string;
+    telefone?: string;
+    processo?: string;
+    observacoes?: string;
+  };
   if (!nome?.trim() || !telefone?.trim()) {
     return res.status(400).json({ error: "Nome e telefone são obrigatórios." });
   }
-  res.json(updateContact(id, nome, telefone, observacoes));
+  res.json(updateContact(id, nome, telefone, observacoes, processo));
 });
 
 contactsRouter.delete("/:id", (req, res) => {
@@ -54,13 +64,13 @@ function csvEscape(value: string): string {
 }
 
 // Contraparte do "Importar CSV/vCard": exporta no mesmo formato de CSV que o import reconhece
-// (headers "nome"/"telefone"/"observacoes"), então o arquivo serve tanto como backup quanto
+// (headers "nome"/"telefone"/"processo"/"observacoes"), então o arquivo serve tanto como backup quanto
 // como forma de levar os contatos para outra instalação.
 contactsRouter.get("/export", (_req, res) => {
   const contatos = listContacts();
   const linhas = [
-    "nome,telefone,observacoes",
-    ...contatos.map((c) => [c.nome, c.telefone, c.observacoes || ""].map(csvEscape).join(",")),
+    "nome,telefone,processo,observacoes",
+    ...contatos.map((c) => [c.nome, c.telefone, c.processo || "", c.observacoes || ""].map(csvEscape).join(",")),
   ];
   // BOM no início: sem isso, o Excel abre acentos/caracteres especiais corrompidos em CSV UTF-8.
   const csv = "﻿" + linhas.join("\r\n");
@@ -71,7 +81,7 @@ contactsRouter.get("/export", (_req, res) => {
 
 contactsRouter.get("/match/:nome", (req, res) => {
   const contacts = listContacts();
-  res.json(matchContact(req.params.nome, contacts));
+  res.json(matchContact(req.params.nome, contacts, typeof req.query.processo === "string" ? req.query.processo : ""));
 });
 
 function apenasDigitos(value: string): string {
@@ -107,7 +117,7 @@ contactsRouter.post("/import", (req, res) => {
       ignorados++;
       continue;
     }
-    createContact(contato.nome, contato.telefone, contato.observacoes);
+    createContact(contato.nome, contato.telefone, contato.observacoes, contato.processo);
     existentes.add(telefoneDigits);
     criados++;
   }

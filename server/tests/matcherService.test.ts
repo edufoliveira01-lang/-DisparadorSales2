@@ -3,7 +3,15 @@ import { matchContact, normalizeName } from "../src/services/matcherService";
 import type { Contact } from "../src/services/contactsService";
 
 function contact(id: number, nome: string): Contact {
-  return { id, nome, telefone: "5511999999999", observacoes: null, created_at: "" };
+  return {
+    id,
+    nome,
+    telefone: "5511999999999",
+    processo: null,
+    processo_chave: "",
+    observacoes: null,
+    created_at: "",
+  };
 }
 
 describe("normalizeName", () => {
@@ -35,6 +43,39 @@ describe("matchContact", () => {
 
   it("retorna tudo nulo quando a lista de contatos está vazia", () => {
     const result = matchContact("Qualquer Nome", []);
-    expect(result).toEqual({ exact: null, sugestao: null, score: null });
+    expect(result).toEqual({ exact: null, sugestao: null, score: null, criterio: null });
+  });
+
+  it("confirma o contato pelo nome completo e número do processo", () => {
+    const maria = {
+      ...contact(4, "Maria Aparecida da Silva"),
+      processo: "5001306-35.2026.4.03.6321",
+      processo_chave: "50013063520264036321",
+    };
+    const result = matchContact("MARIA APARECIDA DA SILVA", [maria], "50013063520264036321");
+
+    expect(result.exact?.id).toBe(4);
+    expect(result.criterio).toBe("nome_processo");
+  });
+
+  it("não preenche automaticamente quando o mesmo nome tem processo diferente", () => {
+    const maria = {
+      ...contact(5, "Maria Aparecida da Silva"),
+      processo: "1111111-11.2026.1.11.1111",
+      processo_chave: "11111111120261111111",
+    };
+    const result = matchContact("Maria Aparecida da Silva", [maria], "2222222-22.2026.2.22.2222");
+
+    expect(result.exact).toBeNull();
+    expect(result.sugestao?.id).toBe(5);
+    expect(result.criterio).toBe("processo_divergente");
+  });
+
+  it("mantém contato antigo sem processo apenas como sugestão", () => {
+    const result = matchContact("Maria da Silva", contacts, "5001306-35.2026.4.03.6321");
+
+    expect(result.exact).toBeNull();
+    expect(result.sugestao?.id).toBe(1);
+    expect(result.criterio).toBe("somente_nome");
   });
 });

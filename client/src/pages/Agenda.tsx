@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Download, Pencil, Plus, Search, StickyNote, Trash2, Upload, Users } from "lucide-react";
+import { ChevronDown, ChevronUp, Download, FileText, Pencil, Plus, Search, StickyNote, Trash2, Upload, Users } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay, formatPhoneInput } from "@/lib/phone";
 import { cn } from "@/lib/utils";
@@ -25,6 +25,7 @@ export function Agenda() {
   const [editando, setEditando] = useState<Contact | null>(null);
   const [nome, setNome] = useState("");
   const [telefone, setTelefone] = useState("");
+  const [processo, setProcesso] = useState("");
   const [observacoes, setObservacoes] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [excluindo, setExcluindo] = useState<number | null>(null);
@@ -52,7 +53,10 @@ export function Agenda() {
     if (!termo) return contacts;
     const termoDigits = termo.replace(/\D/g, "");
     return contacts.filter(
-      (c) => c.nome.toLowerCase().includes(termo) || (termoDigits && c.telefone.replace(/\D/g, "").includes(termoDigits))
+      (c) =>
+        c.nome.toLowerCase().includes(termo) ||
+        (termoDigits && c.telefone.replace(/\D/g, "").includes(termoDigits)) ||
+        (termoDigits && (c.processo || "").replace(/\D/g, "").includes(termoDigits))
     );
   }, [contacts, busca]);
 
@@ -74,6 +78,7 @@ export function Agenda() {
     setEditando(null);
     setNome("");
     setTelefone("");
+    setProcesso("");
     setObservacoes("");
     setModalAberto(true);
   }
@@ -82,6 +87,7 @@ export function Agenda() {
     setEditando(contact);
     setNome(contact.nome);
     setTelefone(formatPhoneDisplay(contact.telefone));
+    setProcesso(contact.processo || "");
     setObservacoes(contact.observacoes || "");
     setModalAberto(true);
   }
@@ -90,10 +96,10 @@ export function Agenda() {
     setSalvando(true);
     try {
       if (editando) {
-        await api.put(`/contacts/${editando.id}`, { nome, telefone, observacoes });
+        await api.put(`/contacts/${editando.id}`, { nome, telefone, processo, observacoes });
         show("Contato atualizado.", "success");
       } else {
-        await api.post("/contacts", { nome, telefone, observacoes });
+        await api.post("/contacts", { nome, telefone, processo, observacoes });
         show("Contato adicionado.", "success");
       }
       setModalAberto(false);
@@ -201,7 +207,9 @@ export function Agenda() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Agenda</h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Contatos usados para cruzar com o nome do cliente no card.</p>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+            Contatos identificados com segurança pelo nome completo e número do processo.
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <input
@@ -225,7 +233,7 @@ export function Agenda() {
 
       <div className="relative w-full max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-        <Input placeholder="Buscar por nome ou telefone…" className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
+        <Input placeholder="Buscar por nome, telefone ou processo…" className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
       </div>
       <p className="-mt-4 text-xs text-zinc-400">
         Aceita CSV exportado do Google/Android (Contatos → Exportar) ou arquivo vCard (.vcf).
@@ -280,7 +288,7 @@ export function Agenda() {
                     className="flex w-full items-center justify-between gap-2 text-left"
                     onClick={() => c.observacoes && setExpandido(aberto ? null : c.id)}
                   >
-                    <span className="block min-w-0 truncate font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</span>
+                    <span className="block min-w-0 break-words font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</span>
                     {c.observacoes &&
                       (aberto ? (
                         <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" />
@@ -306,6 +314,11 @@ export function Agenda() {
                     </div>
                   </div>
 
+                  <p className="flex items-start gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                    <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span className="break-all">{c.processo || "Processo não informado"}</span>
+                  </p>
+
                   {aberto && c.observacoes && (
                     <p className="border-t border-zinc-100 pt-2 text-sm text-zinc-600 dark:border-zinc-800 dark:text-zinc-300">
                       {c.observacoes}
@@ -329,6 +342,7 @@ export function Agenda() {
                   </th>
                   <th className="px-5 py-3">Nome</th>
                   <th className="px-5 py-3">Telefone</th>
+                  <th className="px-5 py-3">Processo</th>
                   <th className="w-16 px-5 py-3">Obs.</th>
                   <th className="px-5 py-3">Ações</th>
                 </tr>
@@ -350,6 +364,9 @@ export function Agenda() {
                         </td>
                         <td className="max-w-[240px] truncate px-5 py-3 text-left font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</td>
                         <td className="whitespace-nowrap px-5 py-3 text-center text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(c.telefone)}</td>
+                        <td className="max-w-[230px] px-5 py-3 text-center text-zinc-600 dark:text-zinc-400">
+                          <span className="break-all">{c.processo || "Não informado"}</span>
+                        </td>
                         <td className="px-5 py-3 text-center">
                           {c.observacoes && (
                             <span title="Tem observação">
@@ -375,7 +392,7 @@ export function Agenda() {
                       </tr>
                       {aberto && c.observacoes && (
                         <tr className="bg-zinc-50 dark:bg-zinc-800/30">
-                          <td colSpan={5} className="px-5 py-4">
+                          <td colSpan={6} className="px-5 py-4">
                             <p className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-400">Observações</p>
                             <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{c.observacoes}</p>
                           </td>
@@ -419,6 +436,15 @@ export function Agenda() {
               placeholder="Ex: (11) 99999-8888"
             />
             <p className="mt-1 text-xs text-zinc-400">DDD + número. Números antigos de 8 dígitos ficam (XX) XXXX-XXXX.</p>
+          </div>
+          <div>
+            <Label>Número do processo</Label>
+            <Input
+              value={processo}
+              onChange={(e) => setProcesso(e.target.value)}
+              placeholder="Ex: 5364774-26.2026.8.09.0006"
+            />
+            <p className="mt-1 text-xs text-zinc-400">Usado junto com o nome para confirmar o cliente correto no Dashboard.</p>
           </div>
           <div>
             <Label>Observações</Label>

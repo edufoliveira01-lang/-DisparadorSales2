@@ -61,6 +61,7 @@ export function Dashboard() {
     card: CardViewModel;
     nome: string;
     telefone: string;
+    processo: string;
     observacoes: string;
     contatoId?: number;
   } | null>(null);
@@ -139,7 +140,7 @@ export function Dashboard() {
   });
 
   function contatoEfetivo(card: CardViewModel): Contact | null {
-    return card.contato || contatoOverrides[card.cardId] || null;
+    return contatoOverrides[card.cardId] || card.contato || null;
   }
 
   function nomeEfetivo(card: CardViewModel): string {
@@ -150,9 +151,22 @@ export function Dashboard() {
     return periciasOverrides[card.cardId] ?? card.pericias;
   }
 
+  function processoDoCard(card: CardViewModel): string {
+    return periciasEfetivas(card).map((p) => p.processo || "").find((processo) => processo.trim()) || "";
+  }
+
+  function criterioContatoEfetivo(card: CardViewModel): CardViewModel["criterioContato"] | "manual" {
+    return contatoOverrides[card.cardId] ? "manual" : card.criterioContato;
+  }
+
   /** Aplica os overrides locais (nome, perícias, contato) — são os dados usados na mensagem enviada. */
   function cardEfetivo(card: CardViewModel): CardViewModel {
-    return { ...card, nomeCliente: nomeEfetivo(card), pericias: periciasEfetivas(card) };
+    return {
+      ...card,
+      nomeCliente: nomeEfetivo(card),
+      pericias: periciasEfetivas(card),
+      contato: contatoEfetivo(card),
+    };
   }
 
   /** true quando o card tem uma perícia marcada como audiência (cabeçalho "AUDIÊNCIA" no card do Trello). */
@@ -178,18 +192,33 @@ export function Dashboard() {
   function renderAudienciaLocal(mensagem: string, nome: string, pericia: Pericia): string {
     return mensagem
       .replace(/\{\{NOME\}\}/g, nome)
+      .replace(/\{\{TIPO_PERICIA\}\}/g, pericia.tipo)
       .replace(/\{\{DATA\}\}/g, pericia.data)
       .replace(/\{\{HORARIO\}\}/g, pericia.horario)
       .replace(/\{\{LOCAL\}\}/g, pericia.local)
-      .replace(/\{\{PROCESSO\}\}/g, pericia.processo || "");
+      .replace(/\{\{TELEFONE\}\}/g, pericia.telefone || "")
+      .replace(/\{\{WHATSAPP\}\}/g, pericia.whatsapp || "")
+      .replace(/\{\{PROCESSO\}\}/g, pericia.processo || "")
+      .replace(/\{\{PROFISSIONAL_PERITO\}\}/g, pericia.profissionalPerito || "");
   }
 
   const cardsFiltrados = useMemo(() => {
     if (!cards) return [];
     const termo = busca.trim().toLowerCase();
     return cards.filter((card) => {
-      if (termo && !card.nomeCliente.toLowerCase().includes(termo) && !card.cardNome.toLowerCase().includes(termo)) {
-        return false;
+      if (termo) {
+        const processoOuProfissional = card.pericias.some(
+          (p) =>
+            (p.processo || "").toLowerCase().includes(termo) ||
+            (p.profissionalPerito || "").toLowerCase().includes(termo)
+        );
+        if (
+          !card.nomeCliente.toLowerCase().includes(termo) &&
+          !card.cardNome.toLowerCase().includes(termo) &&
+          !processoOuProfissional
+        ) {
+          return false;
+        }
       }
       if (filtroStatus === "enviado" && card.ultimoEnvio?.status !== "sucesso") return false;
       if (filtroStatus === "falhou" && card.ultimoEnvio?.status !== "falha") return false;
@@ -238,7 +267,7 @@ export function Dashboard() {
   }
 
   function abrirCadastro(card: CardViewModel) {
-    setCadastro({ card, nome: nomeEfetivo(card), telefone: "", observacoes: "" });
+    setCadastro({ card, nome: nomeEfetivo(card), telefone: "", processo: processoDoCard(card), observacoes: "" });
   }
 
   function abrirEdicaoContato(card: CardViewModel) {
@@ -248,6 +277,7 @@ export function Dashboard() {
       card,
       nome: contato.nome,
       telefone: formatPhoneDisplay(contato.telefone),
+      processo: contato.processo || processoDoCard(card),
       observacoes: contato.observacoes || "",
       contatoId: contato.id,
     });
@@ -257,7 +287,12 @@ export function Dashboard() {
     if (!cadastro) return;
     setSalvandoContato(true);
     try {
-      const payload = { nome: cadastro.nome, telefone: cadastro.telefone, observacoes: cadastro.observacoes };
+      const payload = {
+        nome: cadastro.nome,
+        telefone: cadastro.telefone,
+        processo: cadastro.processo,
+        observacoes: cadastro.observacoes,
+      };
       const contato = cadastro.contatoId
         ? await api.put<Contact>(`/contacts/${cadastro.contatoId}`, payload)
         : await api.post<Contact>("/contacts", payload);
@@ -414,18 +449,20 @@ export function Dashboard() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div className="space-y-5 md:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Dashboard · DisparaZap</h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Cards da lista do Trello configurada.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 md:text-3xl">Dashboard</h1>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Revise os dados do Trello e envie mensagens com segurança.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {whatsapp.status !== "conectado" && (
-            <Badge tone="warning">
-              <WifiOff className="h-3.5 w-3.5" /> WhatsApp desconectado
-            </Badge>
-          )}
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <Badge tone={whatsapp.status === "conectado" ? "success" : "warning"}>
+            {whatsapp.status === "conectado" ? (
+              <><span className="h-2 w-2 rounded-full bg-accent-500" /> WhatsApp conectado</>
+            ) : (
+              <><WifiOff className="h-3.5 w-3.5" /> WhatsApp desconectado</>
+            )}
+          </Badge>
           <Button variant="outline" onClick={carregarCards} loading={carregando}>
             <RefreshCw className="h-4 w-4" /> Atualizar
           </Button>
@@ -445,44 +482,60 @@ export function Dashboard() {
         />
       ) : (
         <>
-          <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-            <div className="relative flex-1 min-w-[200px]">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-soft dark:border-zinc-800 dark:bg-zinc-900 md:p-4">
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+            <div className="relative col-span-2 md:col-span-4 xl:col-span-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-              <Input placeholder="Buscar por cliente…" className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
+              <Input
+                placeholder="Buscar cliente, processo ou perito…"
+                className="pl-9"
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+              />
             </div>
-            <Select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value as FiltroStatus)} className="w-44">
+            <Select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value as FiltroStatus)} className="w-full">
               <option value="todos">Todos os status</option>
               <option value="nao_enviado">Não enviado</option>
               <option value="enviado">Enviado</option>
               <option value="falhou">Falhou</option>
             </Select>
-            <Select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value as FiltroTipo)} className="w-44">
+            <Select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value as FiltroTipo)} className="w-full">
               <option value="todos">Médica e Social</option>
               <option value="medica">Só Médica</option>
               <option value="social">Só Social</option>
               <option value="ambas">Ambas (2 perícias)</option>
               <option value="audiencia">Só Audiência</option>
             </Select>
-            <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="w-52">
+            <Select
+              value={templateId ?? ""}
+              onChange={(e) => setTemplateId(Number(e.target.value))}
+              className="col-span-2 w-full md:col-span-2 xl:col-span-1"
+            >
               {templates.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.nome}
                 </option>
               ))}
             </Select>
-            <div className="flex items-center gap-2">
+            </div>
+            <div className="mt-3 flex flex-col gap-3 border-t border-zinc-100 pt-3 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                {cardsFiltrados.length} de {cards?.length ?? 0} card(s) exibido(s) · {selecionados.size} selecionado(s)
+              </p>
+              <div className="grid grid-cols-2 gap-2 sm:flex">
               <Button
                 variant="outline"
                 onClick={toggleSelecionarTodos}
                 disabled={cardsFiltrados.length === 0 || Boolean(batchProgress)}
               >
                 {cardsFiltrados.length > 0 && cardsFiltrados.every((c) => selecionados.has(c.cardId))
-                  ? "Desmarcar Todos"
-                  : "Selecionar Todos"}
+                  ? "Desmarcar todos"
+                  : "Selecionar todos"}
               </Button>
-              <Button onClick={abrirConfirmBatch} disabled={selecionados.size === 0 || Boolean(batchProgress)}>
-                <Send className="h-4 w-4" /> Enviar selecionados ({selecionados.size})
+              <Button className="min-w-0" onClick={abrirConfirmBatch} disabled={selecionados.size === 0 || Boolean(batchProgress)}>
+                <Send className="h-4 w-4" /> <span className="truncate">Enviar selecionados ({selecionados.size})</span>
               </Button>
+              </div>
             </div>
           </div>
 
@@ -522,7 +575,8 @@ export function Dashboard() {
                   card={cardEfetivo(card)}
                   selecionado={selecionados.has(card.cardId)}
                   onToggleSelecionar={() => toggleSelecionado(card.cardId)}
-                  temContatoEfetivo={Boolean(contatoEfetivo(card))}
+                  contatoEfetivo={contatoEfetivo(card)}
+                  criterioContato={criterioContatoEfetivo(card)}
                   onEnviar={() => abrirPreview(card)}
                   onCadastrarContato={() => abrirCadastro(card)}
                   onEditarContato={() => abrirEdicaoContato(card)}
@@ -630,6 +684,15 @@ export function Dashboard() {
               />
             </div>
             <div>
+              <Label>Número do processo</Label>
+              <Input
+                value={cadastro.processo}
+                onChange={(e) => setCadastro({ ...cadastro, processo: e.target.value })}
+                placeholder="Ex: 5364774-26.2026.8.09.0006"
+              />
+              <p className="mt-1 text-xs text-zinc-400">Confirma o vínculo entre o cartão e o contato da Agenda.</p>
+            </div>
+            <div>
               <Label>Observações</Label>
               <Textarea rows={2} value={cadastro.observacoes} onChange={(e) => setCadastro({ ...cadastro, observacoes: e.target.value })} />
             </div>
@@ -705,6 +768,56 @@ export function Dashboard() {
               <Input
                 value={edicaoPericia.pericia.local}
                 onChange={(e) => setEdicaoPericia({ ...edicaoPericia, pericia: { ...edicaoPericia.pericia, local: e.target.value } })}
+              />
+            </div>
+            <div>
+              <Label>Telefone informado no cartão</Label>
+              <Input
+                value={edicaoPericia.pericia.telefone}
+                onChange={(e) =>
+                  setEdicaoPericia({
+                    ...edicaoPericia,
+                    pericia: { ...edicaoPericia.pericia, telefone: e.target.value },
+                  })
+                }
+              />
+            </div>
+            <div>
+              <Label>WhatsApp</Label>
+              <Input
+                value={edicaoPericia.pericia.whatsapp || ""}
+                onChange={(e) =>
+                  setEdicaoPericia({
+                    ...edicaoPericia,
+                    pericia: { ...edicaoPericia.pericia, whatsapp: e.target.value },
+                  })
+                }
+                placeholder="Ex: SIM"
+              />
+            </div>
+            <div>
+              <Label>Número do processo</Label>
+              <Input
+                value={edicaoPericia.pericia.processo || ""}
+                onChange={(e) =>
+                  setEdicaoPericia({
+                    ...edicaoPericia,
+                    pericia: { ...edicaoPericia.pericia, processo: e.target.value },
+                  })
+                }
+                placeholder="Ex: 5364774-26.2026.8.09.0006"
+              />
+            </div>
+            <div>
+              <Label>Profissional / Perito</Label>
+              <Input
+                value={edicaoPericia.pericia.profissionalPerito || ""}
+                onChange={(e) =>
+                  setEdicaoPericia({
+                    ...edicaoPericia,
+                    pericia: { ...edicaoPericia.pericia, profissionalPerito: e.target.value },
+                  })
+                }
               />
             </div>
           </div>

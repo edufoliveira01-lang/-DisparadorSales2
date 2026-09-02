@@ -6,7 +6,12 @@ describe("parseImportContent — CSV", () => {
     const csv = `Nome,Telefone,Observacoes\nMaria da Silva,11999999999,Cliente antiga\nJoão Pereira,5511988887777,`;
     const result = parseImportContent(csv);
     expect(result).toHaveLength(2);
-    expect(result[0]).toEqual({ nome: "Maria da Silva", telefone: "5511999999999", observacoes: "Cliente antiga" });
+    expect(result[0]).toEqual({
+      nome: "Maria da Silva",
+      telefone: "5511999999999",
+      processo: "",
+      observacoes: "Cliente antiga",
+    });
     expect(result[1].telefone).toBe("5511988887777");
   });
 
@@ -41,6 +46,13 @@ describe("parseImportContent — CSV", () => {
     expect(result[0].nome).toBe("Silva, Maria");
     expect(result[0].observacoes).toBe("Mora na Rua A, 123");
   });
+
+  it("importa o número do processo quando a coluna estiver presente", () => {
+    const csv = "Nome,Telefone,Processo\nMaria da Silva,11999999999,5001306-35.2026.4.03.6321";
+    const result = parseImportContent(csv);
+
+    expect(result[0].processo).toBe("5001306-35.2026.4.03.6321");
+  });
 });
 
 describe("parseImportContent — vCard", () => {
@@ -74,6 +86,20 @@ describe("parseImportContent — vCard", () => {
     const result = parseImportContent(vcf);
     expect(result).toHaveLength(2);
     expect(result.map((c) => c.nome)).toEqual(["Contato Um", "Contato Dois"]);
+  });
+
+  it("importa processo de um vCard exportado pelo sistema", () => {
+    const vcf = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      "FN:Maria da Silva",
+      "TEL:11999990000",
+      "X-PROCESSO:5001306-35.2026.4.03.6321",
+      "END:VCARD",
+    ].join("\n");
+    const result = parseImportContent(vcf);
+
+    expect(result[0].processo).toBe("5001306-35.2026.4.03.6321");
   });
 
   it("ignora vCards sem telefone", () => {

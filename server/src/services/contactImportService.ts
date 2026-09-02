@@ -3,6 +3,7 @@ import { normalizePhone } from "../utils/phone";
 export interface ContatoImportado {
   nome: string;
   telefone: string;
+  processo: string;
   observacoes: string;
 }
 
@@ -74,6 +75,9 @@ function parseCsvContent(content: string): ContatoImportado[] {
     .map(({ idx }) => idx);
 
   const obsIdx = headers.findIndex((h) => ["notes", "note", "observacoes", "observações", "obs"].includes(h));
+  const processoIdx = headers.findIndex((h) =>
+    ["processo", "numero do processo", "numero processo", "process number"].includes(h)
+  );
 
   const contatos: ContatoImportado[] = [];
   for (const row of rows.slice(1)) {
@@ -94,9 +98,10 @@ function parseCsvContent(content: string): ContatoImportado[] {
     }
 
     const observacoes = obsIdx >= 0 ? row[obsIdx]?.trim() || "" : "";
+    const processo = processoIdx >= 0 ? row[processoIdx]?.trim() || "" : "";
 
     if (nome && telefone) {
-      contatos.push({ nome, telefone: normalizePhone(telefone), observacoes });
+      contatos.push({ nome, telefone: normalizePhone(telefone), processo, observacoes });
     }
   }
   return contatos;
@@ -111,6 +116,7 @@ function parseVCardContent(content: string): ContatoImportado[] {
     const lines = block.split(/\r?\n/);
     let nome = "";
     let telefone = "";
+    let processo = "";
     let observacoes = "";
 
     for (const line of lines) {
@@ -120,11 +126,13 @@ function parseVCardContent(content: string): ContatoImportado[] {
         telefone = line.slice(line.lastIndexOf(":") + 1).trim();
       } else if (/^NOTE[:;]/i.test(line) && !observacoes) {
         observacoes = line.slice(line.indexOf(":") + 1).trim();
+      } else if (/^X-PROCESSO[:;]/i.test(line) && !processo) {
+        processo = line.slice(line.indexOf(":") + 1).trim();
       }
     }
 
     if (nome && telefone) {
-      contatos.push({ nome, telefone: normalizePhone(telefone), observacoes });
+      contatos.push({ nome, telefone: normalizePhone(telefone), processo, observacoes });
     }
   }
   return contatos;

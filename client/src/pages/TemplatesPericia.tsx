@@ -19,10 +19,10 @@ type TemplateForm = Omit<Template, "id" | "created_at" | "conteudo_pericia_medic
 function novoTemplateVazio(): TemplateForm {
   return {
     nome: "Novo template",
-    conteudo_1_pericia: "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n\nQualquer dúvida, estou à disposição!",
-    conteudo_2_pericias: "Olá {{NOME}}, tudo bem?\n\nVocê tem as seguintes perícias agendadas:\n\n{{#each PERICIAS}}\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n\n{{/each}}\nQualquer dúvida, estou à disposição!",
-    conteudo_pericia_medica: "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia MÉDICA agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n\nQualquer dúvida, estou à disposição!",
-    conteudo_pericia_social: "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia SOCIAL agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n\nQualquer dúvida, estou à disposição!",
+    conteudo_1_pericia: "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n⚖️ Processo: {{PROCESSO}}\n👤 Profissional/Perito: {{PROFISSIONAL_PERITO}}\n\nQualquer dúvida, estou à disposição!",
+    conteudo_2_pericias: "Olá {{NOME}}, tudo bem?\n\nVocê tem as seguintes perícias agendadas:\n\n{{#each PERICIAS}}\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n⚖️ Processo: {{PROCESSO}}\n👤 Profissional/Perito: {{PROFISSIONAL_PERITO}}\n\n{{/each}}\nQualquer dúvida, estou à disposição!",
+    conteudo_pericia_medica: "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia MÉDICA agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n⚖️ Processo: {{PROCESSO}}\n👤 Profissional/Perito: {{PROFISSIONAL_PERITO}}\n\nQualquer dúvida, estou à disposição!",
+    conteudo_pericia_social: "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia SOCIAL agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n⚖️ Processo: {{PROCESSO}}\n👤 Profissional/Perito: {{PROFISSIONAL_PERITO}}\n\nQualquer dúvida, estou à disposição!",
     modo_envio_2_pericias: "combinada",
   };
 }
@@ -262,8 +262,8 @@ export function TemplatesPericia() {
                   {form.modo_envio_2_pericias === "combinada" ? (
                     <>
                       <p className="text-xs text-zinc-400">
-                        Dentro de {"{{#each PERICIAS}}"}...{"{{/each}}"}, use {"{{TIPO_PERICIA}}"}, {"{{DATA}}"}, {"{{HORARIO}}"} e{" "}
-                        {"{{LOCAL}}"} para cada perícia. {"{{NOME}}"} fica fora do bloco (é o mesmo cliente).
+                        Dentro de {"{{#each PERICIAS}}"}...{"{{/each}}"}, as variáveis representam cada perícia. {"{{NOME}}"}
+                        fica fora do bloco, pois é o mesmo cliente.
                       </p>
                       <Textarea
                         ref={textarea2Ref}
