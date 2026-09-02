@@ -81,7 +81,9 @@ export function montarPericiasDoCard(card: TrelloCard): PericiaComOrigem[] {
     horario: pericia.horario || dataHoraFallback?.horario || "",
     local: pericia.local || "",
     telefone: pericia.telefone || "",
+    whatsapp: pericia.whatsapp || "",
     processo: pericia.processo || "",
+    profissionalPerito: pericia.profissionalPerito || "",
   }));
 }
 

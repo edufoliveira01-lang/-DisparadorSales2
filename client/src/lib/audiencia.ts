@@ -1,6 +1,16 @@
 import type { Pericia } from "@/lib/types";
 
-export const VARIAVEIS_AUDIENCIA = ["NOME", "DATA", "HORARIO", "LOCAL", "PROCESSO"];
+export const VARIAVEIS_AUDIENCIA = [
+  "NOME",
+  "TIPO_PERICIA",
+  "DATA",
+  "HORARIO",
+  "LOCAL",
+  "TELEFONE",
+  "WHATSAPP",
+  "PROCESSO",
+  "PROFISSIONAL_PERITO",
+];
 
 export type ModalidadeAudiencia = "presencial" | "online" | "hibrida";
 
@@ -11,7 +21,9 @@ export const EXEMPLO_AUDIENCIA_PRESENCIAL: Pericia = {
   local: "Avenida Antônio Emmerich, nº 1238, Vila São Jorge, São Vicente/SP",
   nome: "Creide Augusta",
   telefone: "(11) 99999-8888",
+  whatsapp: "SIM",
   processo: "5004217-88.2024.4.03.6321",
+  profissionalPerito: "Dr. Marcos Vinícius Lassi Alves Leocádio",
   origem: "audiencia",
 };
 

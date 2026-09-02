@@ -1,9 +1,15 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import {
+  BriefcaseBusiness,
+  Calendar,
   ChevronDown,
   ChevronUp,
+  Clock,
+  FileText,
   History as HistoryIcon,
+  MapPin,
   MessageSquareReply,
+  Phone,
   RefreshCw,
   RotateCcw,
   Search,
@@ -13,7 +19,7 @@ import {
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { cn } from "@/lib/utils";
-import type { SendLog, Template } from "@/lib/types";
+import type { Pericia, SendLog, Template } from "@/lib/types";
 import { useToast } from "@/components/ui/Toast";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
 import { AckIndicator } from "@/components/AckIndicator";
@@ -74,6 +80,39 @@ function ComoRespondeu({ log }: { log: SendLog }) {
   return <>—</>;
 }
 
+function periciasDoLog(log: SendLog): Pericia[] {
+  if (!log.pericias_json) return [];
+  try {
+    const pericias = JSON.parse(log.pericias_json);
+    return Array.isArray(pericias) ? pericias : [];
+  } catch {
+    return [];
+  }
+}
+
+function DadosDoEnvio({ log }: { log: SendLog }) {
+  const pericias = periciasDoLog(log);
+  if (pericias.length === 0) return null;
+
+  return (
+    <div className="grid gap-2 lg:grid-cols-2">
+      {pericias.map((pericia, index) => (
+        <div key={index} className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900/70">
+          <p className="font-medium text-zinc-800 dark:text-zinc-200">{pericia.tipo || "Perícia"}</p>
+          <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs text-zinc-500 dark:text-zinc-400">
+            <span className="flex items-start gap-1.5"><Calendar className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {pericia.data || "Não informada"}</span>
+            <span className="flex items-start gap-1.5"><Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {pericia.horario || "Não informado"}</span>
+            {pericia.local && <span className="col-span-2 flex items-start gap-1.5"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span className="break-words">{pericia.local}</span></span>}
+            {pericia.processo && <span className="col-span-2 flex items-start gap-1.5"><FileText className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span className="break-all">{pericia.processo}</span></span>}
+            {pericia.profissionalPerito && <span className="col-span-2 flex items-start gap-1.5"><BriefcaseBusiness className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span className="break-words">{pericia.profissionalPerito}</span></span>}
+            {pericia.telefone && <span className="col-span-2 flex items-start gap-1.5"><Phone className="mt-0.5 h-3.5 w-3.5 shrink-0" />{formatPhoneDisplay(pericia.telefone)}</span>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function Historico() {
   const { show } = useToast();
   const [logs, setLogs] = useState<SendLog[] | null>(null);
@@ -126,7 +165,13 @@ export function Historico() {
       if (termo) {
         const nomeMatch = (log.card_nome || "").toLowerCase().includes(termo);
         const telefoneMatch = termoDigits.length > 0 && (log.telefone || "").replace(/\D/g, "").includes(termoDigits);
-        if (!nomeMatch && !telefoneMatch) return false;
+        const mensagemMatch = (log.mensagem_enviada || "").toLowerCase().includes(termo);
+        const dadosMatch = periciasDoLog(log).some(
+          (pericia) =>
+            (pericia.processo || "").toLowerCase().includes(termo) ||
+            (pericia.profissionalPerito || "").toLowerCase().includes(termo)
+        );
+        if (!nomeMatch && !telefoneMatch && !mensagemMatch && !dadosMatch) return false;
       }
       if (dataDe || dataAte) {
         const dataLog = dataLocalYMD(log.created_at);
@@ -253,45 +298,39 @@ export function Historico() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 md:space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Histórico</h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Registro de todas as mensagens enviadas.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 md:text-3xl">Histórico</h1>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Mensagens enviadas, dados utilizados e confirmações de entrega.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="w-full sm:w-52">
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.nome}
-              </option>
-            ))}
-          </Select>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
           <Button variant="outline" onClick={carregar}>
             <RefreshCw className="h-4 w-4" /> Atualizar
           </Button>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="relative min-w-[200px] flex-1">
+      <div className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-soft dark:border-zinc-800 dark:bg-zinc-900 md:p-4">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+        <div className="relative col-span-2 md:col-span-4 xl:col-span-2">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
           <Input
-            placeholder="Buscar por nome ou telefone…"
+            placeholder="Buscar nome, telefone, processo ou mensagem…"
             className="pl-9"
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
           />
         </div>
-        <div>
+        <div className="min-w-0">
           <Label className="text-xs">De</Label>
-          <Input type="date" value={dataDe} onChange={(e) => setDataDe(e.target.value)} className="w-36" />
+          <Input type="date" value={dataDe} onChange={(e) => setDataDe(e.target.value)} className="w-full" />
         </div>
-        <div>
+        <div className="min-w-0">
           <Label className="text-xs">Até</Label>
-          <Input type="date" value={dataAte} onChange={(e) => setDataAte(e.target.value)} className="w-36" />
+          <Input type="date" value={dataAte} onChange={(e) => setDataAte(e.target.value)} className="w-full" />
         </div>
-        <div className="w-full sm:w-56">
+        <div className="col-span-2 md:col-span-2">
           <Label className="text-xs">Ordenar por</Label>
           <Select value={ordenacao} onChange={(e) => setOrdenacao(e.target.value as Ordenacao)}>
             {ORDENACAO_OPTIONS.map((opt) => (
@@ -301,13 +340,24 @@ export function Historico() {
             ))}
           </Select>
         </div>
+        <div className="col-span-2 md:col-span-2">
+          <Label className="text-xs">Template para reenvio</Label>
+          <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="w-full">
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.nome}
+              </option>
+            ))}
+          </Select>
+        </div>
+        </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1 rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="scrollbar-thin flex items-center gap-1 overflow-x-auto rounded-xl border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-900">
         <button
           onClick={() => setLetra(null)}
           className={cn(
-            "rounded-md px-2 py-1 text-xs font-medium transition-colors",
+            "shrink-0 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
             letra === null
               ? "bg-accent-500 text-white"
               : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
@@ -320,7 +370,7 @@ export function Historico() {
             key={l}
             onClick={() => setLetra(letra === l ? null : l)}
             className={cn(
-              "h-7 w-7 rounded-md text-xs font-medium transition-colors",
+              "h-7 w-7 shrink-0 rounded-md text-xs font-medium transition-colors",
               letra === l
                 ? "bg-accent-500 text-white"
                 : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
@@ -380,12 +430,13 @@ export function Historico() {
                     className="flex w-full items-center justify-between gap-2 text-left"
                     onClick={() => setExpandido(aberto ? null : log.id)}
                   >
-                    <span className="min-w-0">
-                      <span className="block truncate font-medium text-zinc-900 dark:text-zinc-100">{log.card_nome || "—"}</span>
-                      <span className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+                    <span className="min-w-0 flex-1">
+                      <span className="block break-words font-semibold leading-snug text-zinc-900 dark:text-zinc-100">{log.card_nome || "Sem nome"}</span>
+                      <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400">
                         {log.telefone ? formatPhoneDisplay(log.telefone) : "—"}
                         <AckIndicator ack={log.ack} respondido={log.resposta_status === "respondido"} />
                       </span>
+                      <span className="mt-1 block text-xs text-zinc-400">{formatarData(log)}</span>
                     </span>
                     {aberto ? (
                       <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" />
@@ -400,8 +451,9 @@ export function Historico() {
                         <StatusBadge sendStatus={log.status} ack={log.ack} respostaStatus={log.resposta_status} />
                       </div>
                       {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
+                      <DadosDoEnvio log={log} />
                       {log.mensagem_enviada && (
-                        <div className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/50">
+                        <div className="rounded-xl rounded-tl-sm bg-accent-50 p-3.5 dark:bg-accent-900/20">
                           <p className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-400">Mensagem enviada</p>
                           <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{log.mensagem_enviada}</p>
                         </div>
@@ -429,11 +481,7 @@ export function Historico() {
                           <RotateCcw className="h-3.5 w-3.5" /> Reenviar
                         </Button>
                       )}
-                      <div className="flex items-center justify-between gap-2 pt-1">
-                        <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                          <span className="text-zinc-400 dark:text-zinc-500">Enviado em: </span>
-                          {formatarData(log)}
-                        </p>
+                      <div className="flex items-center justify-end gap-2 pt-1">
                         <Button variant="ghost" size="icon" title="Apagar" onClick={() => setApagarAlvo(log)} disabled={apagando === log.id}>
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
@@ -458,6 +506,7 @@ export function Historico() {
                   </th>
                   <th className="px-5 py-3">Cliente</th>
                   <th className="px-5 py-3">Telefone</th>
+                  <th className="px-5 py-3">Enviado em</th>
                   <th className="px-5 py-3">Entrega</th>
                   <th className="w-16 px-5 py-3">Status</th>
                   <th className="px-5 py-3">Ações</th>
@@ -475,11 +524,14 @@ export function Historico() {
                         <td className="px-5 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                           <Checkbox checked={selecionados.has(log.id)} onChange={() => alternarSelecionado(log.id)} />
                         </td>
-                        <td className="max-w-[240px] truncate px-5 py-3 text-left font-medium text-zinc-900 dark:text-zinc-100">
+                        <td className="max-w-[240px] break-words px-5 py-3 text-left font-medium text-zinc-900 dark:text-zinc-100">
                           {log.card_nome || "—"}
                         </td>
                         <td className="whitespace-nowrap px-5 py-3 text-center text-zinc-600 dark:text-zinc-400">
                           {log.telefone ? formatPhoneDisplay(log.telefone) : "—"}
+                        </td>
+                        <td className="whitespace-nowrap px-5 py-3 text-center text-xs text-zinc-500 dark:text-zinc-400">
+                          {formatarData(log)}
                         </td>
                         <td className="px-5 py-3 text-center">
                           <AckIndicator ack={log.ack} respondido={log.resposta_status === "respondido"} />
@@ -511,7 +563,7 @@ export function Historico() {
                       </tr>
                       {aberto && (
                         <tr className="bg-zinc-50 dark:bg-zinc-800/30">
-                          <td colSpan={6} className="space-y-2 px-5 py-4">
+                          <td colSpan={7} className="space-y-3 px-5 py-4">
                             <p className="text-sm text-zinc-500 dark:text-zinc-400">
                               <span className="text-zinc-400 dark:text-zinc-500">Enviado em: </span>
                               {formatarData(log)}
@@ -529,8 +581,9 @@ export function Historico() {
                               </p>
                             )}
                             {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
+                            <DadosDoEnvio log={log} />
                             {log.mensagem_enviada && (
-                              <div>
+                              <div className="rounded-xl rounded-tl-sm bg-accent-50 p-4 dark:bg-accent-900/20">
                                 <p className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-400">Mensagem enviada</p>
                                 <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{log.mensagem_enviada}</p>
                               </div>

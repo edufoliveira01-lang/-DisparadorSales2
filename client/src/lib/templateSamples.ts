@@ -1,6 +1,16 @@
 import type { Pericia } from "@/lib/types";
 
-export const VARIAVEIS = ["NOME", "TIPO_PERICIA", "DATA", "HORARIO", "LOCAL"];
+export const VARIAVEIS = [
+  "NOME",
+  "TIPO_PERICIA",
+  "DATA",
+  "HORARIO",
+  "LOCAL",
+  "TELEFONE",
+  "WHATSAPP",
+  "PROCESSO",
+  "PROFISSIONAL_PERITO",
+];
 
 export const EXEMPLO_PERICIAS: Pericia[] = [
   {
@@ -10,6 +20,9 @@ export const EXEMPLO_PERICIAS: Pericia[] = [
     local: "Rua Exemplo, 123 - Centro",
     nome: "Maria da Silva",
     telefone: "(11) 99999-8888",
+    whatsapp: "SIM",
+    processo: "5001234-56.2026.4.03.6100",
+    profissionalPerito: "Dr. Marcos Vinícius Lassi Alves Leocádio",
   },
   {
     tipo: "Perícia Social",
@@ -18,5 +31,8 @@ export const EXEMPLO_PERICIAS: Pericia[] = [
     local: "Fórum Central, sala 4",
     nome: "Maria da Silva",
     telefone: "(11) 99999-8888",
+    whatsapp: "SIM",
+    processo: "5001234-56.2026.4.03.6100",
+    profissionalPerito: "Ana Lúcia Valério",
   },
 ];

@@ -1,10 +1,19 @@
 import stringSimilarity from "string-similarity";
 import type { Contact } from "./contactsService";
+import { normalizeProcesso } from "../utils/processo";
+
+export type MatchCriterio =
+  | "nome_processo"
+  | "somente_nome"
+  | "nome_aproximado"
+  | "processo_divergente"
+  | "telefone_card";
 
 export interface MatchResult {
   exact: Contact | null;
   sugestao: Contact | null;
   score: number | null;
+  criterio: MatchCriterio | null;
 }
 
 const SUGGESTION_THRESHOLD = 0.6;
@@ -18,21 +27,48 @@ export function normalizeName(value: string): string {
     .trim();
 }
 
-export function matchContact(nome: string, contacts: Contact[]): MatchResult {
+export function matchContact(nome: string, contacts: Contact[], processo?: string): MatchResult {
   const normalizedTarget = normalizeName(nome);
-  if (!normalizedTarget) return { exact: null, sugestao: null, score: null };
+  const processoTarget = normalizeProcesso(processo);
+  if (!normalizedTarget) return { exact: null, sugestao: null, score: null, criterio: null };
 
-  const exact = contacts.find((c) => normalizeName(c.nome) === normalizedTarget) || null;
-  if (exact) return { exact, sugestao: null, score: 1 };
+  const mesmoNome = contacts.filter((c) => normalizeName(c.nome) === normalizedTarget);
+  if (processoTarget) {
+    const nomeEProcesso = mesmoNome.find((c) => normalizeProcesso(c.processo) === processoTarget) || null;
+    if (nomeEProcesso) {
+      return { exact: nomeEProcesso, sugestao: null, score: 1, criterio: "nome_processo" };
+    }
 
-  if (contacts.length === 0) return { exact: null, sugestao: null, score: null };
+    const semProcesso = mesmoNome.find((c) => !normalizeProcesso(c.processo)) || null;
+    if (semProcesso) {
+      return { exact: null, sugestao: semProcesso, score: 1, criterio: "somente_nome" };
+    }
+
+    const processoDivergente = mesmoNome[0] || null;
+    if (processoDivergente) {
+      return { exact: null, sugestao: processoDivergente, score: 1, criterio: "processo_divergente" };
+    }
+  } else {
+    const exact = mesmoNome[0] || null;
+    if (exact) return { exact, sugestao: null, score: 1, criterio: "somente_nome" };
+  }
+
+  if (contacts.length === 0) return { exact: null, sugestao: null, score: null, criterio: null };
+
+  if (processoTarget) {
+    const mesmoProcesso = contacts.find((c) => normalizeProcesso(c.processo) === processoTarget) || null;
+    if (mesmoProcesso) {
+      const score = stringSimilarity.compareTwoStrings(normalizedTarget, normalizeName(mesmoProcesso.nome));
+      return { exact: null, sugestao: mesmoProcesso, score, criterio: "nome_aproximado" };
+    }
+  }
 
   const candidates = contacts.map((c) => normalizeName(c.nome));
   const { bestMatch, bestMatchIndex } = stringSimilarity.findBestMatch(normalizedTarget, candidates);
 
   if (bestMatch.rating >= SUGGESTION_THRESHOLD) {
-    return { exact: null, sugestao: contacts[bestMatchIndex], score: bestMatch.rating };
+    return { exact: null, sugestao: contacts[bestMatchIndex], score: bestMatch.rating, criterio: "nome_aproximado" };
   }
 
-  return { exact: null, sugestao: null, score: bestMatch.rating };
+  return { exact: null, sugestao: null, score: bestMatch.rating, criterio: null };
 }

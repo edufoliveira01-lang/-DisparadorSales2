@@ -5,8 +5,12 @@ export interface Pericia {
   local: string;
   nome: string;
   telefone: string;
+  /** Indicação vinda do card, normalmente "SIM" ou "NÃO". */
+  whatsapp?: string;
   /** Número do processo — só relevante para audiências, opcional nos demais casos. */
   processo?: string;
+  /** Nome do profissional responsável ou do perito indicado no cartão. */
+  profissionalPerito?: string;
   /** Preenchido por parseCardDescriptionComOrigem (rota /cards); ausente no parse "puro". */
   origem?: OrigemPericia;
 }
@@ -24,7 +28,9 @@ const FIELD_PATTERNS: Record<FieldName, RegExp> = {
   local: /^[ \t]*LOCAL\b\s*:?[ \t]*(.+)$/im,
   nome: /^[ \t]*NOME\b\s*:?[ \t]*(.+)$/im,
   telefone: /^[ \t]*TELEFONE\b\s*:?[ \t]*(.+)$/im,
+  whatsapp: /^[ \t]*WHATSAPP\b\s*:?[ \t]*(.+)$/im,
   processo: /^[ \t]*PROCESSO\b\s*:?[ \t]*(.+)$/im,
+  profissionalPerito: /^[ \t]*(?:PROFISSIONAL\s*\/\s*PERITO|PROFISSIONAL|PERITO)\b\s*:?[ \t]*(.+)$/im,
 };
 
 // Cabeçalhos de bloco: só contam quando ocupam a linha inteira (opcionalmente com
@@ -55,6 +61,8 @@ function extractField(block: string, pattern: RegExp): string {
 }
 
 function extractPericiaFromBlock(block: string): Pericia {
+  const whatsapp = extractField(block, FIELD_PATTERNS.whatsapp);
+  const profissionalPerito = extractField(block, FIELD_PATTERNS.profissionalPerito);
   return {
     tipo: extractField(block, FIELD_PATTERNS.tipo),
     data: extractField(block, FIELD_PATTERNS.data),
@@ -63,6 +71,8 @@ function extractPericiaFromBlock(block: string): Pericia {
     nome: extractField(block, FIELD_PATTERNS.nome),
     telefone: extractField(block, FIELD_PATTERNS.telefone),
     processo: extractField(block, FIELD_PATTERNS.processo),
+    ...(whatsapp ? { whatsapp } : {}),
+    ...(profissionalPerito ? { profissionalPerito } : {}),
   };
 }
 

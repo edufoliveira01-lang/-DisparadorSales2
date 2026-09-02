@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { createContact, listContacts, type Contact } from "../services/contactsService";
+import { createContact, listContacts, updateContact, type Contact } from "../services/contactsService";
 import { getLastStatusForCard } from "../services/logsService";
-import { matchContact } from "../services/matcherService";
+import { matchContact, normalizeName, type MatchCriterio } from "../services/matcherService";
 import {
   extractNomeFromCardTitle,
   isPericiaCompleta,
@@ -11,6 +11,7 @@ import {
 import { getSetting } from "../services/settingsService";
 import { getCardsFromList, TrelloError } from "../services/trelloService";
 import { normalizePhone } from "../utils/phone";
+import { normalizeProcesso } from "../utils/processo";
 
 export const cardsRouter = Router();
 
@@ -19,14 +20,28 @@ export const cardsRouter = Router();
  * na descrição, cadastra o contato automaticamente (por nome + telefone do card)
  * em vez de exigir cadastro manual no Dashboard.
  */
-function autoCadastrarPorTelefone(nomeCliente: string, telefoneCard: string, todosContatos: Contact[]): Contact | null {
+function autoCadastrarPorTelefone(
+  nomeCliente: string,
+  telefoneCard: string,
+  processo: string,
+  todosContatos: Contact[]
+): Contact | null {
   const telefoneNormalizado = normalizePhone(telefoneCard);
   if (telefoneNormalizado.length < 10) return null;
 
   const existente = todosContatos.find((c) => normalizePhone(c.telefone) === telefoneNormalizado);
-  if (existente) return existente;
+  if (existente && normalizeName(existente.nome) === normalizeName(nomeCliente)) {
+    const processoCard = normalizeProcesso(processo);
+    const processoContato = normalizeProcesso(existente.processo);
+    if (!processoCard || !processoContato || processoCard === processoContato) {
+      if (processoCard && !processoContato) {
+        return updateContact(existente.id, existente.nome, existente.telefone, existente.observacoes || undefined, processo) ?? existente;
+      }
+      return existente;
+    }
+  }
 
-  return createContact(nomeCliente, telefoneNormalizado);
+  return createContact(nomeCliente, telefoneNormalizado, undefined, processo);
 }
 
 cardsRouter.get("/", async (_req, res) => {
@@ -52,15 +67,25 @@ cardsRouter.get("/", async (_req, res) => {
       // 2. Fallback inteligente do título do card (limpando datas e códigos)
       // 3. Título bruto do card (último caso, dentro do próprio extractNomeFromCardTitle)
       const nomeCliente = pericias[0]?.nome || extractNomeFromCardTitle(card.name);
-      let match = matchContact(nomeCliente, [...contacts, ...novosContatos]);
+      const processoCliente = pericias.map((p) => p.processo || "").find((p) => p.trim()) || "";
+      let match = matchContact(nomeCliente, [...contacts, ...novosContatos], processoCliente);
+      let criterioContato: MatchCriterio | null = match.criterio;
 
       if (!match.exact) {
         const telefoneCard = pericias.map((p) => p.telefone).find((t) => t.trim());
         if (telefoneCard) {
-          const contato = autoCadastrarPorTelefone(nomeCliente, telefoneCard, [...contacts, ...novosContatos]);
+          const contato = autoCadastrarPorTelefone(
+            nomeCliente,
+            telefoneCard,
+            processoCliente,
+            [...contacts, ...novosContatos]
+          );
           if (contato) {
-            novosContatos.push(contato);
-            match = { exact: contato, sugestao: null, score: 1 };
+            if (!contacts.some((c) => c.id === contato.id) && !novosContatos.some((c) => c.id === contato.id)) {
+              novosContatos.push(contato);
+            }
+            match = { exact: contato, sugestao: null, score: 1, criterio: "telefone_card" };
+            criterioContato = "telefone_card";
           }
         }
       }
@@ -77,6 +102,7 @@ cardsRouter.get("/", async (_req, res) => {
         nomeCliente,
         contato: match.exact,
         sugestaoContato: match.sugestao,
+        criterioContato,
         ultimoEnvio: lastLog ? { status: lastLog.status, data: lastLog.created_at, erro: lastLog.erro } : null,
       };
     });

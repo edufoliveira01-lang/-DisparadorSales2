@@ -256,6 +256,7 @@ ADVOGADO: ANTONIO MESSIAS SALES JUNIOR - OAB 346457/SP`;
       nome: "GENI DE FATIMA FURTADO",
       telefone: "",
       processo: "5001306-35.2026.4.03.6321",
+      profissionalPerito: "DIEGO ABAD DOS SANTOS",
     });
     expect(isPericiaCompleta(result[0])).toBe(true);
   });
@@ -290,6 +291,7 @@ texto da intimação original que deve ser ignorado...`;
       nome: "GENI DE FATIMA FURTADO",
       telefone: "",
       processo: "5001306-35.2026.4.03.6321",
+      profissionalPerito: "DIEGO ABAD DOS SANTOS",
       origem: "medica",
     });
     expect(result[1]).toEqual({
@@ -300,6 +302,7 @@ texto da intimação original que deve ser ignorado...`;
       nome: "GENI DE FATIMA FURTADO",
       telefone: "",
       processo: "5001306-35.2026.4.03.6321",
+      profissionalPerito: "ANA LUCIA VALERIO",
       origem: "social",
     });
     expect(result.every(isPericiaCompleta)).toBe(true);
@@ -345,6 +348,7 @@ PROFISSIONAL/PERITO: PROFISSIONAL_NAO_IDENTIFICADO`;
       nome: "CREIDE AUGUSTA",
       telefone: "",
       processo: "5004217-88.2024.4.03.6321",
+      profissionalPerito: "PROFISSIONAL_NAO_IDENTIFICADO",
       origem: "audiencia",
     });
     expect(classificarModalidadeAudiencia(result[0].tipo)).toBe("online");
@@ -363,6 +367,34 @@ PROFISSIONAL/PERITO: PROFISSIONAL_NAO_IDENTIFICADO`;
     const result = parseCardDescriptionComOrigem(desc);
     expect(result[0].origem).toBe("audiencia");
     expect(classificarModalidadeAudiencia(result[0].tipo)).toBe("presencial");
+  });
+
+  it("extrai todos os campos do novo padrão de descrição", () => {
+    const desc = `TIPO: PERÍCIA MÉDICA;
+DATA: 02/09/2026;
+HORÁRIO: 15:50;
+LOCAL: Av. Sen. José Lourenço Dias, 1311 - St. Central, Anápolis - GO, 75020-010;
+NOME: MIRIÃ AMORIM SARTIN;
+TELEFONE: (62) 9444 - 0729
+WHATSAPP: SIM
+PROCESSO: 5364774-26.2026.8.09.0006;
+PROFISSIONAL/PERITO: MARCOS VINÍCIUS LASSI ALVES LEOCÁDIO;`;
+
+    const result = parseCardDescription(desc);
+
+    expect(result).toEqual([
+      {
+        tipo: "PERÍCIA MÉDICA",
+        data: "02/09/2026",
+        horario: "15:50",
+        local: "Av. Sen. José Lourenço Dias, 1311 - St. Central, Anápolis - GO, 75020-010",
+        nome: "MIRIÃ AMORIM SARTIN",
+        telefone: "(62) 9444 - 0729",
+        whatsapp: "SIM",
+        processo: "5364774-26.2026.8.09.0006",
+        profissionalPerito: "MARCOS VINÍCIUS LASSI ALVES LEOCÁDIO",
+      },
+    ]);
   });
 
   it.each(["online", "ONLINE", "Virtual", "Por Videoconferência", "videoconferencia", "Telepresencial"])(

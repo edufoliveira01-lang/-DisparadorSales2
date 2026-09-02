@@ -11,6 +11,8 @@ export function runMigrations(db: Database.Database): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       nome TEXT NOT NULL,
       telefone TEXT NOT NULL,
+      processo TEXT,
+      processo_chave TEXT NOT NULL DEFAULT '',
       observacoes TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -134,6 +136,8 @@ export function runMigrations(db: Database.Database): void {
     "ALTER TABLE pending_replies ADD COLUMN whatsapp_message_id TEXT",
     "ALTER TABLE pending_replies ADD COLUMN ack INTEGER",
     "ALTER TABLE pending_replies ADD COLUMN ack_updated_at DATETIME",
+    "ALTER TABLE contacts ADD COLUMN processo TEXT",
+    "ALTER TABLE contacts ADD COLUMN processo_chave TEXT NOT NULL DEFAULT ''",
     // Id completo do chat (com domínio, ex: "5511999999999@c.us" ou "123456789@lid"), guardado
     // à parte de telefone_digits porque este último só serve para CASAR o remetente de uma
     // resposta recebida (comparação de dígitos, sem domínio). Reenviar uma nova mensagem (ex:
@@ -154,6 +158,7 @@ export function runMigrations(db: Database.Database): void {
   }
   db.exec("CREATE INDEX IF NOT EXISTS idx_send_logs_whatsapp_message_id ON send_logs(whatsapp_message_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_pending_replies_whatsapp_message_id ON pending_replies(whatsapp_message_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_contacts_processo_chave ON contacts(processo_chave)");
 
   // Marca quando um alerta de "entrega com problema" (falha no envio, ou entregue não
   // confirmada após X horas) já foi mandado pro Telegram, pra não notificar o mesmo envio
@@ -479,6 +484,19 @@ export function runMigrations(db: Database.Database): void {
     db.prepare("INSERT INTO users (username, password_hash) VALUES (?, ?)").run("admin", hash);
   }
 
+  const templatePadraoAntigo = {
+    uma: "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n\nQualquer dúvida, estou à disposição!",
+    duas: "Olá {{NOME}}, tudo bem?\n\nVocê tem as seguintes perícias agendadas:\n\n{{#each PERICIAS}}\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n\n{{/each}}\nQualquer dúvida, estou à disposição!",
+    medica: "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia médica agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n\nQualquer dúvida, estou à disposição!",
+    social: "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia social agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n\nQualquer dúvida, estou à disposição!",
+  };
+  const templatePadraoAtual = {
+    uma: "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n⚖️ Processo: {{PROCESSO}}\n👤 Profissional/Perito: {{PROFISSIONAL_PERITO}}\n\nQualquer dúvida, estou à disposição!",
+    duas: "Olá {{NOME}}, tudo bem?\n\nVocê tem as seguintes perícias agendadas:\n\n{{#each PERICIAS}}\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n⚖️ Processo: {{PROCESSO}}\n👤 Profissional/Perito: {{PROFISSIONAL_PERITO}}\n\n{{/each}}\nQualquer dúvida, estou à disposição!",
+    medica: "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia médica agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n⚖️ Processo: {{PROCESSO}}\n👤 Profissional/Perito: {{PROFISSIONAL_PERITO}}\n\nQualquer dúvida, estou à disposição!",
+    social: "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia social agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n⚖️ Processo: {{PROCESSO}}\n👤 Profissional/Perito: {{PROFISSIONAL_PERITO}}\n\nQualquer dúvida, estou à disposição!",
+  };
+
   const templateCount = db.prepare("SELECT COUNT(*) as count FROM templates").get() as { count: number };
   if (templateCount.count === 0) {
     db.prepare(
@@ -486,11 +504,34 @@ export function runMigrations(db: Database.Database): void {
        VALUES (?, ?, ?, ?, ?, ?)`
     ).run(
       "Padrão",
-      "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n\nQualquer dúvida, estou à disposição!",
-      "Olá {{NOME}}, tudo bem?\n\nVocê tem as seguintes perícias agendadas:\n\n{{#each PERICIAS}}\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n\n{{/each}}\nQualquer dúvida, estou à disposição!",
-      "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia médica agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n\nQualquer dúvida, estou à disposição!",
-      "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia social agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n\nQualquer dúvida, estou à disposição!",
+      templatePadraoAtual.uma,
+      templatePadraoAtual.duas,
+      templatePadraoAtual.medica,
+      templatePadraoAtual.social,
       "combinada"
     );
   }
+
+  // Atualiza somente o modelo original, sem sobrescrever templates personalizados.
+  db.prepare(
+    `UPDATE templates
+     SET conteudo_1_pericia = ?,
+         conteudo_2_pericias = ?,
+         conteudo_pericia_medica = ?,
+         conteudo_pericia_social = ?
+     WHERE nome = 'Padrão'
+       AND conteudo_1_pericia = ?
+       AND conteudo_2_pericias = ?
+       AND conteudo_pericia_medica = ?
+       AND conteudo_pericia_social = ?`
+  ).run(
+    templatePadraoAtual.uma,
+    templatePadraoAtual.duas,
+    templatePadraoAtual.medica,
+    templatePadraoAtual.social,
+    templatePadraoAntigo.uma,
+    templatePadraoAntigo.duas,
+    templatePadraoAntigo.medica,
+    templatePadraoAntigo.social
+  );
 }
