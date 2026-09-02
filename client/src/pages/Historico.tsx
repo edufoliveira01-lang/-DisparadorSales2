@@ -13,8 +13,10 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  SlidersHorizontal,
   SmilePlus,
   Trash2,
+  X,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay } from "@/lib/phone";
@@ -131,6 +133,7 @@ export function Historico() {
   const [dataDe, setDataDe] = useState("");
   const [dataAte, setDataAte] = useState("");
   const [letra, setLetra] = useState<string | null>(null);
+  const [mostrarPeriodo, setMostrarPeriodo] = useState(false);
 
   async function carregar() {
     const data = await api.get<SendLog[]>("/logs");
@@ -297,6 +300,8 @@ export function Historico() {
     return new Date(log.created_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
   }
 
+  const periodoAtivo = Boolean(dataDe || dataAte);
+
   return (
     <div className="space-y-5 md:space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -311,47 +316,70 @@ export function Historico() {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-soft dark:border-zinc-800 dark:bg-zinc-900 md:p-4">
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-        <div className="relative col-span-2 md:col-span-4 xl:col-span-2">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-          <Input
-            placeholder="Buscar nome, telefone, processo ou mensagem…"
-            className="pl-9"
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-          />
+      <section className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-soft dark:border-zinc-800 dark:bg-zinc-900 md:p-4">
+        <div className="grid gap-3 lg:grid-cols-[minmax(320px,1fr)_280px] lg:gap-4">
+          <div>
+            <Label className="text-xs">Buscar no histórico</Label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+              <Input
+                placeholder="Nome, telefone, processo ou mensagem…"
+                className="pl-9"
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+              />
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Template para reenvio</Label>
+            <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="w-full">
+              {templates.map((template) => (
+                <option key={template.id} value={template.id}>{template.nome}</option>
+              ))}
+            </Select>
+          </div>
         </div>
-        <div className="min-w-0">
-          <Label className="text-xs">De</Label>
-          <Input type="date" value={dataDe} onChange={(e) => setDataDe(e.target.value)} className="w-full" />
+
+        <div className="mt-3 grid grid-cols-2 gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800 sm:flex sm:items-end sm:justify-between">
+          <div className="col-span-2 min-w-0 sm:w-64">
+            <Label className="text-xs">Ordenar registros</Label>
+            <Select value={ordenacao} onChange={(e) => setOrdenacao(e.target.value as Ordenacao)} className="w-full">
+              {ORDENACAO_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </Select>
+          </div>
+          <Button
+            variant={periodoAtivo ? "secondary" : "outline"}
+            className="col-span-2 sm:self-end"
+            onClick={() => setMostrarPeriodo((valor) => !valor)}
+          >
+            <SlidersHorizontal className="h-4 w-4" /> {periodoAtivo ? "Período aplicado" : "Filtrar período"}
+          </Button>
         </div>
-        <div className="min-w-0">
-          <Label className="text-xs">Até</Label>
-          <Input type="date" value={dataAte} onChange={(e) => setDataAte(e.target.value)} className="w-full" />
-        </div>
-        <div className="col-span-2 md:col-span-2">
-          <Label className="text-xs">Ordenar por</Label>
-          <Select value={ordenacao} onChange={(e) => setOrdenacao(e.target.value as Ordenacao)}>
-            {ORDENACAO_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <div className="col-span-2 md:col-span-2">
-          <Label className="text-xs">Template para reenvio</Label>
-          <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="w-full">
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.nome}
-              </option>
-            ))}
-          </Select>
-        </div>
-        </div>
-      </div>
+
+        {(mostrarPeriodo || periodoAtivo) && (
+          <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-zinc-50 p-3 dark:bg-zinc-800/50 sm:flex sm:items-end">
+            <div className="min-w-0 sm:w-44">
+              <Label className="text-xs">Enviados de</Label>
+              <Input type="date" value={dataDe} onChange={(e) => setDataDe(e.target.value)} className="w-full" />
+            </div>
+            <div className="min-w-0 sm:w-44">
+              <Label className="text-xs">Até</Label>
+              <Input type="date" value={dataAte} onChange={(e) => setDataAte(e.target.value)} className="w-full" />
+            </div>
+            {periodoAtivo && (
+              <Button variant="ghost" size="sm" className="col-span-2" onClick={() => { setDataDe(""); setDataAte(""); }}>
+                <X className="h-3.5 w-3.5" /> Limpar período
+              </Button>
+            )}
+          </div>
+        )}
+
+        <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+          {logsFiltrados.length} de {logs?.length ?? 0} registro(s) exibido(s)
+        </p>
+      </section>
 
       <div className="scrollbar-thin flex items-center gap-1 overflow-x-auto rounded-xl border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-900">
         <button
