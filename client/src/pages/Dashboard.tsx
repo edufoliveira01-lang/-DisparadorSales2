@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Inbox, RefreshCw, Search, Send, WifiOff } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay, formatPhoneInput } from "@/lib/phone";
+import { cn } from "@/lib/utils";
 import type { CardViewModel, Contact, ModoEnvio, Pericia, Settings, Template } from "@/lib/types";
 import { classificarModalidadeAudiencia } from "@/lib/audiencia";
 import { useWhatsapp } from "@/context/WhatsappContext";
@@ -18,7 +19,21 @@ import { Badge } from "@/components/ui/Badge";
 import { CardItem } from "@/components/CardItem";
 
 type FiltroStatus = "todos" | "enviado" | "nao_enviado" | "falhou";
-type FiltroTipo = "todos" | "medica" | "social" | "ambas" | "audiencia";
+type FiltroTipo = "todos" | "medica" | "social" | "audiencia";
+
+const STATUS_OPTIONS: { value: FiltroStatus; label: string }[] = [
+  { value: "todos", label: "Todos" },
+  { value: "nao_enviado", label: "Pendentes" },
+  { value: "enviado", label: "Enviados" },
+  { value: "falhou", label: "Falhas" },
+];
+
+const TIPO_OPTIONS: { value: FiltroTipo; label: string }[] = [
+  { value: "todos", label: "Todos" },
+  { value: "medica", label: "Médica" },
+  { value: "social", label: "Social" },
+  { value: "audiencia", label: "Audiência" },
+];
 
 const MODALIDADE_POR_MODO: Record<Exclude<ModoEnvio, "template">, "presencial" | "online" | "hibrida"> = {
   audiencia_presencial: "presencial",
@@ -226,7 +241,6 @@ export function Dashboard() {
 
       if (filtroTipo !== "todos") {
         const origens = card.pericias.map((p) => p.origem || "geral");
-        if (filtroTipo === "ambas" && card.pericias.length < 2) return false;
         if (filtroTipo === "medica" && !origens.includes("medica")) return false;
         if (filtroTipo === "social" && !origens.includes("social")) return false;
         if (filtroTipo === "audiencia" && !origens.includes("audiencia")) return false;
@@ -483,40 +497,70 @@ export function Dashboard() {
       ) : (
         <>
           <div className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-soft dark:border-zinc-800 dark:bg-zinc-900 md:p-4">
-            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-            <div className="relative col-span-2 md:col-span-4 xl:col-span-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-              <Input
-                placeholder="Buscar cliente, processo ou perito…"
-                className="pl-9"
-                value={busca}
-                onChange={(e) => setBusca(e.target.value)}
-              />
+            <div className="grid grid-cols-2 gap-2 md:hidden">
+              <div className="relative col-span-2">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+                <Input
+                  placeholder="Buscar cliente, processo ou perito…"
+                  className="pl-9"
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                />
+              </div>
+              <Select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value as FiltroStatus)} className="w-full">
+                <option value="todos">Todos os status</option>
+                <option value="nao_enviado">Pendentes</option>
+                <option value="enviado">Enviados</option>
+                <option value="falhou">Falhas</option>
+              </Select>
+              <Select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value as FiltroTipo)} className="w-full">
+                <option value="todos">Todos os tipos</option>
+                <option value="medica">Perícia médica</option>
+                <option value="social">Perícia social</option>
+                <option value="audiencia">Audiência</option>
+              </Select>
+              <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="col-span-2 w-full">
+                {templates.map((t) => <option key={t.id} value={t.id}>{t.nome}</option>)}
+              </Select>
             </div>
-            <Select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value as FiltroStatus)} className="w-full">
-              <option value="todos">Todos os status</option>
-              <option value="nao_enviado">Não enviado</option>
-              <option value="enviado">Enviado</option>
-              <option value="falhou">Falhou</option>
-            </Select>
-            <Select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value as FiltroTipo)} className="w-full">
-              <option value="todos">Médica e Social</option>
-              <option value="medica">Só Médica</option>
-              <option value="social">Só Social</option>
-              <option value="ambas">Ambas (2 perícias)</option>
-              <option value="audiencia">Só Audiência</option>
-            </Select>
-            <Select
-              value={templateId ?? ""}
-              onChange={(e) => setTemplateId(Number(e.target.value))}
-              className="col-span-2 w-full md:col-span-2 xl:col-span-1"
-            >
-              {templates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.nome}
-                </option>
-              ))}
-            </Select>
+
+            <div className="hidden md:block">
+              <div className="grid gap-4 lg:grid-cols-[minmax(320px,1fr)_280px]">
+                <div>
+                  <p className="mb-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">Buscar cartões</p>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+                    <Input
+                      placeholder="Nome, processo ou profissional/perito…"
+                      className="pl-9"
+                      value={busca}
+                      onChange={(e) => setBusca(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">Template de envio</p>
+                  <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="w-full">
+                    {templates.map((t) => <option key={t.id} value={t.id}>{t.nome}</option>)}
+                  </Select>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-col gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800 xl:flex-row xl:items-center">
+                <FiltroRapido
+                  label="Situação"
+                  options={STATUS_OPTIONS}
+                  value={filtroStatus}
+                  onChange={(value) => setFiltroStatus(value as FiltroStatus)}
+                />
+                <div className="hidden h-7 w-px bg-zinc-200 dark:bg-zinc-700 xl:block" />
+                <FiltroRapido
+                  label="Tipo"
+                  options={TIPO_OPTIONS}
+                  value={filtroTipo}
+                  onChange={(value) => setFiltroTipo(value as FiltroTipo)}
+                />
+              </div>
             </div>
             <div className="mt-3 flex flex-col gap-3 border-t border-zinc-100 pt-3 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
@@ -823,6 +867,39 @@ export function Dashboard() {
           </div>
         )}
       </Modal>
+    </div>
+  );
+}
+
+function FiltroRapido({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="mr-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">{label}</span>
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onChange(option.value)}
+          className={cn(
+            "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+            value === option.value
+              ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+              : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
     </div>
   );
 }

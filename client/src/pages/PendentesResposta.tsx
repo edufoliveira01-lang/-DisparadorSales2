@@ -1,12 +1,18 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  CalendarDays,
   CheckCircle2,
+  CheckCheck,
   ChevronDown,
   ChevronUp,
+  Clock3,
+  Eye,
   MessageCircleQuestion,
   MessageSquareReply,
+  Phone,
   RefreshCw,
   Search,
+  SlidersHorizontal,
   Trash2,
   X,
 } from "lucide-react";
@@ -30,39 +36,39 @@ import { EmptyState } from "@/components/ui/EmptyState";
 const ITENS_POR_PAGINA = 20;
 
 type Filtro = "todos" | "enviado" | "entregue" | "lido";
-
-const FILTRO_OPTIONS: { value: Filtro; label: string }[] = [
-  { value: "todos", label: "Todos os status" },
-  { value: "enviado", label: "Enviado" },
-  { value: "entregue", label: "Entregue" },
-  { value: "lido", label: "Lido" },
-];
-
-function combinaFiltro(item: PendingReply, filtro: Filtro): boolean {
-  switch (filtro) {
-    case "todos":
-      return true;
-    case "enviado":
-      return item.ack === 1;
-    case "entregue":
-      return item.ack === 2;
-    case "lido":
-      return item.ack !== null && item.ack >= 3;
-  }
-}
-
 type Ordenacao = "recentes" | "antigos" | "az" | "za";
 
+const FILTRO_OPTIONS: { value: Filtro; label: string }[] = [
+  { value: "todos", label: "Todos os envios" },
+  { value: "enviado", label: "Somente enviados" },
+  { value: "entregue", label: "Somente entregues" },
+  { value: "lido", label: "Somente lidos" },
+];
+
 const ORDENACAO_OPTIONS: { value: Ordenacao; label: string }[] = [
-  { value: "recentes", label: "Mais recentes primeiro" },
-  { value: "antigos", label: "Mais antigos primeiro" },
+  { value: "recentes", label: "Mais recentes" },
+  { value: "antigos", label: "Mais antigos" },
   { value: "az", label: "Nome (A-Z)" },
   { value: "za", label: "Nome (Z-A)" },
 ];
 
-/** Data local (America/Sao_Paulo) no formato YYYY-MM-DD, para comparar com o valor de um <input type="date">. */
+function combinaFiltro(item: PendingReply, filtro: Filtro): boolean {
+  if (filtro === "todos") return true;
+  if (filtro === "enviado") return item.ack === 1;
+  if (filtro === "entregue") return item.ack === 2;
+  return item.ack !== null && item.ack >= 3;
+}
+
 function dataLocalYMD(createdAtUtc: string): string {
   return new Date(createdAtUtc + "Z").toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+}
+
+function formatarData(item: PendingReply): string {
+  return new Date(item.created_at + "Z").toLocaleString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    dateStyle: "short",
+    timeStyle: "short",
+  });
 }
 
 export function PendentesResposta() {
@@ -80,22 +86,19 @@ export function PendentesResposta() {
   const [ordenacao, setOrdenacao] = useState<Ordenacao>("recentes");
   const [dataDe, setDataDe] = useState("");
   const [dataAte, setDataAte] = useState("");
+  const [mostrarPeriodo, setMostrarPeriodo] = useState(false);
 
   const carregar = useCallback(async () => {
-    const data = await api.get<PendingReply[]>("/pending-replies");
-    setPendentes(data);
+    setPendentes(await api.get<PendingReply[]>("/pending-replies"));
   }, []);
 
   useEffect(() => {
     carregar();
   }, [carregar]);
 
-  useSocketEvent("pendingReply:resolved", () => {
-    carregar();
-  });
-
+  useSocketEvent("pendingReply:resolved", carregar);
   useSocketEvent<PendingReply>("pendingReply:ack-update", (atualizado) => {
-    setPendentes((prev) => (prev ? prev.map((p) => (p.id === atualizado.id ? atualizado : p)) : prev));
+    setPendentes((prev) => (prev ? prev.map((item) => (item.id === atualizado.id ? atualizado : item)) : prev));
   });
 
   async function confirmar(item: PendingReply) {
@@ -193,7 +196,7 @@ export function PendentesResposta() {
 
   function alternarSelecionarTodos(itens: PendingReply[]) {
     setSelecionados((prev) => {
-      const todosMarcados = itens.length > 0 && itens.every((i) => prev.has(i.id));
+      const todosMarcados = itens.length > 0 && itens.every((item) => prev.has(item.id));
       const next = new Set(prev);
       for (const item of itens) {
         if (todosMarcados) next.delete(item.id);
@@ -204,35 +207,37 @@ export function PendentesResposta() {
   }
 
   const aguardando = useMemo(() => {
-    const base = pendentes?.filter((p) => p.status === "aguardando" && combinaFiltro(p, filtro)) ?? [];
+    const base = pendentes?.filter((item) => item.status === "aguardando" && combinaFiltro(item, filtro)) ?? [];
     const termo = busca.trim().toLowerCase();
     const termoDigits = termo.replace(/\D/g, "");
     const filtrados = base.filter((item) => {
       if (termo) {
         const nomeMatch = (item.card_nome || "").toLowerCase().includes(termo);
-        const telefoneMatch = termoDigits.length > 0 && (item.telefone || "").replace(/\D/g, "").includes(termoDigits);
+        const telefoneMatch = termoDigits.length > 0 && item.telefone.replace(/\D/g, "").includes(termoDigits);
         if (!nomeMatch && !telefoneMatch) return false;
       }
-      if (dataDe || dataAte) {
-        const dataItem = dataLocalYMD(item.created_at);
-        if (dataDe && dataItem < dataDe) return false;
-        if (dataAte && dataItem > dataAte) return false;
-      }
+      const dataItem = dataDe || dataAte ? dataLocalYMD(item.created_at) : "";
+      if (dataDe && dataItem < dataDe) return false;
+      if (dataAte && dataItem > dataAte) return false;
       return true;
     });
+
     return [...filtrados].sort((a, b) => {
-      switch (ordenacao) {
-        case "recentes":
-          return b.created_at.localeCompare(a.created_at);
-        case "antigos":
-          return a.created_at.localeCompare(b.created_at);
-        case "az":
-          return (a.card_nome || "").localeCompare(b.card_nome || "", "pt-BR");
-        case "za":
-          return (b.card_nome || "").localeCompare(a.card_nome || "", "pt-BR");
-      }
+      if (ordenacao === "recentes") return b.created_at.localeCompare(a.created_at);
+      if (ordenacao === "antigos") return a.created_at.localeCompare(b.created_at);
+      if (ordenacao === "az") return (a.card_nome || "").localeCompare(b.card_nome || "", "pt-BR");
+      return (b.card_nome || "").localeCompare(a.card_nome || "", "pt-BR");
     });
   }, [pendentes, filtro, busca, dataDe, dataAte, ordenacao]);
+
+  const resumo = useMemo(() => {
+    const ativos = pendentes?.filter((item) => item.status === "aguardando") ?? [];
+    return {
+      total: ativos.length,
+      entregues: ativos.filter((item) => item.ack !== null && item.ack >= 2).length,
+      lidos: ativos.filter((item) => item.ack !== null && item.ack >= 3).length,
+    };
+  }, [pendentes]);
 
   const aguardandoPaginado = useMemo(
     () => aguardando.slice(paginaAguardando * ITENS_POR_PAGINA, (paginaAguardando + 1) * ITENS_POR_PAGINA),
@@ -248,68 +253,77 @@ export function PendentesResposta() {
     if (paginaAguardando > ultimaPagina) setPaginaAguardando(ultimaPagina);
   }, [aguardando, paginaAguardando]);
 
+  const periodoAtivo = Boolean(dataDe || dataAte);
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-5 md:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Pendentes de Resposta</h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            Clientes que já receberam a mensagem e aguardam resposta ou reação para o cartão ser movido automaticamente.
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 md:text-3xl">Pendentes de Resposta</h1>
+          <p className="mt-1 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">
+            Acompanhe quem recebeu a mensagem, cobre um retorno ou conclua o atendimento manualmente.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Select value={filtro} onChange={(e) => setFiltro(e.target.value as Filtro)} className="w-full sm:w-44">
-            {FILTRO_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
+        <Button variant="outline" className="self-start" onClick={carregar}>
+          <RefreshCw className="h-4 w-4" /> Atualizar
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 md:gap-3">
+        <ResumoCard icon={<Clock3 />} label="Aguardando" value={resumo.total} tone="accent" />
+        <ResumoCard icon={<CheckCheck />} label="Entregues" value={resumo.entregues} tone="warning" />
+        <ResumoCard icon={<Eye />} label="Lidos" value={resumo.lidos} tone="info" />
+      </div>
+
+      <section className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-soft dark:border-zinc-800 dark:bg-zinc-900 md:p-4">
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-[minmax(280px,1fr)_190px_190px_auto]">
+          <div className="relative col-span-2 lg:col-span-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+            <Input placeholder="Buscar nome ou telefone…" className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
+          </div>
+          <Select value={filtro} onChange={(e) => setFiltro(e.target.value as Filtro)} className="w-full">
+            {FILTRO_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </Select>
-          <Button variant="outline" onClick={carregar}>
-            <RefreshCw className="h-4 w-4" /> Atualizar
+          <Select value={ordenacao} onChange={(e) => setOrdenacao(e.target.value as Ordenacao)} className="w-full">
+            {ORDENACAO_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </Select>
+          <Button
+            variant={periodoAtivo ? "secondary" : "outline"}
+            className="col-span-2 lg:col-span-1"
+            onClick={() => setMostrarPeriodo((valor) => !valor)}
+          >
+            <SlidersHorizontal className="h-4 w-4" /> {periodoAtivo ? "Período aplicado" : "Filtrar período"}
           </Button>
         </div>
-      </div>
 
-      <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="relative min-w-[200px] flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-          <Input
-            placeholder="Buscar por nome ou telefone…"
-            className="pl-9"
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-          />
-        </div>
-        <div>
-          <Label className="text-xs">De</Label>
-          <Input type="date" value={dataDe} onChange={(e) => setDataDe(e.target.value)} className="w-36" />
-        </div>
-        <div>
-          <Label className="text-xs">Até</Label>
-          <Input type="date" value={dataAte} onChange={(e) => setDataAte(e.target.value)} className="w-36" />
-        </div>
-        <div className="w-full sm:w-56">
-          <Label className="text-xs">Ordenar por</Label>
-          <Select value={ordenacao} onChange={(e) => setOrdenacao(e.target.value as Ordenacao)}>
-            {ORDENACAO_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </Select>
-        </div>
-      </div>
+        {(mostrarPeriodo || periodoAtivo) && (
+          <div className="mt-3 grid grid-cols-2 gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800 sm:flex sm:items-end">
+            <div className="min-w-0 sm:w-44">
+              <Label className="text-xs">Enviados de</Label>
+              <Input type="date" value={dataDe} onChange={(e) => setDataDe(e.target.value)} className="w-full" />
+            </div>
+            <div className="min-w-0 sm:w-44">
+              <Label className="text-xs">Até</Label>
+              <Input type="date" value={dataAte} onChange={(e) => setDataAte(e.target.value)} className="w-full" />
+            </div>
+            {periodoAtivo && (
+              <Button variant="ghost" size="sm" className="col-span-2" onClick={() => { setDataDe(""); setDataAte(""); }}>
+                <X className="h-3.5 w-3.5" /> Limpar período
+              </Button>
+            )}
+          </div>
+        )}
+
+        <p className="mt-3 flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+          <CalendarDays className="h-3.5 w-3.5" /> {aguardando.length} de {resumo.total} atendimento(s) exibido(s)
+        </p>
+      </section>
 
       {selecionados.size > 0 && (
-        <div className="flex items-center justify-between rounded-xl border border-accent-200 bg-accent-50 px-4 py-3 dark:border-accent-900 dark:bg-accent-900/20">
-          <p className="text-sm font-medium text-accent-800 dark:text-accent-300">
-            {selecionados.size} registro(s) selecionado(s)
-          </p>
-          <div className="flex gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setSelecionados(new Set())}>
-              Limpar seleção
-            </Button>
+        <div className="flex flex-col gap-3 rounded-xl border border-accent-200 bg-accent-50 px-4 py-3 dark:border-accent-900 dark:bg-accent-900/20 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm font-medium text-accent-800 dark:text-accent-300">{selecionados.size} registro(s) selecionado(s)</p>
+          <div className="grid grid-cols-2 gap-2 sm:flex">
+            <Button variant="ghost" size="sm" onClick={() => setSelecionados(new Set())}>Limpar seleção</Button>
             <Button variant="danger" size="sm" onClick={() => setConfirmMassaAberto(true)} loading={apagandoSelecionados}>
               <Trash2 className="h-3.5 w-3.5" /> Apagar selecionados
             </Button>
@@ -318,236 +332,114 @@ export function PendentesResposta() {
       )}
 
       {pendentes === null ? (
-        <div className="space-y-2">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-16 w-full" />
-          ))}
-        </div>
-      ) : pendentes.length === 0 ? (
+        <div className="space-y-3">{Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-28 w-full" />)}</div>
+      ) : resumo.total === 0 ? (
         <EmptyState
           icon={MessageSquareReply}
           title="Nenhum monitoramento ativo"
-          description='Configure uma "lista de confirmação" em Configurações → Trello para que envios passem a aparecer aqui.'
+          description='Configure uma "lista de confirmação" em Configurações > Trello para acompanhar as respostas após o envio.'
         />
-      ) : aguardando.length === 0 && (filtro !== "todos" || busca || dataDe || dataAte) ? (
+      ) : aguardando.length === 0 ? (
         <EmptyState
           icon={MessageSquareReply}
           title="Nenhum resultado para esses filtros"
-          description="Tente ajustar o status, a busca ou o período."
+          description="Tente ajustar a busca, o status de entrega ou o período selecionado."
         />
       ) : (
-        <>
-          <section className="space-y-3">
-            <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Aguardando ({aguardando.length})</h2>
-            {aguardando.length === 0 ? (
-              <p className="text-sm text-zinc-400">Nenhum cliente aguardando resposta no momento.</p>
-            ) : (
-              <>
-                {/* Mobile: apenas nome e telefone visíveis; demais detalhes e ações ficam atrás do expandir. */}
-                <div className="space-y-3 md:hidden">
-                  <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-                    <Checkbox
-                      checked={aguardandoPaginado.length > 0 && aguardandoPaginado.every((i) => selecionados.has(i.id))}
-                      onChange={() => alternarSelecionarTodos(aguardandoPaginado)}
-                    />
-                    <span>Selecionar todos nesta página</span>
+        <section className="space-y-3">
+          <div>
+            <h2 className="font-semibold text-zinc-900 dark:text-zinc-100">Clientes aguardando retorno</h2>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">Abra um contato para ver as ações disponíveis.</p>
+          </div>
+
+          <div className="flex items-center gap-2 px-1 text-sm text-zinc-500 dark:text-zinc-400">
+            <Checkbox
+              checked={aguardandoPaginado.length > 0 && aguardandoPaginado.every((item) => selecionados.has(item.id))}
+              onChange={() => alternarSelecionarTodos(aguardandoPaginado)}
+            />
+            <span>Selecionar todos nesta página</span>
+          </div>
+
+          <div className="space-y-3 md:hidden">
+            {aguardandoPaginado.map((item) => {
+              const aberto = expandido === item.id;
+              return (
+                <SelectableCard key={item.id} checked={selecionados.has(item.id)} onToggle={() => alternarSelecionado(item.id)}>
+                  <button className="flex w-full items-center justify-between gap-3 text-left" onClick={() => setExpandido(aberto ? null : item.id)}>
+                    <span className="min-w-0 flex-1">
+                      <span className="block break-words font-semibold leading-snug text-zinc-900 dark:text-zinc-100">{item.card_nome || "Sem nome"}</span>
+                      <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400">
+                        <span className="inline-flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" /> {formatPhoneDisplay(item.telefone)}</span>
+                        <AckIndicator ack={item.ack} />
+                      </span>
+                    </span>
+                    {aberto ? <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" /> : <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />}
+                  </button>
+
+                  {aberto && (
+                    <div className="space-y-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <StatusBadge ack={item.ack} respostaStatus={item.status} />
+                        <span className="text-xs text-zinc-400">Enviado em {formatarData(item)}</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button className="col-span-2" size="sm" onClick={() => confirmar(item)} loading={processando === item.id}>
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar recebimento
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => cobrar(item)} disabled={processando === item.id}>
+                          <MessageCircleQuestion className="h-3.5 w-3.5" /> Cobrar resposta
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => cancelar(item)} disabled={processando === item.id}>
+                          <X className="h-3.5 w-3.5" /> Cancelar
+                        </Button>
+                        <Button variant="ghost" size="sm" className="col-span-2 text-red-600 dark:text-red-400" onClick={() => setApagarAlvo(item)} disabled={processando === item.id}>
+                          <Trash2 className="h-3.5 w-3.5" /> Apagar registro
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </SelectableCard>
+              );
+            })}
+          </div>
+
+          <div className="hidden gap-3 md:grid xl:grid-cols-2">
+            {aguardandoPaginado.map((item) => (
+              <article key={item.id} className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-soft dark:border-zinc-800 dark:bg-zinc-900">
+                <div className="flex items-start gap-3">
+                  <Checkbox checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <h3 className="break-words font-semibold leading-snug text-zinc-900 dark:text-zinc-100">{item.card_nome || "Sem nome"}</h3>
+                      <StatusBadge ack={item.ack} respostaStatus={item.status} />
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400">
+                      <span className="inline-flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" /> {formatPhoneDisplay(item.telefone)}</span>
+                      <AckIndicator ack={item.ack} />
+                    </div>
+                    <p className="mt-2 text-xs text-zinc-400">Enviado em {formatarData(item)}</p>
                   </div>
-                  {aguardandoPaginado.map((item) => {
-                    const aberto = expandido === item.id;
-                    return (
-                      <SelectableCard key={item.id} checked={selecionados.has(item.id)} onToggle={() => alternarSelecionado(item.id)}>
-                        <button
-                          className="flex w-full items-center justify-between gap-2 text-left"
-                          onClick={() => setExpandido(aberto ? null : item.id)}
-                        >
-                          <span className="min-w-0 truncate font-medium text-zinc-900 dark:text-zinc-100">
-                            {item.card_nome || "—"}
-                          </span>
-                          {aberto ? (
-                            <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
-                          )}
-                        </button>
-
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-                            {formatPhoneDisplay(item.telefone)}
-                            <AckIndicator ack={item.ack} respondido={item.status === "respondido"} />
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title="Apagar (ex: cliente só reagiu e o sistema não detectou)"
-                            onClick={() => setApagarAlvo(item)}
-                            disabled={processando === item.id}
-                          >
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
-                        </div>
-
-                        {aberto && (
-                          <div className="space-y-2 border-t border-zinc-100 pt-2 text-sm text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-                            <div className="flex items-center gap-2">
-                              <StatusBadge ack={item.ack} respostaStatus={item.status} />
-                            </div>
-                            <p>
-                              <span className="text-zinc-400 dark:text-zinc-500">Enviado em: </span>
-                              {new Date(item.created_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
-                            </p>
-                            <div className="flex flex-wrap justify-end gap-1.5 pt-1">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="whitespace-nowrap"
-                                onClick={() => confirmar(item)}
-                                loading={processando === item.id}
-                              >
-                                <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                title="Perguntar se recebeu / cobrar resposta"
-                                onClick={() => cobrar(item)}
-                                disabled={processando === item.id}
-                              >
-                                <MessageCircleQuestion className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                title="Cancelar monitoramento"
-                                onClick={() => cancelar(item)}
-                                disabled={processando === item.id}
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </div>
-                        )}
-                      </SelectableCard>
-                    );
-                  })}
                 </div>
-
-                {/* Desktop: tabela compacta de 6 colunas, "Enviado em" no accordion */}
-                <div className="hidden overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 md:block">
-                  <table className="w-full text-sm">
-                    <thead className="bg-zinc-50 text-center text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
-                      <tr>
-                        <th className="w-10 px-5 py-3">
-                          <Checkbox
-                            checked={aguardandoPaginado.length > 0 && aguardandoPaginado.every((i) => selecionados.has(i.id))}
-                            onChange={() => alternarSelecionarTodos(aguardandoPaginado)}
-                          />
-                        </th>
-                        <th className="px-5 py-3">Cliente</th>
-                        <th className="px-5 py-3">Telefone</th>
-                        <th className="px-5 py-3">Entrega</th>
-                        <th className="w-16 px-5 py-3">Status</th>
-                        <th className="px-5 py-3">Ações</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                      {aguardandoPaginado.map((item) => {
-                        const aberto = expandido === item.id;
-                        return (
-                          <Fragment key={item.id}>
-                            <tr
-                              className="cursor-pointer bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800/40"
-                              onClick={() => setExpandido(aberto ? null : item.id)}
-                            >
-                              <td className="px-5 py-3 text-center" onClick={(e) => e.stopPropagation()}>
-                                <Checkbox checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />
-                              </td>
-                              <td className="max-w-[220px] truncate px-5 py-3 text-left font-medium text-zinc-900 dark:text-zinc-100">
-                                {item.card_nome || "—"}
-                              </td>
-                              <td className="whitespace-nowrap px-5 py-3 text-center text-zinc-600 dark:text-zinc-400">
-                                {formatPhoneDisplay(item.telefone)}
-                              </td>
-                              <td className="px-5 py-3 text-center">
-                                <AckIndicator ack={item.ack} respondido={item.status === "respondido"} />
-                              </td>
-                              <td className="px-5 py-3 text-center">
-                                <StatusBadge ack={item.ack} respostaStatus={item.status} />
-                              </td>
-                              <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
-                                <div className="flex justify-center gap-1.5">
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    title="Ver detalhes"
-                                    onClick={() => setExpandido(aberto ? null : item.id)}
-                                  >
-                                    {aberto ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                                  </Button>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="whitespace-nowrap"
-                                    onClick={() => confirmar(item)}
-                                    loading={processando === item.id}
-                                  >
-                                    <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    title="Perguntar se recebeu / cobrar resposta"
-                                    onClick={() => cobrar(item)}
-                                    disabled={processando === item.id}
-                                  >
-                                    <MessageCircleQuestion className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    title="Cancelar monitoramento"
-                                    onClick={() => cancelar(item)}
-                                    disabled={processando === item.id}
-                                  >
-                                    <X className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    title="Apagar (ex: cliente só reagiu e o sistema não detectou)"
-                                    onClick={() => setApagarAlvo(item)}
-                                    disabled={processando === item.id}
-                                  >
-                                    <Trash2 className="h-4 w-4 text-red-500" />
-                                  </Button>
-                                </div>
-                              </td>
-                            </tr>
-                            {aberto && (
-                              <tr className="bg-zinc-50 dark:bg-zinc-800/30">
-                                <td colSpan={6} className="px-5 py-4">
-                                  <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                                    <span className="text-zinc-400 dark:text-zinc-500">Enviado em: </span>
-                                    {new Date(item.created_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
-                                  </p>
-                                </td>
-                              </tr>
-                            )}
-                          </Fragment>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+                  <Button size="sm" onClick={() => confirmar(item)} loading={processando === item.id}>
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => cobrar(item)} disabled={processando === item.id}>
+                    <MessageCircleQuestion className="h-3.5 w-3.5" /> Cobrar resposta
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => cancelar(item)} disabled={processando === item.id}>
+                    <X className="h-3.5 w-3.5" /> Cancelar
+                  </Button>
+                  <Button variant="ghost" size="icon" className="ml-auto" title="Apagar registro" onClick={() => setApagarAlvo(item)} disabled={processando === item.id}>
+                    <Trash2 className="h-4 w-4 text-red-500" />
+                  </Button>
                 </div>
-                <Pagination
-                  page={paginaAguardando}
-                  totalItems={aguardando.length}
-                  pageSize={ITENS_POR_PAGINA}
-                  onPageChange={setPaginaAguardando}
-                />
-              </>
-            )}
-          </section>
-        </>
+              </article>
+            ))}
+          </div>
+
+          <Pagination page={paginaAguardando} totalItems={aguardando.length} pageSize={ITENS_POR_PAGINA} onPageChange={setPaginaAguardando} />
+        </section>
       )}
 
       <ConfirmDialog
@@ -567,6 +459,22 @@ export function PendentesResposta() {
         onConfirm={confirmarApagarSelecionados}
         onCancel={() => setConfirmMassaAberto(false)}
       />
+    </div>
+  );
+}
+
+function ResumoCard({ icon, label, value, tone }: { icon: ReactNode; label: string; value: number; tone: "accent" | "warning" | "info" }) {
+  const tons = {
+    accent: "bg-accent-50 text-accent-700 dark:bg-accent-900/20 dark:text-accent-300",
+    warning: "bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300",
+    info: "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300",
+  };
+
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-3 shadow-soft dark:border-zinc-800 dark:bg-zinc-900 md:rounded-2xl md:p-4">
+      <div className={`flex h-8 w-8 items-center justify-center rounded-lg [&>svg]:h-4 [&>svg]:w-4 ${tons[tone]}`}>{icon}</div>
+      <p className="mt-2 text-xl font-bold text-zinc-900 dark:text-zinc-100 md:text-2xl">{value}</p>
+      <p className="truncate text-[11px] text-zinc-500 dark:text-zinc-400 md:text-xs">{label}</p>
     </div>
   );
 }
