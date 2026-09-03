@@ -14,11 +14,13 @@ import {
   Search,
   Send,
   ShieldCheck,
+  Video,
   WifiOff,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay, formatPhoneInput } from "@/lib/phone";
 import { cn } from "@/lib/utils";
+import { classificarEvento, type CategoriaEvento } from "@/lib/eventVisual";
 import type {
   CardViewModel,
   Contact,
@@ -82,14 +84,22 @@ function hojeYMD(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 }
 
-function eventoEhAudiencia(pericia: PericiaAgendada): boolean {
-  const texto = [pericia.tipo, pericia.origem, pericia.nome]
-    .filter(Boolean)
-    .join(" ")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toUpperCase();
-  return texto.includes("AUDIENCIA") || texto.includes("ONLINE");
+function toneEventoDashboard(categoria: CategoriaEvento): "neutral" | "accent" | "violet" | "info" | "cyan" | "indigo" {
+  if (categoria === "pericia_social") return "violet";
+  if (categoria === "audiencia_presencial") return "info";
+  if (categoria === "audiencia_online") return "cyan";
+  if (categoria === "audiencia_hibrida") return "indigo";
+  if (categoria === "tipo_nao_identificado" || categoria === "outro") return "neutral";
+  return "accent";
+}
+
+function classesIconeEventoDashboard(categoria: CategoriaEvento): string {
+  if (categoria === "pericia_social") return "bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300";
+  if (categoria === "audiencia_presencial") return "bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-300";
+  if (categoria === "audiencia_online") return "bg-cyan-50 text-cyan-700 dark:bg-cyan-950/50 dark:text-cyan-300";
+  if (categoria === "audiencia_hibrida") return "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300";
+  if (categoria === "tipo_nao_identificado" || categoria === "outro") return "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300";
+  return "bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300";
 }
 
 export function Dashboard() {
@@ -894,7 +904,7 @@ export function Dashboard() {
               <Input
                 value={cadastro.processo}
                 onChange={(e) => setCadastro({ ...cadastro, processo: e.target.value })}
-                placeholder="Ex: 5364774-26.2026.8.09.0006"
+                placeholder="Ex: 0000000-00.2026.0.00.0000"
               />
               <p className="mt-1 text-xs text-zinc-400">Confirma o vínculo entre o cartão e o contato da Agenda.</p>
             </div>
@@ -1011,7 +1021,7 @@ export function Dashboard() {
                     pericia: { ...edicaoPericia.pericia, processo: e.target.value },
                   })
                 }
-                placeholder="Ex: 5364774-26.2026.8.09.0006"
+                placeholder="Ex: 0000000-00.2026.0.00.0000"
               />
             </div>
             <div>
@@ -1114,18 +1124,22 @@ function PainelEventosDashboard({
       ) : (
         <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
           {eventos.map((evento) => {
-            const audiencia = eventoEhAudiencia(evento);
+            const tipo = classificarEvento(evento);
             return (
               <article key={evento.id} className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-zinc-50/70 dark:hover:bg-zinc-800/30">
                 <span
                   className={cn(
                     "mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl",
-                    audiencia
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-300"
-                      : "bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300"
+                    classesIconeEventoDashboard(tipo.categoria)
                   )}
                 >
-                  {audiencia ? <Gavel className="h-4 w-4" /> : <CalendarDays className="h-4 w-4" />}
+                  {tipo.categoria === "audiencia_online" ? (
+                    <Video className="h-4 w-4" />
+                  ) : tipo.audiencia ? (
+                    <Gavel className="h-4 w-4" />
+                  ) : (
+                    <CalendarDays className="h-4 w-4" />
+                  )}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -1134,8 +1148,8 @@ function PainelEventosDashboard({
                         ? evento.horario || "Sem horário"
                         : `${evento.data}${evento.horario ? ` às ${evento.horario}` : ""}`}
                     </span>
-                    <Badge tone={audiencia ? "info" : "accent"} className="px-2 py-0.5">
-                      {audiencia ? "Audiência" : evento.tipo || "Perícia"}
+                    <Badge tone={toneEventoDashboard(tipo.categoria)} className="px-2 py-0.5">
+                      {tipo.rotulo}
                     </Badge>
                   </div>
                   <p className="mt-1 truncate text-sm font-medium text-zinc-950 dark:text-white">{evento.nome}</p>

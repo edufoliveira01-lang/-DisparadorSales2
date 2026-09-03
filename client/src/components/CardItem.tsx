@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Select } from "@/components/ui/Select";
 import { formatPhoneDisplay } from "@/lib/phone";
+import { classificarEvento, type CategoriaEvento } from "@/lib/eventVisual";
 
 interface CardItemProps {
   card: CardViewModel;
@@ -61,6 +62,27 @@ const MODALIDADE_LABEL: Record<ModalidadeAudiencia, string> = {
 
 const OPCOES_MODO_AUDIENCIA: ModoEnvio[] = ["audiencia_presencial", "audiencia_online", "audiencia_hibrida"];
 
+function classesCardAudiencia(modo: ModoEnvio): string {
+  if (modo === "audiencia_online") return "border-cyan-300 dark:border-cyan-500/50";
+  if (modo === "audiencia_hibrida") return "border-indigo-300 dark:border-indigo-500/50";
+  return "border-blue-300 dark:border-blue-500/50";
+}
+
+function toneModoAudiencia(modo: ModoEnvio): "info" | "cyan" | "indigo" {
+  if (modo === "audiencia_online") return "cyan";
+  if (modo === "audiencia_hibrida") return "indigo";
+  return "info";
+}
+
+function classesSecaoEvento(categoria: CategoriaEvento): string {
+  if (categoria === "pericia_medica") return "border-accent-200 bg-accent-50/60 dark:border-accent-900 dark:bg-accent-900/20";
+  if (categoria === "pericia_social") return "border-violet-200 bg-violet-50/60 dark:border-violet-900 dark:bg-violet-950/20";
+  if (categoria === "audiencia_presencial") return "border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/20";
+  if (categoria === "audiencia_online") return "border-cyan-200 bg-cyan-50/60 dark:border-cyan-900 dark:bg-cyan-950/20";
+  if (categoria === "audiencia_hibrida") return "border-indigo-200 bg-indigo-50/60 dark:border-indigo-900 dark:bg-indigo-950/20";
+  return "border-zinc-100 bg-zinc-50/80 dark:border-zinc-800 dark:bg-zinc-800/40";
+}
+
 export function CardItem({
   card,
   selecionado,
@@ -95,7 +117,7 @@ export function CardItem({
         temNaoIdentificado
           ? "border-amber-300 dark:border-amber-500/50"
           : temAudiencia
-            ? "border-blue-300 dark:border-blue-500/50"
+            ? classesCardAudiencia(modo)
             : "border-zinc-200 dark:border-zinc-800"
       )}
     >
@@ -136,7 +158,7 @@ export function CardItem({
             <div className="mt-2 flex flex-wrap gap-1.5">
               {!temAudiencia && <Badge tone="accent">{card.pericias.length === 2 ? "2 perícias" : "1 perícia"}</Badge>}
               {modo !== "template" && (
-                <Badge tone="info">
+                <Badge tone={toneModoAudiencia(modo)}>
                   <Gavel className="h-3 w-3" /> {MODO_LABEL[modo]}
                 </Badge>
               )}
@@ -155,9 +177,7 @@ export function CardItem({
               key={i}
               className={cn(
                 "rounded-xl border p-3.5 md:p-4",
-                p.origem === "audiencia"
-                  ? "border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/20"
-                  : "border-zinc-100 bg-zinc-50/80 dark:border-zinc-800 dark:bg-zinc-800/40"
+                classesSecaoEvento(classificarEvento(p).categoria)
               )}
             >
               <div className="flex items-start justify-between gap-3">

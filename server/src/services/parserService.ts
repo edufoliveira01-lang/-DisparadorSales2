@@ -94,8 +94,8 @@ function detectarOrigemPorTipo(valorTipo: string): OrigemPericia {
 
 export type ModalidadeAudiencia = "presencial" | "online" | "hibrida";
 
-const MODALIDADE_ONLINE_RE = /ONLINE|VIRTUAL|VIDEOCONFER[EÊ]NCIA|TELEPRESENCIAL/i;
-const MODALIDADE_HIBRIDA_RE = /H[IÍ]BRID[OA]/i;
+const MODALIDADE_ONLINE_RE = /ONLINE|VIRTUAL|REMOT[OA]|V[IÍ]DEO\s*CONFER[EÊ]NCIA|VIDEOCONFER[EÊ]NCIA|TELEPRESENCIAL|(?:GOOGLE\s+)?MEET|(?:MICROSOFT\s+)?TEAMS|ZOOM/i;
+const MODALIDADE_HIBRIDA_RE = /H[IÍ]BRID[OA]|SEMIPRESENCIAL|MIST[OA]/i;
 
 /**
  * Numa audiência, o campo TIPO não descreve uma especialidade — descreve a modalidade
@@ -192,7 +192,7 @@ export function parseCardDescriptionComOrigem(description: string): PericiaComOr
 /**
  * Tenta extrair o nome do cliente a partir do título do card do Trello.
  * Útil como fallback quando a descrição está vazia ou mal formatada.
- * Exemplo: "P. SOCIAL - 05/08/2026 - 15:36 - FABIOLA CARLA ALBERTINI BORGES E SILVA - 5002573-34.2025.4.03.6141"
+ * Exemplo: "P. SOCIAL - 05/08/2026 - 15:36 - CLIENTE EXEMPLO - 0000000-00.2026.0.00.0000"
  */
 export function extractNomeFromCardTitle(title: string): string {
   if (!title) return "";
