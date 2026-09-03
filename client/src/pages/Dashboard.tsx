@@ -1,10 +1,35 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { CheckCheck, Clock3, Inbox, RefreshCw, Search, Send, ShieldCheck, WifiOff } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  CalendarDays,
+  CheckCheck,
+  Clock3,
+  Gavel,
+  Inbox,
+  MapPin,
+  MessageSquareReply,
+  RefreshCw,
+  Search,
+  Send,
+  ShieldCheck,
+  WifiOff,
+} from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay, formatPhoneInput } from "@/lib/phone";
 import { cn } from "@/lib/utils";
-import type { CardViewModel, Contact, ModoEnvio, Pericia, Settings, Template } from "@/lib/types";
+import type {
+  CardViewModel,
+  Contact,
+  ModoEnvio,
+  PendingReply,
+  Pericia,
+  PericiaAgendada,
+  SendLog,
+  Settings,
+  Template,
+} from "@/lib/types";
 import { classificarModalidadeAudiencia } from "@/lib/audiencia";
 import { useWhatsapp } from "@/context/WhatsappContext";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
@@ -43,11 +68,37 @@ const MODALIDADE_POR_MODO: Record<Exclude<ModoEnvio, "template">, "presencial" |
   audiencia_hibrida: "hibrida",
 };
 
+interface PanoramaDashboard {
+  pericias: PericiaAgendada[];
+  pendentes: PendingReply[];
+  logs: SendLog[];
+}
+
+function diaLocalYMD(dataHoraMs: number): string {
+  return new Date(dataHoraMs).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+}
+
+function hojeYMD(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+}
+
+function eventoEhAudiencia(pericia: PericiaAgendada): boolean {
+  const texto = [pericia.tipo, pericia.origem, pericia.nome]
+    .filter(Boolean)
+    .join(" ")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+  return texto.includes("AUDIENCIA") || texto.includes("ONLINE");
+}
+
 export function Dashboard() {
   const { show } = useToast();
   const navigate = useNavigate();
 
   const [cards, setCards] = useState<CardViewModel[] | null>(null);
+  const [panorama, setPanorama] = useState<PanoramaDashboard | null>(null);
+  const [carregandoPanorama, setCarregandoPanorama] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -101,8 +152,25 @@ export function Dashboard() {
     }
   }, []);
 
+  const carregarPanorama = useCallback(async () => {
+    setCarregandoPanorama(true);
+    try {
+      const [pericias, pendentes, logs] = await Promise.all([
+        api.get<PericiaAgendada[]>("/pericias-agendadas"),
+        api.get<PendingReply[]>("/pending-replies"),
+        api.get<SendLog[]>("/logs"),
+      ]);
+      setPanorama({ pericias, pendentes, logs });
+    } catch {
+      setPanorama((atual) => atual ?? { pericias: [], pendentes: [], logs: [] });
+    } finally {
+      setCarregandoPanorama(false);
+    }
+  }, []);
+
   useEffect(() => {
     carregarCards();
+    carregarPanorama();
     api.get<Template[]>("/templates").then((data) => {
       setTemplates(data);
       if (data.length > 0) setTemplateId(data[0].id);
@@ -118,7 +186,7 @@ export function Dashboard() {
         max: Number(data.send_interval_max) || 15,
       });
     });
-  }, [carregarCards]);
+  }, [carregarCards, carregarPanorama]);
 
   useSocketEvent<{ cardId: string; status: "sucesso" | "falha"; erro?: string }>("send:update", (payload) => {
     setEnviandoCardId(null);
@@ -154,7 +222,10 @@ export function Dashboard() {
     show("Envio em lote concluído.", "success");
     setSelecionados(new Set());
     carregarCards();
+    carregarPanorama();
   });
+
+  useSocketEvent("pendingReply:resolved", carregarPanorama);
 
   function contatoEfetivo(card: CardViewModel): Contact | null {
     return contatoOverrides[card.cardId] || card.contato || null;
@@ -261,6 +332,32 @@ export function Dashboard() {
     // Os overrides fazem parte da revisão atual do usuário e precisam refletir no resumo imediatamente.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cards, contatoOverrides, periciasOverrides]);
+
+  const visaoGeral = useMemo(() => {
+    const hoje = hojeYMD();
+    const eventosAtivos = (panorama?.pericias ?? []).filter((pericia) => pericia.status === "ativa");
+    const pendentesAtivos = (panorama?.pendentes ?? []).filter((item) => item.status === "aguardando");
+    const limiteSeteDias = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const logsRecentes = (panorama?.logs ?? []).filter((log) => {
+      const data = new Date(log.created_at.endsWith("Z") ? log.created_at : `${log.created_at}Z`).getTime();
+      return Number.isFinite(data) && data >= limiteSeteDias;
+    });
+
+    return {
+      hoje: eventosAtivos
+        .filter((pericia) => diaLocalYMD(pericia.data_hora_ms) === hoje)
+        .sort((a, b) => a.data_hora_ms - b.data_hora_ms),
+      proximos: eventosAtivos
+        .filter((pericia) => diaLocalYMD(pericia.data_hora_ms) > hoje)
+        .sort((a, b) => a.data_hora_ms - b.data_hora_ms)
+        .slice(0, 4),
+      totalProximos: eventosAtivos.filter((pericia) => diaLocalYMD(pericia.data_hora_ms) > hoje).length,
+      aguardandoResposta: pendentesAtivos.length,
+      entreguesAguardando: pendentesAtivos.filter((item) => item.ack !== null && item.ack >= 2).length,
+      enviosRecentes: logsRecentes.length,
+      falhasRecentes: logsRecentes.filter((log) => log.status === "falha").length,
+    };
+  }, [panorama]);
 
   function toggleSelecionado(cardId: string) {
     setSelecionados((prev) => {
@@ -420,6 +517,7 @@ export function Dashboard() {
       show(`Mensagem enviada para ${preview.card.nomeCliente}.`, "success");
       // Recarregar cards para refletir possível movimentação no Trello
       carregarCards();
+      carregarPanorama();
     } catch (err) {
       show(err instanceof ApiError ? err.message : "Erro ao enviar mensagem.", "error");
     } finally {
@@ -479,7 +577,7 @@ export function Dashboard() {
     <div className="space-y-5 md:space-y-6">
       <PageHeader
         title="Dashboard"
-        description="Revise os dados trazidos do Trello, confirme o contato correto e envie mensagens com segurança."
+        description="Acompanhe os compromissos e pendências do dia, revise os dados do Trello e envie mensagens com segurança."
         actions={<>
           <Badge tone={whatsapp.status === "conectado" ? "success" : "warning"}>
             {whatsapp.status === "conectado" ? (
@@ -488,17 +586,64 @@ export function Dashboard() {
               <><WifiOff className="h-3.5 w-3.5" /> WhatsApp desconectado</>
             )}
           </Badge>
-          <Button variant="outline" onClick={carregarCards} loading={carregando}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              carregarCards();
+              carregarPanorama();
+            }}
+            loading={carregando || carregandoPanorama}
+          >
             <RefreshCw className="h-4 w-4" /> Atualizar
           </Button>
         </>}
       />
 
       <div className="grid grid-cols-3 gap-2 md:gap-3">
-        <StatCard icon={<Clock3 />} label="Pendentes" value={resumo.pendentes} tone="warning" helper="Ainda não enviados" />
+        <StatCard icon={<Clock3 />} label="Cards pendentes" value={resumo.pendentes} tone="warning" helper="Ainda não enviados" />
         <StatCard icon={<ShieldCheck />} label="Prontos" value={resumo.prontos} tone="accent" helper="Contato e compromisso conferidos" />
         <StatCard icon={<CheckCheck />} label="Enviados" value={resumo.enviados} tone="info" helper="Envios concluídos" />
       </div>
+
+      <section className="grid gap-4 lg:grid-cols-2">
+        <PainelEventosDashboard
+          titulo="Agenda de hoje"
+          descricao={`${visaoGeral.hoje.length} ${visaoGeral.hoje.length === 1 ? "compromisso" : "compromissos"} para hoje`}
+          eventos={visaoGeral.hoje.slice(0, 4)}
+          total={visaoGeral.hoje.length}
+          carregando={panorama === null}
+          vazio="Nenhum compromisso agendado para hoje."
+          somenteHorario
+          onVerTudo={() => navigate("/calendario")}
+        />
+        <PainelEventosDashboard
+          titulo="Próximos compromissos"
+          descricao={`${visaoGeral.totalProximos} ${visaoGeral.totalProximos === 1 ? "evento futuro" : "eventos futuros"}`}
+          eventos={visaoGeral.proximos}
+          total={visaoGeral.totalProximos}
+          carregando={panorama === null}
+          vazio="Nenhum compromisso futuro encontrado."
+          onVerTudo={() => navigate("/calendario")}
+        />
+      </section>
+
+      <section className="surface-panel p-4">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="font-semibold text-zinc-950 dark:text-white">Panorama geral</h2>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">Situação atual das comunicações e dos últimos sete dias.</p>
+          </div>
+          <Button variant="ghost" size="sm" className="self-start" onClick={() => navigate("/pendentes")}>
+            Ver pendências <ArrowRight className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-2 xl:grid-cols-4">
+          <PanoramaItem icon={<MessageSquareReply />} label="Aguardando resposta" value={visaoGeral.aguardandoResposta} tone="accent" />
+          <PanoramaItem icon={<CheckCheck />} label="Entregues, sem retorno" value={visaoGeral.entreguesAguardando} tone="warning" />
+          <PanoramaItem icon={<Send />} label="Envios em 7 dias" value={visaoGeral.enviosRecentes} tone="info" />
+          <PanoramaItem icon={<AlertTriangle />} label="Falhas em 7 dias" value={visaoGeral.falhasRecentes} tone="danger" />
+        </div>
+      </section>
 
       {erro ? (
         <EmptyState
@@ -917,6 +1062,134 @@ function FiltroRapido({
           {option.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+function PainelEventosDashboard({
+  titulo,
+  descricao,
+  eventos,
+  total,
+  carregando,
+  vazio,
+  somenteHorario = false,
+  onVerTudo,
+}: {
+  titulo: string;
+  descricao: string;
+  eventos: PericiaAgendada[];
+  total: number;
+  carregando: boolean;
+  vazio: string;
+  somenteHorario?: boolean;
+  onVerTudo: () => void;
+}) {
+  return (
+    <div className="surface-panel overflow-hidden">
+      <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-4 py-3.5 dark:border-zinc-800">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300">
+            <CalendarDays className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="truncate text-sm font-semibold text-zinc-950 dark:text-white">{titulo}</h2>
+            <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">{descricao}</p>
+          </div>
+        </div>
+        <Button variant="ghost" size="sm" onClick={onVerTudo} className="shrink-0">
+          Ver calendário <ArrowRight className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+
+      {carregando ? (
+        <div className="space-y-2 p-4">
+          {Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-14 w-full" />)}
+        </div>
+      ) : eventos.length === 0 ? (
+        <div className="flex min-h-40 flex-col items-center justify-center px-4 py-8 text-center">
+          <CalendarDays className="h-6 w-6 text-zinc-300 dark:text-zinc-700" />
+          <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{vazio}</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+          {eventos.map((evento) => {
+            const audiencia = eventoEhAudiencia(evento);
+            return (
+              <article key={evento.id} className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-zinc-50/70 dark:hover:bg-zinc-800/30">
+                <span
+                  className={cn(
+                    "mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl",
+                    audiencia
+                      ? "bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-300"
+                      : "bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300"
+                  )}
+                >
+                  {audiencia ? <Gavel className="h-4 w-4" /> : <CalendarDays className="h-4 w-4" />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                      {somenteHorario
+                        ? evento.horario || "Sem horário"
+                        : `${evento.data}${evento.horario ? ` às ${evento.horario}` : ""}`}
+                    </span>
+                    <Badge tone={audiencia ? "info" : "accent"} className="px-2 py-0.5">
+                      {audiencia ? "Audiência" : evento.tipo || "Perícia"}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 truncate text-sm font-medium text-zinc-950 dark:text-white">{evento.nome}</p>
+                  {evento.local && (
+                    <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-zinc-500 dark:text-zinc-400">
+                      <MapPin className="h-3 w-3 shrink-0" /> {evento.local}
+                    </p>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+          {total > eventos.length && (
+            <button
+              type="button"
+              onClick={onVerTudo}
+              className="w-full px-4 py-3 text-left text-xs font-medium text-accent-700 hover:bg-accent-50/60 dark:text-accent-300 dark:hover:bg-accent-900/20"
+            >
+              +{total - eventos.length} compromisso(s) no calendário
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PanoramaItem({
+  icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: number;
+  tone: "accent" | "warning" | "info" | "danger";
+}) {
+  const tons = {
+    accent: "bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300",
+    warning: "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",
+    info: "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300",
+    danger: "bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300",
+  };
+
+  return (
+    <div className="flex min-w-0 items-center gap-3 rounded-xl bg-zinc-50 p-3 dark:bg-zinc-800/50">
+      <span className={cn("inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl [&>svg]:h-4 [&>svg]:w-4", tons[tone])}>
+        {icon}
+      </span>
+      <div className="min-w-0">
+        <p className="text-lg font-bold tabular-nums text-zinc-950 dark:text-white">{value}</p>
+        <p className="truncate text-[11px] text-zinc-500 dark:text-zinc-400 sm:text-xs">{label}</p>
+      </div>
     </div>
   );
 }
