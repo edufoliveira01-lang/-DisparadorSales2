@@ -695,7 +695,7 @@ export function Dashboard() {
         </div>
       )}
 
-      <section className="grid gap-4 lg:grid-cols-3">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <PainelEventosDashboard
           titulo="Agenda de hoje"
           descricao={`${visaoGeral.hoje.length} ${visaoGeral.hoje.length === 1 ? "compromisso" : "compromissos"} para hoje`}
@@ -1247,11 +1247,17 @@ function PainelEventosDashboard({
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {onEnviarTodos && (
-            <Button variant="outline" size="sm" onClick={onEnviarTodos} disabled={eventos.length === 0 || enviandoBatch}>
-              <Send className="h-3.5 w-3.5" /> Enviar todos
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={onEnviarTodos}
+              disabled={eventos.length === 0 || enviandoBatch}
+              title="Enviar todos"
+            >
+              <Send className="h-3.5 w-3.5" />
             </Button>
           )}
-          <Button variant="ghost" size="sm" onClick={onVerTudo}>
+          <Button variant="ghost" size="sm" onClick={onVerTudo} className="shrink-0">
             Ver calendário <ArrowRight className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -1272,55 +1278,58 @@ function PainelEventosDashboard({
             const tipo = classificarEvento(evento);
             const jaEnviado = lembretesEnviados?.has(evento.id);
             return (
-              <article key={evento.id} className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-zinc-50/70 dark:hover:bg-zinc-800/30">
-                <span
-                  className={cn(
-                    "mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl",
-                    classesIconeEventoDashboard(tipo.categoria)
-                  )}
-                >
-                  {tipo.categoria === "audiencia_online" ? (
-                    <Video className="h-4 w-4" />
-                  ) : tipo.audiencia ? (
-                    <Gavel className="h-4 w-4" />
-                  ) : (
-                    <CalendarDays className="h-4 w-4" />
-                  )}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-                      {somenteHorario
-                        ? evento.horario || "Sem horário"
-                        : `${evento.data}${evento.horario ? ` às ${evento.horario}` : ""}`}
-                    </span>
-                    <Badge tone={toneEventoDashboard(tipo.categoria)} className="px-2 py-0.5">
-                      {tipo.rotulo}
-                    </Badge>
-                    {jaEnviado && (
-                      <Badge tone="accent" className="px-2 py-0.5">
-                        <CheckCheck className="h-3 w-3" /> Enviado
+              <article key={evento.id} className="flex flex-col gap-2 px-4 py-3 transition-colors hover:bg-zinc-50/70 dark:hover:bg-zinc-800/30">
+                <div className="flex items-start gap-3">
+                  <span
+                    className={cn(
+                      "mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl",
+                      classesIconeEventoDashboard(tipo.categoria)
+                    )}
+                  >
+                    {tipo.categoria === "audiencia_online" ? (
+                      <Video className="h-4 w-4" />
+                    ) : tipo.audiencia ? (
+                      <Gavel className="h-4 w-4" />
+                    ) : (
+                      <CalendarDays className="h-4 w-4" />
+                    )}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                        {somenteHorario
+                          ? evento.horario || "Sem horário"
+                          : `${evento.data}${evento.horario ? ` às ${evento.horario}` : ""}`}
+                      </span>
+                      <Badge tone={toneEventoDashboard(tipo.categoria)} className="px-2 py-0.5">
+                        {tipo.rotulo}
                       </Badge>
+                      {jaEnviado && (
+                        <Badge tone="accent" className="px-2 py-0.5">
+                          <CheckCheck className="h-3 w-3" /> Enviado
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="mt-1 text-sm font-medium text-zinc-950 dark:text-white">{evento.nome}</p>
+                    {evento.local && (
+                      <p className="mt-0.5 flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
+                        <MapPin className="h-3 w-3 shrink-0" /> {evento.local}
+                      </p>
                     )}
                   </div>
-                  <p className="mt-1 truncate text-sm font-medium text-zinc-950 dark:text-white">{evento.nome}</p>
-                  {evento.local && (
-                    <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-zinc-500 dark:text-zinc-400">
-                      <MapPin className="h-3 w-3 shrink-0" /> {evento.local}
-                    </p>
-                  )}
                 </div>
                 {onEnviarItem && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0"
-                    onClick={() => onEnviarItem(evento)}
-                    loading={enviandoId === evento.id}
-                    disabled={enviandoBatch}
-                  >
-                    <Send className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Enviar mensagem</span>
-                  </Button>
+                  <div className="flex justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onEnviarItem(evento)}
+                      loading={enviandoId === evento.id}
+                      disabled={enviandoBatch}
+                    >
+                      <Send className="h-3.5 w-3.5" /> Enviar
+                    </Button>
+                  </div>
                 )}
               </article>
             );
