@@ -69,10 +69,13 @@ function formatarDataHora(data?: string | null): string | null {
   return new Date(data + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
 }
 
+function temRespostaRecebida(log: SendLog): boolean {
+  return log.resposta_status === "respondido" || Boolean(log.resposta_preview || log.resposta_resolved_at);
+}
+
 function RespostaRecebida({ log }: { log: SendLog }) {
   const respondidoEm = formatarDataHora(log.resposta_resolved_at);
-  const temResposta = log.resposta_status === "respondido" || Boolean(log.resposta_preview || respondidoEm);
-  if (!temResposta) return null;
+  if (!temRespostaRecebida(log)) return null;
 
   const reacao = log.resposta_tipo === "reacao";
   const IconeResposta = reacao ? SmilePlus : MessageSquareReply;
@@ -109,12 +112,12 @@ function periciasDoLog(log: SendLog): Pericia[] {
   }
 }
 
-function DadosDoEnvio({ log }: { log: SendLog }) {
+function DadosDoEnvio({ log, colunaUnica = false }: { log: SendLog; colunaUnica?: boolean }) {
   const pericias = periciasDoLog(log);
   if (pericias.length === 0) return null;
 
   return (
-    <div className="grid gap-2 lg:grid-cols-2">
+    <div className={cn("grid gap-2", !colunaUnica && "lg:grid-cols-2")}>
       {pericias.map((pericia, index) => (
         <div key={index} className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900/70">
           <p className="font-medium text-zinc-800 dark:text-zinc-200">{pericia.tipo || "Perícia"}</p>
@@ -554,6 +557,7 @@ export function Historico() {
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                 {logsPaginados.map((log) => {
                   const aberto = expandido === log.id;
+                  const detalhesEmDuasColunas = periciasDoLog(log).length > 0 && temRespostaRecebida(log);
                   return (
                     <Fragment key={log.id}>
                       <tr
@@ -608,8 +612,10 @@ export function Historico() {
                               {formatarData(log)}
                             </p>
                             {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
-                            <DadosDoEnvio log={log} />
-                            <RespostaRecebida log={log} />
+                            <div className={cn("grid items-start gap-3", detalhesEmDuasColunas && "lg:grid-cols-2")}>
+                              <DadosDoEnvio log={log} colunaUnica />
+                              <RespostaRecebida log={log} />
+                            </div>
                             {log.mensagem_enviada && (
                               <div className="rounded-xl rounded-tl-sm bg-accent-50 p-4 dark:bg-accent-900/20">
                                 <p className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-400">Mensagem enviada</p>
