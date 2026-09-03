@@ -3,6 +3,7 @@ import { AlertTriangle, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Cl
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { cn } from "@/lib/utils";
+import { classificarEvento, type CategoriaEvento } from "@/lib/eventVisual";
 import type { PericiaAgendada } from "@/lib/types";
 import { useToast } from "@/components/ui/Toast";
 import { Badge } from "@/components/ui/Badge";
@@ -28,6 +29,7 @@ interface TipoCalendario {
   rotulo: string;
   audiencia: boolean;
   identificado: boolean;
+  categoria: CategoriaEvento;
 }
 
 function textoComparavel(valor: string | null | undefined): string {
@@ -40,49 +42,52 @@ function textoComparavel(valor: string | null | undefined): string {
     .toUpperCase();
 }
 
-function rotuloNormalizado(valor: string): string {
-  const limpo = valor.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim().toLocaleLowerCase("pt-BR");
-  return limpo ? limpo.charAt(0).toLocaleUpperCase("pt-BR") + limpo.slice(1) : "Tipo não identificado";
-}
-
 /** Consolida as variações antigas do banco em categorias estáveis para filtro e cor. */
 function classificarTipo(pericia: PericiaAgendada): TipoCalendario {
-  const tipo = textoComparavel(pericia.tipo);
-  const origem = textoComparavel(pericia.origem);
-  const nome = textoComparavel(pericia.nome);
-  const nomeIndicaAudiencia = ["AUDIENCIA", "[AUDIENCIA]", "ONLINE", "[ONLINE]"].includes(nome);
-
-  if (tipo.includes("AUDIENCIA") || tipo.includes("ONLINE") || origem === "AUDIENCIA" || nomeIndicaAudiencia) {
-    return { chave: "audiencia", rotulo: "Audiência", audiencia: true, identificado: true };
-  }
-  if (tipo.includes("SOCIAL") || origem === "SOCIAL") {
-    return { chave: "pericia_social", rotulo: "Perícia social", audiencia: false, identificado: true };
-  }
-  if (tipo.includes("MEDICA") || origem === "MEDICA") {
-    return { chave: "pericia_medica", rotulo: "Perícia médica", audiencia: false, identificado: true };
-  }
-  if (!tipo || tipo.includes("TIPO NAO IDENTIFICADO")) {
-    return { chave: "tipo_nao_identificado", rotulo: "Tipo não identificado", audiencia: false, identificado: false };
-  }
-  if (tipo === "PERICIA") {
-    return { chave: "pericia", rotulo: "Perícia", audiencia: false, identificado: true };
-  }
-
+  const classificacao = classificarEvento(pericia);
   return {
-    chave: `outro:${tipo}`,
-    rotulo: rotuloNormalizado(pericia.tipo),
-    audiencia: false,
-    identificado: true,
+    ...classificacao,
+    chave: classificacao.categoria === "outro" ? `outro:${pericia.tipo}` : classificacao.categoria,
   };
+}
+
+function toneTipo(tipo: TipoCalendario): "neutral" | "accent" | "violet" | "info" | "cyan" | "indigo" {
+  if (tipo.categoria === "pericia_social") return "violet";
+  if (tipo.categoria === "audiencia_presencial") return "info";
+  if (tipo.categoria === "audiencia_online") return "cyan";
+  if (tipo.categoria === "audiencia_hibrida") return "indigo";
+  if (!tipo.identificado || tipo.categoria === "outro") return "neutral";
+  return "accent";
+}
+
+function classesResultadoTipo(categoria: CategoriaEvento): string {
+  if (categoria === "pericia_social") return "border-l-violet-500 bg-violet-50/20 dark:border-l-violet-400 dark:bg-violet-950/10";
+  if (categoria === "audiencia_presencial") return "border-l-blue-500 bg-blue-50/20 dark:border-l-blue-400 dark:bg-blue-950/10";
+  if (categoria === "audiencia_online") return "border-l-cyan-500 bg-cyan-50/20 dark:border-l-cyan-400 dark:bg-cyan-950/10";
+  if (categoria === "audiencia_hibrida") return "border-l-indigo-500 bg-indigo-50/20 dark:border-l-indigo-400 dark:bg-indigo-950/10";
+  if (categoria === "tipo_nao_identificado" || categoria === "outro") return "border-l-zinc-300 dark:border-l-zinc-700";
+  return "border-l-accent-400 dark:border-l-accent-500";
+}
+
+function classesDetalheTipo(categoria: CategoriaEvento): string {
+  if (categoria === "pericia_social") return "border-violet-200 border-l-4 border-l-violet-500 bg-violet-50/60 dark:border-violet-900 dark:border-l-violet-400 dark:bg-violet-950/20";
+  if (categoria === "audiencia_presencial") return "border-blue-200 border-l-4 border-l-blue-500 bg-blue-50/60 dark:border-blue-900 dark:border-l-blue-400 dark:bg-blue-950/20";
+  if (categoria === "audiencia_online") return "border-cyan-200 border-l-4 border-l-cyan-500 bg-cyan-50/60 dark:border-cyan-900 dark:border-l-cyan-400 dark:bg-cyan-950/20";
+  if (categoria === "audiencia_hibrida") return "border-indigo-200 border-l-4 border-l-indigo-500 bg-indigo-50/60 dark:border-indigo-900 dark:border-l-indigo-400 dark:bg-indigo-950/20";
+  if (categoria === "tipo_nao_identificado" || categoria === "outro") return "border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/30";
+  return "border-accent-200 border-l-4 border-l-accent-500 bg-accent-50/60 dark:border-accent-900 dark:border-l-accent-400 dark:bg-accent-900/20";
 }
 
 function classesEventoCalendario(pericia: PericiaAgendada): string {
   if (pericia.status === "substituida") {
     return "bg-zinc-100 text-zinc-400 line-through dark:bg-zinc-800 dark:text-zinc-600";
   }
-  if (classificarTipo(pericia).audiencia) {
-    return "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300";
-  }
+  const tipo = classificarTipo(pericia);
+  if (tipo.categoria === "pericia_social") return "bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300";
+  if (tipo.categoria === "audiencia_presencial") return "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300";
+  if (tipo.categoria === "audiencia_online") return "bg-cyan-50 text-cyan-700 dark:bg-cyan-950/50 dark:text-cyan-300";
+  if (tipo.categoria === "audiencia_hibrida") return "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300";
+  if (!tipo.identificado || tipo.categoria === "outro") return "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300";
   return "bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300";
 }
 
@@ -206,7 +211,9 @@ export function Calendario() {
     const termoDigits = busca.replace(/\D/g, "");
     return pericias.filter((p) => {
       if (!mostrarSubstituidas && p.status === "substituida") return false;
-      if (tipoFiltro !== "todos" && classificarTipo(p).chave !== tipoFiltro) return false;
+      const categoria = classificarTipo(p);
+      if (tipoFiltro === "audiencias" && !categoria.audiencia) return false;
+      if (tipoFiltro !== "todos" && tipoFiltro !== "audiencias" && categoria.chave !== tipoFiltro) return false;
       if (termo) {
         const nomeMatch = textoComparavel(p.nome).includes(termo);
         const processoMatch = textoComparavel(p.processo).includes(termo);
@@ -335,6 +342,7 @@ export function Calendario() {
           </div>
           <Select value={tipoFiltro} onChange={(e) => setTipoFiltro(e.target.value)} className="w-full min-w-0 md:w-44">
             <option value="todos">Todos os tipos</option>
+            <option value="audiencias">Todas as audiências</option>
             {tiposDisponiveis.map((tipo) => (
               <option key={tipo.chave} value={tipo.chave}>
                 {tipo.rotulo}
@@ -603,9 +611,7 @@ function ResultadoBuscaLinha({
         "group border-l-4 px-4 py-4 transition-colors hover:bg-zinc-50/70 dark:hover:bg-zinc-800/30 md:px-5",
         pericia.status === "substituida"
           ? "border-l-zinc-300 bg-zinc-50/40 dark:border-l-zinc-700 dark:bg-zinc-800/20"
-          : tipo.audiencia
-            ? "border-l-blue-500 bg-blue-50/20 dark:border-l-blue-400 dark:bg-blue-950/10"
-            : "border-l-accent-400 dark:border-l-accent-500"
+          : classesResultadoTipo(tipo.categoria)
       )}
     >
       <div className="flex items-start gap-3">
@@ -614,7 +620,7 @@ function ResultadoBuscaLinha({
             <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
               <Clock className="h-3.5 w-3.5" /> {pericia.horario || "Sem horário"}
             </span>
-            <Badge tone={tipo.audiencia ? "info" : tipo.identificado ? "accent" : "neutral"}>{tipo.rotulo}</Badge>
+            <Badge tone={toneTipo(tipo)}>{tipo.rotulo}</Badge>
             {pericia.fonte === "trello_sync" && <Badge tone="neutral">Importado</Badge>}
             {pericia.status === "substituida" && <Badge tone="neutral">Substituída</Badge>}
           </div>
@@ -666,9 +672,7 @@ function PericiaLinha({
         "rounded-xl border p-3 text-sm",
         pericia.status === "substituida"
           ? "border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/30"
-          : tipo.audiencia
-            ? "border-blue-300 border-l-4 border-l-blue-500 bg-blue-50/70 shadow-sm dark:border-blue-800 dark:border-l-blue-400 dark:bg-blue-950/30"
-            : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 md:bg-transparent md:dark:bg-transparent"
+          : classesDetalheTipo(tipo.categoria)
       )}
     >
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 md:flex md:justify-between">
@@ -684,7 +688,7 @@ function PericiaLinha({
           <p className="mt-0.5 whitespace-nowrap text-xs text-zinc-500 dark:text-zinc-400">{formatPhoneDisplay(pericia.telefone)}</p>
         </div>
         <div className="col-span-2 flex w-full flex-wrap items-center gap-1.5 pt-1 md:w-auto md:shrink-0 md:pt-0">
-          <Badge tone={tipo.audiencia ? "info" : tipo.identificado ? "accent" : "neutral"}>{tipo.rotulo}</Badge>
+          <Badge tone={toneTipo(tipo)}>{tipo.rotulo}</Badge>
           {pericia.fonte === "trello_sync" && <Badge tone="neutral">Importado</Badge>}
           {pericia.status === "substituida" && <Badge tone="neutral">Substituída</Badge>}
           {onExcluir && (
