@@ -13,6 +13,7 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  Send,
   SlidersHorizontal,
   SmilePlus,
   Trash2,
@@ -73,7 +74,7 @@ function temRespostaRecebida(log: SendLog): boolean {
   return log.resposta_status === "respondido" || Boolean(log.resposta_preview || log.resposta_resolved_at);
 }
 
-function RespostaRecebida({ log }: { log: SendLog }) {
+function RespostaRecebida({ log, integrada = false }: { log: SendLog; integrada?: boolean }) {
   const respondidoEm = formatarDataHora(log.resposta_resolved_at);
   if (!temRespostaRecebida(log)) return null;
 
@@ -82,7 +83,14 @@ function RespostaRecebida({ log }: { log: SendLog }) {
   const conteudo = log.resposta_preview || (reacao ? "Reação recebida" : "Mensagem recebida");
 
   return (
-    <div className="rounded-xl border border-accent-200 bg-white p-3.5 shadow-sm dark:border-accent-900/70 dark:bg-zinc-900/70">
+    <div
+      className={cn(
+        "rounded-xl border border-accent-200 p-3.5 dark:border-accent-900/70",
+        integrada
+          ? "bg-accent-50/60 dark:bg-accent-900/15"
+          : "bg-white shadow-sm dark:bg-zinc-900/70"
+      )}
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-accent-700 dark:text-accent-300">
           Mensagem recebida
@@ -112,12 +120,12 @@ function periciasDoLog(log: SendLog): Pericia[] {
   }
 }
 
-function DadosDoEnvio({ log, colunaUnica = false }: { log: SendLog; colunaUnica?: boolean }) {
+function DadosDoEnvio({ log }: { log: SendLog }) {
   const pericias = periciasDoLog(log);
   if (pericias.length === 0) return null;
 
   return (
-    <div className={cn("grid gap-2", !colunaUnica && "lg:grid-cols-2")}>
+    <div className="grid gap-2 lg:grid-cols-2">
       {pericias.map((pericia, index) => (
         <div key={index} className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900/70">
           <p className="font-medium text-zinc-800 dark:text-zinc-200">{pericia.tipo || "Perícia"}</p>
@@ -132,6 +140,86 @@ function DadosDoEnvio({ log, colunaUnica = false }: { log: SendLog; colunaUnica?
         </div>
       ))}
     </div>
+  );
+}
+
+function PainelAgendamentoDesktop({ log }: { log: SendLog }) {
+  const pericias = periciasDoLog(log);
+  if (pericias.length === 0) return null;
+
+  return (
+    <section className="h-full overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900/70">
+      <div className="flex items-center gap-3 border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent-50 text-accent-600 dark:bg-accent-900/30 dark:text-accent-300">
+          <Calendar className="h-4 w-4" />
+        </span>
+        <div>
+          <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Dados do agendamento</h3>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            {pericias.length} {pericias.length === 1 ? "compromisso registrado" : "compromissos registrados"}
+          </p>
+        </div>
+      </div>
+      <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+        {pericias.map((pericia, index) => (
+          <div key={index} className="p-4">
+            <p className="font-semibold text-zinc-900 dark:text-zinc-100">{pericia.tipo || "Perícia"}</p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="flex items-center gap-2 rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:bg-zinc-800/60 dark:text-zinc-300">
+                <Calendar className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                <span>{pericia.data || "Data não informada"}</span>
+              </div>
+              <div className="flex items-center gap-2 rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:bg-zinc-800/60 dark:text-zinc-300">
+                <Clock className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                <span>{pericia.horario || "Horário não informado"}</span>
+              </div>
+            </div>
+            <div className="mt-3 space-y-2 text-xs text-zinc-500 dark:text-zinc-400">
+              {pericia.local && <p className="flex items-start gap-2"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span className="break-words">{pericia.local}</span></p>}
+              {pericia.processo && <p className="flex items-start gap-2"><FileText className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span className="break-all">{pericia.processo}</span></p>}
+              {pericia.profissionalPerito && <p className="flex items-start gap-2"><BriefcaseBusiness className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span className="break-words">{pericia.profissionalPerito}</span></p>}
+              {pericia.telefone && <p className="flex items-start gap-2"><Phone className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>{formatPhoneDisplay(pericia.telefone)}</span></p>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PainelComunicacaoDesktop({ log }: { log: SendLog }) {
+  const temMensagem = Boolean(log.mensagem_enviada);
+  const temResposta = temRespostaRecebida(log);
+  if (!temMensagem && !temResposta) return null;
+
+  return (
+    <section className="h-full overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900/70">
+      <div className="flex items-center gap-3 border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-300">
+          <MessageSquareReply className="h-4 w-4" />
+        </span>
+        <div>
+          <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Comunicação com o cliente</h3>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            {temResposta ? "Resposta recebida" : "Mensagem enviada, aguardando resposta"}
+          </p>
+        </div>
+      </div>
+      <div className="space-y-3 p-4">
+        <RespostaRecebida log={log} integrada />
+        {log.mensagem_enviada && (
+          <div className="overflow-hidden rounded-xl border border-zinc-200 bg-zinc-50/70 dark:border-zinc-800 dark:bg-zinc-800/30">
+            <div className="flex items-center gap-2 border-b border-zinc-200 px-3 py-2.5 dark:border-zinc-800">
+              <Send className="h-3.5 w-3.5 text-zinc-400" />
+              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Mensagem enviada</p>
+            </div>
+            <div className="max-h-56 overflow-y-auto px-3 py-3">
+              <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">{log.mensagem_enviada}</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -557,7 +645,8 @@ export function Historico() {
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                 {logsPaginados.map((log) => {
                   const aberto = expandido === log.id;
-                  const detalhesEmDuasColunas = periciasDoLog(log).length > 0 && temRespostaRecebida(log);
+                  const temAgendamento = periciasDoLog(log).length > 0;
+                  const temComunicacao = temRespostaRecebida(log) || Boolean(log.mensagem_enviada);
                   return (
                     <Fragment key={log.id}>
                       <tr
@@ -606,22 +695,18 @@ export function Historico() {
                       </tr>
                       {aberto && (
                         <tr className="bg-zinc-50 dark:bg-zinc-800/30">
-                          <td colSpan={7} className="space-y-3 px-5 py-4">
-                            <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                              <span className="text-zinc-400 dark:text-zinc-500">Enviado em: </span>
-                              {formatarData(log)}
-                            </p>
-                            {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
-                            <div className={cn("grid items-start gap-3", detalhesEmDuasColunas && "lg:grid-cols-2")}>
-                              <DadosDoEnvio log={log} colunaUnica />
-                              <RespostaRecebida log={log} />
+                          <td colSpan={7} className="space-y-4 px-5 py-4">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Detalhes do registro</p>
+                              <p className="inline-flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                                <Clock className="h-3.5 w-3.5" /> Enviado em {formatarData(log)}
+                              </p>
                             </div>
-                            {log.mensagem_enviada && (
-                              <div className="rounded-xl rounded-tl-sm bg-accent-50 p-4 dark:bg-accent-900/20">
-                                <p className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-400">Mensagem enviada</p>
-                                <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{log.mensagem_enviada}</p>
-                              </div>
-                            )}
+                            {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
+                            <div className={cn("grid items-stretch gap-4", temAgendamento && temComunicacao && "lg:grid-cols-2")}>
+                              <PainelAgendamentoDesktop log={log} />
+                              <PainelComunicacaoDesktop log={log} />
+                            </div>
                           </td>
                         </tr>
                       )}
