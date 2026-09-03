@@ -8,6 +8,8 @@ import {
   AUDIENCIA_PRESENCIAL_MENSAGEM_PADRAO,
   COBRANCA_AUDIENCIA_MENSAGEM_PADRAO,
   COBRANCA_MENSAGEM_PADRAO,
+  LEMBRETE_AMANHA_MENSAGEM_PADRAO,
+  LEMBRETE_HOJE_MENSAGEM_PADRAO,
 } from "../services/templateService";
 
 export const settingsRouter = Router();
@@ -22,6 +24,8 @@ const DEFAULTS: Record<string, string> = {
   audiencia_presencial_mensagem: AUDIENCIA_PRESENCIAL_MENSAGEM_PADRAO,
   audiencia_online_mensagem: AUDIENCIA_ONLINE_MENSAGEM_PADRAO,
   audiencia_hibrida_mensagem: AUDIENCIA_HIBRIDA_MENSAGEM_PADRAO,
+  lembrete_hoje_mensagem: LEMBRETE_HOJE_MENSAGEM_PADRAO,
+  lembrete_amanha_mensagem: LEMBRETE_AMANHA_MENSAGEM_PADRAO,
 };
 
 settingsRouter.get("/", (_req, res) => {
@@ -59,6 +63,8 @@ settingsRouter.put("/", (req, res) => {
     "audiencia_presencial_mensagem",
     "audiencia_online_mensagem",
     "audiencia_hibrida_mensagem",
+    "lembrete_hoje_mensagem",
+    "lembrete_amanha_mensagem",
   ];
 
   for (const key of allowedKeys) {

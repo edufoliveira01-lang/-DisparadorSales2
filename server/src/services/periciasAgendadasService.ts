@@ -189,6 +189,10 @@ export function listPericiasAgendadas(): PericiaAgendada[] {
   return listStmt.all() as PericiaAgendada[];
 }
 
+export function getPericiaAgendada(id: number): PericiaAgendada | undefined {
+  return getStmt.get(id) as PericiaAgendada | undefined;
+}
+
 /**
  * Remove entradas com mais de diasRetencao dias, independente do status — é só isso que evita
  * a lista crescer para sempre. Retorna quantas linhas foram apagadas.

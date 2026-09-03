@@ -104,6 +104,8 @@ export interface Settings {
   audiencia_presencial_mensagem: string;
   audiencia_online_mensagem: string;
   audiencia_hibrida_mensagem: string;
+  lembrete_hoje_mensagem: string;
+  lembrete_amanha_mensagem: string;
 }
 
 export interface PericiaAgendada {

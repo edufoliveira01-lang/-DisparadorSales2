@@ -84,6 +84,10 @@ function hojeYMD(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 }
 
+function amanhaYMD(): string {
+  return new Date(Date.now() + 24 * 60 * 60 * 1000).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+}
+
 function toneEventoDashboard(categoria: CategoriaEvento): "neutral" | "accent" | "violet" | "info" | "cyan" | "indigo" {
   if (categoria === "pericia_social") return "violet";
   if (categoria === "audiencia_presencial") return "info";
@@ -134,6 +138,14 @@ export function Dashboard() {
   const [batchProgress, setBatchProgress] = useState<{ ativo: boolean; total: number; aguardandoReconexao?: boolean } | null>(
     null
   );
+
+  const [enviandoLembreteId, setEnviandoLembreteId] = useState<number | null>(null);
+  const [lembretesEnviados, setLembretesEnviados] = useState<Set<number>>(new Set());
+  const [lembreteBatchConfirm, setLembreteBatchConfirm] = useState<{ periodo: "hoje" | "amanha"; eventos: PericiaAgendada[] } | null>(
+    null
+  );
+  const [lembreteBatchLoading, setLembreteBatchLoading] = useState(false);
+  const [lembreteBatchProgress, setLembreteBatchProgress] = useState<{ ativo: boolean; total: number } | null>(null);
 
   const [cadastro, setCadastro] = useState<{
     card: CardViewModel;
@@ -236,6 +248,22 @@ export function Dashboard() {
   });
 
   useSocketEvent("pendingReply:resolved", carregarPanorama);
+
+  useSocketEvent<{ total: number }>("lembrete:batch-started", ({ total }) => {
+    setLembreteBatchProgress({ ativo: true, total });
+    show(`Envio de lembretes iniciado (${total}).`, "info");
+  });
+  useSocketEvent<{ id: number; status: "sucesso" | "falha" }>("lembrete:update", ({ id, status }) => {
+    if (status === "sucesso") setLembretesEnviados((prev) => new Set(prev).add(id));
+  });
+  useSocketEvent<{ reason: string }>("lembrete:batch-paused", ({ reason }) => {
+    setLembreteBatchProgress(null);
+    show(reason, "error");
+  });
+  useSocketEvent("lembrete:batch-completed", () => {
+    setLembreteBatchProgress(null);
+    show("Envio de lembretes concluído.", "success");
+  });
 
   function contatoEfetivo(card: CardViewModel): Contact | null {
     return contatoOverrides[card.cardId] || card.contato || null;
@@ -345,6 +373,7 @@ export function Dashboard() {
 
   const visaoGeral = useMemo(() => {
     const hoje = hojeYMD();
+    const amanha = amanhaYMD();
     const eventosAtivos = (panorama?.pericias ?? []).filter((pericia) => pericia.status === "ativa");
     const pendentesAtivos = (panorama?.pendentes ?? []).filter((item) => item.status === "aguardando");
     const limiteSeteDias = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -353,21 +382,66 @@ export function Dashboard() {
       return Number.isFinite(data) && data >= limiteSeteDias;
     });
 
+    const eventosDoDia = (ymd: string) =>
+      eventosAtivos.filter((pericia) => diaLocalYMD(pericia.data_hora_ms) === ymd).sort((a, b) => a.data_hora_ms - b.data_hora_ms);
+    const futurasTodas = eventosAtivos
+      .filter((pericia) => diaLocalYMD(pericia.data_hora_ms) > amanha)
+      .sort((a, b) => a.data_hora_ms - b.data_hora_ms);
+
     return {
-      hoje: eventosAtivos
-        .filter((pericia) => diaLocalYMD(pericia.data_hora_ms) === hoje)
-        .sort((a, b) => a.data_hora_ms - b.data_hora_ms),
-      proximos: eventosAtivos
-        .filter((pericia) => diaLocalYMD(pericia.data_hora_ms) > hoje)
-        .sort((a, b) => a.data_hora_ms - b.data_hora_ms)
-        .slice(0, 4),
-      totalProximos: eventosAtivos.filter((pericia) => diaLocalYMD(pericia.data_hora_ms) > hoje).length,
+      hoje: eventosDoDia(hoje),
+      amanha: eventosDoDia(amanha),
+      futuras: futurasTodas.slice(0, 4),
+      totalFuturas: futurasTodas.length,
       aguardandoResposta: pendentesAtivos.length,
       entreguesAguardando: pendentesAtivos.filter((item) => item.ack !== null && item.ack >= 2).length,
       enviosRecentes: logsRecentes.length,
       falhasRecentes: logsRecentes.filter((log) => log.status === "falha").length,
     };
   }, [panorama]);
+
+  async function enviarLembreteIndividual(pericia: PericiaAgendada) {
+    if (whatsapp.status !== "conectado") {
+      show("Conecte o WhatsApp antes de enviar mensagens.", "error");
+      navigate("/configuracoes");
+      return;
+    }
+    setEnviandoLembreteId(pericia.id);
+    try {
+      await api.post(`/pericias-agendadas/${pericia.id}/lembrete`);
+      show(`Lembrete enviado para ${pericia.nome}.`, "success");
+      setLembretesEnviados((prev) => new Set(prev).add(pericia.id));
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao enviar lembrete.", "error");
+    } finally {
+      setEnviandoLembreteId(null);
+    }
+  }
+
+  function abrirConfirmLembreteBatch(periodo: "hoje" | "amanha") {
+    if (whatsapp.status !== "conectado") {
+      show("Conecte o WhatsApp antes de enviar mensagens.", "error");
+      navigate("/configuracoes");
+      return;
+    }
+    const eventos = visaoGeral[periodo];
+    if (eventos.length === 0) return;
+    setLembreteBatchConfirm({ periodo, eventos });
+  }
+
+  async function confirmarLembreteBatch() {
+    if (!lembreteBatchConfirm) return;
+    setLembreteBatchLoading(true);
+    try {
+      const ids = lembreteBatchConfirm.eventos.map((e) => e.id);
+      await api.post("/pericias-agendadas/lembrete-em-massa", { ids });
+      setLembreteBatchConfirm(null);
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao iniciar envio dos lembretes.", "error");
+    } finally {
+      setLembreteBatchLoading(false);
+    }
+  }
 
   function toggleSelecionado(cardId: string) {
     setSelecionados((prev) => {
@@ -615,22 +689,48 @@ export function Dashboard() {
         <StatCard icon={<CheckCheck />} label="Enviados" value={resumo.enviados} tone="info" helper="Envios concluídos" />
       </div>
 
-      <section className="grid gap-4 lg:grid-cols-2">
+      {lembreteBatchProgress?.ativo && (
+        <div className="flex items-center gap-2 rounded-xl bg-accent-50 px-4 py-2.5 text-sm text-accent-700 dark:bg-accent-900/20 dark:text-accent-300">
+          <RefreshCw className="h-4 w-4 animate-spin" /> Enviando lembretes… acompanhe os status atualizando em tempo real.
+        </div>
+      )}
+
+      <section className="grid gap-4 lg:grid-cols-3">
         <PainelEventosDashboard
           titulo="Agenda de hoje"
           descricao={`${visaoGeral.hoje.length} ${visaoGeral.hoje.length === 1 ? "compromisso" : "compromissos"} para hoje`}
-          eventos={visaoGeral.hoje.slice(0, 4)}
+          eventos={visaoGeral.hoje}
           total={visaoGeral.hoje.length}
           carregando={panorama === null}
           vazio="Nenhum compromisso agendado para hoje."
           somenteHorario
           onVerTudo={() => navigate("/calendario")}
+          onEnviarItem={enviarLembreteIndividual}
+          onEnviarTodos={() => abrirConfirmLembreteBatch("hoje")}
+          enviandoId={enviandoLembreteId}
+          lembretesEnviados={lembretesEnviados}
+          enviandoBatch={Boolean(lembreteBatchProgress?.ativo)}
+        />
+        <PainelEventosDashboard
+          titulo="Amanhã"
+          descricao={`${visaoGeral.amanha.length} ${visaoGeral.amanha.length === 1 ? "compromisso" : "compromissos"} para amanhã`}
+          eventos={visaoGeral.amanha}
+          total={visaoGeral.amanha.length}
+          carregando={panorama === null}
+          vazio="Nenhum compromisso agendado para amanhã."
+          somenteHorario
+          onVerTudo={() => navigate("/calendario")}
+          onEnviarItem={enviarLembreteIndividual}
+          onEnviarTodos={() => abrirConfirmLembreteBatch("amanha")}
+          enviandoId={enviandoLembreteId}
+          lembretesEnviados={lembretesEnviados}
+          enviandoBatch={Boolean(lembreteBatchProgress?.ativo)}
         />
         <PainelEventosDashboard
           titulo="Próximos compromissos"
-          descricao={`${visaoGeral.totalProximos} ${visaoGeral.totalProximos === 1 ? "evento futuro" : "eventos futuros"}`}
-          eventos={visaoGeral.proximos}
-          total={visaoGeral.totalProximos}
+          descricao={`${visaoGeral.totalFuturas} ${visaoGeral.totalFuturas === 1 ? "evento futuro" : "eventos futuros"}`}
+          eventos={visaoGeral.futuras}
+          total={visaoGeral.totalFuturas}
           carregando={panorama === null}
           vazio="Nenhum compromisso futuro encontrado."
           onVerTudo={() => navigate("/calendario")}
@@ -871,6 +971,32 @@ export function Dashboard() {
       </Modal>
 
       <Modal
+        open={Boolean(lembreteBatchConfirm)}
+        onClose={() => setLembreteBatchConfirm(null)}
+        title={`Enviar lembrete para ${lembreteBatchConfirm?.eventos.length ?? 0} cliente(s)?`}
+        description={`Cada cliente com compromisso ${lembreteBatchConfirm?.periodo === "hoje" ? "hoje" : "amanhã"} recebe a mensagem de lembrete de "${lembreteBatchConfirm?.periodo === "hoje" ? "Hoje" : "Amanhã"}", com intervalo aleatório entre elas.`}
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setLembreteBatchConfirm(null)}>
+              Cancelar
+            </Button>
+            <Button onClick={confirmarLembreteBatch} loading={lembreteBatchLoading}>
+              <Send className="h-4 w-4" /> Enviar lembretes
+            </Button>
+          </>
+        }
+      >
+        <ul className="max-h-64 space-y-1.5 overflow-y-auto text-sm text-zinc-600 dark:text-zinc-300">
+          {lembreteBatchConfirm?.eventos.map((evento) => (
+            <li key={evento.id} className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2 dark:bg-zinc-800/50">
+              <span>{evento.nome}</span>
+              <span className="text-xs text-zinc-400">{evento.horario || "Sem horário"}</span>
+            </li>
+          ))}
+        </ul>
+      </Modal>
+
+      <Modal
         open={Boolean(cadastro)}
         onClose={() => setCadastro(null)}
         title={cadastro?.contatoId ? "Editar contato" : "Cadastrar contato"}
@@ -1085,6 +1211,11 @@ function PainelEventosDashboard({
   vazio,
   somenteHorario = false,
   onVerTudo,
+  onEnviarItem,
+  onEnviarTodos,
+  enviandoId,
+  lembretesEnviados,
+  enviandoBatch,
 }: {
   titulo: string;
   descricao: string;
@@ -1094,6 +1225,13 @@ function PainelEventosDashboard({
   vazio: string;
   somenteHorario?: boolean;
   onVerTudo: () => void;
+  /** Quando presente, cada evento ganha um botão individual de "Enviar mensagem". */
+  onEnviarItem?: (evento: PericiaAgendada) => void;
+  /** Quando presente, o cabeçalho ganha um botão "Enviar todos". */
+  onEnviarTodos?: () => void;
+  enviandoId?: number | null;
+  lembretesEnviados?: Set<number>;
+  enviandoBatch?: boolean;
 }) {
   return (
     <div className="surface-panel overflow-hidden">
@@ -1107,9 +1245,16 @@ function PainelEventosDashboard({
             <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">{descricao}</p>
           </div>
         </div>
-        <Button variant="ghost" size="sm" onClick={onVerTudo} className="shrink-0">
-          Ver calendário <ArrowRight className="h-3.5 w-3.5" />
-        </Button>
+        <div className="flex shrink-0 items-center gap-1">
+          {onEnviarTodos && (
+            <Button variant="outline" size="sm" onClick={onEnviarTodos} disabled={eventos.length === 0 || enviandoBatch}>
+              <Send className="h-3.5 w-3.5" /> Enviar todos
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" onClick={onVerTudo}>
+            Ver calendário <ArrowRight className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       </div>
 
       {carregando ? (
@@ -1125,6 +1270,7 @@ function PainelEventosDashboard({
         <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
           {eventos.map((evento) => {
             const tipo = classificarEvento(evento);
+            const jaEnviado = lembretesEnviados?.has(evento.id);
             return (
               <article key={evento.id} className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-zinc-50/70 dark:hover:bg-zinc-800/30">
                 <span
@@ -1151,6 +1297,11 @@ function PainelEventosDashboard({
                     <Badge tone={toneEventoDashboard(tipo.categoria)} className="px-2 py-0.5">
                       {tipo.rotulo}
                     </Badge>
+                    {jaEnviado && (
+                      <Badge tone="accent" className="px-2 py-0.5">
+                        <CheckCheck className="h-3 w-3" /> Enviado
+                      </Badge>
+                    )}
                   </div>
                   <p className="mt-1 truncate text-sm font-medium text-zinc-950 dark:text-white">{evento.nome}</p>
                   {evento.local && (
@@ -1159,6 +1310,18 @@ function PainelEventosDashboard({
                     </p>
                   )}
                 </div>
+                {onEnviarItem && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => onEnviarItem(evento)}
+                    loading={enviandoId === evento.id}
+                    disabled={enviandoBatch}
+                  >
+                    <Send className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Enviar mensagem</span>
+                  </Button>
+                )}
               </article>
             );
           })}
