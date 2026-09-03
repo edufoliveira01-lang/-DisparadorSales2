@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, History, RefreshCw, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, History, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { cn } from "@/lib/utils";
@@ -200,14 +200,14 @@ export function Calendario() {
 
   const filtradas = useMemo(() => {
     if (!pericias) return [];
-    const termo = busca.trim().toLowerCase();
-    const termoDigits = termo.replace(/\D/g, "");
+    const termo = textoComparavel(busca);
+    const termoDigits = busca.replace(/\D/g, "");
     return pericias.filter((p) => {
       if (!mostrarSubstituidas && p.status === "substituida") return false;
       if (tipoFiltro !== "todos" && classificarTipo(p).chave !== tipoFiltro) return false;
       if (termo) {
-        const nomeMatch = p.nome.toLowerCase().includes(termo);
-        const processoMatch = (p.processo || "").toLowerCase().includes(termo);
+        const nomeMatch = textoComparavel(p.nome).includes(termo);
+        const processoMatch = textoComparavel(p.processo).includes(termo);
         const telefoneMatch = termoDigits.length > 0 && p.telefone.replace(/\D/g, "").includes(termoDigits);
         if (!nomeMatch && !processoMatch && !telefoneMatch) return false;
       }
@@ -229,6 +229,11 @@ export function Calendario() {
 
   const celulas = useMemo(() => montarGrade(ano, mes), [ano, mes]);
   const hoje = hojeYMD();
+  const buscaAtiva = busca.trim().length > 0;
+  const gruposDaBusca = useMemo(
+    () => Array.from(porDia.entries()).sort(([dataA], [dataB]) => dataA.localeCompare(dataB)),
+    [porDia]
+  );
 
   function irParaMesAnterior() {
     setAnoMes(({ ano, mes }) => (mes === 1 ? { ano: ano - 1, mes: 12 } : { ano, mes: mes - 1 }));
@@ -267,25 +272,53 @@ export function Calendario() {
       </div>
 
       <div className="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-zinc-50/70 p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/40 md:flex-row md:items-center md:justify-between md:rounded-none md:border-0 md:bg-transparent md:p-0 md:shadow-none md:dark:bg-transparent">
-        <div className="grid w-full grid-cols-[2.25rem_minmax(0,1fr)_2.25rem_auto] items-center gap-2 md:flex md:w-auto">
-          <Button variant="outline" size="icon" onClick={irParaMesAnterior} title="Mês anterior">
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <span className="min-w-0 text-center text-base font-semibold text-zinc-900 dark:text-zinc-100 md:w-40">
-            {NOMES_MES[mes - 1]} {ano}
-          </span>
-          <Button variant="outline" size="icon" onClick={irParaProximoMes} title="Próximo mês">
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="sm" onClick={irParaHoje}>
-            Hoje
-          </Button>
-        </div>
+        {buscaAtiva ? (
+          <div className="flex min-h-10 w-full items-center gap-2 md:w-auto">
+            <Search className="h-4 w-4 shrink-0 text-accent-600 dark:text-accent-400" />
+            <div>
+              <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Resultados em todos os meses</p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                {filtradas.length} {filtradas.length === 1 ? "evento encontrado" : "eventos encontrados"}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="grid w-full grid-cols-[2.25rem_minmax(0,1fr)_2.25rem_auto] items-center gap-2 md:flex md:w-auto">
+            <Button variant="outline" size="icon" onClick={irParaMesAnterior} title="Mês anterior">
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="min-w-0 text-center text-base font-semibold text-zinc-900 dark:text-zinc-100 md:w-40">
+              {NOMES_MES[mes - 1]} {ano}
+            </span>
+            <Button variant="outline" size="icon" onClick={irParaProximoMes} title="Próximo mês">
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={irParaHoje}>
+              Hoje
+            </Button>
+          </div>
+        )}
 
         <div className="grid w-full grid-cols-2 items-center gap-2 md:flex md:w-auto md:flex-wrap">
           <div className="relative col-span-2 w-full md:col-auto md:max-w-[220px]">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-            <Input placeholder="Nome, telefone ou processo…" className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
+            <Input
+              placeholder="Nome, telefone ou processo…"
+              className={cn("pl-9", busca && "pr-9")}
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+            />
+            {busca && (
+              <button
+                type="button"
+                onClick={() => setBusca("")}
+                title="Limpar busca"
+                aria-label="Limpar busca"
+                className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
           <Select value={tipoFiltro} onChange={(e) => setTipoFiltro(e.target.value)} className="w-full min-w-0 md:w-44">
             <option value="todos">Todos os tipos</option>
@@ -321,6 +354,49 @@ export function Calendario() {
           title="Nenhuma perícia comunicada ainda"
           description="Assim que um envio de WhatsApp for concluído com sucesso, a perícia aparece aqui."
         />
+      ) : buscaAtiva ? (
+        filtradas.length === 0 ? (
+          <EmptyState
+            icon={Search}
+            title="Nenhum evento encontrado"
+            description="Não encontramos nome, telefone ou processo correspondente em nenhum mês."
+            action={
+              <Button variant="outline" onClick={() => setBusca("")}>
+                <X className="h-4 w-4" /> Limpar busca
+              </Button>
+            }
+          />
+        ) : (
+          <div className="space-y-3">
+            {gruposDaBusca.map(([data, itens]) => (
+              <section
+                key={data}
+                className="overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50/60 dark:border-zinc-800 dark:bg-zinc-900/30"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 px-3 py-3 dark:border-zinc-800 md:px-4">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <CalendarDays className="h-4 w-4 shrink-0 text-accent-600 dark:text-accent-400" />
+                    <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{formatarTituloDia(data)}</h2>
+                  </div>
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                    {itens.length} {itens.length === 1 ? "evento" : "eventos"}
+                  </span>
+                </div>
+                <div className="grid gap-2 p-3 md:grid-cols-2 md:p-4 xl:grid-cols-3">
+                  {itens.map((p) => (
+                    <PericiaLinha
+                      key={p.id}
+                      pericia={p}
+                      substituidaPor={p.substituida_por_id ? porId.get(p.substituida_por_id) ?? null : null}
+                      onExcluir={() => setApagarAlvo(p)}
+                      excluindo={apagando === p.id}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        )
       ) : (
         <>
           {/* Desktop/tablet: grade mensal tradicional */}
