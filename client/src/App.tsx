@@ -7,6 +7,7 @@ import { Calendario } from "@/pages/Calendario";
 import { TemplatesPericia } from "@/pages/TemplatesPericia";
 import { TemplatesCobranca } from "@/pages/TemplatesCobranca";
 import { TemplatesAudiencia } from "@/pages/TemplatesAudiencia";
+import { TemplatesLembretes } from "@/pages/TemplatesLembretes";
 import { Historico } from "@/pages/Historico";
 import { PendentesResposta } from "@/pages/PendentesResposta";
 import { Configuracoes } from "@/pages/Configuracoes";
@@ -34,6 +35,7 @@ export default function App() {
           <Route path="/templates" element={<TemplatesPericia />} />
           <Route path="/templates/cobranca" element={<TemplatesCobranca />} />
           <Route path="/templates/audiencia" element={<TemplatesAudiencia />} />
+          <Route path="/templates/lembretes" element={<TemplatesLembretes />} />
           <Route path="/historico" element={<Historico />} />
           <Route path="/pendentes" element={<PendentesResposta />} />
           <Route path="/configuracoes" element={<Configuracoes />} />

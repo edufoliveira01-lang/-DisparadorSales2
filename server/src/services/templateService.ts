@@ -16,6 +16,12 @@ export const AUDIENCIA_ONLINE_MENSAGEM_PADRAO =
 export const AUDIENCIA_HIBRIDA_MENSAGEM_PADRAO =
   "Olá {{NOME}}! Passando para confirmar sua audiência híbrida (presencial ou por videoconferência):\n\n📅 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local/Link: {{LOCAL}}\n⚖️ Processo: {{PROCESSO}}\n👤 Profissional/Perito: {{PROFISSIONAL_PERITO}}\n\nMe avise com antecedência qual forma de participação você prefere. Qualquer dúvida, estou à disposição!";
 
+export const LEMBRETE_HOJE_MENSAGEM_PADRAO =
+  "Olá {{NOME}}, boa tarde! Passando para lembrar que sua {{TIPO_PERICIA}} é hoje, às {{HORARIO}}, em {{LOCAL}}. Qualquer dúvida, estou à disposição!";
+
+export const LEMBRETE_AMANHA_MENSAGEM_PADRAO =
+  "Olá {{NOME}}, boa tarde! Passando para lembrar que sua {{TIPO_PERICIA}} é amanhã, às {{HORARIO}}, em {{LOCAL}}. Entraremos em contato ainda hoje até o final do dia. Qualquer dúvida, estou à disposição!";
+
 export interface Template {
   id: number;
   nome: string;

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
+  AlarmClock,
   CalendarDays,
   ChevronDown,
   LayoutDashboard,
@@ -32,6 +33,7 @@ const subitensTemplates = [
   { to: "/templates", label: "Mensagens de Perícia", icon: MessageSquareText, end: true },
   { to: "/templates/audiencia", label: "Mensagens de Audiência", icon: Gavel },
   { to: "/templates/cobranca", label: "Mensagem de Cobrança", icon: MessageCircleQuestion },
+  { to: "/templates/lembretes", label: "Mensagens de Lembrete", icon: AlarmClock },
 ];
 
 interface SidebarProps {
