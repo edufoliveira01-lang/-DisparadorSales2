@@ -12,16 +12,18 @@ function diaLocalYMD(dataHoraMs: number): string {
 }
 
 /**
- * Classifica o evento em "hoje"/"amanhã" a partir da própria data (não confia no que o
- * frontend mandar) — evita mandar o lembrete errado se o horário virar meia-noite entre o
- * usuário abrir a tela e clicar em enviar.
+ * Classifica o evento em "hoje" (mensagem de hoje) ou "amanha" (mensagem para qualquer
+ * compromisso futuro — o painel "Próximas Perícias" mostra o próximo dia com perícia, que pode
+ * ser depois de amanhã se os dias mais próximos estiverem vazios). A partir da própria data do
+ * evento, não do que o frontend mandar — evita mandar o lembrete errado se o horário virar meia-
+ * noite entre o usuário abrir a tela e clicar em enviar. Datas passadas voltam null (não faz
+ * sentido "lembrar" de algo que já aconteceu).
  */
 export function periodoDoEvento(dataHoraMs: number): PeriodoLembrete | null {
-  const hoje = new Date();
-  const amanha = new Date(hoje.getTime() + 24 * 60 * 60 * 1000);
   const diaEvento = diaLocalYMD(dataHoraMs);
-  if (diaEvento === diaLocalYMD(hoje.getTime())) return "hoje";
-  if (diaEvento === diaLocalYMD(amanha.getTime())) return "amanha";
+  const hoje = diaLocalYMD(Date.now());
+  if (diaEvento === hoje) return "hoje";
+  if (diaEvento > hoje) return "amanha";
   return null;
 }
 
@@ -39,7 +41,7 @@ export async function enviarLembretePorId(id: number): Promise<void> {
   if (!whatsappManager.isReady()) throw new Error("WhatsApp não está conectado.");
 
   const periodo = periodoDoEvento(pericia.data_hora_ms);
-  if (!periodo) throw new Error("Este evento não é de hoje nem de amanhã.");
+  if (!periodo) throw new Error("Este evento já passou — não é possível enviar um lembrete para ele.");
 
   const chatId = await whatsappManager.resolveChatId(pericia.telefone_digits);
   if (!chatId) throw new Error("Este telefone não foi encontrado no WhatsApp.");
