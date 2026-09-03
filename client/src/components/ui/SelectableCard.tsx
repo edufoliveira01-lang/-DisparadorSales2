@@ -10,7 +10,7 @@ interface SelectableCardProps {
 /** Card usado nas listas mobile (alternativa às tabelas, que não cabem numa tela estreita). */
 export function SelectableCard({ checked, onToggle, children }: SelectableCardProps) {
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 shadow-soft dark:border-zinc-800 dark:bg-zinc-900">
       <div className="flex items-start gap-3">
         <div className="shrink-0 pt-0.5">
           <Checkbox checked={checked} onChange={onToggle} />

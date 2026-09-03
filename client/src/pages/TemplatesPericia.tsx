@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { Input, Label, Textarea } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { cn } from "@/lib/utils";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 /** Estado do formulário: campos opcionais do Template ficam "" em vez de null, para inputs controlados. */
 type TemplateForm = Omit<Template, "id" | "created_at" | "conteudo_pericia_medica" | "conteudo_pericia_social"> & {
@@ -151,15 +152,13 @@ export function TemplatesPericia() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Mensagens de Perícia</h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Edite as mensagens de agendamento enviadas aos clientes.</p>
-        </div>
-        <Button onClick={novoTemplate} className="self-start">
+      <PageHeader
+        title="Mensagens de Perícia"
+        description="Edite os textos, variáveis e formatos usados nas mensagens de agendamento."
+        actions={<Button onClick={novoTemplate}>
           <Plus className="h-4 w-4" /> Novo template
-        </Button>
-      </div>
+        </Button>}
+      />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[220px_1fr]">
         <div className="flex gap-1.5 overflow-x-auto pb-1 lg:block lg:space-y-1.5 lg:overflow-visible lg:pb-0">
@@ -306,8 +305,8 @@ export function TemplatesPericia() {
 
               <div className="flex justify-end gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
                 {selecionadoId && (
-                  <Button variant="danger" onClick={excluir} loading={excluindo}>
-                    <Trash2 className="h-4 w-4" /> Excluir
+                  <Button variant="outline" className="danger-action" onClick={excluir} loading={excluindo}>
+                    <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" /> Excluir
                   </Button>
                 )}
                 <Button onClick={salvar} loading={salvando}>

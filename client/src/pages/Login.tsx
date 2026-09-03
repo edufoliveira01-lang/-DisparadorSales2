@@ -69,8 +69,10 @@ export function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4 dark:bg-zinc-950">
-      <div className="w-full max-w-md space-y-8">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-zinc-50 px-4 py-10 dark:bg-zinc-950">
+      <div className="pointer-events-none absolute -left-32 -top-32 h-80 w-80 rounded-full bg-accent-200/40 blur-3xl dark:bg-accent-900/20" />
+      <div className="pointer-events-none absolute -bottom-40 -right-32 h-96 w-96 rounded-full bg-blue-200/30 blur-3xl dark:bg-blue-950/20" />
+      <div className="relative w-full max-w-md space-y-8">
         <div className="flex flex-col items-center text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent-500 text-white shadow-lg">
             <Send className="h-10 w-10" />
@@ -84,7 +86,7 @@ export function Login() {
           </p>
         </div>
 
-        <Card className="border-none shadow-xl">
+        <Card className="border border-white/80 shadow-xl dark:border-zinc-800">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
               {modo === "login" ? (
@@ -197,7 +199,7 @@ export function Login() {
         </Card>
         
         <p className="text-center text-xs text-zinc-400">
-          Uso 100% local · v2.30.0
+          Uso 100% local · v2.31.0
         </p>
       </div>
     </div>

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Textarea } from "@/components/ui/Input";
 import { cn } from "@/lib/utils";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 type Categoria = "pericia" | "audiencia";
 
@@ -100,13 +101,15 @@ export function TemplatesCobranca() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Mensagem de Cobrança</h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+      <PageHeader
+        title="Mensagem de Cobrança"
+        description={
+          <>
           Enviada pelo botão "Cobrar resposta" em Pendentes de Resposta, perguntando ao cliente se recebeu o envio anterior.
           Audiências usam uma mensagem própria, separada da de perícia.
-        </p>
-      </div>
+          </>
+        }
+      />
 
       <Card>
         <CardContent className="space-y-4 pt-5">

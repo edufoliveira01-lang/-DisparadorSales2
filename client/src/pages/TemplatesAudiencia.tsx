@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Textarea } from "@/components/ui/Input";
 import { cn } from "@/lib/utils";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 const ABAS: { modalidade: ModalidadeAudiencia; label: string }[] = [
   { modalidade: "presencial", label: "Presencial" },
@@ -106,13 +107,15 @@ export function TemplatesAudiencia() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Mensagens de Audiência</h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+      <PageHeader
+        title="Mensagens de Audiência"
+        description={
+          <>
           Enviadas automaticamente quando o sistema identifica uma audiência (presencial, online ou híbrida) na descrição
           do card, no lugar da mensagem de perícia.
-        </p>
-      </div>
+          </>
+        }
+      />
 
       <Card>
         <CardContent className="space-y-4 pt-5">

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
   CheckCircle2,
@@ -32,6 +32,8 @@ import { SelectableCard } from "@/components/ui/SelectableCard";
 import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { StatCard } from "@/components/ui/StatCard";
 
 const ITENS_POR_PAGINA = 20;
 
@@ -257,25 +259,21 @@ export function PendentesResposta() {
 
   return (
     <div className="space-y-5 md:space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 md:text-3xl">Pendentes de Resposta</h1>
-          <p className="mt-1 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">
-            Acompanhe quem recebeu a mensagem, cobre um retorno ou conclua o atendimento manualmente.
-          </p>
-        </div>
-        <Button variant="outline" className="self-start" onClick={carregar}>
+      <PageHeader
+        title="Pendentes de Resposta"
+        description="Acompanhe quem recebeu a mensagem, cobre um retorno ou conclua o atendimento manualmente."
+        actions={<Button variant="outline" onClick={carregar}>
           <RefreshCw className="h-4 w-4" /> Atualizar
-        </Button>
-      </div>
+        </Button>}
+      />
 
       <div className="grid grid-cols-3 gap-2 md:gap-3">
-        <ResumoCard icon={<Clock3 />} label="Aguardando" value={resumo.total} tone="accent" />
-        <ResumoCard icon={<CheckCheck />} label="Entregues" value={resumo.entregues} tone="warning" />
-        <ResumoCard icon={<Eye />} label="Lidos" value={resumo.lidos} tone="info" />
+        <StatCard icon={<Clock3 />} label="Aguardando" value={resumo.total} tone="accent" />
+        <StatCard icon={<CheckCheck />} label="Entregues" value={resumo.entregues} tone="warning" />
+        <StatCard icon={<Eye />} label="Lidos" value={resumo.lidos} tone="info" />
       </div>
 
-      <section className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-soft dark:border-zinc-800 dark:bg-zinc-900 md:p-4">
+      <section className="surface-panel p-3 md:p-4">
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-[minmax(280px,1fr)_190px_190px_auto]">
           <div className="relative col-span-2 lg:col-span-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
@@ -324,8 +322,8 @@ export function PendentesResposta() {
           <p className="text-sm font-medium text-accent-800 dark:text-accent-300">{selecionados.size} registro(s) selecionado(s)</p>
           <div className="grid grid-cols-2 gap-2 sm:flex">
             <Button variant="ghost" size="sm" onClick={() => setSelecionados(new Set())}>Limpar seleção</Button>
-            <Button variant="danger" size="sm" onClick={() => setConfirmMassaAberto(true)} loading={apagandoSelecionados}>
-              <Trash2 className="h-3.5 w-3.5" /> Apagar selecionados
+            <Button variant="outline" className="danger-action" size="sm" onClick={() => setConfirmMassaAberto(true)} loading={apagandoSelecionados}>
+              <Trash2 className="h-3.5 w-3.5 text-red-500 dark:text-red-400" /> Apagar selecionados
             </Button>
           </div>
         </div>
@@ -393,7 +391,7 @@ export function PendentesResposta() {
                           <X className="h-3.5 w-3.5" /> Cancelar
                         </Button>
                         <Button variant="ghost" size="sm" className="col-span-2 text-red-600 dark:text-red-400" onClick={() => setApagarAlvo(item)} disabled={processando === item.id}>
-                          <Trash2 className="h-3.5 w-3.5" /> Apagar registro
+                          <Trash2 className="h-3.5 w-3.5 text-red-500 dark:text-red-400" /> Apagar registro
                         </Button>
                       </div>
                     </div>
@@ -431,7 +429,7 @@ export function PendentesResposta() {
                     <X className="h-3.5 w-3.5" /> Cancelar
                   </Button>
                   <Button variant="ghost" size="icon" className="ml-auto" title="Apagar registro" onClick={() => setApagarAlvo(item)} disabled={processando === item.id}>
-                    <Trash2 className="h-4 w-4 text-red-500" />
+                    <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
                   </Button>
                 </div>
               </article>
@@ -459,22 +457,6 @@ export function PendentesResposta() {
         onConfirm={confirmarApagarSelecionados}
         onCancel={() => setConfirmMassaAberto(false)}
       />
-    </div>
-  );
-}
-
-function ResumoCard({ icon, label, value, tone }: { icon: ReactNode; label: string; value: number; tone: "accent" | "warning" | "info" }) {
-  const tons = {
-    accent: "bg-accent-50 text-accent-700 dark:bg-accent-900/20 dark:text-accent-300",
-    warning: "bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300",
-    info: "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300",
-  };
-
-  return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-3 shadow-soft dark:border-zinc-800 dark:bg-zinc-900 md:rounded-2xl md:p-4">
-      <div className={`flex h-8 w-8 items-center justify-center rounded-lg [&>svg]:h-4 [&>svg]:w-4 ${tons[tone]}`}>{icon}</div>
-      <p className="mt-2 text-xl font-bold text-zinc-900 dark:text-zinc-100 md:text-2xl">{value}</p>
-      <p className="truncate text-[11px] text-zinc-500 dark:text-zinc-400 md:text-xs">{label}</p>
     </div>
   );
 }
