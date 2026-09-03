@@ -64,22 +64,39 @@ function inicialSemAcento(nome: string): string {
     .toUpperCase();
 }
 
-function ComoRespondeu({ log }: { log: SendLog }) {
-  if (log.resposta_tipo === "reacao") {
-    return (
-      <span className="inline-flex items-center gap-1">
-        <SmilePlus className="h-3.5 w-3.5" /> Reação {log.resposta_preview}
-      </span>
-    );
-  }
-  if (log.resposta_tipo === "mensagem") {
-    return (
-      <span className="inline-flex items-center gap-1">
-        <MessageSquareReply className="h-3.5 w-3.5" /> {log.resposta_preview || "Mensagem"}
-      </span>
-    );
-  }
-  return <>—</>;
+function formatarDataHora(data?: string | null): string | null {
+  if (!data) return null;
+  return new Date(data + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+}
+
+function RespostaRecebida({ log }: { log: SendLog }) {
+  const respondidoEm = formatarDataHora(log.resposta_resolved_at);
+  const temResposta = log.resposta_status === "respondido" || Boolean(log.resposta_preview || respondidoEm);
+  if (!temResposta) return null;
+
+  const reacao = log.resposta_tipo === "reacao";
+  const IconeResposta = reacao ? SmilePlus : MessageSquareReply;
+  const conteudo = log.resposta_preview || (reacao ? "Reação recebida" : "Mensagem recebida");
+
+  return (
+    <div className="rounded-xl border border-accent-200 bg-white p-3.5 shadow-sm dark:border-accent-900/70 dark:bg-zinc-900/70">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-accent-700 dark:text-accent-300">
+          Mensagem recebida
+        </p>
+        <span className="rounded-full bg-accent-50 px-2 py-0.5 text-[11px] font-medium text-accent-700 dark:bg-accent-900/30 dark:text-accent-300">
+          {reacao ? "Reação" : "Mensagem"}
+        </span>
+      </div>
+      <div className="mt-2.5 flex items-start gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+        <IconeResposta className="mt-0.5 h-4 w-4 shrink-0 text-accent-600 dark:text-accent-400" />
+        <p className="min-w-0 whitespace-pre-wrap break-words font-medium">{conteudo}</p>
+      </div>
+      {respondidoEm && (
+        <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">Recebida em {respondidoEm}</p>
+      )}
+    </div>
+  );
 }
 
 function periciasDoLog(log: SendLog): Pericia[] {
@@ -475,28 +492,27 @@ export function Historico() {
 
                   {aberto && (
                     <div className="space-y-2 border-t border-zinc-100 pt-2 dark:border-zinc-800">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-between gap-2">
                         <StatusBadge sendStatus={log.status} ack={log.ack} respostaStatus={log.resposta_status} />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Apagar"
+                          aria-label={`Apagar registro de ${log.card_nome || "cliente"}`}
+                          onClick={() => setApagarAlvo(log)}
+                          disabled={apagando === log.id}
+                        >
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
                       </div>
                       {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
                       <DadosDoEnvio log={log} />
+                      <RespostaRecebida log={log} />
                       {log.mensagem_enviada && (
                         <div className="rounded-xl rounded-tl-sm bg-accent-50 p-3.5 dark:bg-accent-900/20">
                           <p className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-400">Mensagem enviada</p>
                           <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{log.mensagem_enviada}</p>
                         </div>
-                      )}
-                      {log.resposta_resolved_at && (
-                        <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                          <span className="text-zinc-400 dark:text-zinc-500">Respondido em: </span>
-                          {new Date(log.resposta_resolved_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
-                        </p>
-                      )}
-                      {log.resposta_status === "respondido" && (
-                        <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                          <span className="text-zinc-400 dark:text-zinc-500">Como respondeu: </span>
-                          <ComoRespondeu log={log} />
-                        </p>
                       )}
                       {log.status === "falha" && (
                         <Button
@@ -509,11 +525,6 @@ export function Historico() {
                           <RotateCcw className="h-3.5 w-3.5" /> Reenviar
                         </Button>
                       )}
-                      <div className="flex items-center justify-end gap-2 pt-1">
-                        <Button variant="ghost" size="icon" title="Apagar" onClick={() => setApagarAlvo(log)} disabled={apagando === log.id}>
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
-                      </div>
                     </div>
                   )}
                 </SelectableCard>
@@ -596,20 +607,9 @@ export function Historico() {
                               <span className="text-zinc-400 dark:text-zinc-500">Enviado em: </span>
                               {formatarData(log)}
                             </p>
-                            {log.resposta_resolved_at && (
-                              <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                                <span className="text-zinc-400 dark:text-zinc-500">Respondido em: </span>
-                                {new Date(log.resposta_resolved_at + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
-                              </p>
-                            )}
-                            {log.resposta_status === "respondido" && (
-                              <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                                <span className="text-zinc-400 dark:text-zinc-500">Como respondeu: </span>
-                                <ComoRespondeu log={log} />
-                              </p>
-                            )}
                             {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
                             <DadosDoEnvio log={log} />
+                            <RespostaRecebida log={log} />
                             {log.mensagem_enviada && (
                               <div className="rounded-xl rounded-tl-sm bg-accent-50 p-4 dark:bg-accent-900/20">
                                 <p className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-400">Mensagem enviada</p>
