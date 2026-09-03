@@ -84,8 +84,10 @@ function hojeYMD(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 }
 
-function amanhaYMD(): string {
-  return new Date(Date.now() + 24 * 60 * 60 * 1000).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+/** "YYYY-MM-DD" -> "dd/mm", para o rótulo do painel "Próximas Perícias". */
+function formatarDiaCurto(ymd: string): string {
+  const [, mes, dia] = ymd.split("-");
+  return `${dia}/${mes}`;
 }
 
 function toneEventoDashboard(categoria: CategoriaEvento): "neutral" | "accent" | "violet" | "info" | "cyan" | "indigo" {
@@ -373,7 +375,6 @@ export function Dashboard() {
 
   const visaoGeral = useMemo(() => {
     const hoje = hojeYMD();
-    const amanha = amanhaYMD();
     const eventosAtivos = (panorama?.pericias ?? []).filter((pericia) => pericia.status === "ativa");
     const pendentesAtivos = (panorama?.pendentes ?? []).filter((item) => item.status === "aguardando");
     const limiteSeteDias = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -384,13 +385,32 @@ export function Dashboard() {
 
     const eventosDoDia = (ymd: string) =>
       eventosAtivos.filter((pericia) => diaLocalYMD(pericia.data_hora_ms) === ymd).sort((a, b) => a.data_hora_ms - b.data_hora_ms);
-    const futurasTodas = eventosAtivos
-      .filter((pericia) => diaLocalYMD(pericia.data_hora_ms) > amanha)
+
+    // Agrupa os eventos futuros (depois de hoje) por dia, pra achar o próximo dia que TEM
+    // perícia — pula dias vazios em vez de fixar em "amanhã" literal. "Próximas Perícias" mostra
+    // esse dia inteiro; "Próximos compromissos" mostra o que sobrar dos dias seguintes.
+    const diasFuturosComEventos = new Map<string, PericiaAgendada[]>();
+    for (const pericia of eventosAtivos) {
+      const dia = diaLocalYMD(pericia.data_hora_ms);
+      if (dia <= hoje) continue;
+      const lista = diasFuturosComEventos.get(dia) ?? [];
+      lista.push(pericia);
+      diasFuturosComEventos.set(dia, lista);
+    }
+    const diasFuturosOrdenados = Array.from(diasFuturosComEventos.keys()).sort();
+    const proximoDia = diasFuturosOrdenados[0] ?? null;
+    const proximasPericias = proximoDia
+      ? [...diasFuturosComEventos.get(proximoDia)!].sort((a, b) => a.data_hora_ms - b.data_hora_ms)
+      : [];
+    const futurasTodas = diasFuturosOrdenados
+      .slice(1)
+      .flatMap((dia) => diasFuturosComEventos.get(dia)!)
       .sort((a, b) => a.data_hora_ms - b.data_hora_ms);
 
     return {
       hoje: eventosDoDia(hoje),
-      amanha: eventosDoDia(amanha),
+      amanha: proximasPericias,
+      proximoDiaLabel: proximoDia ? formatarDiaCurto(proximoDia) : null,
       futuras: futurasTodas.slice(0, 4),
       totalFuturas: futurasTodas.length,
       aguardandoResposta: pendentesAtivos.length,
@@ -712,13 +732,16 @@ export function Dashboard() {
           enviandoBatch={Boolean(lembreteBatchProgress?.ativo)}
         />
         <PainelEventosDashboard
-          titulo="Amanhã"
-          descricao={`${visaoGeral.amanha.length} ${visaoGeral.amanha.length === 1 ? "compromisso" : "compromissos"} para amanhã`}
+          titulo="Próximas Perícias"
+          descricao={
+            visaoGeral.proximoDiaLabel
+              ? `${visaoGeral.amanha.length} ${visaoGeral.amanha.length === 1 ? "compromisso" : "compromissos"} em ${visaoGeral.proximoDiaLabel}`
+              : "Nenhum compromisso futuro"
+          }
           eventos={visaoGeral.amanha}
           total={visaoGeral.amanha.length}
           carregando={panorama === null}
-          vazio="Nenhum compromisso agendado para amanhã."
-          somenteHorario
+          vazio="Nenhuma perícia futura agendada."
           onVerTudo={() => navigate("/calendario")}
           onEnviarItem={enviarLembreteIndividual}
           onEnviarTodos={() => abrirConfirmLembreteBatch("amanha")}
@@ -1257,8 +1280,8 @@ function PainelEventosDashboard({
               <Send className="h-3.5 w-3.5" />
             </Button>
           )}
-          <Button variant="ghost" size="sm" onClick={onVerTudo} className="shrink-0">
-            Ver calendário <ArrowRight className="h-3.5 w-3.5" />
+          <Button variant="ghost" size="icon" onClick={onVerTudo} title="Ver calendário">
+            <ArrowRight className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>

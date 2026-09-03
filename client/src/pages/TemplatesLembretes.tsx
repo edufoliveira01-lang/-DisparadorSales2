@@ -95,8 +95,8 @@ export function TemplatesLembretes() {
         title="Mensagens de Lembrete"
         description={
           <>
-            Enviadas pelo botão "Enviar mensagem" no Dashboard, para perícias de hoje e de amanhã — cada período tem sua
-            própria mensagem.
+            Enviadas pelo botão "Enviar mensagem" no Dashboard: "Hoje" para as perícias do dia, "Amanhã" para o painel
+            "Próximas Perícias" (a próxima data futura com compromissos, mesmo que não seja literalmente amanhã).
           </>
         }
       />
