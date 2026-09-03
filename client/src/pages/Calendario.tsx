@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, History, RefreshCw, Search, Trash2, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Clock, FileText, History, MapPin, Phone, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { cn } from "@/lib/utils";
@@ -367,34 +367,46 @@ export function Calendario() {
             }
           />
         ) : (
-          <div className="space-y-3">
-            {gruposDaBusca.map(([data, itens]) => (
-              <section
-                key={data}
-                className="overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50/60 dark:border-zinc-800 dark:bg-zinc-900/30"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 px-3 py-3 dark:border-zinc-800 md:px-4">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <CalendarDays className="h-4 w-4 shrink-0 text-accent-600 dark:text-accent-400" />
-                    <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{formatarTituloDia(data)}</h2>
-                  </div>
-                  <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                    {itens.length} {itens.length === 1 ? "evento" : "eventos"}
-                  </span>
-                </div>
-                <div className="grid gap-2 p-3 md:grid-cols-2 md:p-4 xl:grid-cols-3">
-                  {itens.map((p) => (
-                    <PericiaLinha
-                      key={p.id}
-                      pericia={p}
-                      substituidaPor={p.substituida_por_id ? porId.get(p.substituida_por_id) ?? null : null}
-                      onExcluir={() => setApagarAlvo(p)}
-                      excluindo={apagando === p.id}
-                    />
-                  ))}
-                </div>
-              </section>
-            ))}
+          <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="flex flex-col gap-2 border-b border-zinc-200 bg-zinc-50/70 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-800/30 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">Resultados para</p>
+                <p className="mt-0.5 truncate font-semibold text-zinc-900 dark:text-zinc-100">“{busca.trim()}”</p>
+              </div>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                {filtradas.length} {filtradas.length === 1 ? "evento" : "eventos"} em {gruposDaBusca.length} {gruposDaBusca.length === 1 ? "data" : "datas"}
+              </p>
+            </div>
+            <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
+              {gruposDaBusca.map(([data, itens]) => {
+                const partes = formatarPartesData(data);
+                return (
+                  <section key={data} className="md:grid md:grid-cols-[10.5rem_minmax(0,1fr)]">
+                    <div className="flex items-center justify-between gap-3 bg-zinc-50/70 px-4 py-3 dark:bg-zinc-800/30 md:block md:border-r md:border-zinc-200 md:px-5 md:py-5 md:dark:border-zinc-800">
+                      <div className="flex items-baseline gap-2 md:block">
+                        <span className="text-2xl font-bold leading-none text-zinc-900 dark:text-zinc-100 md:text-3xl">{partes.dia}</span>
+                        <span className="text-sm font-semibold capitalize text-zinc-700 dark:text-zinc-300 md:mt-1 md:block">{partes.mes}</span>
+                      </div>
+                      <div className="text-right md:mt-2 md:text-left">
+                        <p className="text-xs capitalize text-zinc-500 dark:text-zinc-400">{partes.diaSemana}</p>
+                        <p className="text-xs text-zinc-400">{partes.ano} · {itens.length} {itens.length === 1 ? "evento" : "eventos"}</p>
+                      </div>
+                    </div>
+                    <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                      {itens.map((p) => (
+                        <ResultadoBuscaLinha
+                          key={p.id}
+                          pericia={p}
+                          substituidaPor={p.substituida_por_id ? porId.get(p.substituida_por_id) ?? null : null}
+                          onExcluir={() => setApagarAlvo(p)}
+                          excluindo={apagando === p.id}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
           </div>
         )
       ) : (
@@ -547,6 +559,80 @@ export function Calendario() {
 function formatarTituloDia(ymd: string): string {
   const [ano, mes, dia] = ymd.split("-").map(Number);
   return `${dia} de ${NOMES_MES[mes - 1]} de ${ano}`;
+}
+
+function formatarPartesData(ymd: string): { dia: string; mes: string; ano: number; diaSemana: string } {
+  const [ano, mes, dia] = ymd.split("-").map(Number);
+  const data = new Date(ano, mes - 1, dia, 12);
+  return {
+    dia: pad2(dia),
+    mes: NOMES_MES[mes - 1],
+    ano,
+    diaSemana: data.toLocaleDateString("pt-BR", { weekday: "long" }),
+  };
+}
+
+function ResultadoBuscaLinha({
+  pericia,
+  substituidaPor,
+  onExcluir,
+  excluindo,
+}: {
+  pericia: PericiaAgendada;
+  substituidaPor?: PericiaAgendada | null;
+  onExcluir: () => void;
+  excluindo?: boolean;
+}) {
+  const tipo = classificarTipo(pericia);
+  return (
+    <article
+      className={cn(
+        "group border-l-4 px-4 py-4 transition-colors hover:bg-zinc-50/70 dark:hover:bg-zinc-800/30 md:px-5",
+        pericia.status === "substituida"
+          ? "border-l-zinc-300 bg-zinc-50/40 dark:border-l-zinc-700 dark:bg-zinc-800/20"
+          : tipo.audiencia
+            ? "border-l-blue-500 bg-blue-50/20 dark:border-l-blue-400 dark:bg-blue-950/10"
+            : "border-l-accent-400 dark:border-l-accent-500"
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+              <Clock className="h-3.5 w-3.5" /> {pericia.horario || "Sem horário"}
+            </span>
+            <Badge tone={tipo.audiencia ? "info" : tipo.identificado ? "accent" : "neutral"}>{tipo.rotulo}</Badge>
+            {pericia.fonte === "trello_sync" && <Badge tone="neutral">Importado</Badge>}
+            {pericia.status === "substituida" && <Badge tone="neutral">Substituída</Badge>}
+          </div>
+
+          <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(12rem,0.75fr)_minmax(0,1.25fr)]">
+            <div className="min-w-0">
+              <p className={cn("break-words font-semibold leading-snug text-zinc-900 dark:text-zinc-100", pericia.status === "substituida" && "line-through opacity-60")}>
+                {pericia.nome}
+              </p>
+              <p className="mt-1 flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                <Phone className="h-3.5 w-3.5 shrink-0" /> {formatPhoneDisplay(pericia.telefone)}
+              </p>
+            </div>
+            <div className="min-w-0 space-y-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+              {pericia.local && <p className="flex items-start gap-1.5"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span className="break-words">{pericia.local}</span></p>}
+              {pericia.processo && <p className="flex items-start gap-1.5"><FileText className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span className="break-all">Processo: {pericia.processo}</span></p>}
+            </div>
+          </div>
+
+          {pericia.status === "substituida" && substituidaPor && (
+            <p className="mt-3 flex items-center gap-1.5 text-xs text-accent-600 dark:text-accent-400">
+              <History className="h-3.5 w-3.5" /> Reagendada para {substituidaPor.data} {substituidaPor.horario && `às ${substituidaPor.horario}`}
+            </p>
+          )}
+        </div>
+        <Button variant="ghost" size="icon" title="Apagar" onClick={onExcluir} disabled={excluindo}>
+          <Trash2 className="h-4 w-4 text-red-500" />
+        </Button>
+      </div>
+    </article>
+  );
 }
 
 function PericiaLinha({
