@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Inbox, RefreshCw, Search, Send, WifiOff } from "lucide-react";
+import { CheckCheck, Clock3, Inbox, RefreshCw, Search, Send, ShieldCheck, WifiOff } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay, formatPhoneInput } from "@/lib/phone";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,8 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
 import { Badge } from "@/components/ui/Badge";
 import { CardItem } from "@/components/CardItem";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { StatCard } from "@/components/ui/StatCard";
 
 type FiltroStatus = "todos" | "enviado" | "nao_enviado" | "falhou";
 type FiltroTipo = "todos" | "medica" | "social" | "audiencia";
@@ -249,6 +251,17 @@ export function Dashboard() {
     });
   }, [cards, busca, filtroStatus, filtroTipo]);
 
+  const resumo = useMemo(() => {
+    const lista = cards ?? [];
+    return {
+      pendentes: lista.filter((card) => !card.ultimoEnvio).length,
+      prontos: lista.filter((card) => Boolean(contatoEfetivo(card)) && periciasEfetivas(card).length > 0).length,
+      enviados: lista.filter((card) => card.ultimoEnvio?.status === "sucesso").length,
+    };
+    // Os overrides fazem parte da revisão atual do usuário e precisam refletir no resumo imediatamente.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cards, contatoOverrides, periciasOverrides]);
+
   function toggleSelecionado(cardId: string) {
     setSelecionados((prev) => {
       const next = new Set(prev);
@@ -464,12 +477,10 @@ export function Dashboard() {
 
   return (
     <div className="space-y-5 md:space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 md:text-3xl">Dashboard</h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Revise os dados do Trello e envie mensagens com segurança.</p>
-        </div>
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+      <PageHeader
+        title="Dashboard"
+        description="Revise os dados trazidos do Trello, confirme o contato correto e envie mensagens com segurança."
+        actions={<>
           <Badge tone={whatsapp.status === "conectado" ? "success" : "warning"}>
             {whatsapp.status === "conectado" ? (
               <><span className="h-2 w-2 rounded-full bg-accent-500" /> WhatsApp conectado</>
@@ -480,7 +491,13 @@ export function Dashboard() {
           <Button variant="outline" onClick={carregarCards} loading={carregando}>
             <RefreshCw className="h-4 w-4" /> Atualizar
           </Button>
-        </div>
+        </>}
+      />
+
+      <div className="grid grid-cols-3 gap-2 md:gap-3">
+        <StatCard icon={<Clock3 />} label="Pendentes" value={resumo.pendentes} tone="warning" helper="Ainda não enviados" />
+        <StatCard icon={<ShieldCheck />} label="Prontos" value={resumo.prontos} tone="accent" helper="Contato e compromisso conferidos" />
+        <StatCard icon={<CheckCheck />} label="Enviados" value={resumo.enviados} tone="info" helper="Envios concluídos" />
       </div>
 
       {erro ? (
@@ -496,7 +513,7 @@ export function Dashboard() {
         />
       ) : (
         <>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-soft dark:border-zinc-800 dark:bg-zinc-900 md:p-4">
+          <div className="surface-panel p-3 md:p-4">
             <div className="grid grid-cols-2 gap-2 md:hidden">
               <div className="relative col-span-2">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />

@@ -2,11 +2,13 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   BriefcaseBusiness,
   Calendar,
+  CheckCheck,
   ChevronDown,
   ChevronUp,
   Clock,
   FileText,
   History as HistoryIcon,
+  Eye,
   MapPin,
   MessageSquareReply,
   Phone,
@@ -36,6 +38,8 @@ import { SelectableCard } from "@/components/ui/SelectableCard";
 import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { StatCard } from "@/components/ui/StatCard";
 
 const ITENS_POR_PAGINA = 20;
 
@@ -288,6 +292,15 @@ export function Historico() {
     [logsFiltrados, pagina]
   );
 
+  const resumo = useMemo(() => {
+    const lista = logs ?? [];
+    return {
+      envios: lista.length,
+      entregues: lista.filter((log) => log.ack !== null && log.ack >= 2).length,
+      respondidos: lista.filter(temRespostaRecebida).length,
+    };
+  }, [logs]);
+
   useEffect(() => {
     const ultimaPagina = Math.max(0, Math.ceil(logsFiltrados.length / ITENS_POR_PAGINA) - 1);
     if (pagina > ultimaPagina) setPagina(ultimaPagina);
@@ -389,20 +402,22 @@ export function Historico() {
 
   return (
     <div className="space-y-5 md:space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 md:text-3xl">Histórico</h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Mensagens enviadas, dados utilizados e confirmações de entrega.</p>
-        </div>
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          <Button variant="outline" onClick={carregar}>
+      <PageHeader
+        title="Histórico"
+        description="Consulte mensagens enviadas, dados utilizados, confirmações de entrega e respostas dos clientes."
+        actions={<Button variant="outline" onClick={carregar}>
             <RefreshCw className="h-4 w-4" /> Atualizar
-          </Button>
-        </div>
+          </Button>}
+      />
+
+      <div className="grid grid-cols-3 gap-2 md:gap-3">
+        <StatCard icon={<Send />} label="Envios" value={resumo.envios} tone="accent" />
+        <StatCard icon={<CheckCheck />} label="Entregues" value={resumo.entregues} tone="warning" />
+        <StatCard icon={<Eye />} label="Respondidos" value={resumo.respondidos} tone="info" />
       </div>
 
-      <section className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-soft dark:border-zinc-800 dark:bg-zinc-900 md:p-4">
-        <div className="grid gap-3 lg:grid-cols-[minmax(320px,1fr)_280px] lg:gap-4">
+      <section className="surface-panel p-3 md:p-4">
+        <div className="grid gap-3 lg:grid-cols-[minmax(320px,1fr)_240px_auto] lg:items-end lg:gap-4">
           <div>
             <Label className="text-xs">Buscar no histórico</Label>
             <div className="relative">
@@ -416,17 +431,6 @@ export function Historico() {
             </div>
           </div>
           <div>
-            <Label className="text-xs">Template para reenvio</Label>
-            <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="w-full">
-              {templates.map((template) => (
-                <option key={template.id} value={template.id}>{template.nome}</option>
-              ))}
-            </Select>
-          </div>
-        </div>
-
-        <div className="mt-3 grid grid-cols-2 gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800 sm:flex sm:items-end sm:justify-between">
-          <div className="col-span-2 min-w-0 sm:w-64">
             <Label className="text-xs">Ordenar registros</Label>
             <Select value={ordenacao} onChange={(e) => setOrdenacao(e.target.value as Ordenacao)} className="w-full">
               {ORDENACAO_OPTIONS.map((option) => (
@@ -436,7 +440,7 @@ export function Historico() {
           </div>
           <Button
             variant={periodoAtivo ? "secondary" : "outline"}
-            className="col-span-2 sm:self-end"
+            className="w-full lg:w-auto"
             onClick={() => setMostrarPeriodo((valor) => !valor)}
           >
             <SlidersHorizontal className="h-4 w-4" /> {periodoAtivo ? "Período aplicado" : "Filtrar período"}
@@ -461,9 +465,19 @@ export function Historico() {
           </div>
         )}
 
-        <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-          {logsFiltrados.length} de {logs?.length ?? 0} registro(s) exibido(s)
-        </p>
+        <div className="mt-3 flex flex-col gap-3 border-t border-zinc-100 pt-3 dark:border-zinc-800 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0 sm:w-72">
+            <Label className="text-xs">Template usado somente em reenvios</Label>
+            <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="w-full">
+              {templates.map((template) => (
+                <option key={template.id} value={template.id}>{template.nome}</option>
+              ))}
+            </Select>
+          </div>
+          <p className="pb-1 text-xs text-zinc-500 dark:text-zinc-400">
+            {logsFiltrados.length} de {logs?.length ?? 0} registro(s) exibido(s)
+          </p>
+        </div>
       </section>
 
       <div className="scrollbar-thin flex items-center gap-1 overflow-x-auto rounded-xl border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-900">
@@ -503,8 +517,8 @@ export function Historico() {
             <Button variant="ghost" size="sm" onClick={() => setSelecionados(new Set())}>
               Limpar seleção
             </Button>
-            <Button variant="danger" size="sm" onClick={() => setConfirmMassaAberto(true)} loading={apagandoSelecionados}>
-              <Trash2 className="h-3.5 w-3.5" /> Apagar selecionados
+            <Button variant="outline" className="danger-action" size="sm" onClick={() => setConfirmMassaAberto(true)} loading={apagandoSelecionados}>
+              <Trash2 className="h-3.5 w-3.5 text-red-500 dark:text-red-400" /> Apagar selecionados
             </Button>
           </div>
         </div>
@@ -570,7 +584,7 @@ export function Historico() {
                           onClick={() => setApagarAlvo(log)}
                           disabled={apagando === log.id}
                         >
-                          <Trash2 className="h-4 w-4 text-red-500" />
+                          <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
                         </Button>
                       </div>
                       {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
@@ -659,7 +673,7 @@ export function Historico() {
                               onClick={() => setApagarAlvo(log)}
                               disabled={apagando === log.id}
                             >
-                              <Trash2 className="h-4 w-4 text-red-500" />
+                              <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
                             </Button>
                           </div>
                         </td>

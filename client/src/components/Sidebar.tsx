@@ -12,6 +12,7 @@ import {
   MessageSquareReply,
   Settings,
   Send,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -40,9 +41,9 @@ interface SidebarProps {
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   cn(
-    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+    "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
     isActive
-      ? "bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300"
+      ? "bg-accent-50 text-accent-700 shadow-sm dark:bg-accent-900/30 dark:text-accent-300"
       : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
   );
 
@@ -54,21 +55,28 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 z-40 flex h-screen w-60 shrink-0 flex-col border-r border-zinc-200 bg-white transition-transform duration-200 dark:border-zinc-800 dark:bg-zinc-900",
+        "fixed inset-y-0 left-0 z-40 flex h-screen w-[min(18rem,calc(100vw-3rem))] shrink-0 flex-col border-r border-zinc-200/80 bg-white shadow-2xl transition-transform duration-200 dark:border-zinc-800 dark:bg-zinc-900 lg:w-64 lg:shadow-none",
         "lg:sticky lg:top-0 lg:translate-x-0",
         open ? "translate-x-0" : "-translate-x-full"
       )}
     >
-      <div className="flex items-center gap-2 px-5 py-5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent-500 text-white shadow-soft">
+      <div className="flex h-20 items-center gap-3 border-b border-zinc-100 px-5 dark:border-zinc-800">
+        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-accent-500 text-white shadow-soft">
           <Send className="h-5 w-5" />
         </div>
-        <div>
-          <p className="text-lg font-bold leading-tight text-zinc-900 dark:text-zinc-100">DisparaZap</p>
-        </div>
+        <p className="min-w-0 flex-1 text-lg font-bold leading-tight tracking-tight text-zinc-950 dark:text-white">DisparaZap</p>
+        <button
+          type="button"
+          onClick={onNavigate}
+          className="rounded-xl p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 lg:hidden"
+          aria-label="Fechar menu"
+        >
+          <X className="h-5 w-5" />
+        </button>
       </div>
 
-      <nav className="flex-1 space-y-1 px-3 py-2">
+      <nav className="scrollbar-thin flex-1 space-y-1 overflow-y-auto px-3 py-4">
+        <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Operação</p>
         {itemsAntesTemplates.map(({ to, label, icon: Icon, end }) => (
           <NavLink key={to} to={to} end={end} onClick={onNavigate} className={linkClass}>
             <Icon className="h-5 w-5" />
@@ -76,13 +84,14 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
           </NavLink>
         ))}
 
+        <p className="px-3 pb-1 pt-5 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Comunicação</p>
         <div>
           <button
             type="button"
             onClick={() => setTemplatesAberto((v) => !v)}
             aria-expanded={templatesAberto}
             className={cn(
-              "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+              "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
               templatesAtivo
                 ? "text-accent-700 dark:text-accent-300"
                 : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
@@ -102,7 +111,7 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
                   onClick={onNavigate}
                   className={({ isActive }) =>
                     cn(
-                      "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors",
+                      "flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm font-medium transition-colors",
                       isActive
                         ? "bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300"
                         : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
@@ -117,7 +126,15 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
           )}
         </div>
 
-        {itemsDepoisTemplates.map(({ to, label, icon: Icon }) => (
+        {itemsDepoisTemplates.slice(0, 2).map(({ to, label, icon: Icon }) => (
+          <NavLink key={to} to={to} onClick={onNavigate} className={linkClass}>
+            <Icon className="h-5 w-5" />
+            {label}
+          </NavLink>
+        ))}
+
+        <p className="px-3 pb-1 pt-5 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Sistema</p>
+        {itemsDepoisTemplates.slice(2).map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} onClick={onNavigate} className={linkClass}>
             <Icon className="h-5 w-5" />
             {label}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Clock, FileText, History, MapPin, Phone, RefreshCw, Search, Trash2, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Clock, FileText, Gavel, History, MapPin, Phone, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,8 @@ import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { StatCard } from "@/components/ui/StatCard";
 
 const NOMES_MES = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -229,6 +231,16 @@ export function Calendario() {
 
   const celulas = useMemo(() => montarGrade(ano, mes), [ano, mes]);
   const hoje = hojeYMD();
+  const resumo = useMemo(() => {
+    const ativos = (pericias ?? []).filter((pericia) => pericia.status !== "substituida");
+    return {
+      hoje: ativos.filter((pericia) => diaLocalYMD(pericia.data_hora_ms) === hoje).length,
+      proximos: ativos.filter((pericia) => diaLocalYMD(pericia.data_hora_ms) >= hoje).length,
+      audiencias: ativos.filter(
+        (pericia) => diaLocalYMD(pericia.data_hora_ms) >= hoje && classificarTipo(pericia).audiencia
+      ).length,
+    };
+  }, [pericias, hoje]);
   const buscaAtiva = busca.trim().length > 0;
   const gruposDaBusca = useMemo(
     () => Array.from(porDia.entries()).sort(([dataA], [dataB]) => dataA.localeCompare(dataB)),
@@ -258,20 +270,21 @@ export function Calendario() {
 
   return (
     <div className="space-y-4 md:space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 md:text-2xl">Calendário de Perícias</h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400 md:hidden">
-            Consulte perícias e audiências agendadas ou importadas.
-          </p>
-          <p className="mt-1 hidden text-sm text-zinc-500 dark:text-zinc-400 md:block">
-            Perícias já comunicadas ao cliente por WhatsApp, mais o que foi importado manualmente do Trello (badge
-            "Importado"). Eventos com o mesmo tipo, nome, data e horário são consolidados automaticamente.
-          </p>
-        </div>
+      <PageHeader
+        title="Calendário de Perícias"
+        description={<>
+          <span className="md:hidden">Consulte perícias e audiências agendadas ou importadas.</span>
+          <span className="hidden md:inline">Acompanhe compromissos comunicados por WhatsApp e eventos importados do Trello. Duplicidades idênticas são consolidadas automaticamente.</span>
+        </>}
+      />
+
+      <div className="grid grid-cols-3 gap-2 md:gap-3">
+        <StatCard icon={<Clock />} label="Hoje" value={resumo.hoje} tone="warning" />
+        <StatCard icon={<CalendarDays />} label="Próximos" value={resumo.proximos} tone="accent" />
+        <StatCard icon={<Gavel />} label="Audiências" value={resumo.audiencias} tone="info" />
       </div>
 
-      <div className="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-zinc-50/70 p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/40 md:flex-row md:items-center md:justify-between md:rounded-none md:border-0 md:bg-transparent md:p-0 md:shadow-none md:dark:bg-transparent">
+      <div className="surface-panel flex flex-col gap-3 p-3 md:flex-row md:items-center md:justify-between md:p-4">
         {buscaAtiva ? (
           <div className="flex min-h-10 w-full items-center gap-2 md:w-auto">
             <Search className="h-4 w-4 shrink-0 text-accent-600 dark:text-accent-400" />
@@ -628,7 +641,7 @@ function ResultadoBuscaLinha({
           )}
         </div>
         <Button variant="ghost" size="icon" title="Apagar" onClick={onExcluir} disabled={excluindo}>
-          <Trash2 className="h-4 w-4 text-red-500" />
+          <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
         </Button>
       </div>
     </article>
@@ -676,7 +689,7 @@ function PericiaLinha({
           {pericia.status === "substituida" && <Badge tone="neutral">Substituída</Badge>}
           {onExcluir && (
             <Button className="ml-auto md:ml-0" variant="ghost" size="icon" title="Apagar" onClick={onExcluir} disabled={excluindo}>
-              <Trash2 className="h-4 w-4 text-red-500" />
+              <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
             </Button>
           )}
         </div>

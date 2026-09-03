@@ -10,11 +10,14 @@ import {
   Lock,
   LogOut,
   MessageCircle,
+  Moon,
+  Palette,
   QrCode,
   RefreshCw,
   Search,
   Send,
   Square,
+  Sun,
   Trello,
   Unplug,
   Upload,
@@ -33,6 +36,10 @@ import { Input, Label } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Badge } from "@/components/ui/Badge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { Card, CardContent } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { useTheme } from "@/context/ThemeContext";
+import { cn } from "@/lib/utils";
 
 interface TrelloBoard {
   id: string;
@@ -69,6 +76,7 @@ const STATUS_LABEL: Record<WhatsappState["status"], string> = {
 
 export function Configuracoes() {
   const { show } = useToast();
+  const { theme, setTheme } = useTheme();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [trelloKey, setTrelloKey] = useState("");
   const [trelloToken, setTrelloToken] = useState("");
@@ -440,17 +448,51 @@ export function Configuracoes() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Configurações · DisparaZap</h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            Gerencie seu acesso, integração com o Trello e WhatsApp.
-          </p>
-        </div>
-        <Button variant="outline" onClick={handleLogout} className="self-start text-red-600 hover:bg-red-50 hover:text-red-700">
+      <PageHeader
+        title="Configurações"
+        description="Gerencie aparência, acesso, integrações, notificações e segurança do DisparaZap."
+        actions={<Button variant="outline" onClick={handleLogout} className="danger-action">
           <LogOut className="h-4 w-4" /> Sair do sistema
-        </Button>
-      </div>
+        </Button>}
+      />
+
+      <Card>
+        <CardContent className="pt-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600 dark:bg-violet-950/50 dark:text-violet-300">
+                <Palette className="h-5 w-5" />
+              </span>
+              <div>
+                <h2 className="font-semibold text-zinc-950 dark:text-white">Aparência</h2>
+                <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">Escolha o tema deste navegador.</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:w-72" role="radiogroup" aria-label="Tema da interface">
+              {([
+                { value: "light" as const, label: "Claro", icon: Sun },
+                { value: "dark" as const, label: "Escuro", icon: Moon },
+              ]).map(({ value, label, icon: Icon }) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={theme === value}
+                  onClick={() => setTheme(value)}
+                  className={cn(
+                    "flex h-11 items-center justify-center gap-2 rounded-xl border text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500",
+                    theme === value
+                      ? "border-accent-500 bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300"
+                      : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  )}
+                >
+                  <Icon className="h-4 w-4" /> {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <CollapsibleCard icon={<Lock className="h-4 w-4 text-amber-500" />} title="Dados de Acesso" storageKey="dados-acesso">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

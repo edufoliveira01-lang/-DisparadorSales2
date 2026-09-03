@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronUp,
+  CircleAlert,
   Download,
   FileText,
   Pencil,
@@ -28,6 +29,8 @@ import { Pagination } from "@/components/ui/Pagination";
 import { SelectableCard } from "@/components/ui/SelectableCard";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { StatCard } from "@/components/ui/StatCard";
 
 const ITENS_POR_PAGINA = 20;
 const LETRAS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
@@ -95,6 +98,12 @@ export function Agenda() {
     () => filtrados.slice(pagina * ITENS_POR_PAGINA, (pagina + 1) * ITENS_POR_PAGINA),
     [filtrados, pagina]
   );
+
+  const resumo = useMemo(() => {
+    const lista = contacts ?? [];
+    const comProcesso = lista.filter((contato) => Boolean(contato.processo?.trim())).length;
+    return { total: lista.length, comProcesso, semProcesso: lista.length - comProcesso };
+  }, [contacts]);
 
   useEffect(() => {
     const ultimaPagina = Math.max(0, Math.ceil(filtrados.length / ITENS_POR_PAGINA) - 1);
@@ -231,14 +240,10 @@ export function Agenda() {
 
   return (
     <div className="space-y-5 md:space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 md:text-3xl">Agenda</h1>
-          <p className="mt-1 max-w-2xl text-sm text-zinc-500 dark:text-zinc-400">
-            Contatos usados para identificar cada cliente pelo nome completo e número do processo.
-          </p>
-        </div>
-        <div className="grid grid-cols-2 gap-2 lg:flex lg:items-center">
+      <PageHeader
+        title="Agenda"
+        description="Contatos usados para identificar cada cliente com segurança pelo nome completo e número do processo."
+        actions={<div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
           <input
             ref={fileInputRef}
             type="file"
@@ -246,7 +251,7 @@ export function Agenda() {
             className="hidden"
             onChange={handleArquivoSelecionado}
           />
-          <Button className="col-span-2 lg:order-3 lg:col-auto" onClick={abrirNovo}>
+          <Button className="col-span-2 sm:order-3 sm:col-auto" onClick={abrirNovo}>
             <Plus className="h-4 w-4" /> Novo contato
           </Button>
           <Button variant="outline" onClick={() => fileInputRef.current?.click()} loading={importando}>
@@ -255,10 +260,16 @@ export function Agenda() {
           <Button variant="outline" onClick={() => window.open("/api/contacts/export", "_blank")}>
             <Download className="h-4 w-4" /> Exportar
           </Button>
-        </div>
+        </div>}
+      />
+
+      <div className="grid grid-cols-3 gap-2 md:gap-3">
+        <StatCard icon={<Users />} label="Contatos" value={resumo.total} tone="info" />
+        <StatCard icon={<ShieldCheck />} label="Com processo" value={resumo.comProcesso} tone="accent" />
+        <StatCard icon={<CircleAlert />} label="Sem processo" value={resumo.semProcesso} tone="warning" />
       </div>
 
-      <section className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-soft dark:border-zinc-800 dark:bg-zinc-900 md:p-4">
+      <section className="surface-panel p-3 md:p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="relative min-w-0 flex-1 sm:max-w-xl">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
@@ -321,8 +332,8 @@ export function Agenda() {
             <Button variant="ghost" size="sm" onClick={() => setSelecionados(new Set())}>
               Limpar seleção
             </Button>
-            <Button variant="danger" size="sm" onClick={() => setConfirmMassaAberto(true)} loading={apagandoSelecionados}>
-              <Trash2 className="h-3.5 w-3.5" /> Apagar selecionados
+            <Button variant="outline" className="danger-action" size="sm" onClick={() => setConfirmMassaAberto(true)} loading={apagandoSelecionados}>
+              <Trash2 className="h-3.5 w-3.5 text-red-500 dark:text-red-400" /> Apagar selecionados
             </Button>
           </div>
         </div>
@@ -394,7 +405,7 @@ export function Agenda() {
                           <Pencil className="h-3.5 w-3.5" /> Editar
                         </Button>
                         <Button variant="ghost" size="sm" onClick={() => setExcluirAlvo(c)} loading={excluindo === c.id}>
-                          <Trash2 className="h-3.5 w-3.5 text-red-500" /> Apagar
+                          <Trash2 className="h-3.5 w-3.5 text-red-500 dark:text-red-400" /> Apagar
                         </Button>
                       </div>
                     </div>
@@ -459,7 +470,7 @@ export function Agenda() {
                               <Pencil className="h-4 w-4" />
                             </Button>
                             <Button variant="ghost" size="icon" onClick={() => setExcluirAlvo(c)} loading={excluindo === c.id}>
-                              <Trash2 className="h-4 w-4 text-red-500" />
+                              <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
                             </Button>
                           </div>
                         </td>
