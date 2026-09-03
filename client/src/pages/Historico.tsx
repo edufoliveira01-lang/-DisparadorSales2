@@ -120,30 +120,7 @@ function periciasDoLog(log: SendLog): Pericia[] {
   }
 }
 
-function DadosDoEnvio({ log }: { log: SendLog }) {
-  const pericias = periciasDoLog(log);
-  if (pericias.length === 0) return null;
-
-  return (
-    <div className="grid gap-2 lg:grid-cols-2">
-      {pericias.map((pericia, index) => (
-        <div key={index} className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900/70">
-          <p className="font-medium text-zinc-800 dark:text-zinc-200">{pericia.tipo || "Perícia"}</p>
-          <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs text-zinc-500 dark:text-zinc-400">
-            <span className="flex items-start gap-1.5"><Calendar className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {pericia.data || "Não informada"}</span>
-            <span className="flex items-start gap-1.5"><Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {pericia.horario || "Não informado"}</span>
-            {pericia.local && <span className="col-span-2 flex items-start gap-1.5"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span className="break-words">{pericia.local}</span></span>}
-            {pericia.processo && <span className="col-span-2 flex items-start gap-1.5"><FileText className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span className="break-all">{pericia.processo}</span></span>}
-            {pericia.profissionalPerito && <span className="col-span-2 flex items-start gap-1.5"><BriefcaseBusiness className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span className="break-words">{pericia.profissionalPerito}</span></span>}
-            {pericia.telefone && <span className="col-span-2 flex items-start gap-1.5"><Phone className="mt-0.5 h-3.5 w-3.5 shrink-0" />{formatPhoneDisplay(pericia.telefone)}</span>}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function PainelAgendamentoDesktop({ log }: { log: SendLog }) {
+function PainelAgendamento({ log }: { log: SendLog }) {
   const pericias = periciasDoLog(log);
   if (pericias.length === 0) return null;
 
@@ -187,7 +164,7 @@ function PainelAgendamentoDesktop({ log }: { log: SendLog }) {
   );
 }
 
-function PainelComunicacaoDesktop({ log }: { log: SendLog }) {
+function PainelComunicacao({ log }: { log: SendLog }) {
   const temMensagem = Boolean(log.mensagem_enviada);
   const temResposta = temRespostaRecebida(log);
   if (!temMensagem && !temResposta) return null;
@@ -582,7 +559,7 @@ export function Historico() {
                   </button>
 
                   {aberto && (
-                    <div className="space-y-2 border-t border-zinc-100 pt-2 dark:border-zinc-800">
+                    <div className="space-y-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
                       <div className="flex items-center justify-between gap-2">
                         <StatusBadge sendStatus={log.status} ack={log.ack} respostaStatus={log.resposta_status} />
                         <Button
@@ -597,14 +574,8 @@ export function Historico() {
                         </Button>
                       </div>
                       {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
-                      <DadosDoEnvio log={log} />
-                      <RespostaRecebida log={log} />
-                      {log.mensagem_enviada && (
-                        <div className="rounded-xl rounded-tl-sm bg-accent-50 p-3.5 dark:bg-accent-900/20">
-                          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-400">Mensagem enviada</p>
-                          <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{log.mensagem_enviada}</p>
-                        </div>
-                      )}
+                      <PainelAgendamento log={log} />
+                      <PainelComunicacao log={log} />
                       {log.status === "falha" && (
                         <Button
                           variant="outline"
@@ -704,8 +675,8 @@ export function Historico() {
                             </div>
                             {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
                             <div className={cn("grid items-stretch gap-4", temAgendamento && temComunicacao && "lg:grid-cols-2")}>
-                              <PainelAgendamentoDesktop log={log} />
-                              <PainelComunicacaoDesktop log={log} />
+                              <PainelAgendamento log={log} />
+                              <PainelComunicacao log={log} />
                             </div>
                           </td>
                         </tr>
