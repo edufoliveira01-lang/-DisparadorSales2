@@ -29,6 +29,26 @@ export interface PericiaAgendada {
   created_at: string;
 }
 
+export interface AtualizacaoPericiaAgendada {
+  tipo: string;
+  nome: string;
+  telefone?: string | null;
+  processo?: string | null;
+  data: string;
+  horario?: string | null;
+  local?: string | null;
+  whatsapp?: string | null;
+  profissional_perito?: string | null;
+}
+
+export interface ResultadoAtualizacaoPericiaAgendada {
+  pericia: PericiaAgendada;
+  lembrete_resetado: boolean;
+}
+
+export class PericiaAgendadaInputError extends Error {}
+export class PericiaAgendadaConflictError extends Error {}
+
 /** Normaliza pra comparação: sem acento sensível a maiúscula/minúscula, espaços colapsados. */
 function chave(valor: string | null | undefined): string {
   return (valor || "").trim().toLowerCase().replace(/\s+/g, " ");
@@ -48,6 +68,32 @@ const findDuplicadaStmt = db.prepare(
   `SELECT * FROM pericias_agendadas
    WHERE tipo_chave = ? AND nome_chave = ? AND data_hora_ms = ?
    ORDER BY CASE WHEN status = 'ativa' THEN 0 ELSE 1 END, id DESC LIMIT 1`
+);
+const findDuplicadaAoEditarStmt = db.prepare(
+  `SELECT id FROM pericias_agendadas
+   WHERE id <> ? AND status = 'ativa' AND tipo_chave = ? AND nome_chave = ? AND data_hora_ms = ?
+   LIMIT 1`
+);
+const updateStmt = db.prepare(
+  `UPDATE pericias_agendadas SET
+     tipo = @tipo,
+     tipo_chave = @tipo_chave,
+     origem = @origem,
+     nome = @nome,
+     nome_chave = @nome_chave,
+     telefone = @telefone,
+     telefone_digits = @telefone_digits,
+     processo = @processo,
+     processo_chave = @processo_chave,
+     data = @data,
+     horario = @horario,
+     local = @local,
+     whatsapp = @whatsapp,
+     profissional_perito = @profissional_perito,
+     data_hora_ms = @data_hora_ms,
+     ultimo_lembrete_em = CASE WHEN @resetar_lembrete = 1 THEN NULL ELSE ultimo_lembrete_em END,
+     ultimo_lembrete_log_id = CASE WHEN @resetar_lembrete = 1 THEN NULL ELSE ultimo_lembrete_log_id END
+   WHERE id = @id`
 );
 const mergeDuplicadaStmt = db.prepare(
   `UPDATE pericias_agendadas SET
@@ -208,6 +254,110 @@ export function listPericiasAgendadas(): PericiaAgendada[] {
 
 export function getPericiaAgendada(id: number): PericiaAgendada | undefined {
   return getStmt.get(id) as PericiaAgendada | undefined;
+}
+
+function textoLimpo(valor: string | null | undefined): string {
+  return (valor || "").trim();
+}
+
+function dataValida(data: string): boolean {
+  const match = data.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return false;
+  const dia = Number(match[1]);
+  const mes = Number(match[2]);
+  const ano = Number(match[3]);
+  if (ano < 1900 || ano > 2200 || mes < 1 || mes > 12 || dia < 1) return false;
+  return dia <= new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+}
+
+function horarioValido(horario: string): boolean {
+  return horario === "" || /^([01]\d|2[0-3]):[0-5]\d$/.test(horario);
+}
+
+function origemPeloTipo(tipo: string, origemAtual: string | null): string {
+  const valor = tipo.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+  if (/AUDIENCIA|ONLINE|VIRTUAL|REMOT[AO]|VIDEO\s*CONFERENCIA|VIDEOCONFERENCIA|TELEPRESENCIAL|HIBRID[AO]|SEMIPRESENCIAL|MEET|TEAMS|ZOOM/.test(valor)) {
+    return "audiencia";
+  }
+  if (/SOCIAL/.test(valor)) return "social";
+  if (/MEDIC[AO]/.test(valor)) return "medica";
+  if (valor.trim() === "PERICIA") return "geral";
+  return origemAtual || "geral";
+}
+
+/** Atualiza um evento existente sem criar uma nova linha no calendário. */
+export function updatePericiaAgendada(
+  id: number,
+  dados: AtualizacaoPericiaAgendada
+): ResultadoAtualizacaoPericiaAgendada | undefined {
+  return db.transaction(() => {
+    const atual = getStmt.get(id) as PericiaAgendada | undefined;
+    if (!atual) return undefined;
+
+    const tipo = textoLimpo(dados.tipo);
+    const nome = textoLimpo(dados.nome);
+    const telefone = textoLimpo(dados.telefone);
+    const processo = textoLimpo(dados.processo);
+    const data = textoLimpo(dados.data);
+    const horario = textoLimpo(dados.horario);
+    const local = textoLimpo(dados.local);
+    const whatsapp = textoLimpo(dados.whatsapp);
+    const profissionalPerito = textoLimpo(dados.profissional_perito);
+
+    if (!tipo) throw new PericiaAgendadaInputError("Informe o tipo do evento.");
+    if (!nome) throw new PericiaAgendadaInputError("Informe o nome do cliente.");
+    if (!dataValida(data)) throw new PericiaAgendadaInputError("Informe uma data válida.");
+    if (!horarioValido(horario)) throw new PericiaAgendadaInputError("Informe um horário válido.");
+
+    const dataHoraMs = parseBrazilianDate(data, horario);
+    if (!Number.isFinite(dataHoraMs)) throw new PericiaAgendadaInputError("Não foi possível reconhecer a data e o horário.");
+
+    const tipoChave = chave(tipo);
+    const nomeChave = chave(nome);
+    const telefoneDigits = normalizePhone(telefone);
+    const processoChave = chave(processo);
+    const duplicada = findDuplicadaAoEditarStmt.get(id, tipoChave, nomeChave, dataHoraMs) as { id: number } | undefined;
+    if (duplicada) {
+      throw new PericiaAgendadaConflictError("Já existe um evento idêntico para este cliente na mesma data e horário.");
+    }
+
+    const mudouConteudo =
+      tipo !== atual.tipo ||
+      nome !== atual.nome ||
+      telefone !== (atual.telefone || "") ||
+      processo !== (atual.processo || "") ||
+      data !== atual.data ||
+      horario !== (atual.horario || "") ||
+      local !== (atual.local || "") ||
+      whatsapp !== (atual.whatsapp || "") ||
+      profissionalPerito !== (atual.profissional_perito || "");
+    const lembreteResetado = mudouConteudo && Boolean(atual.ultimo_lembrete_em);
+
+    updateStmt.run({
+      id,
+      tipo,
+      tipo_chave: tipoChave,
+      origem: origemPeloTipo(tipo, atual.origem),
+      nome,
+      nome_chave: nomeChave,
+      telefone,
+      telefone_digits: telefoneDigits,
+      processo: processo || null,
+      processo_chave: processoChave,
+      data,
+      horario: horario || null,
+      local: local || null,
+      whatsapp: whatsapp || null,
+      profissional_perito: profissionalPerito || null,
+      data_hora_ms: dataHoraMs,
+      resetar_lembrete: lembreteResetado ? 1 : 0,
+    });
+
+    return {
+      pericia: getStmt.get(id) as PericiaAgendada,
+      lembrete_resetado: lembreteResetado,
+    };
+  })();
 }
 
 export function marcarLembreteEnviado(ids: number[], logId: number): void {

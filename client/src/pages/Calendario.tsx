@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Clock, FileText, Gavel, History, MapPin, Phone, RefreshCw, Search, Trash2, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Clock, FileText, Gavel, History, MapPin, Pencil, Phone, RefreshCw, Save, Search, Trash2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import { formatPhoneDisplay } from "@/lib/phone";
+import { formatPhoneDisplay, formatPhoneInput } from "@/lib/phone";
 import { cn } from "@/lib/utils";
 import { classificarEvento, type CategoriaEvento } from "@/lib/eventVisual";
 import type { PericiaAgendada } from "@/lib/types";
@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { Input } from "@/components/ui/Input";
+import { Input, Label, Textarea } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -30,6 +30,27 @@ interface TipoCalendario {
   audiencia: boolean;
   identificado: boolean;
   categoria: CategoriaEvento;
+}
+
+interface EdicaoEvento {
+  id: number;
+  tipo: string;
+  nome: string;
+  telefone: string;
+  processo: string;
+  data: string;
+  horario: string;
+  local: string;
+  whatsapp: string;
+  profissionalPerito: string;
+  fonte: PericiaAgendada["fonte"];
+  tinhaLembrete: boolean;
+}
+
+interface RespostaEdicaoEvento {
+  ok: true;
+  pericia: PericiaAgendada;
+  lembrete_resetado: boolean;
 }
 
 function textoComparavel(valor: string | null | undefined): string {
@@ -100,6 +121,33 @@ function hojeYMD(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 }
 
+function dataBrasileiraParaInput(data: string): string {
+  const match = data.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : "";
+}
+
+function dataInputParaBrasileira(data: string): string {
+  const match = data.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : data;
+}
+
+function montarEdicaoEvento(pericia: PericiaAgendada): EdicaoEvento {
+  return {
+    id: pericia.id,
+    tipo: pericia.tipo,
+    nome: pericia.nome,
+    telefone: formatPhoneDisplay(pericia.telefone),
+    processo: pericia.processo || "",
+    data: dataBrasileiraParaInput(pericia.data),
+    horario: pericia.horario || "",
+    local: pericia.local || "",
+    whatsapp: pericia.whatsapp || "",
+    profissionalPerito: pericia.profissional_perito || "",
+    fonte: pericia.fonte,
+    tinhaLembrete: Boolean(pericia.ultimo_lembrete_em),
+  };
+}
+
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
@@ -156,6 +204,8 @@ export function Calendario() {
   const [diasExpandidos, setDiasExpandidos] = useState<Set<string>>(() => new Set([hojeYMD()]));
   const [apagarAlvo, setApagarAlvo] = useState<PericiaAgendada | null>(null);
   const [apagando, setApagando] = useState<number | null>(null);
+  const [edicao, setEdicao] = useState<EdicaoEvento | null>(null);
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false);
 
   const carregar = useCallback(async () => {
     setErro(null);
@@ -187,6 +237,50 @@ export function Calendario() {
       show(err instanceof ApiError ? err.message : "Erro ao apagar o evento.", "error");
     } finally {
       setApagando(null);
+    }
+  }
+
+  function abrirEdicao(pericia: PericiaAgendada) {
+    setDiaSelecionado(null);
+    setEdicao(montarEdicaoEvento(pericia));
+  }
+
+  async function salvarEdicao() {
+    if (!edicao) return;
+    if (!edicao.tipo.trim() || !edicao.nome.trim() || !edicao.data) {
+      show("Preencha o tipo, o nome do cliente e a data.", "error");
+      return;
+    }
+
+    setSalvandoEdicao(true);
+    try {
+      const resposta = await api.put<RespostaEdicaoEvento>(`/pericias-agendadas/${edicao.id}`, {
+        tipo: edicao.tipo,
+        nome: edicao.nome,
+        telefone: edicao.telefone,
+        processo: edicao.processo,
+        data: dataInputParaBrasileira(edicao.data),
+        horario: edicao.horario,
+        local: edicao.local,
+        whatsapp: edicao.whatsapp,
+        profissional_perito: edicao.profissionalPerito,
+      });
+      const diaAtualizado = diaLocalYMD(resposta.pericia.data_hora_ms);
+      const [novoAno, novoMes] = diaAtualizado.split("-").map(Number);
+      setAnoMes({ ano: novoAno, mes: novoMes });
+      setDiasExpandidos((atuais) => new Set([...atuais, diaAtualizado]));
+      setEdicao(null);
+      setPericias((atuais) => atuais?.map((item) => item.id === resposta.pericia.id ? resposta.pericia : item) ?? null);
+      show(
+        resposta.lembrete_resetado
+          ? "Evento atualizado. O lembrete anterior permanece no Histórico e um novo lembrete poderá ser enviado."
+          : "Evento atualizado com sucesso.",
+        "success"
+      );
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao editar o evento.", "error");
+    } finally {
+      setSalvandoEdicao(false);
     }
   }
 
@@ -419,6 +513,7 @@ export function Calendario() {
                           key={p.id}
                           pericia={p}
                           substituidaPor={p.substituida_por_id ? porId.get(p.substituida_por_id) ?? null : null}
+                          onEditar={() => abrirEdicao(p)}
                           onExcluir={() => setApagarAlvo(p)}
                           excluindo={apagando === p.id}
                         />
@@ -533,7 +628,13 @@ export function Calendario() {
                     {expandido && (
                       <div id={`eventos-dia-${key}`} className="space-y-2 border-t border-zinc-200 px-3 py-3 dark:border-zinc-800">
                         {itens.map((p) => (
-                          <PericiaLinha key={p.id} pericia={p} onExcluir={() => setApagarAlvo(p)} excluindo={apagando === p.id} />
+                          <PericiaLinha
+                            key={p.id}
+                            pericia={p}
+                            onEditar={() => abrirEdicao(p)}
+                            onExcluir={() => setApagarAlvo(p)}
+                            excluindo={apagando === p.id}
+                          />
                         ))}
                       </div>
                     )}
@@ -558,11 +659,157 @@ export function Calendario() {
               key={p.id}
               pericia={p}
               substituidaPor={p.substituida_por_id ? porId.get(p.substituida_por_id) ?? null : null}
+              onEditar={() => abrirEdicao(p)}
               onExcluir={() => setApagarAlvo(p)}
               excluindo={apagando === p.id}
             />
           ))}
         </div>
+      </Modal>
+
+      <Modal
+        open={edicao !== null}
+        onClose={() => !salvandoEdicao && setEdicao(null)}
+        title="Editar evento"
+        description="Revise as informações usadas no calendário e nos próximos lembretes."
+        maxWidth="max-w-2xl"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setEdicao(null)} disabled={salvandoEdicao}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={salvarEdicao}
+              loading={salvandoEdicao}
+              disabled={!edicao?.tipo.trim() || !edicao?.nome.trim() || !edicao?.data}
+            >
+              <Save className="h-4 w-4" /> Salvar alterações
+            </Button>
+          </>
+        }
+      >
+        {edicao && (
+          <div className="space-y-4">
+            {edicao.fonte === "trello_sync" && (
+              <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs leading-relaxed text-blue-700 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-300">
+                Este evento foi importado. A edição altera o calendário do sistema, mas não modifica o cartão original no Trello.
+              </div>
+            )}
+
+            <div>
+              <Label htmlFor="evento-tipo">Tipo do evento</Label>
+              <Input
+                id="evento-tipo"
+                list="tipos-evento-calendario"
+                value={edicao.tipo}
+                onChange={(e) => setEdicao({ ...edicao, tipo: e.target.value })}
+                placeholder="Ex: Perícia médica ou Audiência online"
+              />
+              <datalist id="tipos-evento-calendario">
+                <option value="Perícia Médica" />
+                <option value="Perícia Social" />
+                <option value="Perícia" />
+                <option value="Audiência Presencial" />
+                <option value="Audiência Online" />
+                <option value="Audiência Híbrida" />
+              </datalist>
+            </div>
+
+            <div>
+              <Label htmlFor="evento-nome">Nome completo do cliente</Label>
+              <Input
+                id="evento-nome"
+                value={edicao.nome}
+                onChange={(e) => setEdicao({ ...edicao, nome: e.target.value })}
+                placeholder="Nome do cliente"
+              />
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="evento-telefone">Telefone</Label>
+                <Input
+                  id="evento-telefone"
+                  inputMode="tel"
+                  value={edicao.telefone}
+                  onChange={(e) => setEdicao({ ...edicao, telefone: formatPhoneInput(e.target.value) })}
+                  placeholder="(11) 99999-9999"
+                />
+              </div>
+              <div>
+                <Label htmlFor="evento-whatsapp">WhatsApp</Label>
+                <Select
+                  id="evento-whatsapp"
+                  value={edicao.whatsapp.toUpperCase() === "NÃO" || edicao.whatsapp.toUpperCase() === "NAO" ? "NÃO" : edicao.whatsapp ? "SIM" : ""}
+                  onChange={(e) => setEdicao({ ...edicao, whatsapp: e.target.value })}
+                >
+                  <option value="">Não informado</option>
+                  <option value="SIM">Sim</option>
+                  <option value="NÃO">Não</option>
+                </Select>
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="evento-processo">Número do processo</Label>
+              <Input
+                id="evento-processo"
+                value={edicao.processo}
+                onChange={(e) => setEdicao({ ...edicao, processo: e.target.value })}
+                placeholder="0000000-00.0000.0.00.0000"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="evento-data">Data</Label>
+                <Input
+                  id="evento-data"
+                  type="date"
+                  value={edicao.data}
+                  onChange={(e) => setEdicao({ ...edicao, data: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label htmlFor="evento-horario">Horário</Label>
+                <Input
+                  id="evento-horario"
+                  type="time"
+                  value={edicao.horario}
+                  onChange={(e) => setEdicao({ ...edicao, horario: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="evento-local">Local ou link de acesso</Label>
+              <Textarea
+                id="evento-local"
+                rows={3}
+                value={edicao.local}
+                onChange={(e) => setEdicao({ ...edicao, local: e.target.value })}
+                placeholder="Endereço completo ou link da audiência"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="evento-profissional">Profissional ou perito</Label>
+              <Input
+                id="evento-profissional"
+                value={edicao.profissionalPerito}
+                onChange={(e) => setEdicao({ ...edicao, profissionalPerito: e.target.value })}
+                placeholder="Nome do profissional responsável"
+              />
+            </div>
+
+            {edicao.tinhaLembrete && (
+              <div className="flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2.5 text-xs leading-relaxed text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                Ao alterar o evento, o lembrete anterior continuará no Histórico, mas este compromisso ficará disponível para um novo lembrete com os dados corrigidos.
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
 
       <ConfirmDialog
@@ -596,11 +843,13 @@ function formatarPartesData(ymd: string): { dia: string; mes: string; ano: numbe
 function ResultadoBuscaLinha({
   pericia,
   substituidaPor,
+  onEditar,
   onExcluir,
   excluindo,
 }: {
   pericia: PericiaAgendada;
   substituidaPor?: PericiaAgendada | null;
+  onEditar: () => void;
   onExcluir: () => void;
   excluindo?: boolean;
 }) {
@@ -646,9 +895,14 @@ function ResultadoBuscaLinha({
             </p>
           )}
         </div>
-        <Button variant="ghost" size="icon" title="Apagar" onClick={onExcluir} disabled={excluindo}>
-          <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
-        </Button>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button variant="ghost" size="icon" title="Editar evento" aria-label="Editar evento" onClick={onEditar}>
+            <Pencil className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" title="Apagar" aria-label="Apagar evento" onClick={onExcluir} disabled={excluindo}>
+            <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
+          </Button>
+        </div>
       </div>
     </article>
   );
@@ -657,11 +911,13 @@ function ResultadoBuscaLinha({
 function PericiaLinha({
   pericia,
   substituidaPor,
+  onEditar,
   onExcluir,
   excluindo,
 }: {
   pericia: PericiaAgendada;
   substituidaPor?: PericiaAgendada | null;
+  onEditar?: () => void;
   onExcluir?: () => void;
   excluindo?: boolean;
 }) {
@@ -691,10 +947,19 @@ function PericiaLinha({
           <Badge tone={toneTipo(tipo)}>{tipo.rotulo}</Badge>
           {pericia.fonte === "trello_sync" && <Badge tone="neutral">Importado</Badge>}
           {pericia.status === "substituida" && <Badge tone="neutral">Substituída</Badge>}
-          {onExcluir && (
-            <Button className="ml-auto md:ml-0" variant="ghost" size="icon" title="Apagar" onClick={onExcluir} disabled={excluindo}>
-              <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
-            </Button>
+          {(onEditar || onExcluir) && (
+            <div className="ml-auto flex items-center gap-1 md:ml-0">
+              {onEditar && (
+                <Button variant="ghost" size="icon" title="Editar evento" aria-label="Editar evento" onClick={onEditar}>
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              )}
+              {onExcluir && (
+                <Button variant="ghost" size="icon" title="Apagar" aria-label="Apagar evento" onClick={onExcluir} disabled={excluindo}>
+                  <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
+                </Button>
+              )}
+            </div>
           )}
         </div>
       </div>
