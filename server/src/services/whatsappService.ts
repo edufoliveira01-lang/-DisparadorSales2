@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import QRCode from "qrcode";
 import { Client, LocalAuth, type Message, type Reaction } from "whatsapp-web.js";
@@ -12,6 +13,7 @@ import { updateLogAckByMessageId } from "./logsService";
 import {
   atrasoRetryConexaoMs,
   deveInvalidarSessao,
+  existeInstanciaConcorrenteAtiva,
   motivoImpedeRetryAutomatico,
   normalizarMotivoDesconexao,
 } from "./whatsappConnectionPolicy";
@@ -29,25 +31,122 @@ export type WhatsappStatus = "desconectado" | "inicializando" | "aguardando_qr" 
 const AUTH_DATA_PATH = path.join(dataDir, "wwebjs_auth");
 const AUTH_SESSION_DIR = path.join(AUTH_DATA_PATH, "session");
 const AUTH_SESSION_MARKER_PATH = path.join(dataDir, "whatsapp-session-ready.json");
+const INSTANCE_LOCK_PATH = path.join(dataDir, "whatsapp-manager.lock");
+const INSTANCE_TOKEN = `${os.hostname()}:${process.pid}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+let possuiLockDaInstancia = false;
 // Local padrão onde o whatsapp-web.js guardava o cache de versão do WhatsApp Web antes de
 // mudarmos para webVersionCache: "none". Removido uma vez na inicialização para descartar
 // qualquer versão cacheada de uma tentativa anterior a essa mudança.
 const LEGACY_WEB_VERSION_CACHE_PATH = path.join(process.cwd(), ".wwebjs_cache");
 
+interface WhatsappInstanceLock {
+  hostname: string;
+  pid: number;
+  token: string;
+  createdAt: string;
+}
+
+function processoEstaAtivo(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+function lerLockDaInstancia(): WhatsappInstanceLock | null {
+  try {
+    return JSON.parse(fs.readFileSync(INSTANCE_LOCK_PATH, "utf8")) as WhatsappInstanceLock;
+  } catch {
+    return null;
+  }
+}
+
+function criarLockDaInstancia(): boolean {
+  try {
+    const fd = fs.openSync(INSTANCE_LOCK_PATH, "wx");
+    try {
+      fs.writeFileSync(fd, JSON.stringify({
+        hostname: os.hostname(),
+        pid: process.pid,
+        token: INSTANCE_TOKEN,
+        createdAt: new Date().toISOString(),
+      } satisfies WhatsappInstanceLock));
+    } finally {
+      fs.closeSync(fd);
+    }
+    possuiLockDaInstancia = true;
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EEXIST") {
+      console.error("[WhatsApp] Não foi possível criar o lock da instância:", err);
+    }
+    return false;
+  }
+}
+
+function adquirirLockDaInstancia(): boolean {
+  if (possuiLockDaInstancia) return true;
+  if (criarLockDaInstancia()) return true;
+
+  const existente = lerLockDaInstancia();
+  if (existeInstanciaConcorrenteAtiva(existente, os.hostname(), process.pid, processoEstaAtivo)) {
+    console.error(`[WhatsApp] Conexão bloqueada: a instância PID ${existente?.pid} já controla a sessão.`);
+    return false;
+  }
+
+  try {
+    fs.rmSync(INSTANCE_LOCK_PATH, { force: true });
+  } catch {
+    return false;
+  }
+  return criarLockDaInstancia();
+}
+
+function liberarLockDaInstancia(): void {
+  if (!possuiLockDaInstancia) return;
+  try {
+    const atual = lerLockDaInstancia();
+    if (atual?.token === INSTANCE_TOKEN) fs.rmSync(INSTANCE_LOCK_PATH, { force: true });
+  } catch {
+    // limpeza best-effort
+  } finally {
+    possuiLockDaInstancia = false;
+  }
+}
+
+function chromiumDoProfileEstaAtivo(sessionPath: string): boolean {
+  const lockPath = path.join(sessionPath, "SingletonLock");
+  try {
+    const alvo = fs.readlinkSync(lockPath);
+    const pidEncontrado = alvo.match(/-(\d+)$/)?.[1];
+    if (!pidEncontrado || !alvo.startsWith(`${os.hostname()}-`)) return false;
+    return processoEstaAtivo(Number(pidEncontrado));
+  } catch {
+    return false;
+  }
+}
+
 /**
  * O Chromium recusa reutilizar o profile enquanto existir um lock "Singleton*" de
  * uma execução anterior, mesmo que o processo já não exista (ex: servidor reiniciado
- * sem shutdown limpo). Como só rodamos um Client por vez, é seguro limpar esses locks
- * antes de iniciar um novo browser — evita o erro "browser is already running".
+ * sem shutdown limpo). Antes de remover, confirmamos que o PID do Chromium não está ativo;
+ * assim uma segunda instância não consegue abrir o mesmo profile ao mesmo tempo.
  */
 function clearStaleChromiumLocks(): void {
   if (!fs.existsSync(AUTH_DATA_PATH)) return;
   const lockFileNames = ["SingletonLock", "SingletonCookie", "SingletonSocket"];
   for (const sessionDir of fs.readdirSync(AUTH_DATA_PATH, { withFileTypes: true })) {
     if (!sessionDir.isDirectory()) continue;
+    const sessionPath = path.join(AUTH_DATA_PATH, sessionDir.name);
+    if (chromiumDoProfileEstaAtivo(sessionPath)) {
+      throw new Error("O perfil do WhatsApp já está aberto por outro processo do Chromium.");
+    }
     for (const lockName of lockFileNames) {
       try {
-        fs.rmSync(path.join(AUTH_DATA_PATH, sessionDir.name, lockName), { force: true });
+        fs.rmSync(path.join(sessionPath, lockName), { force: true });
       } catch {
         // limpeza best-effort
       }
@@ -335,22 +434,50 @@ class WhatsappManager {
     this.estabilidadeTimer = null;
   }
 
-  connect(): void {
-    if (this.client) return;
+  private iniciarTentativaSegura(minhaGeracao: number): void {
+    this.iniciarTentativa(minhaGeracao).catch(async (err) => {
+      if (minhaGeracao !== this.geracao) return;
+      const client = this.client;
+      this.client = null;
+      if (client) {
+        try {
+          await client.destroy();
+        } catch {
+          // limpeza best-effort
+        }
+      }
+      liberarLockDaInstancia();
+      const mensagem = (err as Error)?.message || String(err);
+      console.error("[WhatsApp] Falha ao iniciar a instância:", err);
+      this.setState({ status: "falha", lastError: mensagem, qrDataUrl: null, syncProgress: null });
+    });
+  }
+
+  connect(): boolean {
+    if (this.client) return true;
+    if (!adquirirLockDaInstancia()) {
+      this.setState({
+        status: "falha",
+        lastError: "Outra instância do servidor já está controlando esta sessão do WhatsApp.",
+        qrDataUrl: null,
+        syncProgress: null,
+      });
+      return false;
+    }
     clearLegacyWebVersionCache();
     this.geracao++;
     this.tentativa = 0;
     this.limparEstabilidadeTimer();
     this.desconexaoManual = false;
     this.syncProgress = null;
-    this.iniciarTentativa(this.geracao);
+    this.iniciarTentativaSegura(this.geracao);
+    return true;
   }
 
   /** Restaura automaticamente apenas quando já existe uma sessão autenticada no disco. */
   restoreSavedSession(): boolean {
     if (!possuiMarcadorDeSessao()) return false;
-    this.connect();
-    return true;
+    return this.connect();
   }
 
   private async iniciarTentativa(minhaGeracao: number): Promise<void> {
@@ -417,8 +544,6 @@ class WhatsappManager {
       // de esgotado, nosso próprio retry automático entra em ação e gera um QR novo.
       qrMaxRetries: 12,
       authTimeoutMs: 90000,
-      takeoverOnConflict: true,
-      takeoverTimeoutMs: 10000,
     });
     this.client = client;
 
@@ -477,12 +602,13 @@ class WhatsappManager {
           syncProgress: null,
         });
         setTimeout(
-          () => this.iniciarTentativa(minhaGeracao),
+          () => this.iniciarTentativaSegura(minhaGeracao),
           atrasoRetryConexaoMs(this.tentativa, INTERVALO_ENTRE_TENTATIVAS_CONEXAO_MS)
         );
         return;
       }
 
+      liberarLockDaInstancia();
       if (!this.desconexaoManual) {
         this.notificarDesconexaoInesperada(message).catch((err) =>
           console.error("[Notificações] Erro ao enviar alerta de desconexão ao Telegram:", err)
@@ -520,6 +646,10 @@ class WhatsappManager {
       }, TEMPO_LIMITE_APOS_AUTENTICAR_MS);
     });
 
+    client.on("change_state", (state) => {
+      console.log(`[WhatsApp][${os.hostname()}:${process.pid}] Estado da conexão: ${String(state)}`);
+    });
+
     client.on("ready", () => {
       limparReadyWatchdog();
       marcarSessaoPersistida();
@@ -546,6 +676,7 @@ class WhatsappManager {
 
     client.on("disconnected", (reason) => {
       const motivo = String(reason);
+      console.error(`[WhatsApp][${os.hostname()}:${process.pid}] Desconectado: ${motivo}`);
       failAndCleanUp("desconectado", motivo, deveInvalidarSessao(motivo, this.status === "conectado"));
     });
 
@@ -640,6 +771,7 @@ class WhatsappManager {
       }
       this.client = null;
     }
+    liberarLockDaInstancia();
     this.setState({ status: "desconectado", qrDataUrl: null, lastError: null, syncProgress: null });
   }
 
@@ -649,6 +781,7 @@ class WhatsappManager {
     this.limparEstabilidadeTimer();
     if (!this.client) {
       removerSessaoPersistida();
+      liberarLockDaInstancia();
       this.setState({ status: "desconectado", qrDataUrl: null, lastError: null, syncProgress: null });
       return;
     }
@@ -663,6 +796,7 @@ class WhatsappManager {
     }
     this.client = null;
     removerSessaoPersistida();
+    liberarLockDaInstancia();
     this.setState({ status: "desconectado", qrDataUrl: null, lastError: null, syncProgress: null });
   }
 
@@ -675,13 +809,17 @@ class WhatsappManager {
     this.geracao++; // cancela qualquer retry automático pendente
     this.desconexaoManual = true;
     this.limparEstabilidadeTimer();
-    if (!this.client) return;
+    if (!this.client) {
+      liberarLockDaInstancia();
+      return;
+    }
     try {
       await this.client.destroy();
     } catch {
       // best-effort — estamos encerrando de qualquer forma
     }
     this.client = null;
+    liberarLockDaInstancia();
   }
 
   /**
@@ -693,10 +831,14 @@ class WhatsappManager {
     const token = getSetting("telegram_bot_token");
     const chatId = getSetting("telegram_chat_id");
     if (!token || !chatId) return;
+    const motivoNormalizado = normalizarMotivoDesconexao(motivo);
+    const orientacao = motivoNormalizado === "LOGOUT"
+      ? "\n\nO WhatsApp encerrou a sessão. Isso pode acontecer quando outra instância usa o mesmo profile ou quando o aparelho vinculado é removido no celular."
+      : "";
     await enviarMensagemTelegram(
       token,
       chatId,
-      `🔌 O WhatsApp do DisparaZap desconectou inesperadamente.\n\nMotivo: ${motivo}\n\nNenhuma mensagem será enviada até reconectar. Acesse Configurações → Conexão com o WhatsApp para reconectar.`
+      `🔌 O WhatsApp do DisparaZap desconectou inesperadamente.\n\nMotivo: ${motivo}\nInstância: ${os.hostname()}:${process.pid}${orientacao}\n\nNenhuma mensagem será enviada até reconectar. Acesse Configurações → Conexão com o WhatsApp para reconectar.`
     );
   }
 
