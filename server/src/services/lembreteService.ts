@@ -1,6 +1,8 @@
 import { emitEvent } from "../websocket";
 import { db } from "../db";
 import { createLog, type SendLog } from "./logsService";
+import { listContacts, type Contact } from "./contactsService";
+import { matchContactByNameAndProcess } from "./matcherService";
 import {
   getPericiaAgendada,
   marcarLembreteEnviado,
@@ -20,6 +22,7 @@ import {
   renderLembrete,
 } from "./templateService";
 import { whatsappManager } from "./whatsappService";
+import { normalizePhone } from "../utils/phone";
 
 export interface ResultadoEnvioLembrete {
   status: "sucesso" | "ignorado";
@@ -55,8 +58,26 @@ function paraPericia(pericia: PericiaAgendada): Pericia {
   };
 }
 
-async function enviarGrupoLembrete(eventos: PericiaAgendada[], forcar = false): Promise<ResultadoEnvioLembrete> {
-  const ativos = eventos.filter((evento) => evento.status === "ativa");
+function contatoSeguroDaAgenda(pericia: PericiaAgendada, contatos: Contact[]): Contact | null {
+  return matchContactByNameAndProcess(pericia.nome, pericia.processo, contatos);
+}
+
+function aplicarTelefoneDaAgenda(pericia: PericiaAgendada, contatos: Contact[]): PericiaAgendada {
+  const contato = contatoSeguroDaAgenda(pericia, contatos);
+  if (!contato) return pericia;
+  const telefoneDigits = normalizePhone(contato.telefone);
+  if (!telefoneDigits) return pericia;
+  return { ...pericia, telefone: contato.telefone, telefone_digits: telefoneDigits };
+}
+
+async function enviarGrupoLembrete(
+  eventos: PericiaAgendada[],
+  forcar = false,
+  contatosAgenda: Contact[] = listContacts()
+): Promise<ResultadoEnvioLembrete> {
+  const ativos = eventos
+    .filter((evento) => evento.status === "ativa")
+    .map((evento) => aplicarTelefoneDaAgenda(evento, contatosAgenda));
   if (ativos.length === 0) throw new Error("Este evento não está mais ativo.");
 
   const alvos = forcar ? ativos : ativos.filter((evento) => !evento.ultimo_lembrete_em);
@@ -77,6 +98,7 @@ async function enviarGrupoLembrete(eventos: PericiaAgendada[], forcar = false): 
   const pericias = alvos.map(paraPericia);
   const mensagem = renderLembrete(mensagemConfiguradaPara(periodo), principal.nome, pericias);
   const cardIdLog = `lembrete:${alvos.map((evento) => evento.id).join(",")}`;
+  const contatoAgenda = contatoSeguroDaAgenda(principal, contatosAgenda);
 
   try {
     if (!whatsappManager.isReady()) throw new Error("WhatsApp não está conectado.");
@@ -89,7 +111,7 @@ async function enviarGrupoLembrete(eventos: PericiaAgendada[], forcar = false): 
       const criado = createLog({
         card_id: cardIdLog,
         card_nome: principal.nome,
-        contact_id: null,
+        contact_id: contatoAgenda?.id ?? null,
         telefone: principal.telefone,
         pericias_json: JSON.stringify(pericias),
         mensagem_enviada: mensagem,
@@ -107,7 +129,7 @@ async function enviarGrupoLembrete(eventos: PericiaAgendada[], forcar = false): 
     createLog({
       card_id: cardIdLog,
       card_nome: principal.nome,
-      contact_id: null,
+      contact_id: contatoAgenda?.id ?? null,
       telefone: principal.telefone,
       pericias_json: JSON.stringify(pericias),
       mensagem_enviada: mensagem,
@@ -147,7 +169,9 @@ export async function enviarLembretesEmMassa(ids: number[], intervalMinSec: numb
       .filter((evento): evento is PericiaAgendada => Boolean(evento && evento.status === "ativa"));
     const ignorados = eventos.filter((evento) => Boolean(evento.ultimo_lembrete_em)).length;
     const pendentes = eventos.filter((evento) => !evento.ultimo_lembrete_em);
-    const grupos = agruparEventosParaLembrete(pendentes);
+    const contatosAgenda = listContacts();
+    const pendentesComTelefoneDaAgenda = pendentes.map((evento) => aplicarTelefoneDaAgenda(evento, contatosAgenda));
+    const grupos = agruparEventosParaLembrete(pendentesComTelefoneDaAgenda);
     let enviados = 0;
     let falhas = 0;
 
@@ -168,7 +192,7 @@ export async function enviarLembretesEmMassa(ids: number[], intervalMinSec: numb
 
       const grupo = grupos[i];
       try {
-        const resultado = await enviarGrupoLembrete(grupo.eventos);
+        const resultado = await enviarGrupoLembrete(grupo.eventos, false, contatosAgenda);
         if (resultado.status === "sucesso") enviados += 1;
         emitEvent("lembrete:update", {
           ids: resultado.ids,

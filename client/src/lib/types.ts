@@ -75,6 +75,8 @@ export interface WhatsappState {
   status: "desconectado" | "inicializando" | "aguardando_qr" | "autenticado" | "conectado" | "falha";
   qrDataUrl: string | null;
   lastError: string | null;
+  syncProgress?: number | null;
+  sessionSaved?: boolean;
 }
 
 export interface Settings {

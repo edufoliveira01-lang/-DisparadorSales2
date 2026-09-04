@@ -31,7 +31,8 @@ export function agruparEventosParaLembrete(eventos: PericiaAgendada[]): GrupoLem
   for (const evento of eventos) {
     const telefone = evento.telefone_digits || `sem-telefone:${evento.id}`;
     const nome = evento.nome.trim().toLocaleLowerCase("pt-BR");
-    const chave = `${diaLocalYMD(evento.data_hora_ms)}|${telefone}|${nome}`;
+    const processo = (evento.processo || "").replace(/\D/g, "") || `sem-processo:${evento.id}`;
+    const chave = `${diaLocalYMD(evento.data_hora_ms)}|${telefone}|${nome}|${processo}`;
     const grupo = grupos.get(chave) ?? [];
     grupo.push(evento);
     grupos.set(chave, grupo);

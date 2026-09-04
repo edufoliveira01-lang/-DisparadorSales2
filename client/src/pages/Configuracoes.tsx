@@ -726,6 +726,29 @@ export function Configuracoes() {
             </p>
           )}
 
+          {whatsapp.status === "autenticado" && (
+            <div className="space-y-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-3 text-sm text-blue-700 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-300">
+              <p className="flex items-center gap-2 font-medium">
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                QR Code confirmado. Sincronizando o WhatsApp
+                {whatsapp.syncProgress !== null && whatsapp.syncProgress !== undefined ? ` (${Math.round(whatsapp.syncProgress)}%)` : ""}...
+              </p>
+              <div className="h-1.5 overflow-hidden rounded-full bg-blue-100 dark:bg-blue-900/60">
+                <div
+                  className="h-full rounded-full bg-blue-500 transition-all duration-500"
+                  style={{ width: `${Math.max(6, whatsapp.syncProgress ?? 12)}%` }}
+                />
+              </div>
+              <p className="text-xs opacity-80">A sessão já foi salva e será restaurada automaticamente nas próximas atualizações do servidor.</p>
+            </div>
+          )}
+
+          {whatsapp.status === "conectado" && whatsapp.sessionSaved && (
+            <p className="flex items-center gap-2 rounded-lg bg-accent-50 px-3 py-2 text-sm text-accent-700 dark:bg-accent-900/30 dark:text-accent-300">
+              <CheckCircle2 className="h-4 w-4 shrink-0" /> Sessão salva para reconexão automática após reinicializações.
+            </p>
+          )}
+
           {whatsapp.status === "falha" && whatsapp.lastError && (
             <div className="space-y-1 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-400">
               <p>{whatsapp.lastError}</p>
