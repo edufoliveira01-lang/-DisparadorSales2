@@ -17,10 +17,15 @@ export interface PericiaAgendada {
   data: string;
   horario: string | null;
   local: string | null;
+  whatsapp: string | null;
+  profissional_perito: string | null;
   data_hora_ms: number;
   status: PericiaAgendadaStatus;
   substituida_por_id: number | null;
   fonte: PericiaAgendadaFonte;
+  ultimo_lembrete_em: string | null;
+  ultimo_lembrete_log_id: number | null;
+  lembrete_ack: number | null;
   created_at: string;
 }
 
@@ -31,11 +36,14 @@ function chave(valor: string | null | undefined): string {
 
 const insertStmt = db.prepare(
   `INSERT INTO pericias_agendadas
-     (card_id, tipo, tipo_chave, origem, nome, nome_chave, telefone, telefone_digits, processo, processo_chave, data, horario, local, data_hora_ms, fonte, status)
-   VALUES (@card_id, @tipo, @tipo_chave, @origem, @nome, @nome_chave, @telefone, @telefone_digits, @processo, @processo_chave, @data, @horario, @local, @data_hora_ms, @fonte, 'ativa')`
+     (card_id, tipo, tipo_chave, origem, nome, nome_chave, telefone, telefone_digits, processo, processo_chave, data, horario, local, whatsapp, profissional_perito, data_hora_ms, fonte, status)
+   VALUES (@card_id, @tipo, @tipo_chave, @origem, @nome, @nome_chave, @telefone, @telefone_digits, @processo, @processo_chave, @data, @horario, @local, @whatsapp, @profissional_perito, @data_hora_ms, @fonte, 'ativa')`
 );
 const deleteStmt = db.prepare("DELETE FROM pericias_agendadas WHERE id = ?");
-const getStmt = db.prepare("SELECT * FROM pericias_agendadas WHERE id = ?");
+const SELECT_COM_LEMBRETE = `SELECT p.*, sl.ack AS lembrete_ack
+  FROM pericias_agendadas p
+  LEFT JOIN send_logs sl ON sl.id = p.ultimo_lembrete_log_id`;
+const getStmt = db.prepare(`${SELECT_COM_LEMBRETE} WHERE p.id = ?`);
 const findDuplicadaStmt = db.prepare(
   `SELECT * FROM pericias_agendadas
    WHERE tipo_chave = ? AND nome_chave = ? AND data_hora_ms = ?
@@ -53,6 +61,11 @@ const mergeDuplicadaStmt = db.prepare(
      processo = CASE WHEN processo_chave = '' AND @processo_chave <> '' THEN @processo ELSE processo END,
      processo_chave = CASE WHEN processo_chave = '' THEN @processo_chave ELSE processo_chave END,
      local = CASE WHEN (local IS NULL OR local = '') AND @local <> '' THEN @local ELSE local END,
+     whatsapp = CASE WHEN (whatsapp IS NULL OR whatsapp = '') AND @whatsapp <> '' THEN @whatsapp ELSE whatsapp END,
+     profissional_perito = CASE
+       WHEN (profissional_perito IS NULL OR profissional_perito = '') AND @profissional_perito <> '' THEN @profissional_perito
+       ELSE profissional_perito
+     END,
      fonte = CASE WHEN @fonte = 'whatsapp' THEN 'whatsapp' ELSE fonte END
    WHERE id = @id`
 );
@@ -70,7 +83,7 @@ const supersedeStmt = db.prepare(
 const relinkSubstituidasStmt = db.prepare(
   "UPDATE pericias_agendadas SET substituida_por_id = ? WHERE substituida_por_id = ?"
 );
-const listStmt = db.prepare("SELECT * FROM pericias_agendadas ORDER BY data_hora_ms ASC");
+const listStmt = db.prepare(`${SELECT_COM_LEMBRETE} ORDER BY p.data_hora_ms ASC`);
 const deleteAntigasStmt = db.prepare(
   `DELETE FROM pericias_agendadas WHERE created_at <= datetime('now', '-' || ? || ' days')`
 );
@@ -125,6 +138,8 @@ export function registrarPericiaAgendadaComResultado(
       processo: pericia.processo || "",
       processo_chave: processoChave,
       local: pericia.local || "",
+      whatsapp: pericia.whatsapp || "",
+      profissional_perito: pericia.profissionalPerito || "",
       fonte,
     });
     return { status: "duplicada", pericia: getStmt.get(duplicada.id) as PericiaAgendada };
@@ -150,6 +165,8 @@ export function registrarPericiaAgendadaComResultado(
     data: pericia.data,
     horario: pericia.horario || null,
     local: pericia.local || null,
+    whatsapp: pericia.whatsapp || null,
+    profissional_perito: pericia.profissionalPerito || null,
     data_hora_ms: dataHoraMs,
     fonte,
   });
@@ -191,6 +208,17 @@ export function listPericiasAgendadas(): PericiaAgendada[] {
 
 export function getPericiaAgendada(id: number): PericiaAgendada | undefined {
   return getStmt.get(id) as PericiaAgendada | undefined;
+}
+
+export function marcarLembreteEnviado(ids: number[], logId: number): void {
+  const idsUnicos = Array.from(new Set(ids.filter((id) => Number.isInteger(id) && id > 0)));
+  if (idsUnicos.length === 0) return;
+  const placeholders = idsUnicos.map(() => "?").join(",");
+  db.prepare(
+    `UPDATE pericias_agendadas
+     SET ultimo_lembrete_em = CURRENT_TIMESTAMP, ultimo_lembrete_log_id = ?
+     WHERE id IN (${placeholders})`
+  ).run(logId, ...idsUnicos);
 }
 
 /**

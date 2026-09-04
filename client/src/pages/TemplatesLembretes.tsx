@@ -10,19 +10,24 @@ import { Textarea } from "@/components/ui/Input";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/ui/PageHeader";
 
-type Periodo = "hoje" | "amanha";
+type Periodo = "hoje" | "amanha" | "futuro";
 
 const ABAS: { periodo: Periodo; label: string }[] = [
   { periodo: "hoje", label: "Hoje" },
   { periodo: "amanha", label: "Amanhã" },
+  { periodo: "futuro", label: "Data futura" },
 ];
 
 const exemplo = EXEMPLO_PERICIAS[0];
+const VARIAVEIS_LEMBRETE = [...VARIAVEIS, "COMPROMISSOS"];
+const compromissosExemplo = EXEMPLO_PERICIAS.map((pericia) =>
+  `• ${pericia.tipo}: ${pericia.data} às ${pericia.horario}\n  Local: ${pericia.local}\n  Processo: ${pericia.processo || ""}`
+).join("\n\n");
 
 export function TemplatesLembretes() {
   const { show } = useToast();
   const [aba, setAba] = useState<Periodo>("hoje");
-  const [mensagens, setMensagens] = useState<Record<Periodo, string>>({ hoje: "", amanha: "" });
+  const [mensagens, setMensagens] = useState<Record<Periodo, string>>({ hoje: "", amanha: "", futuro: "" });
   const [salvando, setSalvando] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -31,6 +36,7 @@ export function TemplatesLembretes() {
       setMensagens({
         hoje: data.lembrete_hoje_mensagem ?? "",
         amanha: data.lembrete_amanha_mensagem ?? "",
+        futuro: data.lembrete_futuro_mensagem ?? "",
       });
     });
   }, []);
@@ -67,6 +73,7 @@ export function TemplatesLembretes() {
       await api.put("/settings", {
         lembrete_hoje_mensagem: mensagens.hoje,
         lembrete_amanha_mensagem: mensagens.amanha,
+        lembrete_futuro_mensagem: mensagens.futuro,
       });
       show("Mensagens de lembrete salvas.", "success");
     } catch (err) {
@@ -86,7 +93,8 @@ export function TemplatesLembretes() {
       .replace(/\{\{TELEFONE\}\}/g, exemplo.telefone || "")
       .replace(/\{\{WHATSAPP\}\}/g, exemplo.whatsapp || "")
       .replace(/\{\{PROCESSO\}\}/g, exemplo.processo || "")
-      .replace(/\{\{PROFISSIONAL_PERITO\}\}/g, exemplo.profissionalPerito || "");
+      .replace(/\{\{PROFISSIONAL_PERITO\}\}/g, exemplo.profissionalPerito || "")
+      .replace(/\{\{COMPROMISSOS\}\}/g, compromissosExemplo);
   }
 
   return (
@@ -95,8 +103,7 @@ export function TemplatesLembretes() {
         title="Mensagens de Lembrete"
         description={
           <>
-            Enviadas pelo botão "Enviar mensagem" no Dashboard: "Hoje" para as perícias do dia, "Amanhã" para o painel
-            "Próximas Perícias" (a próxima data futura com compromissos, mesmo que não seja literalmente amanhã).
+            O sistema escolhe automaticamente a mensagem correta para hoje, amanhã ou outra data futura.
           </>
         }
       />
@@ -122,7 +129,7 @@ export function TemplatesLembretes() {
             As variáveis são preenchidas com os dados do próprio evento do calendário.
           </p>
           <div className="flex flex-wrap gap-1.5">
-            {VARIAVEIS.map((v) => (
+            {VARIAVEIS_LEMBRETE.map((v) => (
               <button
                 key={v}
                 onClick={() => inserirVariavel(v)}

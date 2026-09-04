@@ -22,6 +22,19 @@ function periciaToVars(p: Pericia) {
   };
 }
 
+function compromissosToText(pericias: Pericia[]): string {
+  return pericias
+    .map((pericia) => {
+      const linhas = [
+        `• ${pericia.tipo || "Compromisso"}: ${pericia.data}${pericia.horario ? ` às ${pericia.horario}` : ""}`,
+      ];
+      if (pericia.local) linhas.push(`  Local: ${pericia.local}`);
+      if (pericia.processo) linhas.push(`  Processo: ${pericia.processo}`);
+      return linhas.join("\n");
+    })
+    .join("\n\n");
+}
+
 export function renderMessages(template: RenderableTemplate, nome: string, pericias: Pericia[]): string[] {
   if (pericias.length === 0) return [];
 
@@ -64,6 +77,23 @@ export function renderCobranca(mensagem: string, nome: string, pericia: Pericia 
           PROFISSIONAL_PERITO: "",
         }),
   });
+}
+
+export function renderLembrete(mensagem: string, nome: string, pericias: Pericia[]): string {
+  if (pericias.length === 0) return "";
+  const compromissos = compromissosToText(pericias);
+  const usaLista = /\{\{\s*COMPROMISSOS\s*\}\}/.test(mensagem);
+  const compiled = Handlebars.compile(mensagem, { noEscape: true });
+  const renderizada = compiled({
+    NOME: nome,
+    ...periciaToVars(pericias[0]),
+    COMPROMISSOS: compromissos,
+  });
+
+  if (pericias.length > 1 && !usaLista) {
+    return `${renderizada}\n\nCompromissos:\n${compromissos}`;
+  }
+  return renderizada;
 }
 
 export function renderAudiencia(mensagem: string, nome: string, pericia: Pericia): string {
