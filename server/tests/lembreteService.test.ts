@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { agruparEventosParaLembrete, periodoDoEvento } from "../src/services/lembreteUtils";
 import { renderLembrete } from "../src/services/templateRenderer";
+import { matchContactByNameAndProcess } from "../src/services/matcherService";
+import type { Contact } from "../src/services/contactsService";
 import type { PericiaAgendada } from "../src/services/periciasAgendadasService";
 
 function evento(id: number, dataIso: string, telefoneDigits = "5511900000000"): PericiaAgendada {
@@ -52,6 +54,27 @@ describe("lembretes de compromissos", () => {
 
     expect(grupos).toHaveLength(2);
     expect(grupos.map((grupo) => grupo.eventos.length).sort()).toEqual([1, 2]);
+  });
+
+  it("não agrupa processos diferentes do mesmo nome e telefone", () => {
+    const primeiro = evento(1, "2026-09-05T10:00:00-03:00");
+    const segundo = { ...evento(2, "2026-09-05T14:00:00-03:00"), processo: "1111111-11.2026.1.11.1111" };
+    expect(agruparEventosParaLembrete([primeiro, segundo])).toHaveLength(2);
+  });
+
+  it("usa a Agenda somente quando nome completo e processo coincidem", () => {
+    const contato: Contact = {
+      id: 1,
+      nome: "CLIENTE EXEMPLO",
+      telefone: "5511900000000",
+      processo: "0000000-00.2026.0.00.0000",
+      processo_chave: "00000000020260000000",
+      observacoes: null,
+      created_at: "",
+    };
+    expect(matchContactByNameAndProcess("cliente exemplo", "00000000020260000000", [contato])?.id).toBe(1);
+    expect(matchContactByNameAndProcess("cliente exemplo", "9999999-99.2026.9.99.9999", [contato])).toBeNull();
+    expect(matchContactByNameAndProcess("outro cliente", contato.processo, [contato])).toBeNull();
   });
 
   it("renderiza vários compromissos em uma única mensagem", () => {

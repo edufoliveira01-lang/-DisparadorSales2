@@ -27,6 +27,26 @@ export function normalizeName(value: string): string {
     .trim();
 }
 
+/**
+ * Vínculo seguro usado em envios automáticos: só retorna um contato quando nome completo e
+ * processo coincidem. Sugestões por semelhança continuam exclusivas da interface, onde o
+ * usuário pode conferi-las antes de aceitar.
+ */
+export function matchContactByNameAndProcess(
+  nome: string,
+  processo: string | null | undefined,
+  contacts: Contact[]
+): Contact | null {
+  const nomeChave = normalizeName(nome);
+  const processoChave = normalizeProcesso(processo);
+  if (!nomeChave || !processoChave) return null;
+  return contacts.find(
+    (contact) =>
+      normalizeName(contact.nome) === nomeChave &&
+      normalizeProcesso(contact.processo) === processoChave
+  ) || null;
+}
+
 export function matchContact(nome: string, contacts: Contact[], processo?: string): MatchResult {
   const normalizedTarget = normalizeName(nome);
   const processoTarget = normalizeProcesso(processo);

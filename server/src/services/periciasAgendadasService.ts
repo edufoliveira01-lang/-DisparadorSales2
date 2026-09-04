@@ -316,9 +316,15 @@ export function updatePericiaAgendada(
     const nomeChave = chave(nome);
     const telefoneDigits = normalizePhone(telefone);
     const processoChave = chave(processo);
-    const duplicada = findDuplicadaAoEditarStmt.get(id, tipoChave, nomeChave, dataHoraMs) as { id: number } | undefined;
-    if (duplicada) {
-      throw new PericiaAgendadaConflictError("Já existe um evento idêntico para este cliente na mesma data e horário.");
+    const identidadeMudou =
+      tipoChave !== chave(atual.tipo) ||
+      nomeChave !== chave(atual.nome) ||
+      dataHoraMs !== atual.data_hora_ms;
+    if (identidadeMudou) {
+      const duplicada = findDuplicadaAoEditarStmt.get(id, tipoChave, nomeChave, dataHoraMs) as { id: number } | undefined;
+      if (duplicada) {
+        throw new PericiaAgendadaConflictError("Já existe um evento idêntico para este cliente na mesma data e horário.");
+      }
     }
 
     const mudouConteudo =

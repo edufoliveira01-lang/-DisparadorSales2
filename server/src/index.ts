@@ -75,6 +75,9 @@ initWebsocket(httpServer);
 const port = Number(process.env.PORT) || 3333;
 httpServer.listen(port, () => {
   console.log(`Servidor do Disparador de Perícias rodando em http://localhost:${port}`);
+  if (whatsappManager.restoreSavedSession()) {
+    console.log("[WhatsApp] Restaurando sessão salva automaticamente...");
+  }
 });
 
 // Verifica periodicamente envios com problema de entrega e pendentes sem resposta para

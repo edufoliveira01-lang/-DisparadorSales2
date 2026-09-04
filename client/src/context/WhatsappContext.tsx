@@ -9,7 +9,13 @@ interface WhatsappContextValue extends WhatsappState {
   desconectar: () => Promise<void>;
 }
 
-const ESTADO_INICIAL: WhatsappState = { status: "desconectado", qrDataUrl: null, lastError: null };
+const ESTADO_INICIAL: WhatsappState = {
+  status: "desconectado",
+  qrDataUrl: null,
+  lastError: null,
+  syncProgress: null,
+  sessionSaved: false,
+};
 
 const WhatsappContext = createContext<WhatsappContextValue | null>(null);
 

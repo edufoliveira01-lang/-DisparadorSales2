@@ -21,6 +21,8 @@ import {
 export type WhatsappStatus = "desconectado" | "inicializando" | "aguardando_qr" | "autenticado" | "conectado" | "falha";
 
 const AUTH_DATA_PATH = path.join(dataDir, "wwebjs_auth");
+const AUTH_SESSION_DIR = path.join(AUTH_DATA_PATH, "session");
+const AUTH_SESSION_MARKER_PATH = path.join(dataDir, "whatsapp-session-ready.json");
 // Local padrão onde o whatsapp-web.js guardava o cache de versão do WhatsApp Web antes de
 // mudarmos para webVersionCache: "none". Removido uma vez na inicialização para descartar
 // qualquer versão cacheada de uma tentativa anterior a essa mudança.
@@ -92,8 +94,51 @@ function clearLegacyWebVersionCache(): void {
   }
 }
 
+function marcarSessaoPersistida(): void {
+  try {
+    fs.writeFileSync(AUTH_SESSION_MARKER_PATH, JSON.stringify({ authenticatedAt: new Date().toISOString() }), "utf8");
+  } catch (err) {
+    console.error("[WhatsApp] Não foi possível registrar a sessão autenticada:", err);
+  }
+}
+
+function removerSessaoPersistida(): void {
+  try {
+    fs.rmSync(AUTH_SESSION_MARKER_PATH, { force: true });
+    fs.rmSync(AUTH_SESSION_DIR, { recursive: true, force: true });
+  } catch (err) {
+    console.error("[WhatsApp] Não foi possível remover os dados da sessão encerrada:", err);
+  }
+}
+
+function possuiMarcadorDeSessao(): boolean {
+  return fs.existsSync(AUTH_SESSION_MARKER_PATH);
+}
+
+function possuiArtefatosDeSessaoAntiga(): boolean {
+  const defaultProfile = path.join(AUTH_SESSION_DIR, "Default");
+  return [
+    path.join(defaultProfile, "IndexedDB"),
+    path.join(defaultProfile, "Local Storage", "leveldb"),
+  ].some((diretorio) => {
+    try {
+      return fs.existsSync(diretorio) && fs.readdirSync(diretorio).length > 0;
+    } catch {
+      return false;
+    }
+  });
+}
+
+// Instalações anteriores já podem ter um profile autenticado, mas ainda não possuem o marcador
+// introduzido nesta versão. Migra esse estado uma única vez para que o próximo restart também
+// tente restaurar a sessão sem pedir outro QR Code.
+if (!possuiMarcadorDeSessao() && possuiArtefatosDeSessaoAntiga()) {
+  marcarSessaoPersistida();
+}
+
 const WA_VERSION_REPO_API = "https://api.github.com/repos/wppconnect-team/wa-version/contents/html";
 const WA_VERSION_RAW_BASE = "https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html";
+const WA_VERSION_CACHE_FILE = path.join(dataDir, "whatsapp-web-version.json");
 /** Nº de versões a pular a partir da mais antiga ainda disponível, como margem de segurança
  * contra o repositório podar exatamente a que escolhemos entre a hora que listamos e a hora
  * que de fato conectamos. */
@@ -104,10 +149,37 @@ const WA_VERSION_MARGEM_SEGURANCA = 5;
  * isso já é suficiente pra esbarrar no limite de requisições sem autenticação do GitHub (60/hora
  * por IP), fazendo a consulta falhar e cair de volta em "none" (build mais recente), que é
  * exatamente o bug que estamos evitando. */
-const WA_VERSION_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const WA_VERSION_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 type WaVersionCache = { type: "remote"; remotePath: string; strict: false } | { type: "none" };
-let waVersionCacheResolvida: { valor: WaVersionCache; resolvidaEm: number } | null = null;
+
+function carregarWaVersionCachePersistida(): { valor: WaVersionCache; resolvidaEm: number } | null {
+  try {
+    if (!fs.existsSync(WA_VERSION_CACHE_FILE)) return null;
+    const salvo = JSON.parse(fs.readFileSync(WA_VERSION_CACHE_FILE, "utf8")) as {
+      remotePath?: string;
+      resolvidaEm?: number;
+    };
+    if (!salvo.remotePath || !Number.isFinite(salvo.resolvidaEm)) return null;
+    return {
+      valor: { type: "remote", remotePath: salvo.remotePath, strict: false },
+      resolvidaEm: Number(salvo.resolvidaEm),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function salvarWaVersionCache(valor: WaVersionCache, resolvidaEm: number): void {
+  if (valor.type !== "remote") return;
+  try {
+    fs.writeFileSync(WA_VERSION_CACHE_FILE, JSON.stringify({ remotePath: valor.remotePath, resolvidaEm }), "utf8");
+  } catch (err) {
+    console.error("[WhatsApp] Não foi possível persistir a versão do WhatsApp Web:", err);
+  }
+}
+
+let waVersionCacheResolvida: { valor: WaVersionCache; resolvidaEm: number } | null = carregarWaVersionCachePersistida();
 
 /**
  * Resolve dinamicamente qual versão fixar no webVersionCache (ver comentário maior em
@@ -140,7 +212,9 @@ async function resolveWaVersionCache(): Promise<WaVersionCache> {
 
     const escolhida = versoes[Math.min(WA_VERSION_MARGEM_SEGURANCA, versoes.length - 1)];
     const resultado: WaVersionCache = { type: "remote", remotePath: `${WA_VERSION_RAW_BASE}/${escolhida}`, strict: false };
-    waVersionCacheResolvida = { valor: resultado, resolvidaEm: Date.now() };
+    const resolvidaEm = Date.now();
+    waVersionCacheResolvida = { valor: resultado, resolvidaEm };
+    salvarWaVersionCache(resultado, resolvidaEm);
     console.log(`[WhatsApp] Versão fixa do WhatsApp Web resolvida: ${escolhida}`);
     return resultado;
   } catch (err) {
@@ -202,6 +276,7 @@ class WhatsappManager {
   private status: WhatsappStatus = "desconectado";
   private qrDataUrl: string | null = null;
   private lastError: string | null = null;
+  private syncProgress: number | null = null;
   private tentativa = 0;
   /** Incrementado a cada connect()/disconnect()/shutdown() para invalidar retries pendentes de uma tentativa anterior. */
   private geracao = 0;
@@ -226,14 +301,25 @@ class WhatsappManager {
   }
 
   getState() {
-    return { status: this.status, qrDataUrl: this.qrDataUrl, lastError: this.lastError };
+    return {
+      status: this.status,
+      qrDataUrl: this.qrDataUrl,
+      lastError: this.lastError,
+      syncProgress: this.syncProgress,
+      sessionSaved: possuiMarcadorDeSessao(),
+    };
   }
 
   isReady(): boolean {
     return this.status === "conectado" && this.client !== null;
   }
 
-  private setState(partial: Partial<{ status: WhatsappStatus; qrDataUrl: string | null; lastError: string | null }>) {
+  private setState(partial: Partial<{
+    status: WhatsappStatus;
+    qrDataUrl: string | null;
+    lastError: string | null;
+    syncProgress: number | null;
+  }>) {
     Object.assign(this, partial);
     emitEvent("whatsapp:status", this.getState());
     this.emit();
@@ -245,15 +331,25 @@ class WhatsappManager {
     this.geracao++;
     this.tentativa = 0;
     this.desconexaoManual = false;
+    this.syncProgress = null;
     this.iniciarTentativa(this.geracao);
+  }
+
+  /** Restaura automaticamente apenas quando já existe uma sessão autenticada no disco. */
+  restoreSavedSession(): boolean {
+    if (!possuiMarcadorDeSessao()) return false;
+    this.connect();
+    return true;
   }
 
   private async iniciarTentativa(minhaGeracao: number): Promise<void> {
     if (minhaGeracao !== this.geracao) return; // uma chamada mais recente (connect/disconnect) já assumiu
 
     clearStaleChromiumLocks();
-    clearStaleServiceWorkerCache();
-    this.setState({ status: "inicializando", lastError: null, qrDataUrl: null });
+    // Na primeira tentativa preservamos o cache do profile, que deixa a restauração muito mais
+    // rápida. Se ela falhar, os retries seguintes limpam apenas os caches descartáveis.
+    if (this.tentativa > 0) clearStaleServiceWorkerCache();
+    this.setState({ status: "inicializando", lastError: null, qrDataUrl: null, syncProgress: null });
 
     // Configuração idêntica à usada no projeto anterior (que já validamos funcionando):
     // headless, apenas os dois args de sandbox, e os mesmos timeouts. Evitamos adicionar
@@ -322,7 +418,7 @@ class WhatsappManager {
       }
     };
 
-    const failAndCleanUp = async (status: WhatsappStatus, message: string) => {
+    const failAndCleanUp = async (status: WhatsappStatus, message: string, invalidarSessao = false) => {
       limparReadyWatchdog();
 
       // O whatsapp-web.js costuma emitir "disconnected" de forma espúria durante o próprio
@@ -346,11 +442,12 @@ class WhatsappManager {
       }
       if (this.client !== client) return; // uma tentativa mais nova já assumiu
       this.client = null;
+      if (invalidarSessao) removerSessaoPersistida();
 
       const deveTentarNovamente =
         minhaGeracao === this.geracao &&
         this.tentativa < MAX_TENTATIVAS_CONEXAO &&
-        (ERRO_TRANSITORIO.test(message) || aindaNaoConectouNestaTentativa);
+        (ERRO_TRANSITORIO.test(message) || aindaNaoConectouNestaTentativa || possuiMarcadorDeSessao());
 
       if (deveTentarNovamente) {
         this.tentativa++;
@@ -360,6 +457,7 @@ class WhatsappManager {
             ? `O WhatsApp desconectou logo após o escaneamento (${this.tentativa}/${MAX_TENTATIVAS_CONEXAO}) — gerando um novo QR Code automaticamente. Às vezes é preciso escanear mais de uma vez, é uma instabilidade conhecida e não indica erro no cadastro.`
             : `Falha temporária ao conectar (${message}), tentando novamente (${this.tentativa}/${MAX_TENTATIVAS_CONEXAO})…`,
           qrDataUrl: null,
+          syncProgress: null,
         });
         setTimeout(() => this.iniciarTentativa(minhaGeracao), INTERVALO_ENTRE_TENTATIVAS_CONEXAO_MS);
         return;
@@ -370,16 +468,22 @@ class WhatsappManager {
           console.error("[Notificações] Erro ao enviar alerta de desconexão ao Telegram:", err)
         );
       }
-      this.setState({ status, lastError: message, qrDataUrl: null });
+      this.setState({ status, lastError: message, qrDataUrl: null, syncProgress: null });
     };
 
     client.on("qr", async (qr) => {
       const qrDataUrl = await QRCode.toDataURL(qr);
-      this.setState({ status: "aguardando_qr", qrDataUrl });
+      this.setState({ status: "aguardando_qr", qrDataUrl, syncProgress: null });
+    });
+
+    client.on("loading_screen", (percent) => {
+      const valor = Number(percent);
+      this.setState({ syncProgress: Number.isFinite(valor) ? Math.max(0, Math.min(100, valor)) : null });
     });
 
     client.on("authenticated", () => {
-      this.setState({ status: "autenticado", qrDataUrl: null });
+      marcarSessaoPersistida();
+      this.setState({ status: "autenticado", qrDataUrl: null, syncProgress: 0 });
 
       // Depois de autenticar, o whatsapp-web.js às vezes trava sem nunca emitir "ready" nem
       // "disconnected" (mais comum em celulares/conexões lentas) — sem esse timeout a tela
@@ -396,7 +500,9 @@ class WhatsappManager {
 
     client.on("ready", () => {
       limparReadyWatchdog();
-      this.setState({ status: "conectado", qrDataUrl: null });
+      this.tentativa = 0;
+      marcarSessaoPersistida();
+      this.setState({ status: "conectado", qrDataUrl: null, syncProgress: 100 });
 
       // "ready" dispara em toda reconexão (não só na primeira). O whatsapp-web.js não reemite
       // "message"/"message_reaction" para o que chegou enquanto a sessão estava desconectada —
@@ -409,11 +515,12 @@ class WhatsappManager {
     });
 
     client.on("auth_failure", (msg) => {
-      failAndCleanUp("falha", String(msg));
+      failAndCleanUp("falha", String(msg), true);
     });
 
     client.on("disconnected", (reason) => {
-      failAndCleanUp("desconectado", String(reason));
+      const motivo = String(reason);
+      failAndCleanUp("desconectado", motivo, /logout|unpaired/i.test(motivo));
     });
 
     // "message" só dispara para mensagens recebidas (não inclui as que o próprio bot envia).
@@ -441,16 +548,16 @@ class WhatsappManager {
     // com o envio ok, esse evento chega por um caminho totalmente separado (o listener da
     // própria página do WhatsApp Web), então é o fallback usado para capturar o id real da
     // mensagem quando o retorno direto falha (ver sendMessage()/aguardarIdViaMessageCreate()).
-      client.on("message_create", (message: Message) => {
+    client.on("message_create", (message: Message) => {
       if (!message.fromMe) return;
-      
+
       const toDigits = message.to.split("@")[0];
       console.log(`[WhatsApp] message_create detectado (fromMe) para: ${toDigits}`);
 
       // Match por dígitos para evitar problemas com @c.us vs @s.whatsapp.net
       const idx = this.enviosAguardandoId.findIndex((e) => e.chatId.split("@")[0] === toDigits);
       if (idx === -1) return;
-      
+
       const [aguardando] = this.enviosAguardandoId.splice(idx, 1);
       console.log(`[WhatsApp] ID capturado via fallback para ${toDigits}: ${message.id._serialized}`);
       aguardando.resolve(message.id._serialized);
@@ -506,14 +613,15 @@ class WhatsappManager {
       }
       this.client = null;
     }
-    this.setState({ status: "desconectado", qrDataUrl: null, lastError: null });
+    this.setState({ status: "desconectado", qrDataUrl: null, lastError: null, syncProgress: null });
   }
 
   async disconnect(): Promise<void> {
     this.geracao++; // cancela qualquer retry automático pendente
     this.desconexaoManual = true;
     if (!this.client) {
-      this.setState({ status: "desconectado", qrDataUrl: null, lastError: null });
+      removerSessaoPersistida();
+      this.setState({ status: "desconectado", qrDataUrl: null, lastError: null, syncProgress: null });
       return;
     }
     try {
@@ -526,7 +634,8 @@ class WhatsappManager {
       }
     }
     this.client = null;
-    this.setState({ status: "desconectado", qrDataUrl: null, lastError: null });
+    removerSessaoPersistida();
+    this.setState({ status: "desconectado", qrDataUrl: null, lastError: null, syncProgress: null });
   }
 
   /**
