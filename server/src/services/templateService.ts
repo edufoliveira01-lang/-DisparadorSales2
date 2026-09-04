@@ -1,5 +1,5 @@
 import { db } from "../db";
-export { renderAudiencia, renderCobranca, renderMessages } from "./templateRenderer";
+export { renderAudiencia, renderCobranca, renderLembrete, renderMessages } from "./templateRenderer";
 
 export const COBRANCA_MENSAGEM_PADRAO =
   "Olá {{NOME}}! Só confirmando: você recebeu nossa mensagem anterior? Ainda estamos aguardando seu retorno 🙂";
@@ -21,6 +21,9 @@ export const LEMBRETE_HOJE_MENSAGEM_PADRAO =
 
 export const LEMBRETE_AMANHA_MENSAGEM_PADRAO =
   "Olá {{NOME}}, boa tarde! Passando para lembrar que sua {{TIPO_PERICIA}} é amanhã, às {{HORARIO}}, em {{LOCAL}}. Entraremos em contato ainda hoje até o final do dia. Qualquer dúvida, estou à disposição!";
+
+export const LEMBRETE_FUTURO_MENSAGEM_PADRAO =
+  "Olá {{NOME}}! Passando para lembrar dos seus próximos compromissos:\n\n{{COMPROMISSOS}}\n\nQualquer dúvida, estou à disposição!";
 
 export interface Template {
   id: number;

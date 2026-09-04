@@ -17,9 +17,27 @@ interface StatCardProps {
   value: number | string;
   tone?: StatTone;
   helper?: string;
+  layout?: "stacked" | "inline";
 }
 
-export function StatCard({ icon, label, value, tone = "neutral", helper }: StatCardProps) {
+export function StatCard({ icon, label, value, tone = "neutral", helper, layout = "stacked" }: StatCardProps) {
+  if (layout === "inline") {
+    return (
+      <div className="min-w-0 rounded-2xl border border-zinc-200/80 bg-white p-2.5 shadow-soft dark:border-zinc-800 dark:bg-zinc-900 sm:p-3.5">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-xl [&>svg]:h-4 [&>svg]:w-4", toneClasses[tone])}>
+            {icon}
+          </div>
+          <p className="shrink-0 text-lg font-bold tabular-nums tracking-tight text-zinc-950 dark:text-white sm:text-xl">{value}</p>
+          <div className="min-w-0">
+            <p className="truncate text-[10px] font-semibold text-zinc-600 dark:text-zinc-300 sm:text-xs">{label}</p>
+            {helper && <p className="mt-0.5 hidden truncate text-[11px] text-zinc-400 lg:block">{helper}</p>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-w-0 rounded-2xl border border-zinc-200/80 bg-white p-3 shadow-soft dark:border-zinc-800 dark:bg-zinc-900 sm:p-4">
       <div className={cn("flex h-8 w-8 items-center justify-center rounded-xl [&>svg]:h-4 [&>svg]:w-4", toneClasses[tone])}>

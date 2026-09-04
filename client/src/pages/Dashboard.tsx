@@ -5,6 +5,8 @@ import {
   ArrowRight,
   CalendarDays,
   CheckCheck,
+  ChevronDown,
+  ChevronUp,
   Clock3,
   Gavel,
   Inbox,
@@ -46,6 +48,7 @@ import { Badge } from "@/components/ui/Badge";
 import { CardItem } from "@/components/CardItem";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatCard } from "@/components/ui/StatCard";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 type FiltroStatus = "todos" | "enviado" | "nao_enviado" | "falhou";
 type FiltroTipo = "todos" | "medica" | "social" | "audiencia";
@@ -88,6 +91,19 @@ function hojeYMD(): string {
 function formatarDiaCurto(ymd: string): string {
   const [, mes, dia] = ymd.split("-");
   return `${dia}/${mes}`;
+}
+
+function agruparEventosPorDestinatario(eventos: PericiaAgendada[]): PericiaAgendada[][] {
+  const grupos = new Map<string, PericiaAgendada[]>();
+  for (const evento of eventos) {
+    const telefone = evento.telefone_digits || `sem-telefone:${evento.id}`;
+    const nome = evento.nome.trim().toLocaleLowerCase("pt-BR");
+    const chave = `${diaLocalYMD(evento.data_hora_ms)}|${telefone}|${nome}`;
+    const grupo = grupos.get(chave) ?? [];
+    grupo.push(evento);
+    grupos.set(chave, grupo);
+  }
+  return Array.from(grupos.values());
 }
 
 function toneEventoDashboard(categoria: CategoriaEvento): "neutral" | "accent" | "violet" | "info" | "cyan" | "indigo" {
@@ -142,12 +158,18 @@ export function Dashboard() {
   );
 
   const [enviandoLembreteId, setEnviandoLembreteId] = useState<number | null>(null);
-  const [lembretesEnviados, setLembretesEnviados] = useState<Set<number>>(new Set());
-  const [lembreteBatchConfirm, setLembreteBatchConfirm] = useState<{ periodo: "hoje" | "amanha"; eventos: PericiaAgendada[] } | null>(
+  const [lembreteReenvioConfirm, setLembreteReenvioConfirm] = useState<PericiaAgendada | null>(null);
+  const [lembreteBatchConfirm, setLembreteBatchConfirm] = useState<{ periodo: "hoje" | "proximaData"; eventos: PericiaAgendada[] } | null>(
     null
   );
   const [lembreteBatchLoading, setLembreteBatchLoading] = useState(false);
-  const [lembreteBatchProgress, setLembreteBatchProgress] = useState<{ ativo: boolean; total: number } | null>(null);
+  const [lembreteBatchProgress, setLembreteBatchProgress] = useState<{
+    ativo: boolean;
+    total: number;
+    enviados: number;
+    falhas: number;
+    ignorados: number;
+  } | null>(null);
 
   const [cadastro, setCadastro] = useState<{
     card: CardViewModel;
@@ -251,21 +273,35 @@ export function Dashboard() {
 
   useSocketEvent("pendingReply:resolved", carregarPanorama);
 
-  useSocketEvent<{ total: number }>("lembrete:batch-started", ({ total }) => {
-    setLembreteBatchProgress({ ativo: true, total });
-    show(`Envio de lembretes iniciado (${total}).`, "info");
+  useSocketEvent<{ total: number; ignorados: number }>("lembrete:batch-started", ({ total, ignorados }) => {
+    setLembreteBatchProgress({ ativo: true, total, enviados: 0, falhas: 0, ignorados });
+    show(`Envio de lembretes iniciado para ${total} cliente${total === 1 ? "" : "s"}.`, "info");
   });
-  useSocketEvent<{ id: number; status: "sucesso" | "falha" }>("lembrete:update", ({ id, status }) => {
-    if (status === "sucesso") setLembretesEnviados((prev) => new Set(prev).add(id));
+  useSocketEvent<{ enviados: number; falhas: number; total: number }>("lembrete:update", ({ enviados, falhas, total }) => {
+    setLembreteBatchProgress((atual) => ({
+      ativo: true,
+      total,
+      enviados,
+      falhas,
+      ignorados: atual?.ignorados ?? 0,
+    }));
   });
-  useSocketEvent<{ reason: string }>("lembrete:batch-paused", ({ reason }) => {
+  useSocketEvent<{ reason: string; enviados: number; falhas: number; ignorados: number }>("lembrete:batch-paused", ({ reason, enviados, falhas, ignorados }) => {
     setLembreteBatchProgress(null);
-    show(reason, "error");
+    show(`${reason} Enviados: ${enviados}. Falhas: ${falhas}. Ignorados: ${ignorados}.`, "error");
+    carregarPanorama();
   });
-  useSocketEvent("lembrete:batch-completed", () => {
+  useSocketEvent<{ total: number; enviados: number; falhas: number; ignorados: number }>(
+    "lembrete:batch-completed",
+    ({ enviados, falhas, ignorados }) => {
     setLembreteBatchProgress(null);
-    show("Envio de lembretes concluído.", "success");
-  });
+      show(
+        `Lembretes concluídos. Enviados: ${enviados}. Falhas: ${falhas}. Ignorados: ${ignorados}.`,
+        falhas > 0 ? "error" : "success"
+      );
+      carregarPanorama();
+    }
+  );
 
   function contatoEfetivo(card: CardViewModel): Contact | null {
     return contatoOverrides[card.cardId] || card.contato || null;
@@ -386,9 +422,8 @@ export function Dashboard() {
     const eventosDoDia = (ymd: string) =>
       eventosAtivos.filter((pericia) => diaLocalYMD(pericia.data_hora_ms) === ymd).sort((a, b) => a.data_hora_ms - b.data_hora_ms);
 
-    // Agrupa os eventos futuros (depois de hoje) por dia, pra achar o próximo dia que TEM
-    // perícia — pula dias vazios em vez de fixar em "amanhã" literal. "Próximas Perícias" mostra
-    // esse dia inteiro; "Próximos compromissos" mostra o que sobrar dos dias seguintes.
+    // Agrupa os eventos futuros por data. O primeiro grupo vira "Próxima data" e os demais
+    // permanecem em "Próximos compromissos", incluindo perícias e audiências.
     const diasFuturosComEventos = new Map<string, PericiaAgendada[]>();
     for (const pericia of eventosAtivos) {
       const dia = diaLocalYMD(pericia.data_hora_ms);
@@ -399,7 +434,7 @@ export function Dashboard() {
     }
     const diasFuturosOrdenados = Array.from(diasFuturosComEventos.keys()).sort();
     const proximoDia = diasFuturosOrdenados[0] ?? null;
-    const proximasPericias = proximoDia
+    const eventosProximaData = proximoDia
       ? [...diasFuturosComEventos.get(proximoDia)!].sort((a, b) => a.data_hora_ms - b.data_hora_ms)
       : [];
     const futurasTodas = diasFuturosOrdenados
@@ -409,9 +444,9 @@ export function Dashboard() {
 
     return {
       hoje: eventosDoDia(hoje),
-      amanha: proximasPericias,
+      proximaData: eventosProximaData,
       proximoDiaLabel: proximoDia ? formatarDiaCurto(proximoDia) : null,
-      futuras: futurasTodas.slice(0, 4),
+      futuras: futurasTodas,
       totalFuturas: futurasTodas.length,
       aguardandoResposta: pendentesAtivos.length,
       entreguesAguardando: pendentesAtivos.filter((item) => item.ack !== null && item.ack >= 2).length,
@@ -420,7 +455,7 @@ export function Dashboard() {
     };
   }, [panorama]);
 
-  async function enviarLembreteIndividual(pericia: PericiaAgendada) {
+  async function enviarLembreteIndividual(pericia: PericiaAgendada, forcar = false) {
     if (whatsapp.status !== "conectado") {
       show("Conecte o WhatsApp antes de enviar mensagens.", "error");
       navigate("/configuracoes");
@@ -428,9 +463,10 @@ export function Dashboard() {
     }
     setEnviandoLembreteId(pericia.id);
     try {
-      await api.post(`/pericias-agendadas/${pericia.id}/lembrete`);
-      show(`Lembrete enviado para ${pericia.nome}.`, "success");
-      setLembretesEnviados((prev) => new Set(prev).add(pericia.id));
+      await api.post(`/pericias-agendadas/${pericia.id}/lembrete`, { forcar });
+      show(`${forcar ? "Novo lembrete" : "Lembrete"} enviado para ${pericia.nome}.`, "success");
+      setLembreteReenvioConfirm(null);
+      carregarPanorama();
     } catch (err) {
       show(err instanceof ApiError ? err.message : "Erro ao enviar lembrete.", "error");
     } finally {
@@ -438,14 +474,25 @@ export function Dashboard() {
     }
   }
 
-  function abrirConfirmLembreteBatch(periodo: "hoje" | "amanha") {
+  function solicitarLembreteIndividual(pericia: PericiaAgendada) {
+    if (pericia.ultimo_lembrete_em) {
+      setLembreteReenvioConfirm(pericia);
+      return;
+    }
+    enviarLembreteIndividual(pericia);
+  }
+
+  function abrirConfirmLembreteBatch(periodo: "hoje" | "proximaData") {
     if (whatsapp.status !== "conectado") {
       show("Conecte o WhatsApp antes de enviar mensagens.", "error");
       navigate("/configuracoes");
       return;
     }
-    const eventos = visaoGeral[periodo];
-    if (eventos.length === 0) return;
+    const eventos = visaoGeral[periodo].filter((evento) => !evento.ultimo_lembrete_em);
+    if (eventos.length === 0) {
+      show("Todos os compromissos deste painel já receberam lembrete.", "info");
+      return;
+    }
     setLembreteBatchConfirm({ periodo, eventos });
   }
 
@@ -455,6 +502,8 @@ export function Dashboard() {
     try {
       const ids = lembreteBatchConfirm.eventos.map((e) => e.id);
       await api.post("/pericias-agendadas/lembrete-em-massa", { ids });
+      const total = agruparEventosPorDestinatario(lembreteBatchConfirm.eventos).length;
+      setLembreteBatchProgress({ ativo: true, total, enviados: 0, falhas: 0, ignorados: 0 });
       setLembreteBatchConfirm(null);
     } catch (err) {
       show(err instanceof ApiError ? err.message : "Erro ao iniciar envio dos lembretes.", "error");
@@ -677,6 +726,10 @@ export function Dashboard() {
     }
   }
 
+  const gruposLembreteBatch = lembreteBatchConfirm
+    ? agruparEventosPorDestinatario(lembreteBatchConfirm.eventos)
+    : [];
+
   return (
     <div className="space-y-5 md:space-y-6">
       <PageHeader
@@ -703,63 +756,6 @@ export function Dashboard() {
         </>}
       />
 
-      <div className="grid grid-cols-3 gap-2 md:gap-3">
-        <StatCard icon={<Clock3 />} label="Cards pendentes" value={resumo.pendentes} tone="warning" helper="Ainda não enviados" />
-        <StatCard icon={<ShieldCheck />} label="Prontos" value={resumo.prontos} tone="accent" helper="Contato e compromisso conferidos" />
-        <StatCard icon={<CheckCheck />} label="Enviados" value={resumo.enviados} tone="info" helper="Envios concluídos" />
-      </div>
-
-      {lembreteBatchProgress?.ativo && (
-        <div className="flex items-center gap-2 rounded-xl bg-accent-50 px-4 py-2.5 text-sm text-accent-700 dark:bg-accent-900/20 dark:text-accent-300">
-          <RefreshCw className="h-4 w-4 animate-spin" /> Enviando lembretes… acompanhe os status atualizando em tempo real.
-        </div>
-      )}
-
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <PainelEventosDashboard
-          titulo="Agenda de hoje"
-          descricao={`${visaoGeral.hoje.length} ${visaoGeral.hoje.length === 1 ? "compromisso" : "compromissos"} para hoje`}
-          eventos={visaoGeral.hoje}
-          total={visaoGeral.hoje.length}
-          carregando={panorama === null}
-          vazio="Nenhum compromisso agendado para hoje."
-          somenteHorario
-          onVerTudo={() => navigate("/calendario")}
-          onEnviarItem={enviarLembreteIndividual}
-          onEnviarTodos={() => abrirConfirmLembreteBatch("hoje")}
-          enviandoId={enviandoLembreteId}
-          lembretesEnviados={lembretesEnviados}
-          enviandoBatch={Boolean(lembreteBatchProgress?.ativo)}
-        />
-        <PainelEventosDashboard
-          titulo="Próximas Perícias"
-          descricao={
-            visaoGeral.proximoDiaLabel
-              ? `${visaoGeral.amanha.length} ${visaoGeral.amanha.length === 1 ? "compromisso" : "compromissos"} em ${visaoGeral.proximoDiaLabel}`
-              : "Nenhum compromisso futuro"
-          }
-          eventos={visaoGeral.amanha}
-          total={visaoGeral.amanha.length}
-          carregando={panorama === null}
-          vazio="Nenhuma perícia futura agendada."
-          onVerTudo={() => navigate("/calendario")}
-          onEnviarItem={enviarLembreteIndividual}
-          onEnviarTodos={() => abrirConfirmLembreteBatch("amanha")}
-          enviandoId={enviandoLembreteId}
-          lembretesEnviados={lembretesEnviados}
-          enviandoBatch={Boolean(lembreteBatchProgress?.ativo)}
-        />
-        <PainelEventosDashboard
-          titulo="Próximos compromissos"
-          descricao={`${visaoGeral.totalFuturas} ${visaoGeral.totalFuturas === 1 ? "evento futuro" : "eventos futuros"}`}
-          eventos={visaoGeral.futuras}
-          total={visaoGeral.totalFuturas}
-          carregando={panorama === null}
-          vazio="Nenhum compromisso futuro encontrado."
-          onVerTudo={() => navigate("/calendario")}
-        />
-      </section>
-
       <section className="surface-panel p-4">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -776,6 +772,63 @@ export function Dashboard() {
           <PanoramaItem icon={<Send />} label="Envios em 7 dias" value={visaoGeral.enviosRecentes} tone="info" />
           <PanoramaItem icon={<AlertTriangle />} label="Falhas em 7 dias" value={visaoGeral.falhasRecentes} tone="danger" />
         </div>
+      </section>
+
+      <div className="grid grid-cols-3 gap-2 md:gap-3">
+        <StatCard layout="inline" icon={<Clock3 />} label="Pendentes" value={resumo.pendentes} tone="warning" helper="Ainda não enviados" />
+        <StatCard layout="inline" icon={<ShieldCheck />} label="Prontos" value={resumo.prontos} tone="accent" helper="Contato e compromisso conferidos" />
+        <StatCard layout="inline" icon={<CheckCheck />} label="Enviados" value={resumo.enviados} tone="info" helper="Envios concluídos" />
+      </div>
+
+      {lembreteBatchProgress?.ativo && (
+        <div className="flex items-center gap-2 rounded-xl bg-accent-50 px-4 py-2.5 text-sm text-accent-700 dark:bg-accent-900/20 dark:text-accent-300">
+          <RefreshCw className="h-4 w-4 animate-spin" />
+          Enviando lembretes: {lembreteBatchProgress.enviados} de {lembreteBatchProgress.total}
+          {lembreteBatchProgress.falhas > 0 && ` · ${lembreteBatchProgress.falhas} falha(s)`}
+        </div>
+      )}
+
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <PainelEventosDashboard
+          titulo="Agenda de hoje"
+          descricao={`${visaoGeral.hoje.length} ${visaoGeral.hoje.length === 1 ? "compromisso" : "compromissos"} para hoje`}
+          eventos={visaoGeral.hoje}
+          total={visaoGeral.hoje.length}
+          carregando={panorama === null}
+          vazio="Nenhum compromisso agendado para hoje."
+          somenteHorario
+          onVerTudo={() => navigate("/calendario")}
+          onEnviarItem={solicitarLembreteIndividual}
+          onEnviarTodos={() => abrirConfirmLembreteBatch("hoje")}
+          enviandoId={enviandoLembreteId}
+          enviandoBatch={Boolean(lembreteBatchProgress?.ativo)}
+        />
+        <PainelEventosDashboard
+          titulo="Próxima data"
+          descricao={
+            visaoGeral.proximoDiaLabel
+              ? `${visaoGeral.proximaData.length} ${visaoGeral.proximaData.length === 1 ? "compromisso" : "compromissos"} em ${visaoGeral.proximoDiaLabel}`
+              : "Nenhum compromisso futuro"
+          }
+          eventos={visaoGeral.proximaData}
+          total={visaoGeral.proximaData.length}
+          carregando={panorama === null}
+          vazio="Nenhum compromisso futuro agendado."
+          onVerTudo={() => navigate("/calendario")}
+          onEnviarItem={solicitarLembreteIndividual}
+          onEnviarTodos={() => abrirConfirmLembreteBatch("proximaData")}
+          enviandoId={enviandoLembreteId}
+          enviandoBatch={Boolean(lembreteBatchProgress?.ativo)}
+        />
+        <PainelEventosDashboard
+          titulo="Próximos compromissos"
+          descricao={`${visaoGeral.totalFuturas} ${visaoGeral.totalFuturas === 1 ? "evento futuro" : "eventos futuros"}`}
+          eventos={visaoGeral.futuras}
+          total={visaoGeral.totalFuturas}
+          carregando={panorama === null}
+          vazio="Nenhum compromisso futuro encontrado."
+          onVerTudo={() => navigate("/calendario")}
+        />
       </section>
 
       {erro ? (
@@ -996,8 +1049,12 @@ export function Dashboard() {
       <Modal
         open={Boolean(lembreteBatchConfirm)}
         onClose={() => setLembreteBatchConfirm(null)}
-        title={`Enviar lembrete para ${lembreteBatchConfirm?.eventos.length ?? 0} cliente(s)?`}
-        description={`Cada cliente com compromisso ${lembreteBatchConfirm?.periodo === "hoje" ? "hoje" : "amanhã"} recebe a mensagem de lembrete de "${lembreteBatchConfirm?.periodo === "hoje" ? "Hoje" : "Amanhã"}", com intervalo aleatório entre elas.`}
+        title={`Enviar lembrete para ${gruposLembreteBatch.length} cliente(s)?`}
+        description={
+          lembreteBatchConfirm?.periodo === "hoje"
+            ? "Será usada a mensagem de Hoje. Compromissos do mesmo cliente serão reunidos em uma única mensagem."
+            : `O sistema escolherá a mensagem de Amanhã ou Data futura conforme a data real do compromisso${visaoGeral.proximoDiaLabel ? ` (${visaoGeral.proximoDiaLabel})` : ""}.`
+        }
         footer={
           <>
             <Button variant="outline" onClick={() => setLembreteBatchConfirm(null)}>
@@ -1010,14 +1067,26 @@ export function Dashboard() {
         }
       >
         <ul className="max-h-64 space-y-1.5 overflow-y-auto text-sm text-zinc-600 dark:text-zinc-300">
-          {lembreteBatchConfirm?.eventos.map((evento) => (
-            <li key={evento.id} className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2 dark:bg-zinc-800/50">
-              <span>{evento.nome}</span>
-              <span className="text-xs text-zinc-400">{evento.horario || "Sem horário"}</span>
+          {gruposLembreteBatch.map((grupo) => (
+            <li key={grupo[0].id} className="flex items-center justify-between gap-3 rounded-lg bg-zinc-50 px-3 py-2 dark:bg-zinc-800/50">
+              <span className="min-w-0 truncate">{grupo[0].nome}</span>
+              <span className="shrink-0 text-xs text-zinc-400">
+                {grupo.length} {grupo.length === 1 ? "compromisso" : "compromissos"}
+              </span>
             </li>
           ))}
         </ul>
       </Modal>
+
+      <ConfirmDialog
+        open={Boolean(lembreteReenvioConfirm)}
+        title="Reenviar lembrete?"
+        message={`Este compromisso já recebeu um lembrete. Deseja enviar novamente para ${lembreteReenvioConfirm?.nome || "o cliente"}?`}
+        confirmLabel="Reenviar"
+        loading={enviandoLembreteId === lembreteReenvioConfirm?.id}
+        onConfirm={() => lembreteReenvioConfirm && enviarLembreteIndividual(lembreteReenvioConfirm, true)}
+        onCancel={() => setLembreteReenvioConfirm(null)}
+      />
 
       <Modal
         open={Boolean(cadastro)}
@@ -1237,7 +1306,6 @@ function PainelEventosDashboard({
   onEnviarItem,
   onEnviarTodos,
   enviandoId,
-  lembretesEnviados,
   enviandoBatch,
 }: {
   titulo: string;
@@ -1253,11 +1321,14 @@ function PainelEventosDashboard({
   /** Quando presente, o cabeçalho ganha um botão "Enviar todos". */
   onEnviarTodos?: () => void;
   enviandoId?: number | null;
-  lembretesEnviados?: Set<number>;
   enviandoBatch?: boolean;
 }) {
+  const [expandido, setExpandido] = useState(false);
+  const limiteInicial = 3;
+  const eventosVisiveis = expandido ? eventos : eventos.slice(0, limiteInicial);
+
   return (
-    <div className="surface-panel overflow-hidden">
+    <div className="surface-panel flex h-full flex-col overflow-hidden">
       <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-4 py-3.5 dark:border-zinc-800">
         <div className="flex min-w-0 items-center gap-3">
           <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300">
@@ -1274,14 +1345,17 @@ function PainelEventosDashboard({
               variant="outline"
               size="icon"
               onClick={onEnviarTodos}
-              disabled={eventos.length === 0 || enviandoBatch}
+              disabled={eventos.length === 0 || eventos.every((evento) => Boolean(evento.ultimo_lembrete_em)) || enviandoBatch}
               title="Enviar todos"
+              aria-label="Enviar lembretes para todos"
             >
               <Send className="h-3.5 w-3.5" />
+              <span className="sr-only">Enviar lembretes para todos</span>
             </Button>
           )}
-          <Button variant="ghost" size="icon" onClick={onVerTudo} title="Ver calendário">
+          <Button variant="ghost" size="icon" onClick={onVerTudo} title="Ver calendário" aria-label="Ver calendário">
             <ArrowRight className="h-3.5 w-3.5" />
+            <span className="sr-only">Ver calendário</span>
           </Button>
         </div>
       </div>
@@ -1296,10 +1370,10 @@ function PainelEventosDashboard({
           <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{vazio}</p>
         </div>
       ) : (
-        <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-          {eventos.map((evento) => {
+        <div className="flex-1 divide-y divide-zinc-100 dark:divide-zinc-800">
+          {eventosVisiveis.map((evento) => {
             const tipo = classificarEvento(evento);
-            const jaEnviado = lembretesEnviados?.has(evento.id);
+            const jaEnviado = Boolean(evento.ultimo_lembrete_em);
             return (
               <article key={evento.id} className="flex flex-col gap-2 px-4 py-3 transition-colors hover:bg-zinc-50/70 dark:hover:bg-zinc-800/30">
                 <div className="flex items-start gap-3">
@@ -1329,14 +1403,14 @@ function PainelEventosDashboard({
                       </Badge>
                       {jaEnviado && (
                         <Badge tone="accent" className="px-2 py-0.5">
-                          <CheckCheck className="h-3 w-3" /> Enviado
+                          <CheckCheck className="h-3 w-3" /> Lembrete enviado
                         </Badge>
                       )}
                     </div>
-                    <p className="mt-1 text-sm font-medium text-zinc-950 dark:text-white">{evento.nome}</p>
+                    <p className="mt-1 break-words text-sm font-medium text-zinc-950 dark:text-white">{evento.nome}</p>
                     {evento.local && (
-                      <p className="mt-0.5 flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
-                        <MapPin className="h-3 w-3 shrink-0" /> {evento.local}
+                      <p className="mt-0.5 flex items-start gap-1 text-xs text-zinc-500 dark:text-zinc-400" title={evento.local}>
+                        <MapPin className="mt-0.5 h-3 w-3 shrink-0" /> <span className="line-clamp-2">{evento.local}</span>
                       </p>
                     )}
                   </div>
@@ -1350,19 +1424,28 @@ function PainelEventosDashboard({
                       loading={enviandoId === evento.id}
                       disabled={enviandoBatch}
                     >
-                      <Send className="h-3.5 w-3.5" /> Enviar
+                      <Send className="h-3.5 w-3.5" /> {jaEnviado ? "Reenviar" : "Enviar"}
                     </Button>
                   </div>
                 )}
               </article>
             );
           })}
-          {total > eventos.length && (
+          {eventos.length > limiteInicial && (
             <button
               type="button"
-              onClick={onVerTudo}
-              className="w-full px-4 py-3 text-left text-xs font-medium text-accent-700 hover:bg-accent-50/60 dark:text-accent-300 dark:hover:bg-accent-900/20"
+              onClick={() => setExpandido((valor) => !valor)}
+              className="flex w-full items-center justify-center gap-1 px-4 py-3 text-xs font-medium text-accent-700 hover:bg-accent-50/60 dark:text-accent-300 dark:hover:bg-accent-900/20"
             >
+              {expandido ? (
+                <><ChevronUp className="h-3.5 w-3.5" /> Mostrar menos</>
+              ) : (
+                <><ChevronDown className="h-3.5 w-3.5" /> Mostrar mais {eventos.length - limiteInicial}</>
+              )}
+            </button>
+          )}
+          {total > eventos.length && (
+            <button type="button" onClick={onVerTudo} className="w-full px-4 py-3 text-left text-xs font-medium text-accent-700 hover:bg-accent-50/60 dark:text-accent-300 dark:hover:bg-accent-900/20">
               +{total - eventos.length} compromisso(s) no calendário
             </button>
           )}

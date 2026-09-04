@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import {
+  AlarmClock,
   BriefcaseBusiness,
   Calendar,
   CheckCheck,
@@ -582,6 +583,9 @@ export function Historico() {
                   >
                     <span className="min-w-0 flex-1">
                       <span className="block break-words font-semibold leading-snug text-zinc-900 dark:text-zinc-100">{log.card_nome || "Sem nome"}</span>
+                      {log.tipo_envio === "lembrete" && (
+                        <Badge tone="info" className="mt-1.5"><AlarmClock className="h-3 w-3" /> Lembrete</Badge>
+                      )}
                       <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400">
                         {log.telefone ? formatPhoneDisplay(log.telefone) : "—"}
                         <AckIndicator ack={log.ack} respondido={log.resposta_status === "respondido"} />
@@ -613,7 +617,7 @@ export function Historico() {
                       {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
                       <PainelAgendamento log={log} />
                       <PainelComunicacao log={log} />
-                      {log.status === "falha" && (
+                      {log.status === "falha" && log.tipo_envio !== "lembrete" && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -666,6 +670,9 @@ export function Historico() {
                         </td>
                         <td className="max-w-[240px] break-words px-5 py-3 text-left font-medium text-zinc-900 dark:text-zinc-100">
                           {log.card_nome || "—"}
+                          {log.tipo_envio === "lembrete" && (
+                            <Badge tone="info" className="ml-2 align-middle"><AlarmClock className="h-3 w-3" /> Lembrete</Badge>
+                          )}
                         </td>
                         <td className="whitespace-nowrap px-5 py-3 text-center text-zinc-600 dark:text-zinc-400">
                           {log.telefone ? formatPhoneDisplay(log.telefone) : "—"}
@@ -684,7 +691,7 @@ export function Historico() {
                             <Button variant="ghost" size="icon" title="Ver detalhes" onClick={() => setExpandido(aberto ? null : log.id)}>
                               {aberto ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                             </Button>
-                            {log.status === "falha" && (
+                            {log.status === "falha" && log.tipo_envio !== "lembrete" && (
                               <Button variant="outline" size="sm" onClick={() => reenviar(log)} loading={reenviando === log.id}>
                                 <RotateCcw className="h-3.5 w-3.5" /> Reenviar
                               </Button>
@@ -705,7 +712,10 @@ export function Historico() {
                         <tr className="bg-zinc-50 dark:bg-zinc-800/30">
                           <td colSpan={7} className="space-y-4 px-5 py-4">
                             <div className="flex flex-wrap items-center justify-between gap-2">
-                              <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Detalhes do registro</p>
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Detalhes do registro</p>
+                                {log.tipo_envio === "lembrete" && <Badge tone="info"><AlarmClock className="h-3 w-3" /> Lembrete</Badge>}
+                              </div>
                               <p className="inline-flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
                                 <Clock className="h-3.5 w-3.5" /> Enviado em {formatarData(log)}
                               </p>

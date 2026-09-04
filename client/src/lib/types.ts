@@ -47,6 +47,7 @@ export interface SendLog {
   /** -1 erro, 0 pendente, 1 enviado ao servidor, 2 entregue (✓✓ cinza), 3 lido (✓✓ azul), 4 áudio reproduzido. */
   ack: number | null;
   ack_updated_at: string | null;
+  tipo_envio: "disparo" | "lembrete";
   created_at: string;
   /** Dados do pending_reply correlato (mesmo whatsapp_message_id), quando esse envio estava sob
    * monitoramento de resposta. Ausente/null quando nunca houve monitoramento para esse envio. */
@@ -106,6 +107,7 @@ export interface Settings {
   audiencia_hibrida_mensagem: string;
   lembrete_hoje_mensagem: string;
   lembrete_amanha_mensagem: string;
+  lembrete_futuro_mensagem: string;
 }
 
 export interface PericiaAgendada {
@@ -120,10 +122,15 @@ export interface PericiaAgendada {
   data: string;
   horario: string | null;
   local: string | null;
+  whatsapp: string | null;
+  profissional_perito: string | null;
   data_hora_ms: number;
   status: "ativa" | "substituida";
   substituida_por_id: number | null;
   fonte: "whatsapp" | "trello_sync";
+  ultimo_lembrete_em: string | null;
+  ultimo_lembrete_log_id: number | null;
+  lembrete_ack: number | null;
   created_at: string;
 }
 

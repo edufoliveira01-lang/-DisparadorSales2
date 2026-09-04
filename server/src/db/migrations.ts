@@ -46,6 +46,7 @@ export function runMigrations(db: Database.Database): void {
       whatsapp_message_id TEXT,
       ack INTEGER,
       ack_updated_at DATETIME,
+      tipo_envio TEXT NOT NULL DEFAULT 'disparo',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (contact_id) REFERENCES contacts(id)
     );
@@ -87,10 +88,14 @@ export function runMigrations(db: Database.Database): void {
       data TEXT NOT NULL,
       horario TEXT,
       local TEXT,
+      whatsapp TEXT,
+      profissional_perito TEXT,
       data_hora_ms INTEGER NOT NULL,
       status TEXT CHECK(status IN ('ativa','substituida')) DEFAULT 'ativa',
       substituida_por_id INTEGER,
       fonte TEXT CHECK(fonte IN ('whatsapp','trello_sync')) DEFAULT 'whatsapp',
+      ultimo_lembrete_em DATETIME,
+      ultimo_lembrete_log_id INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (substituida_por_id) REFERENCES pericias_agendadas(id)
     );
@@ -133,6 +138,7 @@ export function runMigrations(db: Database.Database): void {
     "ALTER TABLE send_logs ADD COLUMN whatsapp_message_id TEXT",
     "ALTER TABLE send_logs ADD COLUMN ack INTEGER",
     "ALTER TABLE send_logs ADD COLUMN ack_updated_at DATETIME",
+    "ALTER TABLE send_logs ADD COLUMN tipo_envio TEXT NOT NULL DEFAULT 'disparo'",
     "ALTER TABLE pending_replies ADD COLUMN whatsapp_message_id TEXT",
     "ALTER TABLE pending_replies ADD COLUMN ack INTEGER",
     "ALTER TABLE pending_replies ADD COLUMN ack_updated_at DATETIME",
@@ -149,6 +155,10 @@ export function runMigrations(db: Database.Database): void {
     // é mais restritivo sobre o que aceita em ADD COLUMN, e o código nunca grava outro valor
     // além de 'whatsapp'/'trello_sync' de qualquer forma.
     "ALTER TABLE pericias_agendadas ADD COLUMN fonte TEXT DEFAULT 'whatsapp'",
+    "ALTER TABLE pericias_agendadas ADD COLUMN whatsapp TEXT",
+    "ALTER TABLE pericias_agendadas ADD COLUMN profissional_perito TEXT",
+    "ALTER TABLE pericias_agendadas ADD COLUMN ultimo_lembrete_em DATETIME",
+    "ALTER TABLE pericias_agendadas ADD COLUMN ultimo_lembrete_log_id INTEGER",
   ]) {
     try {
       db.exec(stmt);
@@ -215,8 +225,8 @@ export function runMigrations(db: Database.Database): void {
 
     const inserirPericiaAgendada = db.prepare(
       `INSERT INTO pericias_agendadas
-         (card_id, tipo, tipo_chave, origem, nome, nome_chave, telefone, telefone_digits, processo, processo_chave, data, horario, local, data_hora_ms, status)
-       VALUES (@card_id, @tipo, @tipo_chave, @origem, @nome, @nome_chave, @telefone, @telefone_digits, @processo, @processo_chave, @data, @horario, @local, @data_hora_ms, 'ativa')`
+         (card_id, tipo, tipo_chave, origem, nome, nome_chave, telefone, telefone_digits, processo, processo_chave, data, horario, local, whatsapp, profissional_perito, data_hora_ms, status)
+       VALUES (@card_id, @tipo, @tipo_chave, @origem, @nome, @nome_chave, @telefone, @telefone_digits, @processo, @processo_chave, @data, @horario, @local, @whatsapp, @profissional_perito, @data_hora_ms, 'ativa')`
     );
     const buscarAtivasPorChave = db.prepare(
       `SELECT id FROM pericias_agendadas WHERE status = 'ativa' AND tipo_chave = ? AND nome_chave = ? AND telefone_digits = ? AND processo_chave = ?`
@@ -265,6 +275,8 @@ export function runMigrations(db: Database.Database): void {
             data: pericia.data,
             horario: pericia.horario || null,
             local: pericia.local || null,
+            whatsapp: pericia.whatsapp || null,
+            profissional_perito: pericia.profissionalPerito || null,
             data_hora_ms: dataHoraMs,
           });
           for (const anterior of anteriores) {

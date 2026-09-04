@@ -17,6 +17,7 @@ export interface SendLog {
    * (ex: falha antes do envio) ou o evento de confirmação ainda não chegou. */
   ack: number | null;
   ack_updated_at: string | null;
+  tipo_envio: "disparo" | "lembrete";
   created_at: string;
   /** Dados do pending_reply correlato (mesmo whatsapp_message_id), quando esse envio estava sob
    * monitoramento de resposta (lista de confirmação configurada no Trello). Vem de um LEFT JOIN —
@@ -37,11 +38,12 @@ export interface NewSendLog {
   status: "sucesso" | "falha";
   erro: string | null;
   whatsapp_message_id?: string | null;
+  tipo_envio?: "disparo" | "lembrete";
 }
 
 const insertStmt = db.prepare(
-  `INSERT INTO send_logs (card_id, card_nome, contact_id, telefone, pericias_json, mensagem_enviada, status, erro, whatsapp_message_id)
-   VALUES (@card_id, @card_nome, @contact_id, @telefone, @pericias_json, @mensagem_enviada, @status, @erro, @whatsapp_message_id)`
+  `INSERT INTO send_logs (card_id, card_nome, contact_id, telefone, pericias_json, mensagem_enviada, status, erro, whatsapp_message_id, tipo_envio)
+   VALUES (@card_id, @card_nome, @contact_id, @telefone, @pericias_json, @mensagem_enviada, @status, @erro, @whatsapp_message_id, @tipo_envio)`
 );
 // LEFT JOIN pending_replies pelo mesmo whatsapp_message_id: quando esse envio estava sob
 // monitoramento de resposta, o Histórico passa a enxergar se/quando/como o cliente respondeu,
@@ -66,7 +68,11 @@ const updateAckStmt = db.prepare(
 const deleteStmt = db.prepare("DELETE FROM send_logs WHERE id = ?");
 
 export function createLog(entry: NewSendLog): SendLog {
-  const info = insertStmt.run({ ...entry, whatsapp_message_id: entry.whatsapp_message_id ?? null });
+  const info = insertStmt.run({
+    ...entry,
+    whatsapp_message_id: entry.whatsapp_message_id ?? null,
+    tipo_envio: entry.tipo_envio ?? "disparo",
+  });
   const log = getStmt.get(info.lastInsertRowid) as SendLog;
 
   // Se o log tem um ID de mensagem, verifica se já chegou algum ack para ele enquanto

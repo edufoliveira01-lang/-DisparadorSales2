@@ -1,7 +1,11 @@
 import { Router } from "express";
 import { deletePericiaAgendada, listPericiasAgendadas } from "../services/periciasAgendadasService";
 import { sincronizarPericiasDoTrello } from "../services/periciasTrelloSyncService";
-import { enviarLembretePorId, enviarLembretesEmMassa } from "../services/lembreteService";
+import {
+  enviarLembretePorId,
+  enviarLembretesEmMassa,
+  loteLembretesEmAndamento,
+} from "../services/lembreteService";
 import { getSetting } from "../services/settingsService";
 import { TrelloError } from "../services/trelloService";
 
@@ -38,8 +42,12 @@ periciasAgendadasRouter.post("/:id/lembrete", async (req, res) => {
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "Identificador de evento inválido." });
 
   try {
-    await enviarLembretePorId(id);
-    res.json({ ok: true });
+    const forcar = req.body?.forcar === true;
+    const resultado = await enviarLembretePorId(id, forcar);
+    if (resultado.status === "ignorado") {
+      return res.status(409).json({ error: "Este compromisso já recebeu um lembrete. Use a opção de reenviar para confirmar um novo envio." });
+    }
+    res.json({ ok: true, resultado });
   } catch (err) {
     res.status(400).json({ error: (err as Error).message || "Erro ao enviar lembrete." });
   }
@@ -54,11 +62,18 @@ periciasAgendadasRouter.post("/lembrete-em-massa", (req, res) => {
   }
   const idsValidos = ids.filter((id) => Number.isInteger(id) && id > 0);
   if (idsValidos.length === 0) return res.status(400).json({ error: "Nenhum evento selecionado." });
+  if (idsValidos.length > 500) return res.status(400).json({ error: "Selecione no máximo 500 eventos por lote." });
+  if (loteLembretesEmAndamento()) {
+    return res.status(409).json({ error: "Já existe um lote de lembretes em andamento." });
+  }
 
   const min = Number(getSetting("send_interval_min")) || 5;
   const max = Number(getSetting("send_interval_max")) || 15;
-  enviarLembretesEmMassa(idsValidos, min, max).catch(() => {});
-  res.json({ ok: true, total: idsValidos.length });
+  const idsUnicos = Array.from(new Set(idsValidos));
+  enviarLembretesEmMassa(idsUnicos, min, max).catch((err) => {
+    console.error("[Lembretes] Falha inesperada no lote:", err);
+  });
+  res.json({ ok: true, total: idsUnicos.length });
 });
 
 periciasAgendadasRouter.delete("/:id", (req, res) => {
