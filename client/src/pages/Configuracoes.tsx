@@ -739,7 +739,7 @@ export function Configuracoes() {
                   style={{ width: `${Math.max(6, whatsapp.syncProgress ?? 12)}%` }}
                 />
               </div>
-              <p className="text-xs opacity-80">A sessão já foi salva e será restaurada automaticamente nas próximas atualizações do servidor.</p>
+              <p className="text-xs opacity-80">A sessão será salva assim que a sincronização terminar e o status mudar para conectado.</p>
             </div>
           )}
 
