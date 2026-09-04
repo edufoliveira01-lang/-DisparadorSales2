@@ -1,5 +1,12 @@
 import { Router } from "express";
-import { deletePericiaAgendada, listPericiasAgendadas } from "../services/periciasAgendadasService";
+import {
+  deletePericiaAgendada,
+  listPericiasAgendadas,
+  PericiaAgendadaConflictError,
+  PericiaAgendadaInputError,
+  updatePericiaAgendada,
+  type AtualizacaoPericiaAgendada,
+} from "../services/periciasAgendadasService";
 import { sincronizarPericiasDoTrello } from "../services/periciasTrelloSyncService";
 import {
   enviarLembretePorId,
@@ -74,6 +81,26 @@ periciasAgendadasRouter.post("/lembrete-em-massa", (req, res) => {
     console.error("[Lembretes] Falha inesperada no lote:", err);
   });
   res.json({ ok: true, total: idsUnicos.length });
+});
+
+periciasAgendadasRouter.put("/:id", (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "Identificador de evento inválido." });
+
+  try {
+    const resultado = updatePericiaAgendada(id, req.body as AtualizacaoPericiaAgendada);
+    if (!resultado) return res.status(404).json({ error: "Evento não encontrado." });
+    res.json({ ok: true, ...resultado });
+  } catch (err) {
+    if (err instanceof PericiaAgendadaConflictError) {
+      return res.status(409).json({ error: err.message });
+    }
+    if (err instanceof PericiaAgendadaInputError) {
+      return res.status(400).json({ error: err.message });
+    }
+    console.error(`[Calendário] Erro ao editar evento ${id}:`, err);
+    res.status(500).json({ error: "Não foi possível editar o evento do calendário." });
+  }
 });
 
 periciasAgendadasRouter.delete("/:id", (req, res) => {
