@@ -10,6 +10,12 @@ import { enviarMensagemTelegram } from "./telegramService";
 import { moveCard } from "./trelloService";
 import { updateLogAckByMessageId } from "./logsService";
 import {
+  atrasoRetryConexaoMs,
+  deveInvalidarSessao,
+  motivoImpedeRetryAutomatico,
+  normalizarMotivoDesconexao,
+} from "./whatsappConnectionPolicy";
+import {
   findAwaitingByPhoneDigits,
   listPendingReplies,
   resolvePendingReply,
@@ -102,9 +108,17 @@ function marcarSessaoPersistida(): void {
   }
 }
 
-function removerSessaoPersistida(): void {
+function removerMarcadorDeSessao(): void {
   try {
     fs.rmSync(AUTH_SESSION_MARKER_PATH, { force: true });
+  } catch (err) {
+    console.error("[WhatsApp] Não foi possível remover o marcador da sessão:", err);
+  }
+}
+
+function removerSessaoPersistida(): void {
+  try {
+    removerMarcadorDeSessao();
     fs.rmSync(AUTH_SESSION_DIR, { recursive: true, force: true });
   } catch (err) {
     console.error("[WhatsApp] Não foi possível remover os dados da sessão encerrada:", err);
@@ -115,34 +129,11 @@ function possuiMarcadorDeSessao(): boolean {
   return fs.existsSync(AUTH_SESSION_MARKER_PATH);
 }
 
-function possuiArtefatosDeSessaoAntiga(): boolean {
-  const defaultProfile = path.join(AUTH_SESSION_DIR, "Default");
-  return [
-    path.join(defaultProfile, "IndexedDB"),
-    path.join(defaultProfile, "Local Storage", "leveldb"),
-  ].some((diretorio) => {
-    try {
-      return fs.existsSync(diretorio) && fs.readdirSync(diretorio).length > 0;
-    } catch {
-      return false;
-    }
-  });
-}
-
-// Instalações anteriores já podem ter um profile autenticado, mas ainda não possuem o marcador
-// introduzido nesta versão. Migra esse estado uma única vez para que o próximo restart também
-// tente restaurar a sessão sem pedir outro QR Code.
-if (!possuiMarcadorDeSessao() && possuiArtefatosDeSessaoAntiga()) {
-  marcarSessaoPersistida();
-}
-
 const WA_VERSION_REPO_API = "https://api.github.com/repos/wppconnect-team/wa-version/contents/html";
 const WA_VERSION_RAW_BASE = "https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html";
 const WA_VERSION_CACHE_FILE = path.join(dataDir, "whatsapp-web-version.json");
-/** Nº de versões a pular a partir da mais antiga ainda disponível, como margem de segurança
- * contra o repositório podar exatamente a que escolhemos entre a hora que listamos e a hora
- * que de fato conectamos. */
-const WA_VERSION_MARGEM_SEGURANCA = 5;
+/** Evita tanto a build mais nova quanto versões antigas que o WhatsApp já pode ter desativado. */
+const WA_VERSION_MARGEM_RECENTES = 5;
 /** Quanto tempo reaproveitar a mesma versão resolvida antes de consultar de novo. Sem isso, toda
  * tentativa de conexão (inclusive os retries automáticos de iniciarTentativa, até
  * MAX_TENTATIVAS_CONEXAO vezes) batia na API do GitHub — depois de algumas reconexões seguidas
@@ -181,12 +172,22 @@ function salvarWaVersionCache(valor: WaVersionCache, resolvidaEm: number): void 
 
 let waVersionCacheResolvida: { valor: WaVersionCache; resolvidaEm: number } | null = carregarWaVersionCachePersistida();
 
+function invalidarWaVersionCache(): void {
+  waVersionCacheResolvida = null;
+  try {
+    fs.rmSync(WA_VERSION_CACHE_FILE, { force: true });
+  } catch {
+    // limpeza best-effort
+  }
+}
+
 /**
  * Resolve dinamicamente qual versão fixar no webVersionCache (ver comentário maior em
  * iniciarTentativa). Fixar um arquivo específico por nome (como fizemos antes) quebra de novo
  * assim que o wa-version poda esse arquivo do repositório — o repositório só mantém uma janela
  * rolante de versões recentes, então qualquer nome fixo tem vida curta. Em vez disso, consultamos
- * a listagem atual e escolhemos a mais antiga ainda disponível (com uma pequena margem), o que se
+ * a listagem atual e escolhemos uma versão recente já estabilizada, evitando tanto a última build
+ * quanto versões antigas que o próprio WhatsApp pode recusar. Isso se
  * auto-corrige à medida que a janela avança — mas só a cada WA_VERSION_CACHE_TTL_MS, e se a
  * consulta nova falhar (rede, rate limit) preferimos reaproveitar a última resolução boa que
  * tivermos a cair em "none", que reintroduziria o bug do id._serialized undefined.
@@ -210,7 +211,8 @@ async function resolveWaVersionCache(): Promise<WaVersionCache> {
     const versoes = arquivos.map((a) => a.name).filter((nome) => nome.endsWith(".html")).sort();
     if (versoes.length === 0) throw new Error("Nenhuma versão listada");
 
-    const escolhida = versoes[Math.min(WA_VERSION_MARGEM_SEGURANCA, versoes.length - 1)];
+    const indice = Math.max(0, versoes.length - 1 - WA_VERSION_MARGEM_RECENTES);
+    const escolhida = versoes[indice];
     const resultado: WaVersionCache = { type: "remote", remotePath: `${WA_VERSION_RAW_BASE}/${escolhida}`, strict: false };
     const resolvidaEm = Date.now();
     waVersionCacheResolvida = { valor: resultado, resolvidaEm };
@@ -254,6 +256,7 @@ const INTERVALO_ENTRE_TENTATIVAS_MS = 3000;
 // sozinho) se recuperar sem exigir clique manual do usuário.
 const MAX_TENTATIVAS_CONEXAO = 6;
 const INTERVALO_ENTRE_TENTATIVAS_CONEXAO_MS = 5000;
+const TEMPO_PARA_CONSIDERAR_CONEXAO_ESTAVEL_MS = 2 * 60 * 1000;
 
 /**
  * Tempo máximo aguardando o WhatsApp ficar pronto depois de "autenticado" (celular escaneou
@@ -278,6 +281,7 @@ class WhatsappManager {
   private lastError: string | null = null;
   private syncProgress: number | null = null;
   private tentativa = 0;
+  private estabilidadeTimer: ReturnType<typeof setTimeout> | null = null;
   /** Incrementado a cada connect()/disconnect()/shutdown() para invalidar retries pendentes de uma tentativa anterior. */
   private geracao = 0;
   private listeners = new Set<Listener>();
@@ -325,11 +329,18 @@ class WhatsappManager {
     this.emit();
   }
 
+  private limparEstabilidadeTimer(): void {
+    if (!this.estabilidadeTimer) return;
+    clearTimeout(this.estabilidadeTimer);
+    this.estabilidadeTimer = null;
+  }
+
   connect(): void {
     if (this.client) return;
     clearLegacyWebVersionCache();
     this.geracao++;
     this.tentativa = 0;
+    this.limparEstabilidadeTimer();
     this.desconexaoManual = false;
     this.syncProgress = null;
     this.iniciarTentativa(this.geracao);
@@ -346,9 +357,9 @@ class WhatsappManager {
     if (minhaGeracao !== this.geracao) return; // uma chamada mais recente (connect/disconnect) já assumiu
 
     clearStaleChromiumLocks();
-    // Na primeira tentativa preservamos o cache do profile, que deixa a restauração muito mais
-    // rápida. Se ela falhar, os retries seguintes limpam apenas os caches descartáveis.
-    if (this.tentativa > 0) clearStaleServiceWorkerCache();
+    // A sessão fica em Local Storage/IndexedDB e não é apagada aqui. Limpamos somente caches
+    // descartáveis para impedir que um bundle antigo do WhatsApp Web derrube a conexão.
+    clearStaleServiceWorkerCache();
     this.setState({ status: "inicializando", lastError: null, qrDataUrl: null, syncProgress: null });
 
     // Configuração idêntica à usada no projeto anterior (que já validamos funcionando):
@@ -377,8 +388,7 @@ class WhatsappManager {
     // nome sumiu de lá poucos dias depois, e o problema voltou (strict:false caiu de volta para
     // "mais recente"). A correção agora é resolver isso DINAMICAMENTE a cada tentativa de
     // conexão via resolveWaVersionCache(): consultamos a listagem atual do repositório e
-    // escolhemos a mais antiga ainda disponível (com margem de segurança), então continuamos
-    // conservadores mesmo com a janela do repositório avançando. Se a consulta falhar por
+    // escolhemos uma versão recente já estabilizada, deixando de fora as últimas builds. Se a consulta falhar por
     // qualquer motivo, caímos no comportamento anterior (mais recente) em vez de travar.
     const webVersionCache = await resolveWaVersionCache();
     if (minhaGeracao !== this.geracao) return; // connect()/disconnect() aconteceu enquanto resolvíamos a versão
@@ -407,6 +417,8 @@ class WhatsappManager {
       // de esgotado, nosso próprio retry automático entra em ação e gera um QR novo.
       qrMaxRetries: 12,
       authTimeoutMs: 90000,
+      takeoverOnConflict: true,
+      takeoverTimeoutMs: 10000,
     });
     this.client = client;
 
@@ -420,6 +432,7 @@ class WhatsappManager {
 
     const failAndCleanUp = async (status: WhatsappStatus, message: string, invalidarSessao = false) => {
       limparReadyWatchdog();
+      this.limparEstabilidadeTimer();
 
       // O whatsapp-web.js costuma emitir "disconnected" de forma espúria durante o próprio
       // fluxo de pareamento (ex: "Max qrcode retries reached", ou uma oscilação momentânea
@@ -434,6 +447,9 @@ class WhatsappManager {
       const statusAntesDaFalha = this.status;
       const aindaNaoConectouNestaTentativa = statusAntesDaFalha !== "conectado";
       const falhaLogoAposEscanear = statusAntesDaFalha === "autenticado";
+      const motivoNormalizado = normalizarMotivoDesconexao(message);
+
+      if (motivoNormalizado === "DEPRECATED_VERSION") invalidarWaVersionCache();
 
       try {
         await client.destroy();
@@ -447,6 +463,7 @@ class WhatsappManager {
       const deveTentarNovamente =
         minhaGeracao === this.geracao &&
         this.tentativa < MAX_TENTATIVAS_CONEXAO &&
+        !motivoImpedeRetryAutomatico(motivoNormalizado) &&
         (ERRO_TRANSITORIO.test(message) || aindaNaoConectouNestaTentativa || possuiMarcadorDeSessao());
 
       if (deveTentarNovamente) {
@@ -459,7 +476,10 @@ class WhatsappManager {
           qrDataUrl: null,
           syncProgress: null,
         });
-        setTimeout(() => this.iniciarTentativa(minhaGeracao), INTERVALO_ENTRE_TENTATIVAS_CONEXAO_MS);
+        setTimeout(
+          () => this.iniciarTentativa(minhaGeracao),
+          atrasoRetryConexaoMs(this.tentativa, INTERVALO_ENTRE_TENTATIVAS_CONEXAO_MS)
+        );
         return;
       }
 
@@ -472,6 +492,9 @@ class WhatsappManager {
     };
 
     client.on("qr", async (qr) => {
+      // Se uma sessão marcada como válida voltou a pedir QR, ela não é mais restaurável. Remove
+      // apenas o marcador; o profile atual permanece aberto para concluir este pareamento.
+      removerMarcadorDeSessao();
       const qrDataUrl = await QRCode.toDataURL(qr);
       this.setState({ status: "aguardando_qr", qrDataUrl, syncProgress: null });
     });
@@ -482,7 +505,6 @@ class WhatsappManager {
     });
 
     client.on("authenticated", () => {
-      marcarSessaoPersistida();
       this.setState({ status: "autenticado", qrDataUrl: null, syncProgress: 0 });
 
       // Depois de autenticar, o whatsapp-web.js às vezes trava sem nunca emitir "ready" nem
@@ -500,9 +522,13 @@ class WhatsappManager {
 
     client.on("ready", () => {
       limparReadyWatchdog();
-      this.tentativa = 0;
       marcarSessaoPersistida();
       this.setState({ status: "conectado", qrDataUrl: null, syncProgress: 100 });
+      this.limparEstabilidadeTimer();
+      this.estabilidadeTimer = setTimeout(() => {
+        if (this.client === client && this.status === "conectado") this.tentativa = 0;
+        this.estabilidadeTimer = null;
+      }, TEMPO_PARA_CONSIDERAR_CONEXAO_ESTAVEL_MS);
 
       // "ready" dispara em toda reconexão (não só na primeira). O whatsapp-web.js não reemite
       // "message"/"message_reaction" para o que chegou enquanto a sessão estava desconectada —
@@ -520,7 +546,7 @@ class WhatsappManager {
 
     client.on("disconnected", (reason) => {
       const motivo = String(reason);
-      failAndCleanUp("desconectado", motivo, /logout|unpaired/i.test(motivo));
+      failAndCleanUp("desconectado", motivo, deveInvalidarSessao(motivo, this.status === "conectado"));
     });
 
     // "message" só dispara para mensagens recebidas (não inclui as que o próprio bot envia).
@@ -605,6 +631,7 @@ class WhatsappManager {
   async stop(): Promise<void> {
     this.geracao++; // cancela qualquer retry automático pendente
     this.desconexaoManual = true;
+    this.limparEstabilidadeTimer();
     if (this.client) {
       try {
         await this.client.destroy();
@@ -619,6 +646,7 @@ class WhatsappManager {
   async disconnect(): Promise<void> {
     this.geracao++; // cancela qualquer retry automático pendente
     this.desconexaoManual = true;
+    this.limparEstabilidadeTimer();
     if (!this.client) {
       removerSessaoPersistida();
       this.setState({ status: "desconectado", qrDataUrl: null, lastError: null, syncProgress: null });
@@ -646,6 +674,7 @@ class WhatsappManager {
   async shutdown(): Promise<void> {
     this.geracao++; // cancela qualquer retry automático pendente
     this.desconexaoManual = true;
+    this.limparEstabilidadeTimer();
     if (!this.client) return;
     try {
       await this.client.destroy();
