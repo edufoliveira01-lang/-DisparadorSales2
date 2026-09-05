@@ -22,7 +22,7 @@
     "qrcode": "^1.5.4",
     "socket.io": "^4.8.1",
     "string-similarity": "^4.0.4",
-    "whatsapp-web.js": "github:wwebjs/whatsapp-web.js#1780711a1c86dfeca7c5ba6a66f950eac93dde28"
+    "whatsapp-web.js": "https://codeload.github.com/wwebjs/whatsapp-web.js/tar.gz/1780711a1c86dfeca7c5ba6a66f950eac93dde28"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",
