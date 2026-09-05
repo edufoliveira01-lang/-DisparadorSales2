@@ -367,6 +367,47 @@ const TEMPO_LIMITE_APOS_AUTENTICAR_MS = 3 * 60 * 1000;
 
 type Listener = () => void;
 
+interface DiagnosticoWhatsapp {
+  versaoWeb: string | null;
+  url: string | null;
+  memoriaLivreMb: number;
+  memoriaTotalMb: number;
+  memoriaProcessoMb: number;
+  carga1Min: number;
+  cpus: number;
+}
+
+function mb(bytes: number): number {
+  return Math.round(bytes / 1024 / 1024);
+}
+
+async function coletarDiagnosticoWhatsapp(client: Client): Promise<DiagnosticoWhatsapp> {
+  const [versaoResultado, urlResultado] = await Promise.allSettled([
+    client.getWWebVersion(),
+    Promise.resolve(client.pupPage?.url() ?? null),
+  ]);
+
+  return {
+    versaoWeb: versaoResultado.status === "fulfilled" ? String(versaoResultado.value) : null,
+    url: urlResultado.status === "fulfilled" ? urlResultado.value : null,
+    memoriaLivreMb: mb(os.freemem()),
+    memoriaTotalMb: mb(os.totalmem()),
+    memoriaProcessoMb: mb(process.memoryUsage().rss),
+    carga1Min: Number(os.loadavg()[0].toFixed(2)),
+    cpus: os.cpus().length,
+  };
+}
+
+function formatarDiagnosticoWhatsapp(diagnostico: DiagnosticoWhatsapp): string {
+  return [
+    diagnostico.versaoWeb ? `WhatsApp Web: ${diagnostico.versaoWeb}` : null,
+    diagnostico.url ? `URL: ${diagnostico.url}` : null,
+    `Memória livre: ${diagnostico.memoriaLivreMb} MB de ${diagnostico.memoriaTotalMb} MB`,
+    `Memória do servidor Node: ${diagnostico.memoriaProcessoMb} MB`,
+    `Carga: ${diagnostico.carga1Min} em ${diagnostico.cpus} CPU(s)`,
+  ].filter(Boolean).join("\n");
+}
+
 interface EnvioAguardandoId {
   chatId: string;
   texto: string;
@@ -489,9 +530,10 @@ class WhatsappManager {
     clearStaleServiceWorkerCache();
     this.setState({ status: "inicializando", lastError: null, qrDataUrl: null, syncProgress: null });
 
-    // Configuração idêntica à usada no projeto anterior (que já validamos funcionando):
-    // headless, apenas os dois args de sandbox, e os mesmos timeouts. Evitamos adicionar
-    // flags extras do Chromium sem validação prévia em ambiente real.
+    // O commit do whatsapp-web.js fixado no package.json contém a correção oficial para
+    // reinjeções concorrentes e listeners duplicados quando o WhatsApp Web recarrega como SPA.
+    // A versão 1.34.7 publicada no npm ainda não inclui essa correção e pode acumular handlers
+    // até a própria página navegar para post_logout=1.
     //
     // Historicamente usávamos webVersionCache: "none" para evitar um problema documentado da
     // comunidade: por padrão o whatsapp-web.js guarda em cache local a versão do WhatsApp Web
@@ -524,18 +566,20 @@ class WhatsappManager {
       authStrategy: new LocalAuth({ dataPath: AUTH_DATA_PATH }),
       puppeteer: {
         headless: true,
-        // As três flags abaixo evitam que o Chromium aplique power-saving throttling à aba
-        // headless (tratada como "em segundo plano"). Sem elas, o app interno do WhatsApp Web
-        // pode atrasar/descartar o processamento de eventos vindos do WebSocket — inclusive os
-        // que disparam message_ack/message_create — mesmo com a conexão íntegra.
+        // Além de impedir throttling em segundo plano, usamos /tmp em vez do /dev/shm. Em
+        // instâncias pequenas ou containers, o /dev/shm costuma ter só 64 MB; quando ele enche,
+        // o Chromium fica instável justamente durante a sincronização inicial do WhatsApp.
         args: [
           "--no-sandbox",
           "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-gpu",
+          "--no-first-run",
           "--disable-backgrounding-occluded-windows",
           "--disable-renderer-backgrounding",
           "--disable-background-timer-throttling",
         ],
-        protocolTimeout: 120000,
+        protocolTimeout: 300000,
       },
       webVersionCache,
       // Quantas vezes o QR Code pode ser renovado (o WhatsApp Web troca a imagem sozinho a
@@ -555,7 +599,12 @@ class WhatsappManager {
       }
     };
 
-    const failAndCleanUp = async (status: WhatsappStatus, message: string, invalidarSessao = false) => {
+    const failAndCleanUp = async (
+      status: WhatsappStatus,
+      message: string,
+      invalidarSessao = false,
+      diagnostico?: DiagnosticoWhatsapp
+    ) => {
       limparReadyWatchdog();
       this.limparEstabilidadeTimer();
 
@@ -610,7 +659,7 @@ class WhatsappManager {
 
       liberarLockDaInstancia();
       if (!this.desconexaoManual) {
-        this.notificarDesconexaoInesperada(message).catch((err) =>
+        this.notificarDesconexaoInesperada(message, diagnostico).catch((err) =>
           console.error("[Notificações] Erro ao enviar alerta de desconexão ao Telegram:", err)
         );
       }
@@ -660,6 +709,10 @@ class WhatsappManager {
         this.estabilidadeTimer = null;
       }, TEMPO_PARA_CONSIDERAR_CONEXAO_ESTAVEL_MS);
 
+      coletarDiagnosticoWhatsapp(client)
+        .then((diagnostico) => console.log(`[WhatsApp] Conexão pronta.\n${formatarDiagnosticoWhatsapp(diagnostico)}`))
+        .catch((err) => console.error("[WhatsApp] Não foi possível coletar o diagnóstico da conexão:", err));
+
       // "ready" dispara em toda reconexão (não só na primeira). O whatsapp-web.js não reemite
       // "message"/"message_reaction" para o que chegou enquanto a sessão estava desconectada —
       // esses eventos só pegam o que chega ao vivo, depois do client já pronto — então sem essa
@@ -674,10 +727,19 @@ class WhatsappManager {
       failAndCleanUp("falha", String(msg), true);
     });
 
-    client.on("disconnected", (reason) => {
+    client.on("disconnected", async (reason) => {
       const motivo = String(reason);
-      console.error(`[WhatsApp][${os.hostname()}:${process.pid}] Desconectado: ${motivo}`);
-      failAndCleanUp("desconectado", motivo, deveInvalidarSessao(motivo, this.status === "conectado"));
+      const diagnostico = await coletarDiagnosticoWhatsapp(client).catch(() => undefined);
+      console.error(
+        `[WhatsApp][${os.hostname()}:${process.pid}] Desconectado: ${motivo}` +
+        (diagnostico ? `\n${formatarDiagnosticoWhatsapp(diagnostico)}` : "")
+      );
+      await failAndCleanUp(
+        "desconectado",
+        motivo,
+        deveInvalidarSessao(motivo, this.status === "conectado"),
+        diagnostico
+      );
     });
 
     // "message" só dispara para mensagens recebidas (não inclui as que o próprio bot envia).
@@ -827,18 +889,19 @@ class WhatsappManager {
    * mais é enviado até alguém notar e reconectar manualmente pela tela, e não tem outro jeito de
    * saber disso a distância. Silencioso se a integração não estiver configurada.
    */
-  private async notificarDesconexaoInesperada(motivo: string) {
+  private async notificarDesconexaoInesperada(motivo: string, diagnostico?: DiagnosticoWhatsapp) {
     const token = getSetting("telegram_bot_token");
     const chatId = getSetting("telegram_chat_id");
     if (!token || !chatId) return;
     const motivoNormalizado = normalizarMotivoDesconexao(motivo);
     const orientacao = motivoNormalizado === "LOGOUT"
-      ? "\n\nO WhatsApp encerrou a sessão. Isso pode acontecer quando outra instância usa o mesmo profile ou quando o aparelho vinculado é removido no celular."
+      ? "\n\nO próprio WhatsApp Web encerrou e invalidou o vínculo. O diagnóstico abaixo permite distinguir incompatibilidade da interface web de falta de recursos no servidor."
       : "";
+    const detalhes = diagnostico ? `\n\nDiagnóstico:\n${formatarDiagnosticoWhatsapp(diagnostico)}` : "";
     await enviarMensagemTelegram(
       token,
       chatId,
-      `🔌 O WhatsApp do DisparaZap desconectou inesperadamente.\n\nMotivo: ${motivo}\nInstância: ${os.hostname()}:${process.pid}${orientacao}\n\nNenhuma mensagem será enviada até reconectar. Acesse Configurações → Conexão com o WhatsApp para reconectar.`
+      `🔌 O WhatsApp do DisparaZap desconectou inesperadamente.\n\nMotivo: ${motivo}\nInstância: ${os.hostname()}:${process.pid}${orientacao}${detalhes}\n\nNenhuma mensagem será enviada até reconectar. Acesse Configurações → Conexão com o WhatsApp para reconectar.`
     );
   }
 
