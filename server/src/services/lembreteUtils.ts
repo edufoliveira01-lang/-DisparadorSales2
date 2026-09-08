@@ -1,10 +1,63 @@
 import type { PericiaAgendada } from "./periciasAgendadasService";
+import type { Contact } from "./contactsService";
+import { matchContactByNameAndProcess, normalizeName } from "./matcherService";
+import { normalizeProcesso } from "../utils/processo";
 
 export type PeriodoLembrete = "hoje" | "amanha" | "futuro";
 
 export interface GrupoLembrete {
   chave: string;
   eventos: PericiaAgendada[];
+}
+
+export interface PendenciaProcessoLembrete {
+  ids: number[];
+  nome: string;
+  processo: string;
+  contato: Pick<Contact, "id" | "nome" | "telefone">;
+}
+
+function contatoCandidatoParaCompletarProcesso(pericia: PericiaAgendada, contatos: Contact[]): Contact | null {
+  const mesmoNome = contatos.filter((contato) => normalizeName(contato.nome) === normalizeName(pericia.nome));
+  const processoEvento = normalizeProcesso(pericia.processo);
+
+  // Com processo no evento, só é seguro sugerir um contato homônimo que ainda esteja sem
+  // processo. Um processo divergente continua sendo tratado como erro, sem oferecer atalho.
+  const candidatos = processoEvento
+    ? mesmoNome.filter((contato) => !normalizeProcesso(contato.processo))
+    : mesmoNome;
+  return candidatos.length === 1 ? candidatos[0] : null;
+}
+
+export function detectarPendenciasProcesso(
+  eventos: PericiaAgendada[],
+  contatos: Contact[]
+): PendenciaProcessoLembrete[] {
+  const pendencias = new Map<string, PendenciaProcessoLembrete>();
+
+  for (const evento of eventos) {
+    if (evento.status !== "ativa" || evento.telefone_digits || matchContactByNameAndProcess(evento.nome, evento.processo, contatos)) {
+      continue;
+    }
+    const contato = contatoCandidatoParaCompletarProcesso(evento, contatos);
+    if (!contato) continue;
+
+    const processo = (evento.processo || "").trim();
+    const chave = `${contato.id}|${normalizeProcesso(processo)}`;
+    const existente = pendencias.get(chave);
+    if (existente) {
+      existente.ids.push(evento.id);
+      continue;
+    }
+    pendencias.set(chave, {
+      ids: [evento.id],
+      nome: evento.nome,
+      processo,
+      contato: { id: contato.id, nome: contato.nome, telefone: contato.telefone },
+    });
+  }
+
+  return Array.from(pendencias.values());
 }
 
 function diaLocalYMD(dataHoraMs: number): string {
