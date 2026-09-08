@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  createPericiaAgendadaManual,
   deletePericiaAgendada,
   listPericiasAgendadas,
   PericiaAgendadaConflictError,
@@ -26,6 +27,22 @@ export const periciasAgendadasRouter = Router();
 // usuário (America/Sao_Paulo) do que recalculando limites de mês em UTC no servidor.
 periciasAgendadasRouter.get("/", (_req, res) => {
   res.json(listPericiasAgendadas());
+});
+
+periciasAgendadasRouter.post("/", (req, res) => {
+  try {
+    const pericia = createPericiaAgendadaManual(req.body as AtualizacaoPericiaAgendada);
+    res.status(201).json({ ok: true, pericia });
+  } catch (err) {
+    if (err instanceof PericiaAgendadaConflictError) {
+      return res.status(409).json({ error: err.message });
+    }
+    if (err instanceof PericiaAgendadaInputError) {
+      return res.status(400).json({ error: err.message });
+    }
+    console.error("[Calendário] Erro ao criar evento:", err);
+    res.status(500).json({ error: "Não foi possível criar o evento do calendário." });
+  }
 });
 
 periciasAgendadasRouter.post("/sincronizar-trello", async (_req, res) => {

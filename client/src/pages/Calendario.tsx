@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Clock, FileText, Gavel, History, MapPin, Pencil, Phone, RefreshCw, Save, Search, Trash2, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, CalendarPlus, ChevronDown, ChevronLeft, ChevronRight, Clock, FileText, Gavel, History, MapPin, Pencil, Phone, RefreshCw, Save, Search, Trash2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay, formatPhoneInput } from "@/lib/phone";
 import { cn } from "@/lib/utils";
@@ -33,7 +33,7 @@ interface TipoCalendario {
 }
 
 interface EdicaoEvento {
-  id: number;
+  id: number | null;
   tipo: string;
   nome: string;
   telefone: string;
@@ -47,10 +47,10 @@ interface EdicaoEvento {
   tinhaLembrete: boolean;
 }
 
-interface RespostaEdicaoEvento {
+interface RespostaSalvarEvento {
   ok: true;
   pericia: PericiaAgendada;
-  lembrete_resetado: boolean;
+  lembrete_resetado?: boolean;
 }
 
 function textoComparavel(valor: string | null | undefined): string {
@@ -145,6 +145,23 @@ function montarEdicaoEvento(pericia: PericiaAgendada): EdicaoEvento {
     profissionalPerito: pericia.profissional_perito || "",
     fonte: pericia.fonte,
     tinhaLembrete: Boolean(pericia.ultimo_lembrete_em),
+  };
+}
+
+function montarNovoEvento(data = hojeYMD()): EdicaoEvento {
+  return {
+    id: null,
+    tipo: "",
+    nome: "",
+    telefone: "",
+    processo: "",
+    data,
+    horario: "",
+    local: "",
+    whatsapp: "",
+    profissionalPerito: "",
+    fonte: "whatsapp",
+    tinhaLembrete: false,
   };
 }
 
@@ -245,6 +262,11 @@ export function Calendario() {
     setEdicao(montarEdicaoEvento(pericia));
   }
 
+  function abrirNovoEvento(data = hojeYMD()) {
+    setDiaSelecionado(null);
+    setEdicao(montarNovoEvento(data));
+  }
+
   async function salvarEdicao() {
     if (!edicao) return;
     if (!edicao.tipo.trim() || !edicao.nome.trim() || !edicao.data) {
@@ -254,7 +276,8 @@ export function Calendario() {
 
     setSalvandoEdicao(true);
     try {
-      const resposta = await api.put<RespostaEdicaoEvento>(`/pericias-agendadas/${edicao.id}`, {
+      const criando = edicao.id === null;
+      const payload = {
         tipo: edicao.tipo,
         nome: edicao.nome,
         telefone: edicao.telefone,
@@ -264,15 +287,30 @@ export function Calendario() {
         local: edicao.local,
         whatsapp: edicao.whatsapp,
         profissional_perito: edicao.profissionalPerito,
-      });
+      };
+      const resposta = criando
+        ? await api.post<RespostaSalvarEvento>("/pericias-agendadas", payload)
+        : await api.put<RespostaSalvarEvento>(`/pericias-agendadas/${edicao.id}`, payload);
       const diaAtualizado = diaLocalYMD(resposta.pericia.data_hora_ms);
       const [novoAno, novoMes] = diaAtualizado.split("-").map(Number);
       setAnoMes({ ano: novoAno, mes: novoMes });
       setDiasExpandidos((atuais) => new Set([...atuais, diaAtualizado]));
       setEdicao(null);
-      setPericias((atuais) => atuais?.map((item) => item.id === resposta.pericia.id ? resposta.pericia : item) ?? null);
+      setPericias((atuais) => {
+        if (!atuais) return [resposta.pericia];
+        return criando
+          ? [...atuais, resposta.pericia]
+          : atuais.map((item) => item.id === resposta.pericia.id ? resposta.pericia : item);
+      });
+      if (criando) {
+        setBusca("");
+        setTipoFiltro("todos");
+        setMostrarSubstituidas(false);
+      }
       show(
-        resposta.lembrete_resetado
+        criando
+          ? "Evento adicionado ao calendário."
+          : resposta.lembrete_resetado
           ? "Evento atualizado. O lembrete anterior permanece no Histórico e um novo lembrete poderá ser enviado."
           : "Evento atualizado com sucesso.",
         "success"
@@ -375,8 +413,13 @@ export function Calendario() {
         title="Calendário de Perícias"
         description={<>
           <span className="md:hidden">Consulte perícias e audiências agendadas ou importadas.</span>
-          <span className="hidden md:inline">Acompanhe compromissos comunicados por WhatsApp e eventos importados do Trello. Duplicidades idênticas são consolidadas automaticamente.</span>
+          <span className="hidden md:inline">Acompanhe compromissos criados manualmente, comunicados por WhatsApp ou importados do Trello.</span>
         </>}
+        actions={
+          <Button onClick={() => abrirNovoEvento()}>
+            <CalendarPlus className="h-4 w-4" /> Adicionar evento
+          </Button>
+        }
       />
 
       <div className="grid grid-cols-3 gap-2 md:gap-3">
@@ -466,8 +509,13 @@ export function Calendario() {
       ) : pericias.length === 0 ? (
         <EmptyState
           icon={CalendarDays}
-          title="Nenhuma perícia comunicada ainda"
-          description="Assim que um envio de WhatsApp for concluído com sucesso, a perícia aparece aqui."
+          title="Nenhum evento no calendário"
+          description="Adicione um evento manualmente ou conclua um envio de WhatsApp para começar."
+          action={
+            <Button onClick={() => abrirNovoEvento()}>
+              <CalendarPlus className="h-4 w-4" /> Adicionar primeiro evento
+            </Button>
+          }
         />
       ) : buscaAtiva ? (
         filtradas.length === 0 ? (
@@ -652,6 +700,11 @@ export function Calendario() {
         open={diaSelecionado !== null}
         onClose={() => setDiaSelecionado(null)}
         title={diaSelecionado ? formatarTituloDia(diaSelecionado) : ""}
+        footer={
+          <Button onClick={() => diaSelecionado && abrirNovoEvento(diaSelecionado)}>
+            <CalendarPlus className="h-4 w-4" /> Adicionar neste dia
+          </Button>
+        }
       >
         <div className="space-y-3">
           {periciasDoDiaSelecionado.map((p) => (
@@ -670,8 +723,12 @@ export function Calendario() {
       <Modal
         open={edicao !== null}
         onClose={() => !salvandoEdicao && setEdicao(null)}
-        title="Editar evento"
-        description="Revise as informações usadas no calendário e nos próximos lembretes."
+        title={edicao?.id === null ? "Adicionar evento" : "Editar evento"}
+        description={
+          edicao?.id === null
+            ? "Preencha os dados do novo compromisso. Ele ficará disponível no calendário e nos lembretes."
+            : "Revise as informações usadas no calendário e nos próximos lembretes."
+        }
         maxWidth="max-w-2xl"
         footer={
           <>
@@ -683,16 +740,23 @@ export function Calendario() {
               loading={salvandoEdicao}
               disabled={!edicao?.tipo.trim() || !edicao?.nome.trim() || !edicao?.data}
             >
-              <Save className="h-4 w-4" /> Salvar alterações
+              {edicao?.id === null ? <CalendarPlus className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+              {edicao?.id === null ? "Adicionar evento" : "Salvar alterações"}
             </Button>
           </>
         }
       >
         {edicao && (
           <div className="space-y-4">
-            {edicao.fonte === "trello_sync" && (
+            {edicao.id !== null && edicao.fonte === "trello_sync" && (
               <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs leading-relaxed text-blue-700 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-300">
                 Este evento foi importado. A edição altera o calendário do sistema, mas não modifica o cartão original no Trello.
+              </div>
+            )}
+
+            {edicao.id === null && (
+              <div className="rounded-xl border border-accent-200 bg-accent-50 px-3 py-2.5 text-xs leading-relaxed text-accent-700 dark:border-accent-900 dark:bg-accent-950/30 dark:text-accent-300">
+                Evento manual: nenhuma alteração será feita no Trello e nenhuma mensagem será enviada neste momento.
               </div>
             )}
 
@@ -870,6 +934,7 @@ function ResultadoBuscaLinha({
               <Clock className="h-3.5 w-3.5" /> {pericia.horario || "Sem horário"}
             </span>
             <Badge tone={toneTipo(tipo)}>{tipo.rotulo}</Badge>
+            {pericia.card_id.startsWith("manual:") && <Badge tone="accent">Manual</Badge>}
             {pericia.fonte === "trello_sync" && <Badge tone="neutral">Importado</Badge>}
             {pericia.status === "substituida" && <Badge tone="neutral">Substituída</Badge>}
           </div>
@@ -945,6 +1010,7 @@ function PericiaLinha({
         </div>
         <div className="col-span-2 flex w-full flex-wrap items-center gap-1.5 pt-1 md:w-auto md:shrink-0 md:pt-0">
           <Badge tone={toneTipo(tipo)}>{tipo.rotulo}</Badge>
+          {pericia.card_id.startsWith("manual:") && <Badge tone="accent">Manual</Badge>}
           {pericia.fonte === "trello_sync" && <Badge tone="neutral">Importado</Badge>}
           {pericia.status === "substituida" && <Badge tone="neutral">Substituída</Badge>}
           {(onEditar || onExcluir) && (

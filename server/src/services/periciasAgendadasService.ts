@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { randomUUID } from "node:crypto";
 import { normalizePhone } from "../utils/phone";
 import { parseBrazilianDate, type Pericia } from "./parserService";
 
@@ -72,6 +73,11 @@ const findDuplicadaStmt = db.prepare(
 const findDuplicadaAoEditarStmt = db.prepare(
   `SELECT id FROM pericias_agendadas
    WHERE id <> ? AND status = 'ativa' AND tipo_chave = ? AND nome_chave = ? AND data_hora_ms = ?
+   LIMIT 1`
+);
+const findAtivaDuplicadaStmt = db.prepare(
+  `SELECT id FROM pericias_agendadas
+   WHERE status = 'ativa' AND tipo_chave = ? AND nome_chave = ? AND data_hora_ms = ?
    LIMIT 1`
 );
 const updateStmt = db.prepare(
@@ -283,6 +289,57 @@ function origemPeloTipo(tipo: string, origemAtual: string | null): string {
   if (/MEDIC[AO]/.test(valor)) return "medica";
   if (valor.trim() === "PERICIA") return "geral";
   return origemAtual || "geral";
+}
+
+/** Cria um evento diretamente pelo calendário, sem depender de um cartão do Trello. */
+export function createPericiaAgendadaManual(dados: AtualizacaoPericiaAgendada): PericiaAgendada {
+  const tipo = textoLimpo(dados.tipo);
+  const nome = textoLimpo(dados.nome);
+  const telefone = textoLimpo(dados.telefone);
+  const processo = textoLimpo(dados.processo);
+  const data = textoLimpo(dados.data);
+  const horario = textoLimpo(dados.horario);
+  const local = textoLimpo(dados.local);
+  const whatsapp = textoLimpo(dados.whatsapp);
+  const profissionalPerito = textoLimpo(dados.profissional_perito);
+
+  if (!tipo) throw new PericiaAgendadaInputError("Informe o tipo do evento.");
+  if (!nome) throw new PericiaAgendadaInputError("Informe o nome do cliente.");
+  if (!dataValida(data)) throw new PericiaAgendadaInputError("Informe uma data válida.");
+  if (!horarioValido(horario)) throw new PericiaAgendadaInputError("Informe um horário válido.");
+
+  const dataHoraMs = parseBrazilianDate(data, horario);
+  if (!Number.isFinite(dataHoraMs)) throw new PericiaAgendadaInputError("Não foi possível reconhecer a data e o horário.");
+
+  const tipoChave = chave(tipo);
+  const nomeChave = chave(nome);
+  const duplicada = findAtivaDuplicadaStmt.get(tipoChave, nomeChave, dataHoraMs) as { id: number } | undefined;
+  if (duplicada) {
+    throw new PericiaAgendadaConflictError("Já existe um evento idêntico para este cliente na mesma data e horário.");
+  }
+
+  const info = insertStmt.run({
+    card_id: `manual:${randomUUID()}`,
+    tipo,
+    tipo_chave: tipoChave,
+    origem: origemPeloTipo(tipo, null),
+    nome,
+    nome_chave: nomeChave,
+    telefone,
+    telefone_digits: normalizePhone(telefone),
+    processo: processo || null,
+    processo_chave: chave(processo),
+    data,
+    horario: horario || null,
+    local: local || null,
+    whatsapp: whatsapp || null,
+    profissional_perito: profissionalPerito || null,
+    data_hora_ms: dataHoraMs,
+    // A coluna fonte de bancos antigos aceita apenas estes dois valores. O prefixo manual:
+    // em card_id identifica a criação direta sem exigir migração destrutiva da tabela.
+    fonte: "whatsapp",
+  });
+  return getStmt.get(info.lastInsertRowid) as PericiaAgendada;
 }
 
 /** Atualiza um evento existente sem criar uma nova linha no calendário. */
