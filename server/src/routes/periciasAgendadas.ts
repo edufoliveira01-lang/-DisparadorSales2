@@ -9,9 +9,12 @@ import {
 } from "../services/periciasAgendadasService";
 import { sincronizarPericiasDoTrello } from "../services/periciasTrelloSyncService";
 import {
+  completarProcessoLembrete,
   enviarLembretePorId,
   enviarLembretesEmMassa,
+  listarPendenciasProcessoLembrete,
   loteLembretesEmAndamento,
+  ProcessoLembretePendenteError,
 } from "../services/lembreteService";
 import { getSetting } from "../services/settingsService";
 import { TrelloError } from "../services/trelloService";
@@ -44,6 +47,35 @@ periciasAgendadasRouter.post("/sincronizar-trello", async (_req, res) => {
   }
 });
 
+periciasAgendadasRouter.post("/validar-lembretes", (req, res) => {
+  const { ids } = req.body as { ids?: number[] };
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: "Nenhum evento selecionado." });
+  }
+  const idsValidos = ids.filter((id) => Number.isInteger(id) && id > 0);
+  if (idsValidos.length !== ids.length) {
+    return res.status(400).json({ error: "Há identificadores de evento inválidos." });
+  }
+  res.json({ pendencias: listarPendenciasProcessoLembrete(idsValidos) });
+});
+
+periciasAgendadasRouter.post("/completar-processo", (req, res) => {
+  const { ids, contactId, processo } = req.body as { ids?: number[]; contactId?: number; processo?: string };
+  if (!Array.isArray(ids) || ids.length === 0 || ids.some((id) => !Number.isInteger(id) || id <= 0)) {
+    return res.status(400).json({ error: "Nenhum evento válido foi informado." });
+  }
+  if (!Number.isInteger(contactId) || Number(contactId) <= 0) {
+    return res.status(400).json({ error: "Contato da agenda inválido." });
+  }
+
+  try {
+    completarProcessoLembrete(ids, Number(contactId), processo || "");
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message || "Não foi possível salvar o processo." });
+  }
+});
+
 periciasAgendadasRouter.post("/:id/lembrete", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "Identificador de evento inválido." });
@@ -56,6 +88,13 @@ periciasAgendadasRouter.post("/:id/lembrete", async (req, res) => {
     }
     res.json({ ok: true, resultado });
   } catch (err) {
+    if (err instanceof ProcessoLembretePendenteError) {
+      return res.status(409).json({
+        error: err.message,
+        code: "PROCESSO_NAO_IDENTIFICADO",
+        pendencia: err.pendencia,
+      });
+    }
     res.status(400).json({ error: (err as Error).message || "Erro ao enviar lembrete." });
   }
 });
