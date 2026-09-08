@@ -79,6 +79,24 @@ interface PanoramaDashboard {
   logs: SendLog[];
 }
 
+interface PendenciaProcessoLembrete {
+  ids: number[];
+  nome: string;
+  processo: string;
+  contato: Pick<Contact, "id" | "nome" | "telefone">;
+}
+
+type RetomadaAposProcesso =
+  | { tipo: "individual"; pericia: PericiaAgendada; forcar: boolean }
+  | { tipo: "lote"; periodo: "hoje" | "proximaData"; eventos: PericiaAgendada[] };
+
+interface FluxoProcessoLembrete {
+  pendencias: PendenciaProcessoLembrete[];
+  indice: number;
+  valor: string;
+  retomada: RetomadaAposProcesso;
+}
+
 function diaLocalYMD(dataHoraMs: number): string {
   return new Date(dataHoraMs).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 }
@@ -170,6 +188,8 @@ export function Dashboard() {
     falhas: number;
     ignorados: number;
   } | null>(null);
+  const [processoLembrete, setProcessoLembrete] = useState<FluxoProcessoLembrete | null>(null);
+  const [salvandoProcessoLembrete, setSalvandoProcessoLembrete] = useState(false);
 
   const [cadastro, setCadastro] = useState<{
     card: CardViewModel;
@@ -455,6 +475,23 @@ export function Dashboard() {
     };
   }, [panorama]);
 
+  function iniciarFluxoProcesso(pendencias: PendenciaProcessoLembrete[], retomada: RetomadaAposProcesso) {
+    if (pendencias.length === 0) return;
+    setProcessoLembrete({
+      pendencias,
+      indice: 0,
+      valor: pendencias[0].processo,
+      retomada,
+    });
+  }
+
+  function pendenciaProcessoDoErro(err: unknown): PendenciaProcessoLembrete | null {
+    if (!(err instanceof ApiError) || err.data?.code !== "PROCESSO_NAO_IDENTIFICADO") return null;
+    const pendencia = err.data.pendencia as PendenciaProcessoLembrete | undefined;
+    if (!pendencia || !Array.isArray(pendencia.ids) || !pendencia.contato?.id) return null;
+    return pendencia;
+  }
+
   async function enviarLembreteIndividual(pericia: PericiaAgendada, forcar = false) {
     if (whatsapp.status !== "conectado") {
       show("Conecte o WhatsApp antes de enviar mensagens.", "error");
@@ -468,7 +505,13 @@ export function Dashboard() {
       setLembreteReenvioConfirm(null);
       carregarPanorama();
     } catch (err) {
-      show(err instanceof ApiError ? err.message : "Erro ao enviar lembrete.", "error");
+      const pendencia = pendenciaProcessoDoErro(err);
+      if (pendencia) {
+        setLembreteReenvioConfirm(null);
+        iniciarFluxoProcesso([pendencia], { tipo: "individual", pericia, forcar });
+      } else {
+        show(err instanceof ApiError ? err.message : "Erro ao enviar lembrete.", "error");
+      }
     } finally {
       setEnviandoLembreteId(null);
     }
@@ -482,7 +525,7 @@ export function Dashboard() {
     enviarLembreteIndividual(pericia);
   }
 
-  function abrirConfirmLembreteBatch(periodo: "hoje" | "proximaData") {
+  async function abrirConfirmLembreteBatch(periodo: "hoje" | "proximaData") {
     if (whatsapp.status !== "conectado") {
       show("Conecte o WhatsApp antes de enviar mensagens.", "error");
       navigate("/configuracoes");
@@ -493,7 +536,56 @@ export function Dashboard() {
       show("Todos os compromissos deste painel já receberam lembrete.", "info");
       return;
     }
-    setLembreteBatchConfirm({ periodo, eventos });
+    try {
+      const { pendencias } = await api.post<{ pendencias: PendenciaProcessoLembrete[] }>(
+        "/pericias-agendadas/validar-lembretes",
+        { ids: eventos.map((evento) => evento.id) }
+      );
+      if (pendencias.length > 0) {
+        iniciarFluxoProcesso(pendencias, { tipo: "lote", periodo, eventos });
+        return;
+      }
+      setLembreteBatchConfirm({ periodo, eventos });
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao validar os lembretes.", "error");
+    }
+  }
+
+  async function confirmarProcessoLembrete() {
+    if (!processoLembrete) return;
+    const atual = processoLembrete.pendencias[processoLembrete.indice];
+    const processo = processoLembrete.valor.trim();
+    if (!processo) return;
+
+    setSalvandoProcessoLembrete(true);
+    try {
+      await api.post("/pericias-agendadas/completar-processo", {
+        ids: atual.ids,
+        contactId: atual.contato.id,
+        processo,
+      });
+
+      const proximoIndice = processoLembrete.indice + 1;
+      if (proximoIndice < processoLembrete.pendencias.length) {
+        const proxima = processoLembrete.pendencias[proximoIndice];
+        setProcessoLembrete({ ...processoLembrete, indice: proximoIndice, valor: proxima.processo });
+        return;
+      }
+
+      const retomada = processoLembrete.retomada;
+      setProcessoLembrete(null);
+      show("Número do processo salvo. O contato foi confirmado com segurança.", "success");
+
+      if (retomada.tipo === "individual") {
+        await enviarLembreteIndividual(retomada.pericia, retomada.forcar);
+      } else {
+        setLembreteBatchConfirm({ periodo: retomada.periodo, eventos: retomada.eventos });
+      }
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao salvar o número do processo.", "error");
+    } finally {
+      setSalvandoProcessoLembrete(false);
+    }
   }
 
   async function confirmarLembreteBatch() {
@@ -729,6 +821,9 @@ export function Dashboard() {
   const gruposLembreteBatch = lembreteBatchConfirm
     ? agruparEventosPorDestinatario(lembreteBatchConfirm.eventos)
     : [];
+  const pendenciaProcessoAtual = processoLembrete
+    ? processoLembrete.pendencias[processoLembrete.indice]
+    : null;
 
   return (
     <div className="space-y-5 md:space-y-6">
@@ -1043,6 +1138,60 @@ export function Dashboard() {
             {selecionados.size - cardsSelecionadosValidos.length} card(s) selecionado(s) foram ignorados por não terem contato
             cadastrado ou perícia identificada.
           </p>
+        )}
+      </Modal>
+
+      <Modal
+        open={Boolean(processoLembrete)}
+        onClose={() => setProcessoLembrete(null)}
+        title="Informe o número do processo"
+        description="Esse dado é necessário para confirmar com segurança o contato da agenda. Após salvar, o envio continuará do ponto em que parou."
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setProcessoLembrete(null)} disabled={salvandoProcessoLembrete}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={confirmarProcessoLembrete}
+              loading={salvandoProcessoLembrete}
+              disabled={!processoLembrete?.valor.trim()}
+            >
+              Salvar e continuar
+            </Button>
+          </>
+        }
+      >
+        {processoLembrete && pendenciaProcessoAtual && (
+          <div className="space-y-4">
+            {processoLembrete.pendencias.length > 1 && (
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                Contato {processoLembrete.indice + 1} de {processoLembrete.pendencias.length}
+              </p>
+            )}
+            <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-800/50">
+              <p className="font-medium text-zinc-950 dark:text-white">{pendenciaProcessoAtual.contato.nome}</p>
+              <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                {formatPhoneDisplay(pendenciaProcessoAtual.contato.telefone)}
+              </p>
+            </div>
+            <div>
+              <Label>Número do processo</Label>
+              <Input
+                autoFocus
+                value={processoLembrete.valor}
+                onChange={(e) => setProcessoLembrete({ ...processoLembrete, valor: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && processoLembrete.valor.trim() && !salvandoProcessoLembrete) {
+                    confirmarProcessoLembrete();
+                  }
+                }}
+                placeholder="Ex: 0000000-00.2026.0.00.0000"
+              />
+              <p className="mt-1 text-xs text-zinc-400">
+                O processo será salvo no contato e no compromisso para os próximos lembretes.
+              </p>
+            </div>
+          </div>
         )}
       </Modal>
 

@@ -1,17 +1,20 @@
 import { emitEvent } from "../websocket";
 import { db } from "../db";
 import { createLog, type SendLog } from "./logsService";
-import { listContacts, type Contact } from "./contactsService";
-import { matchContactByNameAndProcess } from "./matcherService";
+import { getContact, listContacts, updateContact, type Contact } from "./contactsService";
+import { matchContactByNameAndProcess, normalizeName } from "./matcherService";
 import {
   getPericiaAgendada,
   marcarLembreteEnviado,
+  updatePericiaAgendada,
   type PericiaAgendada,
 } from "./periciasAgendadasService";
 import type { Pericia } from "./parserService";
 import {
   agruparEventosParaLembrete,
+  detectarPendenciasProcesso,
   periodoDoEvento,
+  type PendenciaProcessoLembrete,
   type PeriodoLembrete,
 } from "./lembreteUtils";
 import { getSetting } from "./settingsService";
@@ -23,11 +26,18 @@ import {
 } from "./templateService";
 import { whatsappManager } from "./whatsappService";
 import { normalizePhone } from "../utils/phone";
+import { normalizeProcesso } from "../utils/processo";
 
 export interface ResultadoEnvioLembrete {
   status: "sucesso" | "ignorado";
   ids: number[];
   log?: SendLog;
+}
+
+export class ProcessoLembretePendenteError extends Error {
+  constructor(public readonly pendencia: PendenciaProcessoLembrete) {
+    super("Informe o número do processo para confirmar o contato e continuar o envio.");
+  }
 }
 
 const enviosEmAndamento = new Set<number>();
@@ -62,6 +72,55 @@ function contatoSeguroDaAgenda(pericia: PericiaAgendada, contatos: Contact[]): C
   return matchContactByNameAndProcess(pericia.nome, pericia.processo, contatos);
 }
 
+export function listarPendenciasProcessoLembrete(ids: number[]): PendenciaProcessoLembrete[] {
+  const eventos = Array.from(new Set(ids))
+    .map((id) => getPericiaAgendada(id))
+    .filter((evento): evento is PericiaAgendada => Boolean(evento && evento.status === "ativa"));
+  return detectarPendenciasProcesso(eventos, listContacts());
+}
+
+export function completarProcessoLembrete(ids: number[], contactId: number, processo: string): void {
+  const processoLimpo = processo.trim();
+  if (!normalizeProcesso(processoLimpo)) throw new Error("Informe um número de processo válido.");
+
+  const contato = getContact(contactId);
+  if (!contato) throw new Error("Contato da agenda não encontrado.");
+  const contatos = listContacts();
+
+  const idsUnicos = Array.from(new Set(ids));
+  const eventos = idsUnicos
+    .map((id) => getPericiaAgendada(id))
+    .filter((evento): evento is PericiaAgendada => Boolean(evento && evento.status === "ativa"));
+  if (eventos.length !== idsUnicos.length) throw new Error("Um dos compromissos não foi encontrado ou não está mais ativo.");
+  if (eventos.some((evento) => normalizeName(evento.nome) !== normalizeName(contato.nome))) {
+    throw new Error("O contato selecionado não corresponde ao cliente do compromisso.");
+  }
+  const pendenciaConfirmada = detectarPendenciasProcesso(eventos, contatos).some(
+    (pendencia) =>
+      pendencia.contato.id === contactId &&
+      pendencia.ids.length === idsUnicos.length &&
+      pendencia.ids.every((id) => idsUnicos.includes(id))
+  );
+  if (!pendenciaConfirmada) {
+    throw new Error("Não foi possível confirmar com segurança o vínculo entre o contato e os compromissos.");
+  }
+
+  updateContact(contato.id, contato.nome, contato.telefone, contato.observacoes || undefined, processoLimpo);
+  for (const evento of eventos) {
+    updatePericiaAgendada(evento.id, {
+      tipo: evento.tipo,
+      nome: evento.nome,
+      telefone: evento.telefone,
+      processo: processoLimpo,
+      data: evento.data,
+      horario: evento.horario,
+      local: evento.local,
+      whatsapp: evento.whatsapp,
+      profissional_perito: evento.profissional_perito,
+    });
+  }
+}
+
 function aplicarTelefoneDaAgenda(pericia: PericiaAgendada, contatos: Contact[]): PericiaAgendada {
   const contato = contatoSeguroDaAgenda(pericia, contatos);
   if (!contato) return pericia;
@@ -75,6 +134,9 @@ async function enviarGrupoLembrete(
   forcar = false,
   contatosAgenda: Contact[] = listContacts()
 ): Promise<ResultadoEnvioLembrete> {
+  const pendenciaProcesso = detectarPendenciasProcesso(eventos, contatosAgenda)[0];
+  if (pendenciaProcesso) throw new ProcessoLembretePendenteError(pendenciaProcesso);
+
   const ativos = eventos
     .filter((evento) => evento.status === "ativa")
     .map((evento) => aplicarTelefoneDaAgenda(evento, contatosAgenda));

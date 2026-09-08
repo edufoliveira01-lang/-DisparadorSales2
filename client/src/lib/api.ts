@@ -1,8 +1,10 @@
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  data: Record<string, unknown> | null;
+  constructor(message: string, status: number, data: Record<string, unknown> | null = null) {
     super(message);
     this.status = status;
+    this.data = data;
   }
 }
 
@@ -20,7 +22,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       // Redirecionar para login se não estiver autenticado (exceto na própria tela de login)
       window.location.href = "/login";
     }
-    throw new ApiError(body?.error || `Erro na requisição (HTTP ${response.status})`, response.status);
+    throw new ApiError(body?.error || `Erro na requisição (HTTP ${response.status})`, response.status, body);
   }
   return body as T;
 }
