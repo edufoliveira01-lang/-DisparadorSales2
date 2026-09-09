@@ -16,6 +16,7 @@ export interface PendingReply {
   tipo_resposta: TipoResposta | null;
   resposta_preview: string | null;
   whatsapp_message_id: string | null;
+  send_log_id: number | null;
   /** -1 erro, 0 pendente, 1 enviado ao servidor, 2 entregue (✓✓ cinza), 3 lido (✓✓ azul), 4 áudio reproduzido. */
   ack: number | null;
   ack_updated_at: string | null;
@@ -36,6 +37,12 @@ const insertStmt = db.prepare(
 );
 const getStmt = db.prepare("SELECT * FROM pending_replies WHERE id = ?");
 const getByMessageIdStmt = db.prepare("SELECT * FROM pending_replies WHERE whatsapp_message_id = ?");
+const findAwaitingByMessageIdStmt = db.prepare(
+  "SELECT * FROM pending_replies WHERE whatsapp_message_id = ? AND status = 'aguardando' ORDER BY created_at DESC LIMIT 1"
+);
+const findAwaitingByChatIdStmt = db.prepare(
+  "SELECT * FROM pending_replies WHERE whatsapp_chat_id = ? AND status = 'aguardando' ORDER BY created_at DESC LIMIT 1"
+);
 const findAwaitingByDigitsStmt = db.prepare(
   `SELECT * FROM pending_replies WHERE telefone_digits = ? AND status = 'aguardando' ORDER BY created_at DESC LIMIT 1`
 );
@@ -45,6 +52,10 @@ const listStmt = db.prepare(
 const resolveStmt = db.prepare(
   `UPDATE pending_replies SET status = 'respondido', tipo_resposta = ?, resposta_preview = ?, resolved_at = CURRENT_TIMESTAMP WHERE id = ?`
 );
+const resolveAwaitingStmt = db.prepare(
+  `UPDATE pending_replies SET status = 'respondido', tipo_resposta = ?, resposta_preview = ?, resolved_at = CURRENT_TIMESTAMP
+   WHERE id = ? AND status = 'aguardando'`
+);
 const cancelStmt = db.prepare(
   `UPDATE pending_replies SET status = 'cancelado', resolved_at = CURRENT_TIMESTAMP WHERE id = ?`
 );
@@ -52,6 +63,7 @@ const deleteStmt = db.prepare("DELETE FROM pending_replies WHERE id = ?");
 const updateAckStmt = db.prepare(
   "UPDATE pending_replies SET ack = ?, ack_updated_at = CURRENT_TIMESTAMP WHERE whatsapp_message_id = ?"
 );
+const linkSendLogStmt = db.prepare("UPDATE pending_replies SET send_log_id = ? WHERE id = ?");
 
 /**
  * telefoneExibicao é o número "para humano ler" (o telefone salvo no contato). chatIdDigits é
@@ -101,6 +113,26 @@ export function findAwaitingByPhoneDigits(telefoneDigits: string): PendingReply 
   return findAwaitingByDigitsStmt.get(telefoneDigits) as PendingReply | undefined;
 }
 
+export function findAwaitingByWhatsappChatId(whatsappChatId: string): PendingReply | undefined {
+  return findAwaitingByChatIdStmt.get(whatsappChatId) as PendingReply | undefined;
+}
+
+/** Procura primeiro pelo chat completo (@lid/@c.us) e depois pelos dígitos normalizados. */
+export function findAwaitingByChatIdentifier(chatId: string): PendingReply | undefined {
+  return findAwaitingByWhatsappChatId(chatId)
+    ?? findAwaitingByPhoneDigits(normalizePhone(chatId.split("@")[0]));
+}
+
+export function findAwaitingByWhatsappMessageId(whatsappMessageId: string): PendingReply | undefined {
+  return findAwaitingByMessageIdStmt.get(whatsappMessageId) as PendingReply | undefined;
+}
+
+export function linkPendingReplyToSendLog(pendingId: number, sendLogId: number): PendingReply | undefined {
+  const info = linkSendLogStmt.run(sendLogId, pendingId);
+  if (info.changes === 0) return undefined;
+  return getStmt.get(pendingId) as PendingReply;
+}
+
 export function listPendingReplies(): PendingReply[] {
   return listStmt.all() as PendingReply[];
 }
@@ -135,6 +167,17 @@ export function marcarAlertaRespostaEnviado(ids: number[]): void {
 
 export function resolvePendingReply(id: number, tipoResposta: TipoResposta, preview: string | null): PendingReply {
   resolveStmt.run(tipoResposta, preview, id);
+  return getStmt.get(id) as PendingReply;
+}
+
+/** Resolve somente uma vez, mesmo se os eventos message e message_create chegarem juntos. */
+export function resolvePendingReplyIfAwaiting(
+  id: number,
+  tipoResposta: TipoResposta,
+  preview: string | null
+): PendingReply | undefined {
+  const info = resolveAwaitingStmt.run(tipoResposta, preview, id);
+  if (info.changes === 0) return undefined;
   return getStmt.get(id) as PendingReply;
 }
 
