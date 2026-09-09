@@ -2,9 +2,9 @@ import crypto from "node:crypto";
 import { db } from "../db";
 
 const ENCRYPTED_KEYS = new Set(["trello_token", "telegram_bot_token", "whapi_token", "google_refresh_token"]);
+const LEGACY_DEFAULT_SECRET = "chave-padrao-nao-segura-troque-no-env";
 
-function getEncryptionKey(): Buffer {
-  const secret = process.env.ENCRYPTION_KEY || "chave-padrao-nao-segura-troque-no-env";
+function getEncryptionKey(secret = process.env.ENCRYPTION_KEY || LEGACY_DEFAULT_SECRET): Buffer {
   return crypto.createHash("sha256").update(secret).digest();
 }
 
@@ -16,12 +16,12 @@ function encrypt(plain: string): string {
   return Buffer.concat([iv, authTag, encrypted]).toString("base64");
 }
 
-function decrypt(payload: string): string {
+function decrypt(payload: string, secret?: string): string {
   const raw = Buffer.from(payload, "base64");
   const iv = raw.subarray(0, 12);
   const authTag = raw.subarray(12, 28);
   const encrypted = raw.subarray(28);
-  const decipher = crypto.createDecipheriv("aes-256-gcm", getEncryptionKey(), iv);
+  const decipher = crypto.createDecipheriv("aes-256-gcm", getEncryptionKey(secret), iv);
   decipher.setAuthTag(authTag);
   return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
 }
@@ -42,7 +42,18 @@ export function setSetting(chave: string, valor: string): void {
 export function getSetting(chave: string): string | null {
   const row = getStmt.get(chave) as { valor: string } | undefined;
   if (!row) return null;
-  return ENCRYPTED_KEYS.has(chave) ? decrypt(row.valor) : row.valor;
+  if (!ENCRYPTED_KEYS.has(chave)) return row.valor;
+  try {
+    return decrypt(row.valor);
+  } catch (err) {
+    // Instalações antigas podiam ter salvo tokens com a chave padrão. Quando o administrador
+    // adiciona ENCRYPTION_KEY para habilitar o Google Agenda, recupera uma única vez com a
+    // chave legada e já regrava usando a chave segura, sem interromper Trello/Telegram/Whapi.
+    if (!process.env.ENCRYPTION_KEY) throw err;
+    const plain = decrypt(row.valor, LEGACY_DEFAULT_SECRET);
+    upsertStmt.run(chave, encrypt(plain));
+    return plain;
+  }
 }
 
 export function getAllSettings(): Record<string, string> {
