@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CalendarDays, CalendarPlus, ChevronDown, ChevronLeft, ChevronRight, Clock, FileText, Gavel, History, MapPin, Pencil, Phone, RefreshCw, Save, Search, Trash2, X } from "lucide-react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { AlertTriangle, CalendarDays, CalendarPlus, ChevronDown, ChevronLeft, ChevronRight, Clock, FileText, Gavel, History, MapPin, Pencil, Phone, RefreshCw, Save, Search, Stethoscope, Trash2, Users, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay, formatPhoneInput } from "@/lib/phone";
 import { cn } from "@/lib/utils";
@@ -16,7 +16,6 @@ import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { StatCard } from "@/components/ui/StatCard";
 
 const NOMES_MES = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -206,6 +205,30 @@ function montarGrade(ano: number, mes: number): Celula[] {
 
 const MAX_VISIVEIS_NA_CELULA = 3;
 
+function ResumoCalendarioItem({
+  icon,
+  valor,
+  rotulo,
+  className,
+}: {
+  icon: ReactNode;
+  valor: number;
+  rotulo: string;
+  className: string;
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-2.5 rounded-xl px-3 py-2.5 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+      <span className={cn("inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg [&>svg]:h-4 [&>svg]:w-4", className)}>
+        {icon}
+      </span>
+      <div className="min-w-0">
+        <p className="text-lg font-bold leading-none text-zinc-900 dark:text-zinc-100">{valor}</p>
+        <p className="mt-1 truncate text-[11px] leading-tight text-zinc-500 dark:text-zinc-400 sm:text-xs">{rotulo}</p>
+      </div>
+    </div>
+  );
+}
+
 export function Calendario() {
   const { show } = useToast();
   const [pericias, setPericias] = useState<PericiaAgendada[] | null>(null);
@@ -372,12 +395,13 @@ export function Calendario() {
   const hoje = hojeYMD();
   const resumo = useMemo(() => {
     const ativos = (pericias ?? []).filter((pericia) => pericia.status !== "substituida");
+    const classificados = ativos.map((pericia) => ({ pericia, tipo: classificarTipo(pericia) }));
     return {
       hoje: ativos.filter((pericia) => diaLocalYMD(pericia.data_hora_ms) === hoje).length,
-      proximos: ativos.filter((pericia) => diaLocalYMD(pericia.data_hora_ms) >= hoje).length,
-      audiencias: ativos.filter(
-        (pericia) => diaLocalYMD(pericia.data_hora_ms) >= hoje && classificarTipo(pericia).audiencia
-      ).length,
+      total: ativos.length,
+      medicas: classificados.filter(({ tipo }) => tipo.categoria === "pericia_medica").length,
+      sociais: classificados.filter(({ tipo }) => tipo.categoria === "pericia_social").length,
+      audiencias: classificados.filter(({ tipo }) => tipo.audiencia).length,
     };
   }, [pericias, hoje]);
   const buscaAtiva = busca.trim().length > 0;
@@ -395,6 +419,13 @@ export function Calendario() {
   function irParaHoje() {
     const [y, m] = hojeYMD().split("-").map(Number);
     setAnoMes({ ano: y, mes: m });
+  }
+  function navegarDiaSelecionado(delta: number) {
+    if (!diaSelecionado) return;
+    const [anoAtual, mesAtual, diaAtual] = diaSelecionado.split("-").map(Number);
+    const proximaData = deslocarDias(anoAtual, mesAtual, diaAtual, delta);
+    setDiaSelecionado(celulaKey(proximaData.ano, proximaData.mes, proximaData.dia));
+    setAnoMes({ ano: proximaData.ano, mes: proximaData.mes });
   }
   function alternarDiaExpandido(dia: string) {
     setDiasExpandidos((atuais) => {
@@ -422,10 +453,12 @@ export function Calendario() {
         }
       />
 
-      <div className="grid grid-cols-3 gap-2 md:gap-3">
-        <StatCard icon={<Clock />} label="Hoje" value={resumo.hoje} tone="warning" />
-        <StatCard icon={<CalendarDays />} label="Próximos" value={resumo.proximos} tone="accent" />
-        <StatCard icon={<Gavel />} label="Audiências" value={resumo.audiencias} tone="info" />
+      <div className="surface-panel grid grid-cols-2 gap-1 p-1.5 sm:grid-cols-3 xl:grid-cols-5">
+        <ResumoCalendarioItem icon={<Clock />} valor={resumo.hoje} rotulo="Hoje" className="bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400" />
+        <ResumoCalendarioItem icon={<CalendarDays />} valor={resumo.total} rotulo="Total de agendamentos" className="bg-accent-50 text-accent-600 dark:bg-accent-950/50 dark:text-accent-400" />
+        <ResumoCalendarioItem icon={<Stethoscope />} valor={resumo.medicas} rotulo="Perícias médicas" className="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400" />
+        <ResumoCalendarioItem icon={<Users />} valor={resumo.sociais} rotulo="Perícias sociais" className="bg-violet-50 text-violet-600 dark:bg-violet-950/50 dark:text-violet-400" />
+        <ResumoCalendarioItem icon={<Gavel />} valor={resumo.audiencias} rotulo="Audiências" className="bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400" />
       </div>
 
       <div className="surface-panel flex flex-col gap-3 p-3 md:flex-row md:items-center md:justify-between md:p-4">
@@ -700,24 +733,42 @@ export function Calendario() {
         open={diaSelecionado !== null}
         onClose={() => setDiaSelecionado(null)}
         title={diaSelecionado ? formatarTituloDia(diaSelecionado) : ""}
+        headerActions={
+          <>
+            <Button variant="outline" size="icon" onClick={() => navegarDiaSelecionado(-1)} title="Dia anterior" aria-label="Dia anterior">
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" size="icon" onClick={() => navegarDiaSelecionado(1)} title="Próximo dia" aria-label="Próximo dia">
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </>
+        }
         footer={
           <Button onClick={() => diaSelecionado && abrirNovoEvento(diaSelecionado)}>
             <CalendarPlus className="h-4 w-4" /> Adicionar neste dia
           </Button>
         }
       >
-        <div className="space-y-3">
-          {periciasDoDiaSelecionado.map((p) => (
-            <PericiaLinha
-              key={p.id}
-              pericia={p}
-              substituidaPor={p.substituida_por_id ? porId.get(p.substituida_por_id) ?? null : null}
-              onEditar={() => abrirEdicao(p)}
-              onExcluir={() => setApagarAlvo(p)}
-              excluindo={apagando === p.id}
-            />
-          ))}
-        </div>
+        {periciasDoDiaSelecionado.length > 0 ? (
+          <div className="space-y-3">
+            {periciasDoDiaSelecionado.map((p) => (
+              <PericiaLinha
+                key={p.id}
+                pericia={p}
+                substituidaPor={p.substituida_por_id ? porId.get(p.substituida_por_id) ?? null : null}
+                onEditar={() => abrirEdicao(p)}
+                onExcluir={() => setApagarAlvo(p)}
+                excluindo={apagando === p.id}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-zinc-200 px-4 py-8 text-center dark:border-zinc-700">
+            <CalendarDays className="mx-auto h-6 w-6 text-zinc-300 dark:text-zinc-600" />
+            <p className="mt-2 text-sm font-medium text-zinc-600 dark:text-zinc-300">Nenhum evento neste dia</p>
+            <p className="mt-1 text-xs text-zinc-400">Use as setas para continuar navegando ou adicione um novo evento.</p>
+          </div>
+        )}
       </Modal>
 
       <Modal
