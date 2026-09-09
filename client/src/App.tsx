@@ -9,6 +9,7 @@ import { TemplatesCobranca } from "@/pages/TemplatesCobranca";
 import { TemplatesAudiencia } from "@/pages/TemplatesAudiencia";
 import { TemplatesLembretes } from "@/pages/TemplatesLembretes";
 import { Historico } from "@/pages/Historico";
+import { Logs } from "@/pages/Logs";
 import { PendentesResposta } from "@/pages/PendentesResposta";
 import { Configuracoes } from "@/pages/Configuracoes";
 import { Login } from "@/pages/Login";
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="/templates/audiencia" element={<TemplatesAudiencia />} />
           <Route path="/templates/lembretes" element={<TemplatesLembretes />} />
           <Route path="/historico" element={<Historico />} />
+          <Route path="/logs" element={<Logs />} />
           <Route path="/pendentes" element={<PendentesResposta />} />
           <Route path="/configuracoes" element={<Configuracoes />} />
           <Route path="/login" element={<Login />} />
