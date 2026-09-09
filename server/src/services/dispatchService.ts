@@ -12,7 +12,7 @@ import { createLog, type SendLog } from "./logsService";
 import { whatsappManager } from "./whatsappService";
 import { getSetting } from "./settingsService";
 import { moveCard } from "./trelloService";
-import { createPendingReply } from "./pendingRepliesService";
+import { createPendingReply, linkPendingReplyToSendLog, type PendingReply } from "./pendingRepliesService";
 import { registrarPericiaAgendada } from "./periciasAgendadasService";
 
 export type ModoEnvio = "template" | "audiencia_presencial" | "audiencia_online" | "audiencia_hibrida";
@@ -99,8 +99,16 @@ export async function dispatchSingle(item: SendItem, templateId: number | null):
     // WhatsApp (às vezes nem é baseado no telefone, quando o contato já migrou para "LID").
     // O telefone bruto do contato continua sendo usado só para EXIBIÇÃO na tela.
     const confirmListId = getSetting("trello_confirm_list_id");
+    let pendingReply: PendingReply | null = null;
     if (confirmListId) {
-      createPendingReply(item.cardId, item.nomeCliente, item.telefone, chatId.split("@")[0], chatId, ultimoMessageId);
+      pendingReply = createPendingReply(
+        item.cardId,
+        item.nomeCliente,
+        item.telefone,
+        chatId.split("@")[0],
+        chatId,
+        ultimoMessageId
+      );
     }
 
     // Alimenta o calendário de perícias agendadas só com o que foi de fato comunicado ao
@@ -122,6 +130,7 @@ export async function dispatchSingle(item: SendItem, templateId: number | null):
       erro: null,
       whatsapp_message_id: ultimoMessageId,
     });
+    if (pendingReply) linkPendingReplyToSendLog(pendingReply.id, log.id);
     emitEvent("send:update", { cardId: item.cardId, status: "sucesso", log });
     return log;
   } catch (err) {
