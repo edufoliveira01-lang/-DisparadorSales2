@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { db } from "../src/db";
+import { runMigrations } from "../src/db/migrations";
 import { createSystemLog, listSystemLogs, recordSystemLog } from "../src/services/systemLogsService";
-import { listLogsPendentesDeAlerta } from "../src/services/logsService";
+import { listLogs, listLogsPendentesDeAlerta } from "../src/services/logsService";
+import {
+  findAwaitingByChatIdentifier,
+  findAwaitingByWhatsappMessageId,
+  linkPendingReplyToSendLog,
+  resolvePendingReplyIfAwaiting,
+} from "../src/services/pendingRepliesService";
 
 const prefixo = `TESTE-LOG-${Date.now()}-`;
 
@@ -95,5 +102,70 @@ describe("seleção de envios para alerta de entrega", () => {
   it("mantém a confirmação de entrega para disparos normais", () => {
     const id = inserirEnvio("disparo", "sucesso");
     expect(listLogsPendentesDeAlerta(24).some((log) => log.id === id)).toBe(true);
+  });
+});
+
+describe("correlação da resposta com o Histórico", () => {
+  afterEach(() => {
+    db.prepare("DELETE FROM pending_replies WHERE card_id LIKE ?").run(`${prefixo}%`);
+    db.prepare("DELETE FROM send_logs WHERE card_id LIKE ?").run(`${prefixo}%`);
+  });
+
+  it("encontra o pendente pelo chat completo LID e pelo ID da mensagem citada", () => {
+    const chatId = `${Date.now()}@lid`;
+    const messageId = `true_${Date.now()}@c.us_TESTE`;
+    const info = db.prepare(`
+      INSERT INTO pending_replies
+        (card_id, card_nome, telefone, telefone_digits, whatsapp_chat_id, whatsapp_message_id, status)
+      VALUES (?, 'CLIENTE RESPOSTA', '(13) 99123-8064', '5513991238064', ?, ?, 'aguardando')
+    `).run(`${prefixo}lid`, chatId, messageId);
+
+    expect(findAwaitingByChatIdentifier(chatId)?.id).toBe(Number(info.lastInsertRowid));
+    expect(findAwaitingByWhatsappMessageId(messageId)?.id).toBe(Number(info.lastInsertRowid));
+  });
+
+  it("mostra no Histórico a resposta vinculada diretamente mesmo sem ID do WhatsApp", () => {
+    const cardId = `${prefixo}sem-message-id`;
+    const logInfo = db.prepare(`
+      INSERT INTO send_logs (card_id, card_nome, telefone, status, tipo_envio)
+      VALUES (?, 'CLIENTE RESPOSTA', '(13) 99123-8064', 'sucesso', 'disparo')
+    `).run(cardId);
+    const pendingInfo = db.prepare(`
+      INSERT INTO pending_replies
+        (card_id, card_nome, telefone, telefone_digits, whatsapp_chat_id, whatsapp_message_id, status)
+      VALUES (?, 'CLIENTE RESPOSTA', '(13) 99123-8064', '5513991238064', '5513991238064@c.us', NULL, 'aguardando')
+    `).run(cardId);
+
+    const pendingId = Number(pendingInfo.lastInsertRowid);
+    const logId = Number(logInfo.lastInsertRowid);
+    linkPendingReplyToSendLog(pendingId, logId);
+    expect(resolvePendingReplyIfAwaiting(pendingId, "mensagem", "Boa tarde! Recebi o comunicado.")?.status)
+      .toBe("respondido");
+    expect(resolvePendingReplyIfAwaiting(pendingId, "mensagem", "Evento duplicado")).toBeUndefined();
+
+    expect(listLogs().find((log) => log.id === logId)).toMatchObject({
+      resposta_status: "respondido",
+      resposta_tipo: "mensagem",
+      resposta_preview: "Boa tarde! Recebi o comunicado.",
+    });
+  });
+
+  it("recupera o vínculo de registros antigos pelo mesmo card e horário próximo", () => {
+    const cardId = `${prefixo}migracao`;
+    const logInfo = db.prepare(`
+      INSERT INTO send_logs (card_id, card_nome, telefone, status, tipo_envio, created_at)
+      VALUES (?, 'CLIENTE ANTIGO', '(13) 99123-8064', 'sucesso', 'disparo', '2026-09-09 16:43:55')
+    `).run(cardId);
+    const pendingInfo = db.prepare(`
+      INSERT INTO pending_replies
+        (card_id, card_nome, telefone, telefone_digits, whatsapp_chat_id, status, created_at)
+      VALUES (?, 'CLIENTE ANTIGO', '(13) 99123-8064', '5513991238064', '5513991238064@c.us', 'aguardando', '2026-09-09 16:43:56')
+    `).run(cardId);
+
+    runMigrations(db);
+
+    const pendente = db.prepare("SELECT send_log_id FROM pending_replies WHERE id = ?")
+      .get(pendingInfo.lastInsertRowid) as { send_log_id: number | null };
+    expect(pendente.send_log_id).toBe(Number(logInfo.lastInsertRowid));
   });
 });
