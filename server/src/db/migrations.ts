@@ -64,10 +64,12 @@ export function runMigrations(db: Database.Database): void {
       tipo_resposta TEXT CHECK(tipo_resposta IN ('mensagem','reacao')),
       resposta_preview TEXT,
       whatsapp_message_id TEXT,
+      send_log_id INTEGER,
       ack INTEGER,
       ack_updated_at DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      resolved_at DATETIME
+      resolved_at DATETIME,
+      FOREIGN KEY (send_log_id) REFERENCES send_logs(id) ON DELETE SET NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_pending_replies_telefone_digits ON pending_replies(telefone_digits);
@@ -155,6 +157,7 @@ export function runMigrations(db: Database.Database): void {
     "ALTER TABLE send_logs ADD COLUMN ack_updated_at DATETIME",
     "ALTER TABLE send_logs ADD COLUMN tipo_envio TEXT NOT NULL DEFAULT 'disparo'",
     "ALTER TABLE pending_replies ADD COLUMN whatsapp_message_id TEXT",
+    "ALTER TABLE pending_replies ADD COLUMN send_log_id INTEGER",
     "ALTER TABLE pending_replies ADD COLUMN ack INTEGER",
     "ALTER TABLE pending_replies ADD COLUMN ack_updated_at DATETIME",
     "ALTER TABLE contacts ADD COLUMN processo TEXT",
@@ -183,7 +186,48 @@ export function runMigrations(db: Database.Database): void {
   }
   db.exec("CREATE INDEX IF NOT EXISTS idx_send_logs_whatsapp_message_id ON send_logs(whatsapp_message_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_pending_replies_whatsapp_message_id ON pending_replies(whatsapp_message_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_pending_replies_send_log_id ON pending_replies(send_log_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_contacts_processo_chave ON contacts(processo_chave)");
+
+  // Liga pendentes antigos ao registro correspondente no Histórico. O ID da mensagem é o
+  // critério mais seguro; para versões em que o WhatsApp não devolveu esse ID, usamos o mesmo
+  // card e uma janela curta de criação, pois os dois registros eram gravados em sequência.
+  db.exec(`
+    WITH candidatos AS (
+      SELECT
+        pr.id AS pending_id,
+        sl.id AS log_id,
+        ROW_NUMBER() OVER (
+          PARTITION BY pr.id
+          ORDER BY
+            CASE
+              WHEN pr.whatsapp_message_id IS NOT NULL
+                AND sl.whatsapp_message_id = pr.whatsapp_message_id THEN 0
+              ELSE 1
+            END,
+            ABS(strftime('%s', sl.created_at) - strftime('%s', pr.created_at)),
+            sl.id DESC
+        ) AS ordem
+      FROM pending_replies pr
+      JOIN send_logs sl ON
+        (
+          pr.whatsapp_message_id IS NOT NULL
+          AND sl.whatsapp_message_id = pr.whatsapp_message_id
+        )
+        OR (
+          sl.card_id = pr.card_id
+          AND ABS(strftime('%s', sl.created_at) - strftime('%s', pr.created_at)) <= 300
+        )
+      WHERE pr.send_log_id IS NULL
+    )
+    UPDATE pending_replies
+    SET send_log_id = (
+      SELECT log_id FROM candidatos
+      WHERE candidatos.pending_id = pending_replies.id AND candidatos.ordem = 1
+    )
+    WHERE send_log_id IS NULL
+      AND id IN (SELECT pending_id FROM candidatos WHERE ordem = 1)
+  `);
 
   // Marca quando um alerta de "entrega com problema" (falha no envio, ou entregue não
   // confirmada após X horas) já foi mandado pro Telegram, pra não notificar o mesmo envio
