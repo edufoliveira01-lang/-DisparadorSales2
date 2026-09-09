@@ -229,6 +229,47 @@ function ResumoCalendarioItem({
   );
 }
 
+function ResumoCalendarioGrupo({
+  icon,
+  titulo,
+  descricao,
+  className,
+  children,
+}: {
+  icon: ReactNode;
+  titulo: string;
+  descricao: string;
+  className: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="surface-panel p-2">
+      <div className="flex items-center gap-2 px-2 py-1.5">
+        <span className={cn("inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg [&>svg]:h-4 [&>svg]:w-4", className)}>
+          {icon}
+        </span>
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{titulo}</h2>
+          <p className="text-[11px] text-zinc-400 dark:text-zinc-500">{descricao}</p>
+        </div>
+      </div>
+      <div className="mt-1 grid grid-cols-2 gap-1 border-t border-zinc-100 pt-1 dark:border-zinc-800">
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function contarEventosResumo(eventos: PericiaAgendada[]) {
+  const tipos = eventos.map(classificarTipo);
+  return {
+    total: eventos.length,
+    medicas: tipos.filter((tipo) => tipo.categoria === "pericia_medica").length,
+    sociais: tipos.filter((tipo) => tipo.categoria === "pericia_social").length,
+    audiencias: tipos.filter((tipo) => tipo.audiencia).length,
+  };
+}
+
 export function Calendario() {
   const { show } = useToast();
   const [pericias, setPericias] = useState<PericiaAgendada[] | null>(null);
@@ -395,14 +436,10 @@ export function Calendario() {
   const hoje = hojeYMD();
   const resumo = useMemo(() => {
     const ativos = (pericias ?? []).filter((pericia) => pericia.status !== "substituida");
-    const classificados = ativos.map((pericia) => ({ pericia, tipo: classificarTipo(pericia) }));
+    const hojeEFuturos = ativos.filter((pericia) => diaLocalYMD(pericia.data_hora_ms) >= hoje);
     return {
-      hoje: ativos.filter((pericia) => diaLocalYMD(pericia.data_hora_ms) === hoje).length,
-      total: ativos.length,
-      hojeEFuturos: ativos.filter((pericia) => diaLocalYMD(pericia.data_hora_ms) >= hoje).length,
-      medicas: classificados.filter(({ tipo }) => tipo.categoria === "pericia_medica").length,
-      sociais: classificados.filter(({ tipo }) => tipo.categoria === "pericia_social").length,
-      audiencias: classificados.filter(({ tipo }) => tipo.audiencia).length,
+      todos: contarEventosResumo(ativos),
+      hojeEFuturos: contarEventosResumo(hojeEFuturos),
     };
   }, [pericias, hoje]);
   const buscaAtiva = busca.trim().length > 0;
@@ -454,13 +491,30 @@ export function Calendario() {
         }
       />
 
-      <div className="surface-panel grid grid-cols-2 gap-1 p-1.5 sm:grid-cols-3 xl:grid-cols-6">
-        <ResumoCalendarioItem icon={<Clock />} valor={resumo.hoje} rotulo="Hoje" className="bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400" />
-        <ResumoCalendarioItem icon={<CalendarDays />} valor={resumo.total} rotulo="Total de agendamentos" className="bg-accent-50 text-accent-600 dark:bg-accent-950/50 dark:text-accent-400" />
-        <ResumoCalendarioItem icon={<CalendarRange />} valor={resumo.hojeEFuturos} rotulo="Hoje e futuros" className="bg-cyan-50 text-cyan-600 dark:bg-cyan-950/50 dark:text-cyan-400" />
-        <ResumoCalendarioItem icon={<Stethoscope />} valor={resumo.medicas} rotulo="Perícias médicas" className="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400" />
-        <ResumoCalendarioItem icon={<Users />} valor={resumo.sociais} rotulo="Perícias sociais" className="bg-violet-50 text-violet-600 dark:bg-violet-950/50 dark:text-violet-400" />
-        <ResumoCalendarioItem icon={<Gavel />} valor={resumo.audiencias} rotulo="Audiências" className="bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400" />
+      <div className="grid gap-3 lg:grid-cols-2">
+        <ResumoCalendarioGrupo
+          icon={<CalendarDays />}
+          titulo="Todos os agendamentos"
+          descricao="Inclui datas passadas"
+          className="bg-accent-50 text-accent-600 dark:bg-accent-950/50 dark:text-accent-400"
+        >
+          <ResumoCalendarioItem icon={<CalendarDays />} valor={resumo.todos.total} rotulo="Total" className="bg-accent-50 text-accent-600 dark:bg-accent-950/50 dark:text-accent-400" />
+          <ResumoCalendarioItem icon={<Stethoscope />} valor={resumo.todos.medicas} rotulo="Perícias médicas" className="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400" />
+          <ResumoCalendarioItem icon={<Users />} valor={resumo.todos.sociais} rotulo="Perícias sociais" className="bg-violet-50 text-violet-600 dark:bg-violet-950/50 dark:text-violet-400" />
+          <ResumoCalendarioItem icon={<Gavel />} valor={resumo.todos.audiencias} rotulo="Audiências" className="bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400" />
+        </ResumoCalendarioGrupo>
+
+        <ResumoCalendarioGrupo
+          icon={<CalendarRange />}
+          titulo="Hoje e futuros"
+          descricao="Sem datas passadas"
+          className="bg-cyan-50 text-cyan-600 dark:bg-cyan-950/50 dark:text-cyan-400"
+        >
+          <ResumoCalendarioItem icon={<CalendarRange />} valor={resumo.hojeEFuturos.total} rotulo="Total" className="bg-cyan-50 text-cyan-600 dark:bg-cyan-950/50 dark:text-cyan-400" />
+          <ResumoCalendarioItem icon={<Stethoscope />} valor={resumo.hojeEFuturos.medicas} rotulo="Perícias médicas" className="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400" />
+          <ResumoCalendarioItem icon={<Users />} valor={resumo.hojeEFuturos.sociais} rotulo="Perícias sociais" className="bg-violet-50 text-violet-600 dark:bg-violet-950/50 dark:text-violet-400" />
+          <ResumoCalendarioItem icon={<Gavel />} valor={resumo.hojeEFuturos.audiencias} rotulo="Audiências" className="bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400" />
+        </ResumoCalendarioGrupo>
       </div>
 
       <div className="surface-panel flex flex-col gap-3 p-3 md:flex-row md:items-center md:justify-between md:p-4">
