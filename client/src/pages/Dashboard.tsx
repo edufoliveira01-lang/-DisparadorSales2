@@ -923,6 +923,7 @@ export function Dashboard() {
           carregando={panorama === null}
           vazio="Nenhum compromisso futuro encontrado."
           onVerTudo={() => navigate("/calendario")}
+          expandirLocalmente={false}
         />
       </section>
 
@@ -1456,6 +1457,7 @@ function PainelEventosDashboard({
   onEnviarTodos,
   enviandoId,
   enviandoBatch,
+  expandirLocalmente = true,
 }: {
   titulo: string;
   descricao: string;
@@ -1471,10 +1473,12 @@ function PainelEventosDashboard({
   onEnviarTodos?: () => void;
   enviandoId?: number | null;
   enviandoBatch?: boolean;
+  /** Quando falso, mantém o painel compacto e usa a ação inferior para abrir o Calendário. */
+  expandirLocalmente?: boolean;
 }) {
   const [expandido, setExpandido] = useState(false);
   const limiteInicial = 3;
-  const eventosVisiveis = expandido ? eventos : eventos.slice(0, limiteInicial);
+  const eventosVisiveis = expandirLocalmente && expandido ? eventos : eventos.slice(0, limiteInicial);
 
   return (
     <div className="surface-panel flex h-full flex-col overflow-hidden">
@@ -1583,10 +1587,12 @@ function PainelEventosDashboard({
           {eventos.length > limiteInicial && (
             <button
               type="button"
-              onClick={() => setExpandido((valor) => !valor)}
+              onClick={expandirLocalmente ? () => setExpandido((valor) => !valor) : onVerTudo}
               className="flex w-full items-center justify-center gap-1 px-4 py-3 text-xs font-medium text-accent-700 hover:bg-accent-50/60 dark:text-accent-300 dark:hover:bg-accent-900/20"
             >
-              {expandido ? (
+              {!expandirLocalmente ? (
+                <><ArrowRight className="h-3.5 w-3.5" /> Ver mais no calendário</>
+              ) : expandido ? (
                 <><ChevronUp className="h-3.5 w-3.5" /> Mostrar menos</>
               ) : (
                 <><ChevronDown className="h-3.5 w-3.5" /> Mostrar mais {eventos.length - limiteInicial}</>
