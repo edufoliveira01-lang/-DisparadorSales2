@@ -2,6 +2,7 @@ import { db } from "../db";
 import { randomUUID } from "node:crypto";
 import { normalizePhone } from "../utils/phone";
 import { parseBrazilianDate, type Pericia } from "./parserService";
+import { scheduleGoogleCalendarDelete, scheduleGoogleCalendarSync } from "./googleCalendarService";
 
 export type PericiaAgendadaStatus = "ativa" | "substituida";
 export type PericiaAgendadaFonte = "whatsapp" | "trello_sync";
@@ -194,7 +195,9 @@ export function registrarPericiaAgendadaComResultado(
       profissional_perito: pericia.profissionalPerito || "",
       fonte,
     });
-    return { status: "duplicada", pericia: getStmt.get(duplicada.id) as PericiaAgendada };
+    const periciaAtualizada = getStmt.get(duplicada.id) as PericiaAgendada;
+    scheduleGoogleCalendarSync(periciaAtualizada.id);
+    return { status: "duplicada", pericia: periciaAtualizada };
   }
 
   // Sem telefone e processo, restringe a busca de reagendamento ao mesmo card para não unir
@@ -226,7 +229,10 @@ export function registrarPericiaAgendadaComResultado(
 
   for (const anterior of anteriores) {
     supersedeStmt.run(nova.id, anterior.id);
+    scheduleGoogleCalendarDelete(anterior.id);
   }
+
+  scheduleGoogleCalendarSync(nova.id);
 
   return { status: "criada", pericia: nova };
 }
@@ -241,7 +247,7 @@ export function registrarPericiaAgendada(
 
 /** Apaga em definitivo. Retorna false se o id não existia. */
 export function deletePericiaAgendada(id: number): boolean {
-  return db.transaction((registroId: number) => {
+  const apagou = db.transaction((registroId: number) => {
     const atual = getStmt.get(registroId) as PericiaAgendada | undefined;
     if (!atual) return false;
 
@@ -251,6 +257,8 @@ export function deletePericiaAgendada(id: number): boolean {
     relinkSubstituidasStmt.run(atual.substituida_por_id ?? null, registroId);
     return deleteStmt.run(registroId).changes > 0;
   })(id);
+  if (apagou) scheduleGoogleCalendarDelete(id);
+  return apagou;
 }
 
 /** Todas as entradas (ativas e substituídas) — a tela decide o que mostrar por padrão. */
@@ -339,7 +347,9 @@ export function createPericiaAgendadaManual(dados: AtualizacaoPericiaAgendada): 
     // em card_id identifica a criação direta sem exigir migração destrutiva da tabela.
     fonte: "whatsapp",
   });
-  return getStmt.get(info.lastInsertRowid) as PericiaAgendada;
+  const criada = getStmt.get(info.lastInsertRowid) as PericiaAgendada;
+  scheduleGoogleCalendarSync(criada.id);
+  return criada;
 }
 
 /** Atualiza um evento existente sem criar uma nova linha no calendário. */
@@ -347,7 +357,7 @@ export function updatePericiaAgendada(
   id: number,
   dados: AtualizacaoPericiaAgendada
 ): ResultadoAtualizacaoPericiaAgendada | undefined {
-  return db.transaction(() => {
+  const resultado = db.transaction(() => {
     const atual = getStmt.get(id) as PericiaAgendada | undefined;
     if (!atual) return undefined;
 
@@ -421,6 +431,8 @@ export function updatePericiaAgendada(
       lembrete_resetado: lembreteResetado,
     };
   })();
+  if (resultado) scheduleGoogleCalendarSync(resultado.pericia.id);
+  return resultado;
 }
 
 export function marcarLembreteEnviado(ids: number[], logId: number): void {
