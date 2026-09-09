@@ -8,12 +8,13 @@ interface ModalProps {
   onClose: () => void;
   title: string;
   description?: string;
+  headerActions?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
   maxWidth?: string;
 }
 
-export function Modal({ open, onClose, title, description, children, footer, maxWidth = "max-w-lg" }: ModalProps) {
+export function Modal({ open, onClose, title, description, headerActions, children, footer, maxWidth = "max-w-lg" }: ModalProps) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -36,13 +37,17 @@ export function Modal({ open, onClose, title, description, children, footer, max
           maxWidth
         )}
       >
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{title}</h2>
-            {description && <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{description}</p>}
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="flex min-w-0 flex-1 items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{title}</h2>
+              {description && <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{description}</p>}
+            </div>
+            {headerActions && <div className="flex shrink-0 items-center gap-1">{headerActions}</div>}
           </div>
           <button
             onClick={onClose}
+            aria-label="Fechar"
             className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"
           >
             <X className="h-5 w-5" />
