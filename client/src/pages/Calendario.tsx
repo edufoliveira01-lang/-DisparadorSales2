@@ -1,5 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CalendarDays, CalendarPlus, ChevronDown, ChevronLeft, ChevronRight, Clock, FileText, Gavel, History, MapPin, Pencil, Phone, RefreshCw, Save, Search, Stethoscope, Trash2, Users, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, CalendarPlus, CalendarRange, ChevronDown, ChevronLeft, ChevronRight, Clock, FileText, Gavel, History, MapPin, Pencil, Phone, RefreshCw, Save, Search, Stethoscope, Trash2, Users, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay, formatPhoneInput } from "@/lib/phone";
 import { cn } from "@/lib/utils";
@@ -399,6 +399,7 @@ export function Calendario() {
     return {
       hoje: ativos.filter((pericia) => diaLocalYMD(pericia.data_hora_ms) === hoje).length,
       total: ativos.length,
+      hojeEFuturos: ativos.filter((pericia) => diaLocalYMD(pericia.data_hora_ms) >= hoje).length,
       medicas: classificados.filter(({ tipo }) => tipo.categoria === "pericia_medica").length,
       sociais: classificados.filter(({ tipo }) => tipo.categoria === "pericia_social").length,
       audiencias: classificados.filter(({ tipo }) => tipo.audiencia).length,
@@ -453,9 +454,10 @@ export function Calendario() {
         }
       />
 
-      <div className="surface-panel grid grid-cols-2 gap-1 p-1.5 sm:grid-cols-3 xl:grid-cols-5">
+      <div className="surface-panel grid grid-cols-2 gap-1 p-1.5 sm:grid-cols-3 xl:grid-cols-6">
         <ResumoCalendarioItem icon={<Clock />} valor={resumo.hoje} rotulo="Hoje" className="bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400" />
         <ResumoCalendarioItem icon={<CalendarDays />} valor={resumo.total} rotulo="Total de agendamentos" className="bg-accent-50 text-accent-600 dark:bg-accent-950/50 dark:text-accent-400" />
+        <ResumoCalendarioItem icon={<CalendarRange />} valor={resumo.hojeEFuturos} rotulo="Hoje e futuros" className="bg-cyan-50 text-cyan-600 dark:bg-cyan-950/50 dark:text-cyan-400" />
         <ResumoCalendarioItem icon={<Stethoscope />} valor={resumo.medicas} rotulo="Perícias médicas" className="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400" />
         <ResumoCalendarioItem icon={<Users />} valor={resumo.sociais} rotulo="Perícias sociais" className="bg-violet-50 text-violet-600 dark:bg-violet-950/50 dark:text-violet-400" />
         <ResumoCalendarioItem icon={<Gavel />} valor={resumo.audiencias} rotulo="Audiências" className="bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400" />
@@ -733,15 +735,15 @@ export function Calendario() {
         open={diaSelecionado !== null}
         onClose={() => setDiaSelecionado(null)}
         title={diaSelecionado ? formatarTituloDia(diaSelecionado) : ""}
-        headerActions={
-          <>
-            <Button variant="outline" size="icon" onClick={() => navegarDiaSelecionado(-1)} title="Dia anterior" aria-label="Dia anterior">
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button variant="outline" size="icon" onClick={() => navegarDiaSelecionado(1)} title="Próximo dia" aria-label="Próximo dia">
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </>
+        leftAction={
+          <Button variant="outline" size="icon" onClick={() => navegarDiaSelecionado(-1)} title="Dia anterior" aria-label="Dia anterior" className="rounded-full shadow-lg">
+            <ChevronLeft className="h-5 w-5" />
+          </Button>
+        }
+        rightAction={
+          <Button variant="outline" size="icon" onClick={() => navegarDiaSelecionado(1)} title="Próximo dia" aria-label="Próximo dia" className="rounded-full shadow-lg">
+            <ChevronRight className="h-5 w-5" />
+          </Button>
         }
         footer={
           <Button onClick={() => diaSelecionado && abrirNovoEvento(diaSelecionado)}>
