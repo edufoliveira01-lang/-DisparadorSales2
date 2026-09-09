@@ -17,6 +17,7 @@ import { systemLogsRouter } from "./routes/systemLogs";
 import { templatesRouter } from "./routes/templates";
 import { trelloRouter } from "./routes/trello";
 import { whatsappRouter } from "./routes/whatsapp";
+import { googleCalendarRouter } from "./routes/googleCalendar";
 import { initWebsocket } from "./websocket";
 import { whatsappManager } from "./services/whatsappService";
 import { verificarNotificacoesPendentes } from "./services/notificationService";
@@ -62,6 +63,7 @@ app.use("/api/logs", logsRouter);
 app.use("/api/system-logs", systemLogsRouter);
 app.use("/api/pending-replies", pendingRepliesRouter);
 app.use("/api/pericias-agendadas", periciasAgendadasRouter);
+app.use("/api/google-calendar", googleCalendarRouter);
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });

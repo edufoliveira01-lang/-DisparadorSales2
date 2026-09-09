@@ -40,6 +40,7 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useTheme } from "@/context/ThemeContext";
 import { cn } from "@/lib/utils";
+import { GoogleCalendarSettings } from "@/components/GoogleCalendarSettings";
 
 interface TrelloBoard {
   id: string;
@@ -870,6 +871,8 @@ export function Configuracoes() {
             </Button>
           </div>
       </CollapsibleCard>
+
+      <GoogleCalendarSettings />
 
       <CollapsibleCard
         icon={<MessageCircle className="h-4 w-4 text-emerald-500" />}

@@ -121,6 +121,24 @@ export function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_pericias_agendadas_status ON pericias_agendadas(status);
     CREATE INDEX IF NOT EXISTS idx_pericias_agendadas_chave ON pericias_agendadas(tipo_chave, nome_chave, telefone_digits, processo_chave);
 
+    CREATE TABLE IF NOT EXISTS google_calendar_event_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pericia_id INTEGER NOT NULL,
+      destination INTEGER NOT NULL CHECK(destination IN (1, 2)),
+      calendar_id TEXT NOT NULL,
+      google_event_id TEXT NOT NULL,
+      sync_status TEXT NOT NULL DEFAULT 'sincronizado' CHECK(sync_status IN ('sincronizado','pendente','erro')),
+      last_error TEXT,
+      synced_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(pericia_id, destination)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_google_calendar_links_pericia ON google_calendar_event_links(pericia_id);
+    CREATE INDEX IF NOT EXISTS idx_google_calendar_links_status ON google_calendar_event_links(sync_status);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_google_calendar_links_remote_unique ON google_calendar_event_links(calendar_id, google_event_id);
+
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT UNIQUE NOT NULL,

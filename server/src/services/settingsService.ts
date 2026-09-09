@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { db } from "../db";
 
-const ENCRYPTED_KEYS = new Set(["trello_token", "telegram_bot_token", "whapi_token"]);
+const ENCRYPTED_KEYS = new Set(["trello_token", "telegram_bot_token", "whapi_token", "google_refresh_token"]);
 
 function getEncryptionKey(): Buffer {
   const secret = process.env.ENCRYPTION_KEY || "chave-padrao-nao-segura-troque-no-env";
@@ -32,6 +32,7 @@ const upsertStmt = db.prepare(
 );
 const getStmt = db.prepare("SELECT valor FROM settings WHERE chave = ?");
 const getAllStmt = db.prepare("SELECT chave, valor FROM settings");
+const deleteStmt = db.prepare("DELETE FROM settings WHERE chave = ?");
 
 export function setSetting(chave: string, valor: string): void {
   const stored = ENCRYPTED_KEYS.has(chave) ? encrypt(valor) : valor;
@@ -57,4 +58,8 @@ export function getAllSettings(): Record<string, string> {
     }
   }
   return result;
+}
+
+export function deleteSetting(chave: string): void {
+  deleteStmt.run(chave);
 }

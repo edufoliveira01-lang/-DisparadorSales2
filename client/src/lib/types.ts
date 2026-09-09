@@ -124,6 +124,74 @@ export interface Settings {
   lembrete_futuro_mensagem: string;
 }
 
+export type GoogleCalendarTitleFormat = "tipo_nome" | "nome_tipo" | "somente_nome" | "tipo_processo";
+
+export interface GoogleCalendarDestinationConfig {
+  destination: 1 | 2;
+  enabled: boolean;
+  calendarId: string;
+  calendarName: string;
+  titleFormat: GoogleCalendarTitleFormat;
+  includePhone: boolean;
+  includeProcess: boolean;
+  includeProfessional: boolean;
+  includeLocation: boolean;
+  visibility: "default" | "private";
+  transparency: "opaque" | "transparent";
+  reminderMinutes: number[];
+  colorId: string;
+}
+
+export interface GoogleCalendarConfig {
+  syncEnabled: boolean;
+  durationMinutes: number;
+  destinations: [GoogleCalendarDestinationConfig, GoogleCalendarDestinationConfig];
+}
+
+export interface GoogleCalendarStatus {
+  serverConfigured: boolean;
+  connected: boolean;
+  accountEmail: string | null;
+  config: GoogleCalendarConfig;
+  linkedEvents: number;
+  syncErrors: number;
+  lastSync: string | null;
+}
+
+export interface GoogleCalendarListItem {
+  id: string;
+  summary: string;
+  primary: boolean;
+  accessRole: string;
+  backgroundColor?: string;
+}
+
+export interface GoogleCalendarAnalysisDestination {
+  destination: 1 | 2;
+  calendarName: string;
+  total: number;
+  linked: number;
+  matched: number;
+  missing: number;
+  conflicts: number;
+  conflictItems: Array<{ periciaId: number; nome: string; data: string; horario: string | null }>;
+}
+
+export interface GoogleCalendarAnalysis {
+  totalEvents: number;
+  destinations: GoogleCalendarAnalysisDestination[];
+}
+
+export interface GoogleCalendarSyncResult {
+  total: number;
+  linked: number;
+  created: number;
+  updated: number;
+  deleted: number;
+  conflicts: number;
+  errors: number;
+}
+
 export interface PericiaAgendada {
   id: number;
   card_id: string;
