@@ -13,6 +13,7 @@ import {
   MessageSquareReply,
   Settings,
   Send,
+  ScrollText,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -26,6 +27,7 @@ const itemsAntesTemplates = [
 const itemsDepoisTemplates = [
   { to: "/historico", label: "Histórico", icon: History },
   { to: "/pendentes", label: "Pendentes de Resposta", icon: MessageSquareReply },
+  { to: "/logs", label: "Logs", icon: ScrollText },
   { to: "/configuracoes", label: "Configurações", icon: Settings },
 ];
 
