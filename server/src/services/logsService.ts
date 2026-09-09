@@ -19,9 +19,9 @@ export interface SendLog {
   ack_updated_at: string | null;
   tipo_envio: "disparo" | "lembrete";
   created_at: string;
-  /** Dados do pending_reply correlato (mesmo whatsapp_message_id), quando esse envio estava sob
-   * monitoramento de resposta (lista de confirmação configurada no Trello). Vem de um LEFT JOIN —
-   * undefined/null em todos quando não há (ou nunca houve) monitoramento para esse envio. */
+  /** Dados do pending_reply correlato pelo vínculo direto ou pelo whatsapp_message_id legado,
+   * quando esse envio estava sob monitoramento de resposta (lista de confirmação configurada no
+   * Trello). Vem de um LEFT JOIN — undefined/null quando nunca houve monitoramento. */
   resposta_status?: "aguardando" | "respondido" | "cancelado" | null;
   resposta_resolved_at?: string | null;
   resposta_tipo?: "mensagem" | "reacao" | null;
@@ -45,9 +45,9 @@ const insertStmt = db.prepare(
   `INSERT INTO send_logs (card_id, card_nome, contact_id, telefone, pericias_json, mensagem_enviada, status, erro, whatsapp_message_id, tipo_envio)
    VALUES (@card_id, @card_nome, @contact_id, @telefone, @pericias_json, @mensagem_enviada, @status, @erro, @whatsapp_message_id, @tipo_envio)`
 );
-// LEFT JOIN pending_replies pelo mesmo whatsapp_message_id: quando esse envio estava sob
-// monitoramento de resposta, o Histórico passa a enxergar se/quando/como o cliente respondeu,
-// sem precisar de uma segunda consulta por linha.
+// LEFT JOIN pelo vínculo direto; whatsapp_message_id fica como compatibilidade para registros
+// antigos. Assim o Histórico enxerga a resposta mesmo quando a API do WhatsApp não devolveu o ID
+// da mensagem no momento do envio.
 const listStmt = db.prepare(`
   SELECT
     send_logs.*,
@@ -56,7 +56,13 @@ const listStmt = db.prepare(`
     pending_replies.tipo_resposta AS resposta_tipo,
     pending_replies.resposta_preview AS resposta_preview
   FROM send_logs
-  LEFT JOIN pending_replies ON pending_replies.whatsapp_message_id = send_logs.whatsapp_message_id
+  LEFT JOIN pending_replies ON
+    pending_replies.send_log_id = send_logs.id
+    OR (
+      pending_replies.send_log_id IS NULL
+      AND pending_replies.whatsapp_message_id IS NOT NULL
+      AND pending_replies.whatsapp_message_id = send_logs.whatsapp_message_id
+    )
   ORDER BY send_logs.created_at DESC, send_logs.id DESC
 `);
 const lastForCardStmt = db.prepare("SELECT * FROM send_logs WHERE card_id = ? ORDER BY created_at DESC, id DESC LIMIT 1");

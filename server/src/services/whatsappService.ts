@@ -5,7 +5,6 @@ import QRCode from "qrcode";
 import { Client, LocalAuth, type Message, type Reaction } from "whatsapp-web.js";
 import { dataDir } from "../db";
 import { emitEvent } from "../websocket";
-import { normalizePhone } from "../utils/phone";
 import { getSetting } from "./settingsService";
 import { enviarMensagemTelegram } from "./telegramService";
 import { recordSystemLog } from "./systemLogsService";
@@ -19,9 +18,10 @@ import {
   normalizarMotivoDesconexao,
 } from "./whatsappConnectionPolicy";
 import {
-  findAwaitingByPhoneDigits,
+  findAwaitingByChatIdentifier,
+  findAwaitingByWhatsappMessageId,
   listPendingReplies,
-  resolvePendingReply,
+  resolvePendingReplyIfAwaiting,
   updatePendingReplyAckByMessageId,
   type PendingReply,
   type TipoResposta,
@@ -745,10 +745,10 @@ class WhatsappManager {
 
     // "message" só dispara para mensagens recebidas (não inclui as que o próprio bot envia).
     // Chega uma mensagem de QUALQUER conversa; o filtro por "está esperando resposta desse
-    // telefone" acontece dentro de resolvePendingReplyForPhone.
+    // telefone/conversa" acontece dentro de resolvePendingReplyForMessage.
     client.on("message", (message: Message) => {
       if (message.fromMe || message.from.endsWith("@g.us")) return;
-      this.resolvePendingReplyForPhone(message.from, "mensagem", message.body ? message.body.slice(0, 300) : null).catch(
+      this.resolvePendingReplyForMessage(message).catch(
         (err) => console.error("Erro ao processar mensagem recebida:", err)
       );
     });
@@ -758,18 +758,23 @@ class WhatsappManager {
     // quando o cliente remove a reação, então também ignoramos esse caso.
     client.on("message_reaction", (reaction: Reaction) => {
       if (!reaction.msgId.fromMe || !reaction.reaction) return;
-      this.resolvePendingReplyForPhone(reaction.senderId, "reacao", reaction.reaction).catch((err) =>
+      this.resolvePendingReplyForReaction(reaction).catch((err) =>
         console.error("Erro ao processar reação recebida:", err)
       );
     });
 
-    // "message_create" dispara para toda mensagem criada, incluindo as que nós mesmos enviamos
-    // (fromMe) — ao contrário do retorno de client.sendMessage(), que às vezes vem vazio mesmo
-    // com o envio ok, esse evento chega por um caminho totalmente separado (o listener da
-    // própria página do WhatsApp Web), então é o fallback usado para capturar o id real da
-    // mensagem quando o retorno direto falha (ver sendMessage()/aguardarIdViaMessageCreate()).
+    // "message_create" dispara para toda mensagem criada. Para mensagens recebidas, funciona
+    // como redundância do evento "message" (a resolução é idempotente: depois da primeira, o
+    // pendente deixa de estar em "aguardando"). Para mensagens nossas, é o fallback que captura
+    // o ID real quando o retorno direto de client.sendMessage() vem vazio.
     client.on("message_create", (message: Message) => {
-      if (!message.fromMe) return;
+      if (!message.fromMe) {
+        if (message.from.endsWith("@g.us")) return;
+        this.resolvePendingReplyForMessage(message).catch((err) =>
+          console.error("Erro ao processar mensagem recebida pelo fallback:", err)
+        );
+        return;
+      }
 
       const toDigits = message.to.split("@")[0];
       console.log(`[WhatsApp] message_create detectado (fromMe) para: ${toDigits}`);
@@ -1145,39 +1150,80 @@ class WhatsappManager {
   }
 
   private async verificarMensagemPerdida(client: Client, pendente: PendingReply): Promise<void> {
-    // Preferimos o chat id completo já resolvido no envio original (funciona mesmo quando o
-    // contato usa "LID" em vez de telefone). Só re-resolvemos via telefone_digits para
-    // registros antigos, criados antes desse campo existir.
-    let chatIdSerialized = pendente.whatsapp_chat_id;
-    if (!chatIdSerialized) {
-      const numberId = await this.comRetryTransitorio(() => client.getNumberId(pendente.telefone_digits));
-      if (!numberId) return;
-      chatIdSerialized = numberId._serialized;
-    }
-
-    const chat = await client.getChatById(chatIdSerialized);
-    const mensagens = await chat.fetchMessages({ limit: 50, fromMe: false });
-
     // created_at do SQLite vem como "YYYY-MM-DD HH:MM:SS" em UTC, sem indicação de fuso —
     // sem o "Z", o Date trataria como horário local e compararia timestamps errado.
     const criadoEmMs = new Date(`${pendente.created_at.replace(" ", "T")}Z`).getTime();
-    const resposta = mensagens.find((m) => m.timestamp * 1000 >= criadoEmMs);
-    if (!resposta) return;
+    const chatIds = new Set<string>();
+    if (pendente.whatsapp_chat_id) chatIds.add(pendente.whatsapp_chat_id);
 
-    await this.resolvePendingReplyForPhone(chatIdSerialized, "mensagem", resposta.body ? resposta.body.slice(0, 300) : null);
+    // Resolve novamente o telefone porque o WhatsApp pode ter migrado a conversa de @c.us para
+    // @lid depois do envio original. Mantemos os dois candidatos para recuperar a resposta em
+    // instalações que atravessaram essa migração.
+    const numberId = await this.comRetryTransitorio(() => client.getNumberId(pendente.telefone_digits)).catch(() => null);
+    if (numberId) chatIds.add(numberId._serialized);
+
+    for (const chatId of chatIds) {
+      try {
+        const chat = await client.getChatById(chatId);
+        const mensagens = await chat.fetchMessages({ limit: 50, fromMe: false });
+        const resposta = mensagens.find((m) => !m.fromMe && m.timestamp * 1000 >= criadoEmMs);
+        if (!resposta) continue;
+
+        await this.finalizarPendingReply(pendente, "mensagem", resposta.body ? resposta.body.slice(0, 300) : null);
+        return;
+      } catch {
+        // Um dos aliases pode não existir mais; tentamos o próximo antes de desistir.
+      }
+    }
   }
 
   /**
-   * Casa o remetente de uma mensagem/reação recebida com um pendente "aguardando" pelo mesmo
-   * telefone (criado em dispatchService ao enviar, quando há lista de confirmação configurada).
-   * Sem pendente para esse telefone, a mensagem é apenas ignorada — não há nada para mover.
+   * Prioriza o vínculo inequívoco com a mensagem citada. Se a resposta não for uma citação,
+   * tenta o chat completo, os dígitos e por fim os aliases retornados pelo contato do WhatsApp.
+   * Esta última etapa cobre conversas que chegam como @lid embora tenham sido abertas como @c.us.
    */
-  private async resolvePendingReplyForPhone(chatId: string, tipo: TipoResposta, preview: string | null): Promise<void> {
-    const telefoneDigits = normalizePhone(chatId.split("@")[0]);
-    const pending = findAwaitingByPhoneDigits(telefoneDigits);
-    if (!pending) return;
+  private async resolvePendingReplyForMessage(message: Message): Promise<void> {
+    let pending: PendingReply | undefined;
 
-    const resolved = resolvePendingReply(pending.id, tipo, preview);
+    if (message.hasQuotedMsg) {
+      try {
+        const citada = await message.getQuotedMessage();
+        pending = findAwaitingByWhatsappMessageId(citada.id._serialized);
+      } catch {
+        // A mensagem citada pode já ter saído do cache local; seguimos com os demais critérios.
+      }
+    }
+
+    pending ??= this.findPendingReplyByChatId(message.from);
+
+    if (!pending) {
+      try {
+        const contato = await message.getContact();
+        pending = this.findPendingReplyByChatId(contato.id._serialized)
+          ?? this.findPendingReplyByChatId(contato.number);
+      } catch {
+        // Nem toda mensagem permite carregar o contato; o evento continua sendo ignorado sem erro.
+      }
+    }
+
+    if (!pending) return;
+    await this.finalizarPendingReply(pending, "mensagem", message.body ? message.body.slice(0, 300) : null);
+  }
+
+  private async resolvePendingReplyForReaction(reaction: Reaction): Promise<void> {
+    const pending = findAwaitingByWhatsappMessageId(reaction.msgId._serialized)
+      ?? this.findPendingReplyByChatId(reaction.senderId);
+    if (!pending) return;
+    await this.finalizarPendingReply(pending, "reacao", reaction.reaction);
+  }
+
+  private findPendingReplyByChatId(chatId: string): PendingReply | undefined {
+    return findAwaitingByChatIdentifier(chatId);
+  }
+
+  private async finalizarPendingReply(pending: PendingReply, tipo: TipoResposta, preview: string | null): Promise<void> {
+    const resolved = resolvePendingReplyIfAwaiting(pending.id, tipo, preview);
+    if (!resolved) return;
     emitEvent("pendingReply:resolved", resolved);
 
     const trelloKey = getSetting("trello_key");
