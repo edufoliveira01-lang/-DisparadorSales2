@@ -1,12 +1,23 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { db } from "../src/db";
 import { createSystemLog, listSystemLogs, recordSystemLog } from "../src/services/systemLogsService";
+import { listLogsPendentesDeAlerta } from "../src/services/logsService";
 
 const prefixo = `TESTE-LOG-${Date.now()}-`;
+
+function inserirEnvio(tipoEnvio: "disparo" | "lembrete", status: "sucesso" | "falha"): number {
+  const info = db.prepare(`
+    INSERT INTO send_logs
+      (card_id, card_nome, status, tipo_envio, ack, alerta_entrega_enviado_em, created_at)
+    VALUES (?, 'CLIENTE TESTE', ?, ?, NULL, NULL, datetime('now', '-30 hours'))
+  `).run(`${prefixo}${tipoEnvio}-${status}`, status, tipoEnvio);
+  return Number(info.lastInsertRowid);
+}
 
 describe("logs de sistema", () => {
   afterEach(() => {
     db.prepare("DELETE FROM system_logs WHERE titulo LIKE ?").run(`${prefixo}%`);
+    db.prepare("DELETE FROM send_logs WHERE card_id LIKE ?").run(`${prefixo}%`);
   });
 
   it("registra origem, nível e detalhes estruturados", () => {
@@ -63,5 +74,26 @@ describe("logs de sistema", () => {
       origem: "sistema",
     });
     expect(criado?.titulo).toBe(`${prefixo}seguro`);
+  });
+});
+
+describe("seleção de envios para alerta de entrega", () => {
+  afterEach(() => {
+    db.prepare("DELETE FROM send_logs WHERE card_id LIKE ?").run(`${prefixo}%`);
+  });
+
+  it("não alerta lembrete bem-sucedido apenas por falta de confirmação técnica", () => {
+    const id = inserirEnvio("lembrete", "sucesso");
+    expect(listLogsPendentesDeAlerta(24).some((log) => log.id === id)).toBe(false);
+  });
+
+  it("continua alertando quando o envio do lembrete falha de fato", () => {
+    const id = inserirEnvio("lembrete", "falha");
+    expect(listLogsPendentesDeAlerta(24).some((log) => log.id === id)).toBe(true);
+  });
+
+  it("mantém a confirmação de entrega para disparos normais", () => {
+    const id = inserirEnvio("disparo", "sucesso");
+    expect(listLogsPendentesDeAlerta(24).some((log) => log.id === id)).toBe(true);
   });
 });

@@ -106,6 +106,8 @@ export function updateLogAckByMessageId(whatsappMessageId: string, ack: number):
 /**
  * Envios com problema de entrega ainda não notificados: falha no envio (alerta imediato) ou
  * "enviado" há mais de horasLimite horas sem confirmar entrega (ack ainda não chegou a 2).
+ * Lembretes bem-sucedidos não entram na espera por confirmação: eles são mensagens informativas
+ * e só geram alerta quando o próprio envio falha de fato.
  * Usado pela verificação periódica que avisa no Telegram.
  */
 export function listLogsPendentesDeAlerta(horasLimite: number): SendLog[] {
@@ -115,7 +117,12 @@ export function listLogsPendentesDeAlerta(horasLimite: number): SendLog[] {
        WHERE alerta_entrega_enviado_em IS NULL
          AND (
            status = 'falha'
-           OR (status = 'sucesso' AND (ack IS NULL OR ack < 2) AND created_at <= datetime('now', '-' || ? || ' hours'))
+           OR (
+             tipo_envio != 'lembrete'
+             AND status = 'sucesso'
+             AND (ack IS NULL OR ack < 2)
+             AND created_at <= datetime('now', '-' || ? || ' hours')
+           )
          )
        ORDER BY created_at ASC`
     )

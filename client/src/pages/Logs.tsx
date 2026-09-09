@@ -111,6 +111,7 @@ function ackDescricao(ack?: number | null): string {
 
 function DetalhesNotificacao({ detalhes }: { detalhes: DetalhesLog }) {
   const itens = detalhes.envios ?? detalhes.pendentes ?? [];
+  const rotuloItem = detalhes.envios ? "Envio" : "Pendente";
   const camposConhecidos = new Set(["tipo_verificacao", "horas_limite", "detectado_em", "canais", "envios", "pendentes"]);
   const extras = Object.fromEntries(Object.entries(detalhes).filter(([chave]) => !camposConhecidos.has(chave)));
 
@@ -167,7 +168,7 @@ function DetalhesNotificacao({ detalhes }: { detalhes: DetalhesLog }) {
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <p className="font-semibold text-zinc-900 dark:text-zinc-100">
-                      {item.id ? `#${item.id} · ` : ""}{item.cliente || "Cliente sem nome"}
+                      {item.id ? `${rotuloItem} #${item.id} · ` : ""}{item.cliente || "Cliente sem nome"}
                     </p>
                     <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{formatarTelefone(item.telefone)}</p>
                   </div>
@@ -300,7 +301,7 @@ export function Logs() {
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge tone={nivelVisual.tone}>{nivelVisual.label}</Badge>
                         <Badge>{log.categoria}</Badge>
-                        <span className="text-xs text-zinc-400">#{log.id}</span>
+                        <span className="text-xs text-zinc-400">Registro #{log.id}</span>
                       </div>
                       <h2 className="mt-2 font-semibold text-zinc-900 dark:text-zinc-100">{log.titulo}</h2>
                       {log.mensagem && <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{log.mensagem}</p>}
