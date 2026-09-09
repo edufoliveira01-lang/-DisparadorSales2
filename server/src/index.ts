@@ -13,6 +13,7 @@ import { pendingRepliesRouter } from "./routes/pendingReplies";
 import { periciasAgendadasRouter } from "./routes/periciasAgendadas";
 import { sendRouter } from "./routes/send";
 import { settingsRouter } from "./routes/settings";
+import { systemLogsRouter } from "./routes/systemLogs";
 import { templatesRouter } from "./routes/templates";
 import { trelloRouter } from "./routes/trello";
 import { whatsappRouter } from "./routes/whatsapp";
@@ -20,6 +21,7 @@ import { initWebsocket } from "./websocket";
 import { whatsappManager } from "./services/whatsappService";
 import { verificarNotificacoesPendentes } from "./services/notificationService";
 import { podarPericiasAgendadasAntigas } from "./services/periciasAgendadasService";
+import { recordSystemLog } from "./services/systemLogsService";
 
 const app = express();
 app.use(cors({
@@ -57,6 +59,7 @@ app.use("/api/whatsapp", whatsappRouter);
 app.use("/api/cards", cardsRouter);
 app.use("/api/send", sendRouter);
 app.use("/api/logs", logsRouter);
+app.use("/api/system-logs", systemLogsRouter);
 app.use("/api/pending-replies", pendingRepliesRouter);
 app.use("/api/pericias-agendadas", periciasAgendadasRouter);
 
@@ -66,6 +69,15 @@ app.get("/api/health", (_req, res) => {
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error("[erro não tratado]", err);
+  recordSystemLog({
+    nivel: "erro",
+    categoria: "sistema",
+    evento: "erro_http_nao_tratado",
+    titulo: "Erro interno não tratado",
+    mensagem: err.message,
+    origem: "sistema",
+    detalhes: { rota: _req.originalUrl, metodo: _req.method, nome: err.name },
+  });
   res.status(500).json({ error: "Erro interno do servidor." });
 });
 
@@ -86,11 +98,31 @@ httpServer.listen(port, () => {
 // depois a cada 30 minutos — frequência de sobra para prazos de alerta medidos em horas.
 const INTERVALO_VERIFICACAO_MS = 30 * 60 * 1000;
 setTimeout(
-  () => verificarNotificacoesPendentes().catch((err) => console.error("[Notificações] Erro na verificação inicial:", err)),
+  () => verificarNotificacoesPendentes("inicializacao").catch((err) => {
+    console.error("[Notificações] Erro na verificação inicial:", err);
+    recordSystemLog({
+      nivel: "erro",
+      categoria: "notificacao",
+      evento: "falha_verificacao_inicial",
+      titulo: "Falha na verificação inicial de notificações",
+      mensagem: (err as Error).message,
+      origem: "automatico",
+    });
+  }),
   60_000
 );
 setInterval(
-  () => verificarNotificacoesPendentes().catch((err) => console.error("[Notificações] Erro na verificação periódica:", err)),
+  () => verificarNotificacoesPendentes("periodica").catch((err) => {
+    console.error("[Notificações] Erro na verificação periódica:", err);
+    recordSystemLog({
+      nivel: "erro",
+      categoria: "notificacao",
+      evento: "falha_verificacao_periodica",
+      titulo: "Falha na verificação periódica de notificações",
+      mensagem: (err as Error).message,
+      origem: "automatico",
+    });
+  }),
   INTERVALO_VERIFICACAO_MS
 );
 

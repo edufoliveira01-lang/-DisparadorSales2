@@ -73,6 +73,21 @@ export function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_pending_replies_telefone_digits ON pending_replies(telefone_digits);
     CREATE INDEX IF NOT EXISTS idx_pending_replies_status ON pending_replies(status);
 
+    CREATE TABLE IF NOT EXISTS system_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nivel TEXT NOT NULL CHECK(nivel IN ('info','aviso','erro')),
+      categoria TEXT NOT NULL,
+      evento TEXT NOT NULL,
+      titulo TEXT NOT NULL,
+      mensagem TEXT,
+      origem TEXT NOT NULL CHECK(origem IN ('automatico','usuario','sistema')),
+      detalhes_json TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_system_logs_created_at ON system_logs(created_at);
+    CREATE INDEX IF NOT EXISTS idx_system_logs_categoria ON system_logs(categoria);
+
     CREATE TABLE IF NOT EXISTS pericias_agendadas (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       card_id TEXT NOT NULL,

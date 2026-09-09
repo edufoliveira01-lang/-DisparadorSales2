@@ -8,6 +8,7 @@ import { emitEvent } from "../websocket";
 import { normalizePhone } from "../utils/phone";
 import { getSetting } from "./settingsService";
 import { enviarMensagemTelegram } from "./telegramService";
+import { recordSystemLog } from "./systemLogsService";
 import { moveCard } from "./trelloService";
 import { updateLogAckByMessageId } from "./logsService";
 import {
@@ -892,17 +893,62 @@ class WhatsappManager {
   private async notificarDesconexaoInesperada(motivo: string, diagnostico?: DiagnosticoWhatsapp) {
     const token = getSetting("telegram_bot_token");
     const chatId = getSetting("telegram_chat_id");
-    if (!token || !chatId) return;
     const motivoNormalizado = normalizarMotivoDesconexao(motivo);
     const orientacao = motivoNormalizado === "LOGOUT"
       ? "\n\nO próprio WhatsApp Web encerrou e invalidou o vínculo. O diagnóstico abaixo permite distinguir incompatibilidade da interface web de falta de recursos no servidor."
       : "";
     const detalhes = diagnostico ? `\n\nDiagnóstico:\n${formatarDiagnosticoWhatsapp(diagnostico)}` : "";
-    await enviarMensagemTelegram(
-      token,
-      chatId,
-      `🔌 O WhatsApp do DisparaZap desconectou inesperadamente.\n\nMotivo: ${motivo}\nInstância: ${os.hostname()}:${process.pid}${orientacao}${detalhes}\n\nNenhuma mensagem será enviada até reconectar. Acesse Configurações → Conexão com o WhatsApp para reconectar.`
-    );
+    const dadosLog = {
+      motivo,
+      motivo_normalizado: motivoNormalizado,
+      instancia: `${os.hostname()}:${process.pid}`,
+      diagnostico: diagnostico ?? null,
+      canal_configurado: Boolean(token && chatId),
+    };
+
+    if (!token || !chatId) {
+      recordSystemLog({
+        nivel: "erro",
+        categoria: "whatsapp",
+        evento: "desconexao_inesperada",
+        titulo: "WhatsApp desconectado inesperadamente",
+        mensagem: "A desconexão foi detectada, mas o Telegram não está configurado para receber o alerta.",
+        origem: "sistema",
+        detalhes: dadosLog,
+      });
+      return;
+    }
+
+    try {
+      await enviarMensagemTelegram(
+        token,
+        chatId,
+        `🔌 O WhatsApp do DisparaZap desconectou inesperadamente.\n\nMotivo: ${motivo}\nInstância: ${os.hostname()}:${process.pid}${orientacao}${detalhes}\n\nNenhuma mensagem será enviada até reconectar. Acesse Configurações → Conexão com o WhatsApp para reconectar.`
+      );
+      recordSystemLog({
+        nivel: "erro",
+        categoria: "whatsapp",
+        evento: "desconexao_inesperada",
+        titulo: "WhatsApp desconectado inesperadamente",
+        mensagem: "A desconexão foi detectada e o alerta foi enviado pelo Telegram.",
+        origem: "sistema",
+        detalhes: { ...dadosLog, notificacao: { canal: "Telegram", sucesso: true } },
+      });
+    } catch (err) {
+      recordSystemLog({
+        nivel: "erro",
+        categoria: "whatsapp",
+        evento: "desconexao_inesperada",
+        titulo: "WhatsApp desconectado inesperadamente",
+        mensagem: "A desconexão foi detectada, mas o alerta pelo Telegram falhou.",
+        origem: "sistema",
+        detalhes: {
+          ...dadosLog,
+          notificacao: { canal: "Telegram", sucesso: false, erro: (err as Error).message },
+        },
+      });
+      throw err;
+    }
   }
 
   /**

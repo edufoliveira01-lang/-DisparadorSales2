@@ -57,6 +57,18 @@ export interface SendLog {
   resposta_preview?: string | null;
 }
 
+export interface SystemLog {
+  id: number;
+  nivel: "info" | "aviso" | "erro";
+  categoria: string;
+  evento: string;
+  titulo: string;
+  mensagem: string | null;
+  origem: "automatico" | "usuario" | "sistema";
+  detalhes_json: string | null;
+  created_at: string;
+}
+
 export interface CardViewModel {
   cardId: string;
   cardNome: string;
