@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildGoogleEvent,
   DEFAULT_GOOGLE_CALENDAR_CONFIG,
+  getGoogleCalendarSyncJob,
   GoogleCalendarError,
   saveGoogleCalendarConfig,
+  startGoogleCalendarSyncJob,
   transferGoogleCalendarLinks,
   type GoogleCalendarDestinationConfig,
 } from "../src/services/googleCalendarService";
@@ -125,5 +127,12 @@ describe("integração com o Google Agenda", () => {
     ).get("evento-reagendado") as { pericia_id: number; google_event_id: string };
     expect(link).toEqual({ pericia_id: 999_992, google_event_id: "evento-reagendado" });
     db.prepare("DELETE FROM google_calendar_event_links WHERE pericia_id = ?").run(999_992);
+  });
+
+  it("recusa iniciar a tarefa assíncrona quando a sincronização está desativada", () => {
+    saveGoogleCalendarConfig({ syncEnabled: false, destinations: [] });
+
+    expect(getGoogleCalendarSyncJob().state).toBe("idle");
+    expect(() => startGoogleCalendarSyncJob()).toThrow(GoogleCalendarError);
   });
 });

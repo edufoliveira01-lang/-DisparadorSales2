@@ -10,6 +10,7 @@ import type {
   GoogleCalendarDestinationConfig,
   GoogleCalendarListItem,
   GoogleCalendarStatus,
+  GoogleCalendarSyncJob,
   GoogleCalendarSyncResult,
 } from "@/lib/types";
 import { useToast } from "@/components/ui/Toast";
@@ -381,8 +382,17 @@ export function GoogleCalendarSettings() {
     if (!await saveConfig(false)) return;
     setSyncing(true);
     try {
-      const response = await api.post<{ ok: true; result: GoogleCalendarSyncResult }>("/google-calendar/sync");
-      const result = response.result;
+      const response = await api.post<{ ok: true; started: boolean; job: GoogleCalendarSyncJob }>("/google-calendar/sync");
+      let job = response.job;
+      while (job.state === "running") {
+        await new Promise((resolve) => window.setTimeout(resolve, 2_000));
+        job = await api.get<GoogleCalendarSyncJob>("/google-calendar/sync/status");
+      }
+      if (job.state === "failed") {
+        throw new Error(job.error || "A sincronização com o Google Agenda não pôde ser concluída.");
+      }
+      const result: GoogleCalendarSyncResult | null = job.result;
+      if (!result) throw new Error("O servidor não retornou o resultado da sincronização.");
       show(
         `Google Agenda atualizado: ${result.created} criado(s), ${result.linked} vinculado(s), ${result.updated} atualizado(s), ${result.skipped} não encontrado(s)${result.errors ? ` e ${result.errors} erro(s)` : ""}.`,
         result.errors ? "info" : "success"
@@ -390,7 +400,7 @@ export function GoogleCalendarSettings() {
       setAnalysis(null);
       await load();
     } catch (err) {
-      show(err instanceof ApiError ? err.message : "Não foi possível sincronizar as agendas.", "error");
+      show(err instanceof Error ? err.message : "Não foi possível sincronizar as agendas.", "error");
     } finally {
       setSyncing(false);
     }
@@ -456,6 +466,13 @@ export function GoogleCalendarSettings() {
               <Plus className="h-4 w-4" /> Adicionar destino
             </Button>
           </div>
+
+          {syncing && (
+            <div className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50/60 p-3 text-sm text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/20 dark:text-blue-300">
+              <RefreshCw className="h-4 w-4 animate-spin" />
+              Sincronização em andamento no servidor. Esta tela mostrará o resultado assim que terminar.
+            </div>
+          )}
 
           {config.destinations.length === 0 ? (
             <div className="rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-500 dark:border-zinc-700">

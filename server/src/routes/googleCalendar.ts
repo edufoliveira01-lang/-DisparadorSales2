@@ -6,10 +6,11 @@ import {
   disconnectGoogleCalendar,
   exchangeGoogleAuthorizationCode,
   getGoogleCalendarStatus,
+  getGoogleCalendarSyncJob,
   GoogleCalendarError,
   listWritableGoogleCalendars,
   saveGoogleCalendarConfig,
-  syncAllGoogleCalendar,
+  startGoogleCalendarSyncJob,
   type GoogleCalendarConfig,
 } from "../services/googleCalendarService";
 import { recordSystemLog } from "../services/systemLogsService";
@@ -120,12 +121,17 @@ googleCalendarRouter.post("/analyze", async (_req, res) => {
   }
 });
 
-googleCalendarRouter.post("/sync", async (_req, res) => {
+googleCalendarRouter.post("/sync", (_req, res) => {
   try {
-    res.json({ ok: true, result: await syncAllGoogleCalendar() });
+    const response = startGoogleCalendarSyncJob();
+    res.status(response.started ? 202 : 200).json({ ok: true, ...response });
   } catch (err) {
     sendGoogleError(res, err);
   }
+});
+
+googleCalendarRouter.get("/sync/status", (_req, res) => {
+  res.json(getGoogleCalendarSyncJob());
 });
 
 googleCalendarRouter.post("/disconnect", async (_req, res) => {

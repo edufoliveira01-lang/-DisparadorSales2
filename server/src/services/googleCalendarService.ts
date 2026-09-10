@@ -111,6 +111,16 @@ export interface GoogleCalendarSyncResult {
   errors: number;
 }
 
+export type GoogleCalendarSyncJobState = "idle" | "running" | "completed" | "failed";
+
+export interface GoogleCalendarSyncJob {
+  state: GoogleCalendarSyncJobState;
+  startedAt: string | null;
+  finishedAt: string | null;
+  result: GoogleCalendarSyncResult | null;
+  error: string | null;
+}
+
 export class GoogleCalendarError extends Error {
   constructor(message: string, public status = 502) {
     super(message);
@@ -1006,6 +1016,72 @@ export async function syncAllGoogleCalendar(): Promise<GoogleCalendarSyncResult>
     detalhes: result,
   });
   return result;
+}
+
+let manualSyncJob: GoogleCalendarSyncJob = {
+  state: "idle",
+  startedAt: null,
+  finishedAt: null,
+  result: null,
+  error: null,
+};
+
+export function getGoogleCalendarSyncJob(): GoogleCalendarSyncJob {
+  return {
+    ...manualSyncJob,
+    result: manualSyncJob.result ? { ...manualSyncJob.result } : null,
+  };
+}
+
+export function startGoogleCalendarSyncJob(): { started: boolean; job: GoogleCalendarSyncJob } {
+  const config = getGoogleCalendarConfig();
+  if (!config.syncEnabled) throw new GoogleCalendarError("Ative a sincronização antes de executar.", 400);
+  if (!getSetting("google_refresh_token")) throw new GoogleCalendarError("Conecte sua conta Google primeiro.", 400);
+
+  if (manualSyncJob.state === "running") {
+    return { started: false, job: getGoogleCalendarSyncJob() };
+  }
+
+  manualSyncJob = {
+    state: "running",
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    result: null,
+    error: null,
+  };
+
+  setImmediate(() => {
+    syncAllGoogleCalendar()
+      .then((result) => {
+        manualSyncJob = {
+          ...manualSyncJob,
+          state: "completed",
+          finishedAt: new Date().toISOString(),
+          result,
+          error: null,
+        };
+      })
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : "Erro inesperado durante a sincronização.";
+        manualSyncJob = {
+          ...manualSyncJob,
+          state: "failed",
+          finishedAt: new Date().toISOString(),
+          result: null,
+          error: message,
+        };
+        recordSystemLog({
+          nivel: "erro",
+          categoria: "google_calendar",
+          evento: "falha_sincronizacao_manual",
+          titulo: "Falha na sincronização manual com o Google Agenda",
+          mensagem: message,
+          origem: "usuario",
+        });
+      });
+  });
+
+  return { started: true, job: getGoogleCalendarSyncJob() };
 }
 
 type QueueAction = "upsert" | "delete";
