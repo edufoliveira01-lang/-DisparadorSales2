@@ -182,7 +182,19 @@ export interface GoogleCalendarAnalysisDestination {
   matched: number;
   missing: number;
   conflicts: number;
-  conflictItems: Array<{ periciaId: number; nome: string; data: string; horario: string | null }>;
+  conflictItems: Array<{
+    periciaId: number;
+    nome: string;
+    data: string;
+    horario: string | null;
+    candidates: Array<{
+      eventId: string;
+      title: string;
+      start: string;
+      end: string;
+      location: string;
+    }>;
+  }>;
 }
 
 export interface GoogleCalendarAnalysis {

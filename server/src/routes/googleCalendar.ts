@@ -9,6 +9,7 @@ import {
   getGoogleCalendarSyncJob,
   GoogleCalendarError,
   listWritableGoogleCalendars,
+  resolveGoogleCalendarConflict,
   saveGoogleCalendarConfig,
   startGoogleCalendarSyncJob,
   type GoogleCalendarConfig,
@@ -116,6 +117,20 @@ googleCalendarRouter.put("/config", (req, res) => {
 googleCalendarRouter.post("/analyze", async (_req, res) => {
   try {
     res.json(await analyzeGoogleCalendar());
+  } catch (err) {
+    sendGoogleError(res, err);
+  }
+});
+
+googleCalendarRouter.post("/conflicts/resolve", async (req, res) => {
+  try {
+    const periciaId = Number(req.body?.periciaId);
+    const destination = Number(req.body?.destination);
+    const googleEventId = typeof req.body?.googleEventId === "string" ? req.body.googleEventId.trim() : "";
+    if (!Number.isInteger(periciaId) || periciaId < 1 || !Number.isInteger(destination) || destination < 1 || !googleEventId) {
+      throw new GoogleCalendarError("Informe o compromisso, o destino e o evento escolhidos.", 400);
+    }
+    res.json({ ok: true, result: await resolveGoogleCalendarConflict(periciaId, destination, googleEventId) });
   } catch (err) {
     sendGoogleError(res, err);
   }
