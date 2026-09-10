@@ -141,7 +141,7 @@ export interface GoogleCalendarDestinationConfig {
   endDaysAfter: number;
   fixedTime: string;
   durationMinutes: number;
-  createMissing: boolean;
+  eventMode: "reuse_manual" | "create_additional";
   includePhone: boolean;
   includeProcess: boolean;
   includeProfessional: boolean;

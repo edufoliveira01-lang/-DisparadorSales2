@@ -13,6 +13,7 @@ const CONFIG_KEY = "google_calendar_config";
 
 export type GoogleCalendarTimingMode = "all_day" | "fixed_time" | "appointment_time";
 export type GoogleCalendarDescriptionMode = "preserve" | "replace" | "keep_original";
+export type GoogleCalendarEventMode = "reuse_manual" | "create_additional";
 
 export interface GoogleCalendarDestinationConfig {
   destination: number;
@@ -29,7 +30,7 @@ export interface GoogleCalendarDestinationConfig {
   endDaysAfter: number;
   fixedTime: string;
   durationMinutes: number;
-  createMissing: boolean;
+  eventMode: GoogleCalendarEventMode;
   includePhone: boolean;
   includeProcess: boolean;
   includeProfessional: boolean;
@@ -174,7 +175,7 @@ const DEFAULT_DESTINATION = (destination: number): GoogleCalendarDestinationConf
   endDaysAfter: 0,
   fixedTime: "23:00",
   durationMinutes: 60,
-  createMissing: false,
+  eventMode: destination === 1 ? "reuse_manual" : "create_additional",
   includePhone: true,
   includeProcess: true,
   includeProfessional: true,
@@ -223,11 +224,13 @@ function validTime(value: unknown, fallback = "23:00"): string {
 function sanitizeDestination(
   value: Partial<GoogleCalendarDestinationConfig> | undefined,
   destination: number,
-  legacyDuration = 60
+  legacyDuration = 60,
+  legacyEventMode?: GoogleCalendarEventMode
 ): GoogleCalendarDestinationConfig {
   const fallback = DEFAULT_DESTINATION(destination);
   const timingModes: GoogleCalendarTimingMode[] = ["all_day", "fixed_time", "appointment_time"];
   const descriptionModes: GoogleCalendarDescriptionMode[] = ["preserve", "replace", "keep_original"];
+  const eventModes: GoogleCalendarEventMode[] = ["reuse_manual", "create_additional"];
   const titleTemplate = typeof value?.titleTemplate === "string" && value.titleTemplate.trim()
     ? value.titleTemplate.trim().slice(0, 500)
     : fallback.titleTemplate;
@@ -254,7 +257,9 @@ function sanitizeDestination(
     endDaysAfter: clampedInteger(value?.endDaysAfter, 0, 365, fallback.endDaysAfter),
     fixedTime: validTime(value?.fixedTime, fallback.fixedTime),
     durationMinutes: clampedInteger(value?.durationMinutes, 5, 1440, legacyDuration),
-    createMissing: value?.createMissing === true,
+    eventMode: eventModes.includes(value?.eventMode as GoogleCalendarEventMode)
+      ? (value?.eventMode as GoogleCalendarEventMode)
+      : legacyEventMode || fallback.eventMode,
     includePhone: value?.includePhone !== false,
     includeProcess: value?.includeProcess !== false,
     includeProfessional: value?.includeProfessional !== false,
@@ -271,12 +276,16 @@ export function getGoogleCalendarConfig(): GoogleCalendarConfig {
   const inputDestinations = Array.isArray(saved?.destinations)
     ? saved.destinations.slice(0, 50)
     : DEFAULT_GOOGLE_CALENDAR_CONFIG.destinations;
+  const legacyManualIndex = inputDestinations.findIndex((item) => item?.enabled === true && Boolean(item?.calendarId));
   const used = new Set<number>();
   const destinations = inputDestinations.map((item, index) => {
     let destination = clampedInteger(item?.destination, 1, 2_147_483_647, index + 1);
     while (used.has(destination)) destination += 1;
     used.add(destination);
-    return sanitizeDestination(item, destination, legacyDuration);
+    const legacyEventMode = index === (legacyManualIndex >= 0 ? legacyManualIndex : 0)
+      ? "reuse_manual"
+      : "create_additional";
+    return sanitizeDestination(item, destination, legacyDuration, legacyEventMode);
   });
   return {
     syncEnabled: saved?.syncEnabled === true,
@@ -292,9 +301,15 @@ export function saveGoogleCalendarConfig(input: Partial<GoogleCalendarConfig>): 
   if (ids.some((id) => !Number.isInteger(id) || id < 1) || new Set(ids).size !== ids.length) {
     throw new GoogleCalendarError("Os identificadores dos destinos são inválidos ou repetidos.", 400);
   }
+  const legacyManualIndex = input.destinations.findIndex((item) => item?.enabled === true && Boolean(item?.calendarId));
   const config: GoogleCalendarConfig = {
     syncEnabled: input.syncEnabled === true,
-    destinations: input.destinations.map((item) => sanitizeDestination(item, Number(item.destination))),
+    destinations: input.destinations.map((item, index) => sanitizeDestination(
+      item,
+      Number(item.destination),
+      60,
+      index === (legacyManualIndex >= 0 ? legacyManualIndex : 0) ? "reuse_manual" : "create_additional"
+    )),
   };
   const enabled = config.destinations.filter((item) => item.enabled);
   if (config.syncEnabled && enabled.length === 0) {
@@ -326,7 +341,7 @@ export function saveGoogleCalendarConfig(input: Partial<GoogleCalendarConfig>): 
     origem: "usuario",
     detalhes: {
       sincronizacaoAtiva: config.syncEnabled,
-      agendas: enabled.map((item) => ({ destino: item.destination, nome: item.calendarName })),
+      agendas: enabled.map((item) => ({ destino: item.destination, nome: item.calendarName, modoEvento: item.eventMode })),
     },
   });
   return config;
@@ -931,11 +946,20 @@ async function syncPericiaToDestination(
   knownEvent?: GoogleCalendarEvent
 ): Promise<"linked" | "created" | "updated" | "skipped" | "conflict"> {
   let link = getLinkStmt.get(pericia.id, destination.destination) as GoogleEventLink | undefined;
+  const generatedId = deterministicGoogleEventId(destination.calendarId, pericia.id, destination.destination);
   if (link && link.calendar_id !== destination.calendarId) {
     // A agenda pode conter um evento criado manualmente antes da vinculação. Ao trocar o
     // destino, removemos somente o vínculo local para nunca apagar esse evento por engano.
     deleteLinkStmt.run(link.pericia_id, link.destination);
     link = undefined;
+  }
+  if (link && destination.eventMode === "create_additional" && link.google_event_id !== generatedId) {
+    // Ao trocar um destino de "reaproveitar" para "criar adicional", o evento manual
+    // permanece intacto no Google e somente o vínculo local é removido.
+    deleteLinkStmt.run(link.pericia_id, link.destination);
+    link = undefined;
+    skipExistingLookup = true;
+    knownEvent = undefined;
   }
 
   if (link) {
@@ -977,9 +1001,9 @@ async function syncPericiaToDestination(
     }
   }
 
-  if (!allowCreateMissing || !destination.createMissing) return "skipped";
+  if (!allowCreateMissing) return "skipped";
 
-  const googleEventId = deterministicGoogleEventId(destination.calendarId, pericia.id, destination.destination);
+  const googleEventId = generatedId;
   const payload = buildGoogleEvent(pericia, destination);
   try {
     const created = await googleRequest<GoogleCalendarEvent>(
@@ -1006,16 +1030,16 @@ export async function syncGoogleCalendarPericia(periciaId: number): Promise<Goog
   if (!pericia || pericia.status !== "ativa") return deleteGoogleCalendarPericia(periciaId);
 
   const destinations = config.destinations.filter((item) => item.enabled && item.calendarId);
-  for (const [index, destination] of destinations.entries()) {
-    const isPrimaryDestination = index === 0;
+  for (const destination of destinations) {
+    const reuseManual = destination.eventMode === "reuse_manual";
     result.total += 1;
     try {
       const action = await syncPericiaToDestination(
         pericia,
         destination,
         false,
-        isPrimaryDestination,
-        !isPrimaryDestination
+        reuseManual,
+        !reuseManual
       );
       result[action === "conflict" ? "conflicts" : action] += 1;
     } catch (err) {
@@ -1060,9 +1084,9 @@ export async function analyzeGoogleCalendar(): Promise<GoogleCalendarAnalysis> {
 
   const activeDestinations = config.destinations.filter((item) => item.enabled && item.calendarId);
 
-  for (const [index, destination] of activeDestinations.entries()) {
-    const isPrimaryDestination = index === 0;
-    const firstSearchDate = isPrimaryDestination
+  for (const destination of activeDestinations) {
+    const reuseManual = destination.eventMode === "reuse_manual";
+    const firstSearchDate = reuseManual
       ? addDays(todayInSaoPaulo(), -MANUAL_MATCH_WINDOW_DAYS)
       : todayInSaoPaulo();
     const events = await listGoogleEvents(destination.calendarId, `${firstSearchDate}T00:00:00-03:00`);
@@ -1085,7 +1109,7 @@ export async function analyzeGoogleCalendar(): Promise<GoogleCalendarAnalysis> {
       const link = getLinkStmt.get(pericia.id, destination.destination) as GoogleEventLink | undefined;
       if (link && link.calendar_id === destination.calendarId) {
         const generatedId = deterministicGoogleEventId(destination.calendarId, pericia.id, destination.destination);
-        if (isPrimaryDestination && link.google_event_id === generatedId) {
+        if (reuseManual && link.google_event_id === generatedId) {
           const candidates = manualCandidates(pericia, events, used);
           if (candidates.length === 1) {
             summary.matched += 1;
@@ -1104,10 +1128,20 @@ export async function analyzeGoogleCalendar(): Promise<GoogleCalendarAnalysis> {
             continue;
           }
         }
+        if (!reuseManual && link.google_event_id !== generatedId) {
+          const generatedMatch = findExistingEvent(pericia, destination, events, used, false);
+          if (generatedMatch.event?.id) {
+            summary.matched += 1;
+            used.add(generatedMatch.event.id);
+          } else {
+            summary.missing += 1;
+          }
+          continue;
+        }
         summary.linked += 1;
         continue;
       }
-      const match = findExistingEvent(pericia, destination, events, used, isPrimaryDestination);
+      const match = findExistingEvent(pericia, destination, events, used, reuseManual);
       if (match.conflict) {
         summary.conflicts += 1;
         summary.conflictItems.push({
@@ -1139,8 +1173,8 @@ export async function resolveGoogleCalendarConflict(
   const activeDestinations = config.destinations.filter((item) => item.enabled && item.calendarId);
   const destination = activeDestinations.find((item) => item.destination === destinationId);
   if (!destination) throw new GoogleCalendarError("O destino selecionado não está ativo.", 400);
-  if (activeDestinations[0]?.destination !== destinationId) {
-    throw new GoogleCalendarError("A escolha manual só é permitida no primeiro destino.", 400);
+  if (destination.eventMode !== "reuse_manual") {
+    throw new GoogleCalendarError("A escolha manual só é permitida em destinos configurados para reaproveitar eventos.", 400);
   }
 
   const pericia = db.prepare("SELECT * FROM pericias_agendadas WHERE id = ?").get(periciaId) as PericiaAgendada | undefined;
@@ -1200,13 +1234,13 @@ export async function syncAllGoogleCalendar(): Promise<GoogleCalendarSyncResult>
   await cleanupOrphanLinks(result);
   const pericias = futurePericias();
 
-  // Uma única leitura por agenda mantém a primeira sincronização rápida mesmo com centenas
-  // de compromissos. A lista em memória também impede que o mesmo evento manual seja ligado
-  // a dois compromissos diferentes durante a reconciliação.
+  // Uma única leitura por agenda mantém a sincronização rápida mesmo com centenas de
+  // compromissos. A lista em memória também impede que um evento manual seja ligado a dois
+  // compromissos diferentes dentro do mesmo destino durante a reconciliação.
   const activeDestinations = config.destinations.filter((item) => item.enabled && item.calendarId);
-  for (const [index, destination] of activeDestinations.entries()) {
-    const isPrimaryDestination = index === 0;
-    const firstSearchDate = isPrimaryDestination
+  for (const destination of activeDestinations) {
+    const reuseManual = destination.eventMode === "reuse_manual";
+    const firstSearchDate = reuseManual
       ? addDays(todayInSaoPaulo(), -MANUAL_MATCH_WINDOW_DAYS)
       : todayInSaoPaulo();
     const events = await listGoogleEvents(destination.calendarId, `${firstSearchDate}T00:00:00-03:00`);
@@ -1222,7 +1256,7 @@ export async function syncAllGoogleCalendar(): Promise<GoogleCalendarSyncResult>
         const currentLink = getLinkStmt.get(pericia.id, destination.destination) as GoogleEventLink | undefined;
         if (currentLink?.calendar_id === destination.calendarId) {
           const generatedId = deterministicGoogleEventId(destination.calendarId, pericia.id, destination.destination);
-          if (isPrimaryDestination && currentLink.google_event_id === generatedId) {
+          if (reuseManual && currentLink.google_event_id === generatedId) {
             const candidates = manualCandidates(pericia, events, usedIds);
             if (candidates.length > 1) {
               result.conflicts += 1;
@@ -1242,8 +1276,8 @@ export async function syncAllGoogleCalendar(): Promise<GoogleCalendarSyncResult>
             pericia,
             destination,
             true,
-            isPrimaryDestination,
-            !isPrimaryDestination,
+            reuseManual,
+            !reuseManual,
             events.find((event) => event.id === currentLink.google_event_id)
           );
           result[action === "conflict" ? "conflicts" : action] += 1;
@@ -1253,7 +1287,7 @@ export async function syncAllGoogleCalendar(): Promise<GoogleCalendarSyncResult>
           deleteLinkStmt.run(currentLink.pericia_id, currentLink.destination);
         }
 
-        const match = findExistingEvent(pericia, destination, events, usedIds, isPrimaryDestination);
+        const match = findExistingEvent(pericia, destination, events, usedIds, reuseManual);
         if (match.conflict) {
           result.conflicts += 1;
           continue;
@@ -1265,7 +1299,7 @@ export async function syncAllGoogleCalendar(): Promise<GoogleCalendarSyncResult>
           continue;
         }
 
-        const action = await syncPericiaToDestination(pericia, destination, true, isPrimaryDestination, !isPrimaryDestination);
+        const action = await syncPericiaToDestination(pericia, destination, true, reuseManual, !reuseManual);
         result[action === "conflict" ? "conflicts" : action] += 1;
       } catch (err) {
         result.errors += 1;

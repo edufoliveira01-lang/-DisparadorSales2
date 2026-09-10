@@ -4,6 +4,7 @@ import {
   buildGoogleDescription,
   DEFAULT_GOOGLE_CALENDAR_CONFIG,
   findExistingEvent,
+  getGoogleCalendarConfig,
   getGoogleCalendarSyncJob,
   GoogleCalendarError,
   saveGoogleCalendarConfig,
@@ -13,6 +14,7 @@ import {
 } from "../src/services/googleCalendarService";
 import type { PericiaAgendada } from "../src/services/periciasAgendadasService";
 import { db } from "../src/db";
+import { setSetting } from "../src/services/settingsService";
 
 function pericia(overrides: Partial<PericiaAgendada> = {}): PericiaAgendada {
   return {
@@ -225,6 +227,40 @@ describe("integração com o Google Agenda", () => {
     });
 
     expect(config.destinations.map((item) => item.destination)).toEqual([1, 2, 3]);
+  });
+
+  it("salva a origem do evento de forma independente em cada destino", () => {
+    const config = saveGoogleCalendarConfig({
+      syncEnabled: false,
+      destinations: [
+        destination({ eventMode: "create_additional" }),
+        destination({ destination: 2, calendarId: "agenda-2", eventMode: "reuse_manual" }),
+        destination({ destination: 3, calendarId: "agenda-3", eventMode: "reuse_manual" }),
+      ],
+    });
+
+    expect(config.destinations.map((item) => item.eventMode)).toEqual([
+      "create_additional",
+      "reuse_manual",
+      "reuse_manual",
+    ]);
+  });
+
+  it("migra a configuração antiga mantendo o primeiro destino ativo como reutilizável", () => {
+    const legacyDestinations = [
+      { ...destination({ enabled: false }), eventMode: undefined },
+      { ...destination({ destination: 2, calendarId: "agenda-2" }), eventMode: undefined },
+      { ...destination({ destination: 3, calendarId: "agenda-3" }), eventMode: undefined },
+    ];
+    setSetting("google_calendar_config", JSON.stringify({ syncEnabled: false, destinations: legacyDestinations }));
+
+    const config = getGoogleCalendarConfig();
+
+    expect(config.destinations.map((item) => item.eventMode)).toEqual([
+      "create_additional",
+      "reuse_manual",
+      "create_additional",
+    ]);
   });
 
   it("transfere o vínculo para o novo registro em um reagendamento", () => {
