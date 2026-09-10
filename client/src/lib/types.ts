@@ -133,6 +133,7 @@ export interface GoogleCalendarDestinationConfig {
   calendarId: string;
   calendarName: string;
   titleTemplate: string;
+  descriptionTemplate: string;
   uppercaseTitle: boolean;
   timingMode: GoogleCalendarTimingMode;
   startDaysBefore: number;

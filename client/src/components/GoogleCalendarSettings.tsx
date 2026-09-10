@@ -17,11 +17,22 @@ import { CollapsibleCard } from "@/components/ui/CollapsibleCard";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
-import { Input, Label } from "@/components/ui/Input";
+import { Input, Label, Textarea } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 
 const DEFAULT_TITLE_TEMPLATE = "{tipo} - {data} - {horario} - {nome} - {telefone} - {processo}";
-const TITLE_TOKENS = ["{tipo}", "{data}", "{horario}", "{nome}", "{telefone}", "{processo}", "{profissional}", "{local}"];
+const DEFAULT_DESCRIPTION_TEMPLATE = [
+  "TIPO: {tipo};",
+  "DATA: {data};",
+  "HORÁRIO: {horario};",
+  "LOCAL: {local};",
+  "NOME: {nome};",
+  "TELEFONE: {telefone};",
+  "WHATSAPP: {whatsapp};",
+  "PROCESSO: {processo};",
+  "PROFISSIONAL/PERITO: {profissional};",
+].join("\n");
+const TEMPLATE_TOKENS = ["{tipo}", "{data}", "{horario}", "{local}", "{nome}", "{telefone}", "{whatsapp}", "{processo}", "{profissional}"];
 
 function ToggleLine({ checked, onChange, children }: {
   checked: boolean;
@@ -44,6 +55,7 @@ function newDestination(destination: number): GoogleCalendarDestinationConfig {
     calendarId: "",
     calendarName: "",
     titleTemplate: DEFAULT_TITLE_TEMPLATE,
+    descriptionTemplate: DEFAULT_DESCRIPTION_TEMPLATE,
     uppercaseTitle: true,
     timingMode: "appointment_time",
     startDaysBefore: 0,
@@ -68,6 +80,7 @@ function titlePreview(config: GoogleCalendarDestinationConfig): string {
     horario: "10:00",
     nome: "MÁRCIA APARECIDA CARVALHO NEVES",
     telefone: "(13) 99711-4872",
+    whatsapp: "SIM",
     processo: "1003033-76.2025.8.26.0075",
     profissional: "PROFISSIONAL",
     local: "LOCAL DA PERÍCIA",
@@ -77,6 +90,24 @@ function titlePreview(config: GoogleCalendarDestinationConfig): string {
     (_match, token: string) => values[token.toLowerCase()] || ""
   );
   return config.uppercaseTitle ? rendered.toLocaleUpperCase("pt-BR") : rendered;
+}
+
+function descriptionPreview(config: GoogleCalendarDestinationConfig): string {
+  const values: Record<string, string> = {
+    tipo: "PERÍCIA MÉDICA",
+    data: "27/11/2026",
+    horario: "12:00",
+    local: "Rua Marrey Júnior, s/nº (entrada lateral do Fórum Central) - Sala 9E - Santos/SP",
+    nome: "KARINA VIEIRA",
+    telefone: "(11) 98893 - 5160",
+    whatsapp: "SIM",
+    processo: "1016617-71.2025.8.26.0477",
+    profissional: "",
+  };
+  return config.descriptionTemplate.replace(
+    /\{(tipo|data|horario|nome|telefone|whatsapp|processo|profissional|local)\}/gi,
+    (_match, token: string) => values[token.toLowerCase()] || ""
+  );
 }
 
 function DestinationEditor({ config, calendars, onChange, onRemove }: {
@@ -128,7 +159,7 @@ function DestinationEditor({ config, calendars, onChange, onRemove }: {
         <Label>Modelo do título</Label>
         <Input value={config.titleTemplate} onChange={(event) => update("titleTemplate", event.target.value)} />
         <div className="mt-2 flex flex-wrap gap-1.5">
-          {TITLE_TOKENS.map((token) => (
+          {TEMPLATE_TOKENS.map((token) => (
             <button
               key={token}
               type="button"
@@ -209,11 +240,33 @@ function DestinationEditor({ config, calendars, onChange, onRemove }: {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <ToggleLine checked={config.includeProcess} onChange={(checked) => update("includeProcess", checked)}>Processo na descrição</ToggleLine>
-        <ToggleLine checked={config.includePhone} onChange={(checked) => update("includePhone", checked)}>Telefone na descrição</ToggleLine>
-        <ToggleLine checked={config.includeProfessional} onChange={(checked) => update("includeProfessional", checked)}>Profissional/perito na descrição</ToggleLine>
-        <ToggleLine checked={config.includeLocation} onChange={(checked) => update("includeLocation", checked)}>Local do evento</ToggleLine>
+      <div>
+        <Label>Modelo da descrição</Label>
+        <Textarea
+          rows={10}
+          value={config.descriptionTemplate}
+          onChange={(event) => update("descriptionTemplate", event.target.value)}
+          className="font-mono text-xs leading-5"
+        />
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {TEMPLATE_TOKENS.map((token) => (
+            <button
+              key={token}
+              type="button"
+              className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-500 hover:border-accent-400 hover:text-accent-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
+              onClick={() => update("descriptionTemplate", `${config.descriptionTemplate}${config.descriptionTemplate ? "\n" : ""}${token}`)}
+            >
+              {token}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-zinc-400">Mantenha cada informação em uma linha. Os campos sem dados permanecerão vazios.</p>
+        <pre className="mt-2 whitespace-pre-wrap break-words rounded-lg bg-white px-3 py-2 font-sans text-xs leading-5 text-zinc-500 dark:bg-zinc-950 dark:text-zinc-400">
+          {descriptionPreview(config)}
+        </pre>
+        <div className="mt-2">
+        <ToggleLine checked={config.includeLocation} onChange={(checked) => update("includeLocation", checked)}>Preencher também o campo “Local” do Google</ToggleLine>
+        </div>
       </div>
 
       <div className="space-y-2 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-950">
