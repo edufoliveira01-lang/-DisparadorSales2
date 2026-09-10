@@ -69,7 +69,7 @@ function newDestination(destination: number): GoogleCalendarDestinationConfig {
     endDaysAfter: 0,
     fixedTime: "23:00",
     durationMinutes: 60,
-    createMissing: false,
+    eventMode: "create_additional",
     includePhone: true,
     includeProcess: true,
     includeProfessional: true,
@@ -138,12 +138,11 @@ function formatCandidateMoment(value: string): string {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("pt-BR");
 }
 
-function DestinationEditor({ config, calendars, onChange, onRemove, isPrimary }: {
+function DestinationEditor({ config, calendars, onChange, onRemove }: {
   config: GoogleCalendarDestinationConfig;
   calendars: GoogleCalendarListItem[];
   onChange: (value: GoogleCalendarDestinationConfig) => void;
   onRemove: () => void;
-  isPrimary: boolean;
 }) {
   const update = <K extends keyof GoogleCalendarDestinationConfig>(key: K, value: GoogleCalendarDestinationConfig[K]) => {
     onChange({ ...config, [key]: value });
@@ -156,7 +155,6 @@ function DestinationEditor({ config, calendars, onChange, onRemove, isPrimary }:
         <div className="min-w-0 flex-1">
           <Label>Nome da configuração</Label>
           <Input value={config.name} onChange={(event) => update("name", event.target.value)} placeholder={`Destino ${config.destination}`} />
-          {isPrimary && <p className="mt-1 text-xs text-blue-600 dark:text-blue-400">Destino principal: reaproveita o evento criado manualmente.</p>}
         </div>
         <div className="flex items-center gap-2 pt-7">
           <ToggleLine checked={config.enabled} onChange={(checked) => update("enabled", checked)}>Ativo</ToggleLine>
@@ -183,6 +181,22 @@ function DestinationEditor({ config, calendars, onChange, onRemove, isPrimary }:
             </option>
           ))}
         </Select>
+      </div>
+
+      <div>
+        <Label>Origem do evento neste destino</Label>
+        <Select
+          value={config.eventMode}
+          onChange={(event) => update("eventMode", event.target.value as GoogleCalendarDestinationConfig["eventMode"])}
+        >
+          <option value="reuse_manual">Reaproveitar evento manual existente</option>
+          <option value="create_additional">Criar evento adicional</option>
+        </Select>
+        <p className="mt-1 text-xs leading-5 text-zinc-400">
+          {config.eventMode === "reuse_manual"
+            ? "Procura por processo, nome, tipo e data. Se não encontrar, não cria uma cópia."
+            : "Não vincula eventos manuais: cria e mantém um evento próprio do DisparaZap."}
+        </p>
       </div>
 
       <div>
@@ -321,21 +335,12 @@ function DestinationEditor({ config, calendars, onChange, onRemove, isPrimary }:
         </div>
       </div>
 
-      <div className="space-y-2 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-950">
-        {isPrimary ? (
-          <p className="text-xs leading-5 text-blue-700 dark:text-blue-400">
-            Este destino nunca cria uma cópia: ele procura e vincula o evento manual pelo processo, nome, tipo e data.
-          </p>
-        ) : (
-          <>
-            <ToggleLine checked={config.createMissing} onChange={(checked) => update("createMissing", checked)}>
-              Criar evento se nenhuma correspondência for encontrada
-            </ToggleLine>
-            <p className="text-xs leading-5 text-zinc-400">
-              Ative para criar este evento adicional quando ele ainda não existir. Os lembretes do Google ficam desativados.
-            </p>
-          </>
-        )}
+      <div className="rounded-lg border border-zinc-200 bg-white p-3 text-xs leading-5 dark:border-zinc-700 dark:bg-zinc-950">
+        <p className={config.eventMode === "reuse_manual" ? "text-blue-700 dark:text-blue-400" : "text-zinc-500 dark:text-zinc-400"}>
+          {config.eventMode === "reuse_manual"
+            ? "Este destino preserva o evento manual e passa a atualizá-lo depois da vinculação."
+            : "Este destino cria somente o evento adicional configurado. Os lembretes do Google permanecem desativados."}
+        </p>
       </div>
     </div>
   );
@@ -565,7 +570,6 @@ export function GoogleCalendarSettings() {
                   key={destination.destination}
                   config={destination}
                   calendars={calendars}
-                  isPrimary={destination.destination === config.destinations.find((item) => item.enabled && item.calendarId)?.destination}
                   onChange={(value) => updateDestination(index, value)}
                   onRemove={() => removeDestination(index)}
                 />
@@ -582,7 +586,7 @@ export function GoogleCalendarSettings() {
           <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-4 text-sm text-blue-800 dark:border-blue-900/60 dark:bg-blue-950/20 dark:text-blue-300">
             <p className="flex items-center gap-2 font-medium"><Link2 className="h-4 w-4" /> Vinculação segura, sem duplicidade</p>
             <p className="mt-1 text-xs leading-5 text-blue-700 dark:text-blue-400">
-              O primeiro destino procura o evento manual principalmente pelo processo e confirma nome, tipo e data em uma faixa de sete dias. Os destinos seguintes criam apenas os eventos adicionais configurados. Casos ambíguos aguardam sua escolha e não geram cópias.
+              Cada destino decide se reaproveita um evento manual ou cria um evento adicional. A busca manual usa principalmente o processo e confirma nome, tipo e data em uma faixa de sete dias. Casos ambíguos aguardam sua escolha e não geram cópias.
             </p>
           </div>
 
@@ -592,12 +596,11 @@ export function GoogleCalendarSettings() {
               <div className="grid gap-3 lg:grid-cols-2">
                 {analysis.destinations.map((item) => {
                   const destination = config.destinations.find((candidate) => candidate.destination === item.destination);
-                  const isPrimaryDestination = item.destination === config.destinations.find((candidate) => candidate.enabled && candidate.calendarId)?.destination;
                   return (
                     <div key={item.destination} className="rounded-lg bg-zinc-50 p-3 text-sm dark:bg-zinc-900">
                       <p className="font-medium">{item.name}: {item.calendarName}</p>
                       <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                        {item.linked} já vinculados · {item.matched} existentes encontrados · {item.missing} não encontrados {isPrimaryDestination ? "(aguardam evento manual)" : destination?.createMissing ? "(serão criados)" : "(não serão criados)"} · {item.conflicts} para revisão
+                        {item.linked} já vinculados · {item.matched} existentes encontrados · {item.missing} não encontrados {destination?.eventMode === "reuse_manual" ? "(aguardam evento manual)" : "(serão criados)"} · {item.conflicts} para revisão
                       </p>
                       {item.conflictItems.length > 0 && (
                         <div className="mt-3 space-y-3">
