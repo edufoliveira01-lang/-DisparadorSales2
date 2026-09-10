@@ -201,6 +201,14 @@ export interface GoogleCalendarSyncResult {
   errors: number;
 }
 
+export interface GoogleCalendarSyncJob {
+  state: "idle" | "running" | "completed" | "failed";
+  startedAt: string | null;
+  finishedAt: string | null;
+  result: GoogleCalendarSyncResult | null;
+  error: string | null;
+}
+
 export interface PericiaAgendada {
   id: number;
   card_id: string;
