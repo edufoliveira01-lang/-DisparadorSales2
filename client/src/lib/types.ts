@@ -124,28 +124,34 @@ export interface Settings {
   lembrete_futuro_mensagem: string;
 }
 
-export type GoogleCalendarTitleFormat = "tipo_nome" | "nome_tipo" | "somente_nome" | "tipo_processo";
+export type GoogleCalendarTimingMode = "all_day" | "fixed_time" | "appointment_time";
 
 export interface GoogleCalendarDestinationConfig {
-  destination: 1 | 2;
+  destination: number;
+  name: string;
   enabled: boolean;
   calendarId: string;
   calendarName: string;
-  titleFormat: GoogleCalendarTitleFormat;
+  titleTemplate: string;
+  uppercaseTitle: boolean;
+  timingMode: GoogleCalendarTimingMode;
+  startDaysBefore: number;
+  endDaysAfter: number;
+  fixedTime: string;
+  durationMinutes: number;
+  createMissing: boolean;
   includePhone: boolean;
   includeProcess: boolean;
   includeProfessional: boolean;
   includeLocation: boolean;
   visibility: "default" | "private";
   transparency: "opaque" | "transparent";
-  reminderMinutes: number[];
   colorId: string;
 }
 
 export interface GoogleCalendarConfig {
   syncEnabled: boolean;
-  durationMinutes: number;
-  destinations: [GoogleCalendarDestinationConfig, GoogleCalendarDestinationConfig];
+  destinations: GoogleCalendarDestinationConfig[];
 }
 
 export interface GoogleCalendarStatus {
@@ -167,7 +173,8 @@ export interface GoogleCalendarListItem {
 }
 
 export interface GoogleCalendarAnalysisDestination {
-  destination: 1 | 2;
+  destination: number;
+  name: string;
   calendarName: string;
   total: number;
   linked: number;
@@ -188,6 +195,7 @@ export interface GoogleCalendarSyncResult {
   created: number;
   updated: number;
   deleted: number;
+  skipped: number;
   conflicts: number;
   errors: number;
 }
