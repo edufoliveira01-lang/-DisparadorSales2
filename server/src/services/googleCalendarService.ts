@@ -20,6 +20,7 @@ export interface GoogleCalendarDestinationConfig {
   calendarId: string;
   calendarName: string;
   titleTemplate: string;
+  descriptionTemplate: string;
   uppercaseTitle: boolean;
   timingMode: GoogleCalendarTimingMode;
   startDaysBefore: number;
@@ -117,6 +118,17 @@ export class GoogleCalendarError extends Error {
 }
 
 export const DEFAULT_GOOGLE_CALENDAR_TITLE_TEMPLATE = "{tipo} - {data} - {horario} - {nome} - {telefone} - {processo}";
+export const DEFAULT_GOOGLE_CALENDAR_DESCRIPTION_TEMPLATE = [
+  "TIPO: {tipo};",
+  "DATA: {data};",
+  "HORÁRIO: {horario};",
+  "LOCAL: {local};",
+  "NOME: {nome};",
+  "TELEFONE: {telefone};",
+  "WHATSAPP: {whatsapp};",
+  "PROCESSO: {processo};",
+  "PROFISSIONAL/PERITO: {profissional};",
+].join("\n");
 
 const DEFAULT_DESTINATION = (destination: number): GoogleCalendarDestinationConfig => ({
   destination,
@@ -125,6 +137,7 @@ const DEFAULT_DESTINATION = (destination: number): GoogleCalendarDestinationConf
   calendarId: "",
   calendarName: "",
   titleTemplate: DEFAULT_GOOGLE_CALENDAR_TITLE_TEMPLATE,
+  descriptionTemplate: DEFAULT_GOOGLE_CALENDAR_DESCRIPTION_TEMPLATE,
   uppercaseTitle: true,
   timingMode: destination === 1 ? "all_day" : destination === 2 ? "fixed_time" : "appointment_time",
   startDaysBefore: destination === 1 ? 5 : 0,
@@ -187,6 +200,9 @@ function sanitizeDestination(
   const titleTemplate = typeof value?.titleTemplate === "string" && value.titleTemplate.trim()
     ? value.titleTemplate.trim().slice(0, 500)
     : fallback.titleTemplate;
+  const descriptionTemplate = typeof value?.descriptionTemplate === "string" && value.descriptionTemplate.trim()
+    ? value.descriptionTemplate.trim().slice(0, 4_000)
+    : fallback.descriptionTemplate;
 
   return {
     destination,
@@ -195,6 +211,7 @@ function sanitizeDestination(
     calendarId: typeof value?.calendarId === "string" ? value.calendarId.trim().slice(0, 500) : "",
     calendarName: typeof value?.calendarName === "string" ? value.calendarName.trim().slice(0, 200) : "",
     titleTemplate,
+    descriptionTemplate,
     uppercaseTitle: value?.uppercaseTitle !== false,
     timingMode: timingModes.includes(value?.timingMode as GoogleCalendarTimingMode)
       ? (value?.timingMode as GoogleCalendarTimingMode)
@@ -490,21 +507,31 @@ function addDays(ymd: string, days: number): string {
   return `${result.getUTCFullYear()}-${String(result.getUTCMonth() + 1).padStart(2, "0")}-${String(result.getUTCDate()).padStart(2, "0")}`;
 }
 
-function titleFor(pericia: PericiaAgendada, destination: GoogleCalendarDestinationConfig): string {
-  const values: Record<string, string> = {
-    tipo: pericia.tipo || "",
+function googleTemplateValues(pericia: PericiaAgendada): Record<string, string> {
+  const telefone = (pericia.telefone || "").replace(/\s*-\s*(?=\d{4}\s*$)/, " - ");
+  return {
+    tipo: (pericia.tipo || "").toLocaleUpperCase("pt-BR"),
     data: pericia.data || "",
     horario: pericia.horario || "",
-    nome: pericia.nome || "",
-    telefone: pericia.telefone || "",
+    nome: (pericia.nome || "").toLocaleUpperCase("pt-BR"),
+    telefone,
+    whatsapp: (pericia.whatsapp || "").toLocaleUpperCase("pt-BR"),
     processo: pericia.processo || "",
-    profissional: pericia.profissional_perito || "",
+    profissional: (pericia.profissional_perito || "").toLocaleUpperCase("pt-BR"),
     local: pericia.local || "",
   };
-  const rendered = destination.titleTemplate.replace(
-    /\{(tipo|data|horario|nome|telefone|processo|profissional|local)\}/gi,
+}
+
+function renderGoogleTemplate(template: string, pericia: PericiaAgendada): string {
+  const values = googleTemplateValues(pericia);
+  return template.replace(
+    /\{(tipo|data|horario|nome|telefone|whatsapp|processo|profissional|local)\}/gi,
     (_match, token: string) => values[token.toLowerCase()] || ""
-  ).replace(/\s+/g, " ").trim();
+  );
+}
+
+function titleFor(pericia: PericiaAgendada, destination: GoogleCalendarDestinationConfig): string {
+  const rendered = renderGoogleTemplate(destination.titleTemplate, pericia).replace(/\s+/g, " ").trim();
   const title = rendered || `${pericia.tipo} - ${pericia.nome}`;
   return destination.uppercaseTitle ? title.toLocaleUpperCase("pt-BR") : title;
 }
@@ -540,15 +567,11 @@ export function buildGoogleEvent(
   pericia: PericiaAgendada,
   destination: GoogleCalendarDestinationConfig
 ): GoogleCalendarEvent {
-  const details: string[] = ["Evento sincronizado pelo DisparaZap."];
-  if (destination.includeProcess && pericia.processo) details.push(`Processo: ${pericia.processo}`);
-  if (destination.includePhone && pericia.telefone) details.push(`Telefone: ${pericia.telefone}`);
-  if (destination.includeProfessional && pericia.profissional_perito) details.push(`Profissional/Perito: ${pericia.profissional_perito}`);
-  details.push(`Tipo: ${pericia.tipo}`, `Cliente: ${pericia.nome}`);
+  const description = renderGoogleTemplate(destination.descriptionTemplate, pericia).trim();
 
   const event: GoogleCalendarEvent = {
     summary: titleFor(pericia, destination),
-    description: details.join("\n"),
+    description,
     location: destination.includeLocation ? pericia.local || undefined : undefined,
     visibility: destination.visibility,
     transparency: destination.transparency,

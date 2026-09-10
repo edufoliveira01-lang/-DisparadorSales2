@@ -43,16 +43,26 @@ function destination(overrides: Partial<GoogleCalendarDestinationConfig> = {}): 
 
 describe("integração com o Google Agenda", () => {
   it("monta o título completo e um evento em horário fixo sem lembretes", () => {
-    const event = buildGoogleEvent(pericia(), destination({
+    const event = buildGoogleEvent(pericia({ whatsapp: "SIM" }), destination({
       timingMode: "fixed_time",
       fixedTime: "23:00",
       durationMinutes: 60,
     })) as Record<string, any>;
 
-    expect(event.summary).toBe("PERÍCIA MÉDICA - 20/12/2026 - 23:30 - CLIENTE TESTE - (11) 99999-8888 - 0000000-00.2026.0.00.0000");
+    expect(event.summary).toBe("PERÍCIA MÉDICA - 20/12/2026 - 23:30 - CLIENTE TESTE - (11) 99999 - 8888 - 0000000-00.2026.0.00.0000");
     expect(event.start.dateTime).toBe("2026-12-20T23:00:00-03:00");
     expect(event.end.dateTime).toBe("2026-12-21T00:00:00-03:00");
-    expect(event.description).toContain("Processo: 0000000-00.2026.0.00.0000");
+    expect(event.description).toBe([
+      "TIPO: PERÍCIA MÉDICA;",
+      "DATA: 20/12/2026;",
+      "HORÁRIO: 23:30;",
+      "LOCAL: Fórum de Teste;",
+      "NOME: CLIENTE TESTE;",
+      "TELEFONE: (11) 99999 - 8888;",
+      "WHATSAPP: SIM;",
+      "PROCESSO: 0000000-00.2026.0.00.0000;",
+      "PROFISSIONAL/PERITO: PROFISSIONAL TESTE;",
+    ].join("\n"));
     expect(event.location).toBe("Fórum de Teste");
     expect(event.extendedProperties.private.disparazapId).toBe("999991");
     expect(event.reminders).toEqual({ useDefault: false, overrides: [] });
@@ -69,7 +79,7 @@ describe("integração com o Google Agenda", () => {
 
     expect(event.start).toEqual({ date: "2026-12-15" });
     expect(event.end).toEqual({ date: "2026-12-21" });
-    expect(event.description).not.toContain("Telefone:");
+    expect(event.description).toContain("TELEFONE: (11) 99999 - 8888;");
     expect(event.location).toBeUndefined();
   });
 
