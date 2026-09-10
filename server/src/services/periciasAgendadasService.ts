@@ -2,7 +2,11 @@ import { db } from "../db";
 import { randomUUID } from "node:crypto";
 import { normalizePhone } from "../utils/phone";
 import { parseBrazilianDate, type Pericia } from "./parserService";
-import { scheduleGoogleCalendarDelete, scheduleGoogleCalendarSync } from "./googleCalendarService";
+import {
+  scheduleGoogleCalendarDelete,
+  scheduleGoogleCalendarSync,
+  transferGoogleCalendarLinks,
+} from "./googleCalendarService";
 
 export type PericiaAgendadaStatus = "ativa" | "substituida";
 export type PericiaAgendadaFonte = "whatsapp" | "trello_sync";
@@ -229,7 +233,7 @@ export function registrarPericiaAgendadaComResultado(
 
   for (const anterior of anteriores) {
     supersedeStmt.run(nova.id, anterior.id);
-    scheduleGoogleCalendarDelete(anterior.id);
+    transferGoogleCalendarLinks(anterior.id, nova.id);
   }
 
   scheduleGoogleCalendarSync(nova.id);

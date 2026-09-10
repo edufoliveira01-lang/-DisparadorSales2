@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import crypto from "node:crypto";
 import { parseBrazilianDate, type Pericia } from "../services/parserService";
 import { normalizePhone } from "../utils/phone";
 
@@ -124,7 +125,7 @@ export function runMigrations(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS google_calendar_event_links (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       pericia_id INTEGER NOT NULL,
-      destination INTEGER NOT NULL CHECK(destination IN (1, 2)),
+      destination INTEGER NOT NULL CHECK(destination > 0),
       calendar_id TEXT NOT NULL,
       google_event_id TEXT NOT NULL,
       sync_status TEXT NOT NULL DEFAULT 'sincronizado' CHECK(sync_status IN ('sincronizado','pendente','erro')),
@@ -157,6 +158,41 @@ export function runMigrations(db: Database.Database): void {
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
   `);
+
+  // A primeira versão da integração limitava os destinos aos números 1 e 2 por CHECK.
+  // Reconstrói somente essa tabela em instalações existentes para aceitar uma quantidade
+  // dinâmica de regras, preservando todos os vínculos já salvos.
+  const googleLinksSchema = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'google_calendar_event_links'"
+  ).get() as { sql?: string } | undefined;
+  if (googleLinksSchema?.sql?.includes("destination IN (1, 2)")) {
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE google_calendar_event_links_dynamic (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          pericia_id INTEGER NOT NULL,
+          destination INTEGER NOT NULL CHECK(destination > 0),
+          calendar_id TEXT NOT NULL,
+          google_event_id TEXT NOT NULL,
+          sync_status TEXT NOT NULL DEFAULT 'sincronizado' CHECK(sync_status IN ('sincronizado','pendente','erro')),
+          last_error TEXT,
+          synced_at DATETIME,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(pericia_id, destination)
+        );
+        INSERT INTO google_calendar_event_links_dynamic
+          (id, pericia_id, destination, calendar_id, google_event_id, sync_status, last_error, synced_at, created_at, updated_at)
+        SELECT id, pericia_id, destination, calendar_id, google_event_id, sync_status, last_error, synced_at, created_at, updated_at
+        FROM google_calendar_event_links;
+        DROP TABLE google_calendar_event_links;
+        ALTER TABLE google_calendar_event_links_dynamic RENAME TO google_calendar_event_links;
+        CREATE INDEX idx_google_calendar_links_pericia ON google_calendar_event_links(pericia_id);
+        CREATE INDEX idx_google_calendar_links_status ON google_calendar_event_links(sync_status);
+        CREATE UNIQUE INDEX idx_google_calendar_links_remote_unique ON google_calendar_event_links(calendar_id, google_event_id);
+      `);
+    })();
+  }
 
   // Migração para adicionar colunas se não existirem
   try {
@@ -563,14 +599,21 @@ export function runMigrations(db: Database.Database): void {
     console.error("[Calendário] Não foi possível criar o índice antiduplicação v2:", err);
   }
 
-  // Criar usuário padrão se não existir nenhum
+  // Cria o primeiro usuário sem uma credencial pública/fixa. Instalações podem definir
+  // INITIAL_ADMIN_PASSWORD (mínimo 12 caracteres); sem ela, uma senha temporária aleatória é
+  // exibida uma única vez no log do primeiro boot e deve ser alterada após a entrada.
   const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get() as { count: number };
   if (userCount.count === 0) {
-    // Senha padrão: admin123 (hash simples para exemplo, ideal seria bcrypt mas para uso local/simples manteremos direto ou hash sha256)
-    // Usaremos um hash SHA256 fixo para 'admin123' para facilitar a primeira entrada
-    const crypto = require("node:crypto");
-    const hash = crypto.createHash("sha256").update("admin123").digest("hex");
+    const configuredPassword = process.env.INITIAL_ADMIN_PASSWORD?.trim();
+    const initialPassword = configuredPassword && configuredPassword.length >= 12
+      ? configuredPassword
+      : crypto.randomBytes(24).toString("base64url");
+    const hash = crypto.createHash("sha256").update(initialPassword).digest("hex");
     db.prepare("INSERT INTO users (username, password_hash) VALUES (?, ?)").run("admin", hash);
+    if (!configuredPassword || configuredPassword.length < 12) {
+      console.warn(`[Configuração inicial] Usuário admin criado com senha temporária: ${initialPassword}`);
+      console.warn("[Configuração inicial] Altere essa senha após o primeiro acesso.");
+    }
   }
 
   const templatePadraoAntigo = {

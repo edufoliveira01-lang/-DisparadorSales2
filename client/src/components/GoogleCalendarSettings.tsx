@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { CalendarSync, CheckCircle2, ExternalLink, Link2, RefreshCw, ShieldCheck, Unplug } from "lucide-react";
+import {
+  CalendarSync, CheckCircle2, ExternalLink, Link2, Plus,
+  RefreshCw, ShieldCheck, Trash2, Unplug,
+} from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type {
   GoogleCalendarAnalysis,
@@ -17,11 +20,10 @@ import { Checkbox } from "@/components/ui/Checkbox";
 import { Input, Label } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 
-function ToggleLine({
-  checked,
-  onChange,
-  children,
-}: {
+const DEFAULT_TITLE_TEMPLATE = "{tipo} - {data} - {horario} - {nome} - {telefone} - {processo}";
+const TITLE_TOKENS = ["{tipo}", "{data}", "{horario}", "{nome}", "{telefone}", "{processo}", "{profissional}", "{local}"];
+
+function ToggleLine({ checked, onChange, children }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   children: React.ReactNode;
@@ -34,25 +36,55 @@ function ToggleLine({
   );
 }
 
-function parseReminders(value: string): number[] {
-  return Array.from(new Set(
-    value
-      .split(/[,;\s]+/)
-      .map((item) => Number(item))
-      .filter((item) => Number.isInteger(item) && item >= 0 && item <= 40_320)
-  )).slice(0, 5);
+function newDestination(destination: number): GoogleCalendarDestinationConfig {
+  return {
+    destination,
+    name: `Destino ${destination}`,
+    enabled: false,
+    calendarId: "",
+    calendarName: "",
+    titleTemplate: DEFAULT_TITLE_TEMPLATE,
+    uppercaseTitle: true,
+    timingMode: "appointment_time",
+    startDaysBefore: 0,
+    endDaysAfter: 0,
+    fixedTime: "23:00",
+    durationMinutes: 60,
+    createMissing: false,
+    includePhone: true,
+    includeProcess: true,
+    includeProfessional: true,
+    includeLocation: true,
+    visibility: "default",
+    transparency: "opaque",
+    colorId: "",
+  };
 }
 
-function DestinationEditor({
-  config,
-  calendars,
-  onChange,
-}: {
+function titlePreview(config: GoogleCalendarDestinationConfig): string {
+  const values: Record<string, string> = {
+    tipo: "PERÍCIA MÉDICA",
+    data: "14/10/2026",
+    horario: "10:00",
+    nome: "MÁRCIA APARECIDA CARVALHO NEVES",
+    telefone: "(13) 99711-4872",
+    processo: "1003033-76.2025.8.26.0075",
+    profissional: "PROFISSIONAL",
+    local: "LOCAL DA PERÍCIA",
+  };
+  const rendered = config.titleTemplate.replace(
+    /\{(tipo|data|horario|nome|telefone|processo|profissional|local)\}/gi,
+    (_match, token: string) => values[token.toLowerCase()] || ""
+  );
+  return config.uppercaseTitle ? rendered.toLocaleUpperCase("pt-BR") : rendered;
+}
+
+function DestinationEditor({ config, calendars, onChange, onRemove }: {
   config: GoogleCalendarDestinationConfig;
   calendars: GoogleCalendarListItem[];
   onChange: (value: GoogleCalendarDestinationConfig) => void;
+  onRemove: () => void;
 }) {
-  const [remindersText, setRemindersText] = useState(config.reminderMinutes.join(", "));
   const update = <K extends keyof GoogleCalendarDestinationConfig>(key: K, value: GoogleCalendarDestinationConfig[K]) => {
     onChange({ ...config, [key]: value });
   };
@@ -60,19 +92,23 @@ function DestinationEditor({
 
   return (
     <div className="space-y-4 rounded-xl border border-zinc-200 bg-zinc-50/60 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="font-medium text-zinc-900 dark:text-zinc-100">Destino {config.destination}</p>
-          <p className="text-xs text-zinc-500">Configuração independente desta agenda</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <Label>Nome da configuração</Label>
+          <Input value={config.name} onChange={(event) => update("name", event.target.value)} placeholder={`Destino ${config.destination}`} />
         </div>
-        <ToggleLine checked={config.enabled} onChange={(checked) => update("enabled", checked)}>Ativo</ToggleLine>
+        <div className="flex items-center gap-2 pt-7">
+          <ToggleLine checked={config.enabled} onChange={(checked) => update("enabled", checked)}>Ativo</ToggleLine>
+          <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-600" onClick={onRemove} title="Remover configuração">
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       <div>
         <Label>Agenda do Google</Label>
         <Select
           value={config.calendarId}
-          disabled={!config.enabled}
           onChange={(event) => {
             const calendar = calendars.find((item) => item.id === event.target.value);
             onChange({ ...config, calendarId: event.target.value, calendarName: calendar?.summary || "" });
@@ -89,51 +125,82 @@ function DestinationEditor({
       </div>
 
       <div>
-        <Label>Título do evento</Label>
-        <Select value={config.titleFormat} disabled={!config.enabled} onChange={(event) => update("titleFormat", event.target.value as GoogleCalendarDestinationConfig["titleFormat"])}>
-          <option value="tipo_nome">Tipo — Cliente</option>
-          <option value="nome_tipo">Cliente — Tipo</option>
-          <option value="somente_nome">Somente cliente</option>
-          <option value="tipo_processo">Tipo — Processo</option>
+        <Label>Modelo do título</Label>
+        <Input value={config.titleTemplate} onChange={(event) => update("titleTemplate", event.target.value)} />
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {TITLE_TOKENS.map((token) => (
+            <button
+              key={token}
+              type="button"
+              className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-500 hover:border-accent-400 hover:text-accent-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
+              onClick={() => update("titleTemplate", `${config.titleTemplate}${config.titleTemplate ? " " : ""}${token}`)}
+            >
+              {token}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 break-words rounded-lg bg-white px-3 py-2 text-xs text-zinc-500 dark:bg-zinc-950 dark:text-zinc-400">
+          Prévia: {titlePreview(config)}
+        </p>
+        <div className="mt-2">
+          <ToggleLine checked={config.uppercaseTitle} onChange={(checked) => update("uppercaseTitle", checked)}>Converter o título para maiúsculas</ToggleLine>
+        </div>
+      </div>
+
+      <div>
+        <Label>Quando o evento acontece</Label>
+        <Select value={config.timingMode} onChange={(event) => update("timingMode", event.target.value as GoogleCalendarDestinationConfig["timingMode"])}>
+          <option value="all_day">Dia inteiro — período configurável</option>
+          <option value="fixed_time">Horário fixo</option>
+          <option value="appointment_time">Data e horário da perícia</option>
         </Select>
       </div>
+
+      {config.timingMode === "all_day" ? (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <Label>Iniciar quantos dias antes</Label>
+            <Input type="number" min={0} max={365} value={config.startDaysBefore} onChange={(event) => update("startDaysBefore", Number(event.target.value))} />
+          </div>
+          <div>
+            <Label>Terminar quantos dias depois</Label>
+            <Input type="number" min={0} max={365} value={config.endDaysAfter} onChange={(event) => update("endDaysAfter", Number(event.target.value))} />
+            <p className="mt-1 text-xs text-zinc-400">Use 0 para terminar no próprio dia da perícia.</p>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {config.timingMode === "fixed_time" && (
+            <div>
+              <Label>Horário fixo</Label>
+              <Input type="time" value={config.fixedTime} onChange={(event) => update("fixedTime", event.target.value)} />
+            </div>
+          )}
+          <div>
+            <Label>Duração em minutos</Label>
+            <Input type="number" min={5} max={1440} value={config.durationMinutes} onChange={(event) => update("durationMinutes", Number(event.target.value))} />
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <Label>Disponibilidade</Label>
-          <Select value={config.transparency} disabled={!config.enabled} onChange={(event) => update("transparency", event.target.value as "opaque" | "transparent")}>
+          <Select value={config.transparency} onChange={(event) => update("transparency", event.target.value as "opaque" | "transparent")}>
             <option value="opaque">Ocupado</option>
             <option value="transparent">Livre</option>
           </Select>
         </div>
         <div>
           <Label>Privacidade</Label>
-          <Select value={config.visibility} disabled={!config.enabled} onChange={(event) => update("visibility", event.target.value as "default" | "private")}>
+          <Select value={config.visibility} onChange={(event) => update("visibility", event.target.value as "default" | "private")}>
             <option value="default">Padrão da agenda</option>
             <option value="private">Privado</option>
           </Select>
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div>
-          <Label>Lembretes em minutos</Label>
-          <Input
-            disabled={!config.enabled}
-            value={remindersText}
-            onChange={(event) => setRemindersText(event.target.value)}
-            onBlur={() => {
-              const parsed = parseReminders(remindersText);
-              setRemindersText(parsed.join(", "));
-              update("reminderMinutes", parsed);
-            }}
-            placeholder="1440, 60"
-          />
-          <p className="mt-1 text-xs text-zinc-400">Ex.: 1440 = 1 dia; 60 = 1 hora. Até 5 avisos.</p>
-        </div>
         <div>
           <Label>Cor no Google (opcional)</Label>
-          <Select value={config.colorId} disabled={!config.enabled} onChange={(event) => update("colorId", event.target.value)}>
+          <Select value={config.colorId} onChange={(event) => update("colorId", event.target.value)}>
             <option value="">Padrão da agenda</option>
             {Array.from({ length: 11 }, (_, index) => String(index + 1)).map((color) => (
               <option key={color} value={color}>Cor {color}</option>
@@ -143,10 +210,19 @@ function DestinationEditor({
       </div>
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <ToggleLine checked={config.includeProcess} onChange={(checked) => update("includeProcess", checked)}>Incluir processo</ToggleLine>
-        <ToggleLine checked={config.includePhone} onChange={(checked) => update("includePhone", checked)}>Incluir telefone</ToggleLine>
-        <ToggleLine checked={config.includeProfessional} onChange={(checked) => update("includeProfessional", checked)}>Incluir profissional/perito</ToggleLine>
-        <ToggleLine checked={config.includeLocation} onChange={(checked) => update("includeLocation", checked)}>Incluir local</ToggleLine>
+        <ToggleLine checked={config.includeProcess} onChange={(checked) => update("includeProcess", checked)}>Processo na descrição</ToggleLine>
+        <ToggleLine checked={config.includePhone} onChange={(checked) => update("includePhone", checked)}>Telefone na descrição</ToggleLine>
+        <ToggleLine checked={config.includeProfessional} onChange={(checked) => update("includeProfessional", checked)}>Profissional/perito na descrição</ToggleLine>
+        <ToggleLine checked={config.includeLocation} onChange={(checked) => update("includeLocation", checked)}>Local do evento</ToggleLine>
+      </div>
+
+      <div className="space-y-2 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-950">
+        <ToggleLine checked={config.createMissing} onChange={(checked) => update("createMissing", checked)}>
+          Criar evento se nenhuma correspondência for encontrada
+        </ToggleLine>
+        <p className="text-xs leading-5 text-zinc-400">
+          Desativado: apenas eventos já existentes são vinculados e atualizados. Os lembretes do Google ficam desativados nesta configuração.
+        </p>
       </div>
     </div>
   );
@@ -196,11 +272,25 @@ export function GoogleCalendarSettings() {
     load();
   }, [load, show]);
 
-  function updateDestination(index: 0 | 1, value: GoogleCalendarDestinationConfig) {
+  function updateDestination(index: number, value: GoogleCalendarDestinationConfig) {
     if (!config) return;
-    const destinations = [...config.destinations] as GoogleCalendarConfig["destinations"];
+    const destinations = [...config.destinations];
     destinations[index] = value;
     setConfig({ ...config, destinations });
+    setAnalysis(null);
+  }
+
+  function addDestination() {
+    if (!config || config.destinations.length >= 50) return;
+    const nextId = Math.max(0, ...config.destinations.map((item) => item.destination)) + 1;
+    setConfig({ ...config, destinations: [...config.destinations, newDestination(nextId)] });
+    setAnalysis(null);
+  }
+
+  function removeDestination(index: number) {
+    if (!config) return;
+    const destinations = config.destinations.filter((_item, currentIndex) => currentIndex !== index);
+    setConfig({ ...config, destinations, syncEnabled: destinations.length > 0 ? config.syncEnabled : false });
     setAnalysis(null);
   }
 
@@ -241,7 +331,7 @@ export function GoogleCalendarSettings() {
       const response = await api.post<{ ok: true; result: GoogleCalendarSyncResult }>("/google-calendar/sync");
       const result = response.result;
       show(
-        `Google Agenda atualizado: ${result.created} criado(s), ${result.linked} vinculado(s), ${result.updated} atualizado(s)${result.errors ? ` e ${result.errors} erro(s)` : ""}.`,
+        `Google Agenda atualizado: ${result.created} criado(s), ${result.linked} vinculado(s), ${result.updated} atualizado(s), ${result.skipped} não encontrado(s)${result.errors ? ` e ${result.errors} erro(s)` : ""}.`,
         result.errors ? "info" : "success"
       );
       setAnalysis(null);
@@ -304,26 +394,44 @@ export function GoogleCalendarSettings() {
             <Button variant="outline" size="sm" onClick={disconnect} loading={disconnecting}><Unplug className="h-4 w-4" /> Desconectar</Button>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            <DestinationEditor config={config.destinations[0]} calendars={calendars} onChange={(value) => updateDestination(0, value)} />
-            <DestinationEditor config={config.destinations[1]} calendars={calendars} onChange={(value) => updateDestination(1, value)} />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-medium text-zinc-900 dark:text-zinc-100">Destinos de sincronização</p>
+              <p className="text-xs text-zinc-500">Adicione ou remova quantas configurações precisar. Cada destino funciona de forma independente.</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={addDestination} disabled={config.destinations.length >= 50}>
+              <Plus className="h-4 w-4" /> Adicionar destino
+            </Button>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800 sm:grid-cols-[220px_1fr] sm:items-end">
-            <div>
-              <Label>Duração padrão</Label>
-              <Input type="number" min={15} max={480} value={config.durationMinutes} onChange={(event) => setConfig({ ...config, durationMinutes: Number(event.target.value) })} />
-              <p className="mt-1 text-xs text-zinc-400">Em minutos; usada para calcular o término.</p>
+          {config.destinations.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-500 dark:border-zinc-700">
+              Nenhum destino configurado. Clique em “Adicionar destino” para começar.
             </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              {config.destinations.map((destination, index) => (
+                <DestinationEditor
+                  key={destination.destination}
+                  config={destination}
+                  calendars={calendars}
+                  onChange={(value) => updateDestination(index, value)}
+                  onRemove={() => removeDestination(index)}
+                />
+              ))}
+            </div>
+          )}
+
+          <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
             <ToggleLine checked={config.syncEnabled} onChange={(checked) => { setConfig({ ...config, syncEnabled: checked }); setAnalysis(null); }}>
-              Sincronizar automaticamente novas criações, edições e exclusões
+              Sincronizar automaticamente criações, edições, reagendamentos e exclusões
             </ToggleLine>
           </div>
 
           <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-4 text-sm text-blue-800 dark:border-blue-900/60 dark:bg-blue-950/20 dark:text-blue-300">
-            <p className="flex items-center gap-2 font-medium"><Link2 className="h-4 w-4" /> Primeira sincronização sem duplicidade</p>
+            <p className="flex items-center gap-2 font-medium"><Link2 className="h-4 w-4" /> Vinculação segura, sem duplicidade</p>
             <p className="mt-1 text-xs leading-5 text-blue-700 dark:text-blue-400">
-              A análise procura eventos já existentes pelo identificador, processo, cliente, data e horário. Correspondências seguras são vinculadas; casos ambíguos ficam sem alteração para revisão.
+              A análise procura eventos existentes por identificador, processo, cliente e pela regra de data/horário de cada destino. Correspondências seguras são vinculadas; casos ambíguos não são alterados. Para não criar novos eventos, mantenha “Criar evento” desativado.
             </p>
           </div>
 
@@ -331,22 +439,25 @@ export function GoogleCalendarSettings() {
             <div className="space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
               <p className="font-medium text-zinc-900 dark:text-zinc-100">Resultado da análise — {analysis.totalEvents} compromisso(s) de hoje em diante</p>
               <div className="grid gap-3 lg:grid-cols-2">
-                {analysis.destinations.map((item) => (
-                  <div key={item.destination} className="rounded-lg bg-zinc-50 p-3 text-sm dark:bg-zinc-900">
-                    <p className="font-medium">Destino {item.destination}: {item.calendarName}</p>
-                    <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                      {item.linked} já vinculados · {item.matched} existentes encontrados · {item.missing} a criar · {item.conflicts} para revisão
-                    </p>
-                    {item.conflictItems.length > 0 && (
-                      <details className="mt-2 text-xs text-amber-700 dark:text-amber-400">
-                        <summary className="cursor-pointer">Ver casos ambíguos</summary>
-                        <ul className="mt-1 space-y-1 pl-4">
-                          {item.conflictItems.map((conflict) => <li key={conflict.periciaId}>#{conflict.periciaId} · {conflict.nome} · {conflict.data} {conflict.horario || ""}</li>)}
-                        </ul>
-                      </details>
-                    )}
-                  </div>
-                ))}
+                {analysis.destinations.map((item) => {
+                  const destination = config.destinations.find((candidate) => candidate.destination === item.destination);
+                  return (
+                    <div key={item.destination} className="rounded-lg bg-zinc-50 p-3 text-sm dark:bg-zinc-900">
+                      <p className="font-medium">{item.name}: {item.calendarName}</p>
+                      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                        {item.linked} já vinculados · {item.matched} existentes encontrados · {item.missing} não encontrados {destination?.createMissing ? "(serão criados)" : "(não serão criados)"} · {item.conflicts} para revisão
+                      </p>
+                      {item.conflictItems.length > 0 && (
+                        <details className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+                          <summary className="cursor-pointer">Ver casos ambíguos</summary>
+                          <ul className="mt-1 space-y-1 pl-4">
+                            {item.conflictItems.map((conflict) => <li key={conflict.periciaId}>#{conflict.periciaId} · {conflict.nome} · {conflict.data} {conflict.horario || ""}</li>)}
+                          </ul>
+                        </details>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
