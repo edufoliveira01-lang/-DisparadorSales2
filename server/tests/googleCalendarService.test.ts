@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildGoogleEvent,
   DEFAULT_GOOGLE_CALENDAR_CONFIG,
+  findExistingEvent,
   getGoogleCalendarSyncJob,
   GoogleCalendarError,
   saveGoogleCalendarConfig,
@@ -90,6 +91,82 @@ describe("integração com o Google Agenda", () => {
 
     expect(event.start.dateTime).toBe("2026-12-20T23:30:00-03:00");
     expect(event.end.dateTime).toBe("2026-12-21T01:00:00-03:00");
+  });
+
+  it("prioriza processo e confirma nome, tipo e data sem exigir o mesmo horário", () => {
+    const compromisso = pericia({
+      data: "09/10/2026",
+      horario: "14:00",
+      nome: "GUSTAVO GOMIERO",
+      telefone: "(13) 98833 - 2810",
+      processo: "1025868-13.2025.8.26.0381",
+    });
+    const destino = destination({ timingMode: "fixed_time", fixedTime: "23:00" });
+    const eventoManual = {
+      id: "evento-manual",
+      summary: "Perícia médica — Gustavo Gomiero — processo 1025868-13.2025.8.26.0381",
+      description: "Data: 09/10/2026",
+      start: { dateTime: "2026-10-09T09:30:00-03:00" },
+      end: { dateTime: "2026-10-09T10:30:00-03:00" },
+    };
+
+    expect(findExistingEvent(compromisso, destino, [eventoManual], new Set())).toEqual({
+      event: eventoManual,
+      conflict: false,
+      candidates: [eventoManual],
+    });
+  });
+
+  it("não considera um evento manual fora da faixa segura de sete dias", () => {
+    const compromisso = pericia({ data: "20/12/2026" });
+    const eventoDistante = {
+      id: "evento-distante",
+      summary: "Perícia médica — CLIENTE TESTE — 0000000-00.2026.0.00.0000",
+      start: { dateTime: "2026-11-20T23:30:00-03:00" },
+      end: { dateTime: "2026-11-21T00:30:00-03:00" },
+    };
+
+    expect(findExistingEvent(compromisso, destination(), [eventoDistante], new Set())).toEqual({
+      event: null,
+      conflict: false,
+      candidates: [],
+    });
+  });
+
+  it("marca conflito e devolve as opções quando há mais de uma possibilidade", () => {
+    const compromisso = pericia();
+    const destino = destination();
+    const base = {
+      summary: "PERÍCIA MÉDICA - CLIENTE TESTE - 0000000-00.2026.0.00.0000",
+      start: { dateTime: "2026-12-20T23:30:00-03:00" },
+      end: { dateTime: "2026-12-21T00:30:00-03:00" },
+    };
+    const eventos = [
+      { id: "possibilidade-1", ...base },
+      { id: "possibilidade-2", ...base },
+    ];
+
+    expect(findExistingEvent(compromisso, destino, eventos, new Set())).toEqual({
+      event: null,
+      conflict: true,
+      candidates: eventos,
+    });
+  });
+
+  it("não reaproveita evento manual nos destinos adicionais", () => {
+    const compromisso = pericia();
+    const eventoManual = {
+      id: "evento-principal",
+      summary: "PERÍCIA MÉDICA - CLIENTE TESTE - 0000000-00.2026.0.00.0000",
+      start: { dateTime: "2026-12-20T23:30:00-03:00" },
+      end: { dateTime: "2026-12-21T00:30:00-03:00" },
+    };
+
+    expect(findExistingEvent(compromisso, destination({ destination: 2 }), [eventoManual], new Set(), false)).toEqual({
+      event: null,
+      conflict: false,
+      candidates: [],
+    });
   });
 
   it("bloqueia destinos ativos apontando para a mesma agenda", () => {

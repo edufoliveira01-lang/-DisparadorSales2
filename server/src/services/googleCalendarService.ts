@@ -83,6 +83,22 @@ interface GoogleEventLink {
   last_error: string | null;
 }
 
+export interface GoogleCalendarConflictCandidate {
+  eventId: string;
+  title: string;
+  start: string;
+  end: string;
+  location: string;
+}
+
+export interface GoogleCalendarConflictItem {
+  periciaId: number;
+  nome: string;
+  data: string;
+  horario: string | null;
+  candidates: GoogleCalendarConflictCandidate[];
+}
+
 export interface GoogleCalendarAnalysisDestination {
   destination: number;
   name: string;
@@ -92,7 +108,7 @@ export interface GoogleCalendarAnalysisDestination {
   matched: number;
   missing: number;
   conflicts: number;
-  conflictItems: Array<{ periciaId: number; nome: string; data: string; horario: string | null }>;
+  conflictItems: GoogleCalendarConflictItem[];
 }
 
 export interface GoogleCalendarAnalysis {
@@ -604,58 +620,101 @@ export function buildGoogleEvent(
   return extended;
 }
 
-function googleEventStartKey(event: GoogleCalendarEvent): string {
-  if (event.start?.date) return `${event.start.date}|`;
-  const dateTime = event.start?.dateTime || "";
-  return dateTime ? `${dateTime.slice(0, 10)}|${dateTime.slice(11, 16)}` : "";
-}
-
-function localEventStartKey(pericia: PericiaAgendada, destination: GoogleCalendarDestinationConfig): string {
-  const start = eventTiming(pericia, destination).start;
-  if (start?.date) return `${start.date}|`;
-  const dateTime = start?.dateTime || "";
-  return dateTime ? `${dateTime.slice(0, 10)}|${dateTime.slice(11, 16)}` : "";
-}
-
 function eventSearchText(event: GoogleCalendarEvent): string {
   return normalizeText([event.summary, event.description, event.location].filter(Boolean).join(" "));
 }
 
-function findExistingEvent(
+const MANUAL_MATCH_WINDOW_DAYS = 7;
+
+function eventDateRange(event: GoogleCalendarEvent): { start: string; end: string } | null {
+  const start = event.start?.date || event.start?.dateTime?.slice(0, 10) || "";
+  const end = event.end?.date || event.end?.dateTime?.slice(0, 10) || start;
+  return /^\d{4}-\d{2}-\d{2}$/.test(start) && /^\d{4}-\d{2}-\d{2}$/.test(end)
+    ? { start, end }
+    : null;
+}
+
+function eventIsInsideManualMatchWindow(event: GoogleCalendarEvent, appointmentDate: string): boolean {
+  const range = eventDateRange(event);
+  if (!range) return false;
+  const minimum = addDays(appointmentDate, -MANUAL_MATCH_WINDOW_DAYS);
+  const maximum = addDays(appointmentDate, MANUAL_MATCH_WINDOW_DAYS);
+  return range.start <= maximum && range.end >= minimum;
+}
+
+function eventCoversAppointmentDate(event: GoogleCalendarEvent, appointmentDate: string): boolean {
+  const range = eventDateRange(event);
+  if (!range) return false;
+  if (event.start?.date) return range.start <= appointmentDate && range.end > appointmentDate;
+  return range.start === appointmentDate;
+}
+
+function manualCandidates(
+  pericia: PericiaAgendada,
+  events: GoogleCalendarEvent[],
+  usedIds: Set<string>
+): GoogleCalendarEvent[] {
+  const appointmentDate = eventDateKey(pericia);
+  const process = normalizeText(pericia.processo);
+  const name = normalizeText(pericia.nome);
+  const type = normalizeText(pericia.tipo);
+  const date = normalizeText(pericia.data);
+
+  return events.filter((event) => {
+    if (!event.id || usedIds.has(event.id) || event.extendedProperties?.private?.disparazapId) return false;
+    if (!eventIsInsideManualMatchWindow(event, appointmentDate)) return false;
+
+    const text = eventSearchText(event);
+    const processMatches = Boolean(process && text.includes(process));
+    const nameMatches = Boolean(name && text.includes(name));
+    const typeMatches = Boolean(type && text.includes(type));
+    const dateMatches = Boolean(date && text.includes(date)) || eventCoversAppointmentDate(event, appointmentDate);
+    const secondaryMatches = [nameMatches, typeMatches, dateMatches].filter(Boolean).length;
+
+    // Com processo cadastrado, ele é obrigatório e pelo menos dois campos de conferência
+    // também precisam coincidir. Sem processo, somente nome + tipo + data é considerado seguro.
+    return process
+      ? processMatches && secondaryMatches >= 2
+      : nameMatches && typeMatches && dateMatches;
+  });
+}
+
+function conflictCandidate(event: GoogleCalendarEvent): GoogleCalendarConflictCandidate {
+  return {
+    eventId: event.id || "",
+    title: event.summary || "Evento sem título",
+    start: event.start?.date || event.start?.dateTime || "",
+    end: event.end?.date || event.end?.dateTime || "",
+    location: event.location || "",
+  };
+}
+
+type ExistingEventMatch = {
+  event: GoogleCalendarEvent | null;
+  conflict: boolean;
+  candidates: GoogleCalendarEvent[];
+};
+
+export function findExistingEvent(
   pericia: PericiaAgendada,
   destination: GoogleCalendarDestinationConfig,
   events: GoogleCalendarEvent[],
-  usedIds: Set<string>
-): { event: GoogleCalendarEvent | null; conflict: boolean } {
+  usedIds: Set<string>,
+  allowManualMatch = true
+): ExistingEventMatch {
   const byInternalId = events.filter((event) => {
     const properties = event.extendedProperties?.private;
     return event.id && !usedIds.has(event.id) && properties?.disparazapId === String(pericia.id)
       && (!properties.disparazapDestination || properties.disparazapDestination === String(destination.destination));
   });
-  if (byInternalId.length === 1) return { event: byInternalId[0], conflict: false };
+  if (byInternalId.length === 1) return { event: byInternalId[0], conflict: false, candidates: byInternalId };
+  if (byInternalId.length > 1) return { event: null, conflict: true, candidates: byInternalId };
+  if (!allowManualMatch) return { event: null, conflict: false, candidates: [] };
 
-  const startKey = localEventStartKey(pericia, destination);
-  const name = normalizeText(pericia.nome);
-  const process = normalizeText(pericia.processo);
-  const type = normalizeText(pericia.tipo);
-  const candidates = events
-    .filter((event) => event.id && !usedIds.has(event.id) && googleEventStartKey(event) === startKey)
-    .map((event) => {
-      const text = eventSearchText(event);
-      let score = 0;
-      if (process && text.includes(process)) score += 80;
-      if (name && text.includes(name)) score += 50;
-      if (type && text.includes(type)) score += 10;
-      return { event, score };
-    })
-    // Nome sozinho é insuficiente: duas perícias distintas do mesmo cliente podem ocorrer no
-    // mesmo horário. Exige processo ou a combinação de cliente + tipo para vincular com segurança.
-    .filter((candidate) => candidate.score >= 60)
-    .sort((a, b) => b.score - a.score);
-
-  if (candidates.length === 0) return { event: null, conflict: false };
-  if (candidates.length > 1 && candidates[0].score === candidates[1].score) return { event: null, conflict: true };
-  return { event: candidates[0].event, conflict: false };
+  const candidates = manualCandidates(pericia, events, usedIds);
+  if (candidates.length === 0) return { event: null, conflict: false, candidates };
+  if (candidates.length > 1) return { event: null, conflict: true, candidates };
+  return { event: candidates[0], conflict: false, candidates };
 }
 
 function deterministicGoogleEventId(calendarId: string, periciaId: number, destination: number): string {
@@ -664,8 +723,16 @@ function deterministicGoogleEventId(calendarId: string, periciaId: number, desti
 
 function eventSearchWindow(
   pericia: PericiaAgendada,
-  destination: GoogleCalendarDestinationConfig
+  destination: GoogleCalendarDestinationConfig,
+  allowManualMatch = false
 ): { timeMin: string; timeMax: string } {
+  if (allowManualMatch) {
+    const appointmentDate = eventDateKey(pericia);
+    return {
+      timeMin: `${addDays(appointmentDate, -MANUAL_MATCH_WINDOW_DAYS)}T00:00:00-03:00`,
+      timeMax: `${addDays(appointmentDate, MANUAL_MATCH_WINDOW_DAYS + 1)}T00:00:00-03:00`,
+    };
+  }
   const timing = eventTiming(pericia, destination);
   const startDate = timing.start?.date || timing.start?.dateTime?.slice(0, 10) || eventDateKey(pericia);
   const rawEndDate = timing.end?.date || timing.end?.dateTime?.slice(0, 10) || startDate;
@@ -773,10 +840,43 @@ async function deleteRemoteEvent(link: GoogleEventLink): Promise<boolean> {
   }
 }
 
+async function adoptManualEvent(
+  pericia: PericiaAgendada,
+  destination: GoogleCalendarDestinationConfig,
+  event: GoogleCalendarEvent,
+  previousLink?: GoogleEventLink
+): Promise<{ deletedGeneratedCopy: boolean }> {
+  if (!event.id) throw new GoogleCalendarError("O evento selecionado não possui um identificador válido.", 409);
+
+  let deletedGeneratedCopy = false;
+  const generatedId = deterministicGoogleEventId(destination.calendarId, pericia.id, destination.destination);
+  if (previousLink?.google_event_id === generatedId && previousLink.google_event_id !== event.id) {
+    try {
+      await googleRequest<Record<string, never>>(
+        `/calendars/${encodeURIComponent(destination.calendarId)}/events/${encodeURIComponent(previousLink.google_event_id)}`,
+        { method: "DELETE" }
+      );
+      deletedGeneratedCopy = true;
+    } catch (err) {
+      if (!(err instanceof GoogleCalendarError) || (err.status !== 404 && err.status !== 410)) throw err;
+      deletedGeneratedCopy = true;
+    }
+  }
+
+  const updated = await googleRequest<GoogleCalendarEvent>(
+    `/calendars/${encodeURIComponent(destination.calendarId)}/events/${encodeURIComponent(event.id)}`,
+    { method: "PATCH", body: JSON.stringify(buildGoogleEvent(pericia, destination)) }
+  );
+  saveLink(pericia.id, destination.destination, destination.calendarId, updated.id || event.id);
+  return { deletedGeneratedCopy };
+}
+
 async function syncPericiaToDestination(
   pericia: PericiaAgendada,
   destination: GoogleCalendarDestinationConfig,
-  skipExistingLookup = false
+  skipExistingLookup = false,
+  allowManualMatch = true,
+  allowCreateMissing = true
 ): Promise<"linked" | "created" | "updated" | "skipped" | "conflict"> {
   let link = getLinkStmt.get(pericia.id, destination.destination) as GoogleEventLink | undefined;
   if (link && link.calendar_id !== destination.calendarId) {
@@ -805,25 +905,21 @@ async function syncPericiaToDestination(
   }
 
   if (!skipExistingLookup) {
-    const window = eventSearchWindow(pericia, destination);
+    const window = eventSearchWindow(pericia, destination, allowManualMatch);
     const existingEvents = await listGoogleEvents(
       destination.calendarId,
       window.timeMin,
       window.timeMax
     );
-    const existing = findExistingEvent(pericia, destination, existingEvents, new Set());
+    const existing = findExistingEvent(pericia, destination, existingEvents, new Set(), allowManualMatch);
     if (existing.conflict) return "conflict";
     if (existing.event?.id) {
-      const updated = await googleRequest<GoogleCalendarEvent>(
-        `/calendars/${encodeURIComponent(destination.calendarId)}/events/${encodeURIComponent(existing.event.id)}`,
-        { method: "PATCH", body: JSON.stringify(payload) }
-      );
-      saveLink(pericia.id, destination.destination, destination.calendarId, updated.id || existing.event.id);
+      await adoptManualEvent(pericia, destination, existing.event);
       return "linked";
     }
   }
 
-  if (!destination.createMissing) return "skipped";
+  if (!allowCreateMissing || !destination.createMissing) return "skipped";
 
   const googleEventId = deterministicGoogleEventId(destination.calendarId, pericia.id, destination.destination);
   try {
@@ -850,10 +946,18 @@ export async function syncGoogleCalendarPericia(periciaId: number): Promise<Goog
   const pericia = db.prepare("SELECT * FROM pericias_agendadas WHERE id = ?").get(periciaId) as PericiaAgendada | undefined;
   if (!pericia || pericia.status !== "ativa") return deleteGoogleCalendarPericia(periciaId);
 
-  for (const destination of config.destinations.filter((item) => item.enabled && item.calendarId)) {
+  const destinations = config.destinations.filter((item) => item.enabled && item.calendarId);
+  for (const [index, destination] of destinations.entries()) {
+    const isPrimaryDestination = index === 0;
     result.total += 1;
     try {
-      const action = await syncPericiaToDestination(pericia, destination);
+      const action = await syncPericiaToDestination(
+        pericia,
+        destination,
+        false,
+        isPrimaryDestination,
+        !isPrimaryDestination
+      );
       result[action === "conflict" ? "conflicts" : action] += 1;
     } catch (err) {
       result.errors += 1;
@@ -895,9 +999,18 @@ export async function analyzeGoogleCalendar(): Promise<GoogleCalendarAnalysis> {
   const pericias = futurePericias();
   const destinations: GoogleCalendarAnalysisDestination[] = [];
 
-  for (const destination of config.destinations.filter((item) => item.enabled && item.calendarId)) {
-    const events = await listGoogleEvents(destination.calendarId, `${todayInSaoPaulo()}T00:00:00-03:00`);
-    const used = new Set<string>();
+  const activeDestinations = config.destinations.filter((item) => item.enabled && item.calendarId);
+
+  for (const [index, destination] of activeDestinations.entries()) {
+    const isPrimaryDestination = index === 0;
+    const firstSearchDate = isPrimaryDestination
+      ? addDays(todayInSaoPaulo(), -MANUAL_MATCH_WINDOW_DAYS)
+      : todayInSaoPaulo();
+    const events = await listGoogleEvents(destination.calendarId, `${firstSearchDate}T00:00:00-03:00`);
+    const savedLinks = db.prepare(
+      "SELECT * FROM google_calendar_event_links WHERE destination = ? AND calendar_id = ?"
+    ).all(destination.destination, destination.calendarId) as GoogleEventLink[];
+    const used = new Set(savedLinks.map((link) => link.google_event_id));
     const summary: GoogleCalendarAnalysisDestination = {
       destination: destination.destination,
       name: destination.name,
@@ -912,14 +1025,39 @@ export async function analyzeGoogleCalendar(): Promise<GoogleCalendarAnalysis> {
     for (const pericia of pericias) {
       const link = getLinkStmt.get(pericia.id, destination.destination) as GoogleEventLink | undefined;
       if (link && link.calendar_id === destination.calendarId) {
+        const generatedId = deterministicGoogleEventId(destination.calendarId, pericia.id, destination.destination);
+        if (isPrimaryDestination && link.google_event_id === generatedId) {
+          const candidates = manualCandidates(pericia, events, used);
+          if (candidates.length === 1) {
+            summary.matched += 1;
+            used.add(candidates[0].id || "");
+            continue;
+          }
+          if (candidates.length > 1) {
+            summary.conflicts += 1;
+            summary.conflictItems.push({
+              periciaId: pericia.id,
+              nome: pericia.nome,
+              data: pericia.data,
+              horario: pericia.horario,
+              candidates: candidates.map(conflictCandidate),
+            });
+            continue;
+          }
+        }
         summary.linked += 1;
-        used.add(link.google_event_id);
         continue;
       }
-      const match = findExistingEvent(pericia, destination, events, used);
+      const match = findExistingEvent(pericia, destination, events, used, isPrimaryDestination);
       if (match.conflict) {
         summary.conflicts += 1;
-        summary.conflictItems.push({ periciaId: pericia.id, nome: pericia.nome, data: pericia.data, horario: pericia.horario });
+        summary.conflictItems.push({
+          periciaId: pericia.id,
+          nome: pericia.nome,
+          data: pericia.data,
+          horario: pericia.horario,
+          candidates: match.candidates.map(conflictCandidate),
+        });
       } else if (match.event?.id) {
         summary.matched += 1;
         used.add(match.event.id);
@@ -930,6 +1068,56 @@ export async function analyzeGoogleCalendar(): Promise<GoogleCalendarAnalysis> {
     destinations.push(summary);
   }
   return { totalEvents: pericias.length, destinations };
+}
+
+export async function resolveGoogleCalendarConflict(
+  periciaId: number,
+  destinationId: number,
+  googleEventId: string
+): Promise<GoogleCalendarSyncResult> {
+  if (!getSetting("google_refresh_token")) throw new GoogleCalendarError("Conecte sua conta Google primeiro.", 400);
+  const config = getGoogleCalendarConfig();
+  const activeDestinations = config.destinations.filter((item) => item.enabled && item.calendarId);
+  const destination = activeDestinations.find((item) => item.destination === destinationId);
+  if (!destination) throw new GoogleCalendarError("O destino selecionado não está ativo.", 400);
+  if (activeDestinations[0]?.destination !== destinationId) {
+    throw new GoogleCalendarError("A escolha manual só é permitida no primeiro destino.", 400);
+  }
+
+  const pericia = db.prepare("SELECT * FROM pericias_agendadas WHERE id = ?").get(periciaId) as PericiaAgendada | undefined;
+  if (!pericia || pericia.status !== "ativa") throw new GoogleCalendarError("O compromisso não está mais ativo.", 404);
+
+  const currentLink = getLinkStmt.get(pericia.id, destination.destination) as GoogleEventLink | undefined;
+  const generatedId = deterministicGoogleEventId(destination.calendarId, pericia.id, destination.destination);
+  if (currentLink && currentLink.calendar_id === destination.calendarId && currentLink.google_event_id !== generatedId) {
+    throw new GoogleCalendarError("Este compromisso já está vinculado a um evento manual.", 409);
+  }
+
+  const window = eventSearchWindow(pericia, destination, true);
+  const events = await listGoogleEvents(destination.calendarId, window.timeMin, window.timeMax);
+  const linkedIds = db.prepare(
+    "SELECT google_event_id FROM google_calendar_event_links WHERE calendar_id = ? AND NOT (pericia_id = ? AND destination = ?)"
+  ).all(destination.calendarId, pericia.id, destination.destination) as Array<{ google_event_id: string }>;
+  const candidates = manualCandidates(pericia, events, new Set(linkedIds.map((item) => item.google_event_id)));
+  const selected = candidates.find((event) => event.id === googleEventId);
+  if (!selected) {
+    throw new GoogleCalendarError("O evento escolhido não está mais disponível ou não corresponde ao compromisso.", 409);
+  }
+
+  const adoption = await adoptManualEvent(pericia, destination, selected, currentLink);
+  recordSystemLog({
+    nivel: "info",
+    categoria: "google_calendar",
+    evento: "conflito_resolvido",
+    titulo: "Evento do Google Agenda escolhido manualmente",
+    origem: "usuario",
+    detalhes: { periciaId, destino: destination.destination, agenda: destination.calendarName, googleEventId },
+  });
+
+  const result = await syncGoogleCalendarPericia(periciaId);
+  result.linked += 1;
+  if (adoption.deletedGeneratedCopy) result.deleted += 1;
+  return result;
 }
 
 async function cleanupOrphanLinks(result: GoogleCalendarSyncResult): Promise<void> {
@@ -956,8 +1144,13 @@ export async function syncAllGoogleCalendar(): Promise<GoogleCalendarSyncResult>
   // Uma única leitura por agenda mantém a primeira sincronização rápida mesmo com centenas
   // de compromissos. A lista em memória também impede que o mesmo evento manual seja ligado
   // a dois compromissos diferentes durante a reconciliação.
-  for (const destination of config.destinations.filter((item) => item.enabled && item.calendarId)) {
-    const events = await listGoogleEvents(destination.calendarId, `${todayInSaoPaulo()}T00:00:00-03:00`);
+  const activeDestinations = config.destinations.filter((item) => item.enabled && item.calendarId);
+  for (const [index, destination] of activeDestinations.entries()) {
+    const isPrimaryDestination = index === 0;
+    const firstSearchDate = isPrimaryDestination
+      ? addDays(todayInSaoPaulo(), -MANUAL_MATCH_WINDOW_DAYS)
+      : todayInSaoPaulo();
+    const events = await listGoogleEvents(destination.calendarId, `${firstSearchDate}T00:00:00-03:00`);
     const usedIds = new Set<string>();
     const currentLinks = db.prepare(
       "SELECT * FROM google_calendar_event_links WHERE destination = ? AND calendar_id = ?"
@@ -969,7 +1162,24 @@ export async function syncAllGoogleCalendar(): Promise<GoogleCalendarSyncResult>
       try {
         const currentLink = getLinkStmt.get(pericia.id, destination.destination) as GoogleEventLink | undefined;
         if (currentLink?.calendar_id === destination.calendarId) {
-          const action = await syncPericiaToDestination(pericia, destination, true);
+          const generatedId = deterministicGoogleEventId(destination.calendarId, pericia.id, destination.destination);
+          if (isPrimaryDestination && currentLink.google_event_id === generatedId) {
+            const candidates = manualCandidates(pericia, events, usedIds);
+            if (candidates.length > 1) {
+              result.conflicts += 1;
+              continue;
+            }
+            if (candidates.length === 1) {
+              const previousId = currentLink.google_event_id;
+              const adoption = await adoptManualEvent(pericia, destination, candidates[0], currentLink);
+              usedIds.delete(previousId);
+              usedIds.add(candidates[0].id || "");
+              result.linked += 1;
+              if (adoption.deletedGeneratedCopy) result.deleted += 1;
+              continue;
+            }
+          }
+          const action = await syncPericiaToDestination(pericia, destination, true, isPrimaryDestination, !isPrimaryDestination);
           result[action === "conflict" ? "conflicts" : action] += 1;
           continue;
         }
@@ -977,20 +1187,19 @@ export async function syncAllGoogleCalendar(): Promise<GoogleCalendarSyncResult>
           deleteLinkStmt.run(currentLink.pericia_id, currentLink.destination);
         }
 
-        const match = findExistingEvent(pericia, destination, events, usedIds);
+        const match = findExistingEvent(pericia, destination, events, usedIds, isPrimaryDestination);
         if (match.conflict) {
           result.conflicts += 1;
           continue;
         }
         if (match.event?.id) {
-          saveLink(pericia.id, destination.destination, destination.calendarId, match.event.id);
+          await adoptManualEvent(pericia, destination, match.event);
           usedIds.add(match.event.id);
-          await syncPericiaToDestination(pericia, destination, true);
           result.linked += 1;
           continue;
         }
 
-        const action = await syncPericiaToDestination(pericia, destination, true);
+        const action = await syncPericiaToDestination(pericia, destination, true, isPrimaryDestination, !isPrimaryDestination);
         result[action === "conflict" ? "conflicts" : action] += 1;
       } catch (err) {
         result.errors += 1;

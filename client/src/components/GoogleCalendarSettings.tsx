@@ -111,11 +111,22 @@ function descriptionPreview(config: GoogleCalendarDestinationConfig): string {
   );
 }
 
-function DestinationEditor({ config, calendars, onChange, onRemove }: {
+function formatCandidateMoment(value: string): string {
+  if (!value) return "Horário não informado";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split("-");
+    return `${day}/${month}/${year} · dia inteiro`;
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("pt-BR");
+}
+
+function DestinationEditor({ config, calendars, onChange, onRemove, isPrimary }: {
   config: GoogleCalendarDestinationConfig;
   calendars: GoogleCalendarListItem[];
   onChange: (value: GoogleCalendarDestinationConfig) => void;
   onRemove: () => void;
+  isPrimary: boolean;
 }) {
   const update = <K extends keyof GoogleCalendarDestinationConfig>(key: K, value: GoogleCalendarDestinationConfig[K]) => {
     onChange({ ...config, [key]: value });
@@ -128,6 +139,7 @@ function DestinationEditor({ config, calendars, onChange, onRemove }: {
         <div className="min-w-0 flex-1">
           <Label>Nome da configuração</Label>
           <Input value={config.name} onChange={(event) => update("name", event.target.value)} placeholder={`Destino ${config.destination}`} />
+          {isPrimary && <p className="mt-1 text-xs text-blue-600 dark:text-blue-400">Destino principal: reaproveita o evento criado manualmente.</p>}
         </div>
         <div className="flex items-center gap-2 pt-7">
           <ToggleLine checked={config.enabled} onChange={(checked) => update("enabled", checked)}>Ativo</ToggleLine>
@@ -271,12 +283,20 @@ function DestinationEditor({ config, calendars, onChange, onRemove }: {
       </div>
 
       <div className="space-y-2 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-950">
-        <ToggleLine checked={config.createMissing} onChange={(checked) => update("createMissing", checked)}>
-          Criar evento se nenhuma correspondência for encontrada
-        </ToggleLine>
-        <p className="text-xs leading-5 text-zinc-400">
-          Desativado: apenas eventos já existentes são vinculados e atualizados. Os lembretes do Google ficam desativados nesta configuração.
-        </p>
+        {isPrimary ? (
+          <p className="text-xs leading-5 text-blue-700 dark:text-blue-400">
+            Este destino nunca cria uma cópia: ele procura e vincula o evento manual pelo processo, nome, tipo e data.
+          </p>
+        ) : (
+          <>
+            <ToggleLine checked={config.createMissing} onChange={(checked) => update("createMissing", checked)}>
+              Criar evento se nenhuma correspondência for encontrada
+            </ToggleLine>
+            <p className="text-xs leading-5 text-zinc-400">
+              Ative para criar este evento adicional quando ele ainda não existir. Os lembretes do Google ficam desativados.
+            </p>
+          </>
+        )}
       </div>
     </div>
   );
@@ -292,6 +312,7 @@ export function GoogleCalendarSettings() {
   const [saving, setSaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [resolvingConflict, setResolvingConflict] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
 
   const load = useCallback(async () => {
@@ -393,16 +414,36 @@ export function GoogleCalendarSettings() {
       }
       const result: GoogleCalendarSyncResult | null = job.result;
       if (!result) throw new Error("O servidor não retornou o resultado da sincronização.");
+      let nextAnalysis: GoogleCalendarAnalysis | null = null;
+      if (result.conflicts > 0) {
+        nextAnalysis = await api.post<GoogleCalendarAnalysis>("/google-calendar/analyze");
+      }
+      setAnalysis(nextAnalysis);
       show(
-        `Google Agenda atualizado: ${result.created} criado(s), ${result.linked} vinculado(s), ${result.updated} atualizado(s), ${result.skipped} não encontrado(s)${result.errors ? ` e ${result.errors} erro(s)` : ""}.`,
-        result.errors ? "info" : "success"
+        `Google Agenda atualizado: ${result.created} criado(s), ${result.linked} vinculado(s), ${result.updated} atualizado(s), ${result.skipped} não encontrado(s)${result.conflicts ? ` e ${result.conflicts} aguardando sua escolha` : ""}${result.errors ? ` e ${result.errors} erro(s)` : ""}.`,
+        result.errors || result.conflicts ? "info" : "success"
       );
-      setAnalysis(null);
       await load();
     } catch (err) {
       show(err instanceof Error ? err.message : "Não foi possível sincronizar as agendas.", "error");
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function resolveConflict(destination: number, periciaId: number, googleEventId: string) {
+    const key = `${destination}:${periciaId}:${googleEventId}`;
+    setResolvingConflict(key);
+    try {
+      await api.post("/google-calendar/conflicts/resolve", { destination, periciaId, googleEventId });
+      const nextAnalysis = await api.post<GoogleCalendarAnalysis>("/google-calendar/analyze");
+      setAnalysis(nextAnalysis);
+      show("Evento selecionado, vinculado e sincronizado. O sistema continuará usando esse mesmo evento.", "success");
+      await load();
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Não foi possível vincular o evento escolhido.", "error");
+    } finally {
+      setResolvingConflict(null);
     }
   }
 
@@ -485,6 +526,7 @@ export function GoogleCalendarSettings() {
                   key={destination.destination}
                   config={destination}
                   calendars={calendars}
+                  isPrimary={destination.destination === config.destinations.find((item) => item.enabled && item.calendarId)?.destination}
                   onChange={(value) => updateDestination(index, value)}
                   onRemove={() => removeDestination(index)}
                 />
@@ -501,7 +543,7 @@ export function GoogleCalendarSettings() {
           <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-4 text-sm text-blue-800 dark:border-blue-900/60 dark:bg-blue-950/20 dark:text-blue-300">
             <p className="flex items-center gap-2 font-medium"><Link2 className="h-4 w-4" /> Vinculação segura, sem duplicidade</p>
             <p className="mt-1 text-xs leading-5 text-blue-700 dark:text-blue-400">
-              A análise procura eventos existentes por identificador, processo, cliente e pela regra de data/horário de cada destino. Correspondências seguras são vinculadas; casos ambíguos não são alterados. Para não criar novos eventos, mantenha “Criar evento” desativado.
+              O primeiro destino procura o evento manual principalmente pelo processo e confirma nome, tipo e data em uma faixa de sete dias. Os destinos seguintes criam apenas os eventos adicionais configurados. Casos ambíguos aguardam sua escolha e não geram cópias.
             </p>
           </div>
 
@@ -511,19 +553,43 @@ export function GoogleCalendarSettings() {
               <div className="grid gap-3 lg:grid-cols-2">
                 {analysis.destinations.map((item) => {
                   const destination = config.destinations.find((candidate) => candidate.destination === item.destination);
+                  const isPrimaryDestination = item.destination === config.destinations.find((candidate) => candidate.enabled && candidate.calendarId)?.destination;
                   return (
                     <div key={item.destination} className="rounded-lg bg-zinc-50 p-3 text-sm dark:bg-zinc-900">
                       <p className="font-medium">{item.name}: {item.calendarName}</p>
                       <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                        {item.linked} já vinculados · {item.matched} existentes encontrados · {item.missing} não encontrados {destination?.createMissing ? "(serão criados)" : "(não serão criados)"} · {item.conflicts} para revisão
+                        {item.linked} já vinculados · {item.matched} existentes encontrados · {item.missing} não encontrados {isPrimaryDestination ? "(aguardam evento manual)" : destination?.createMissing ? "(serão criados)" : "(não serão criados)"} · {item.conflicts} para revisão
                       </p>
                       {item.conflictItems.length > 0 && (
-                        <details className="mt-2 text-xs text-amber-700 dark:text-amber-400">
-                          <summary className="cursor-pointer">Ver casos ambíguos</summary>
-                          <ul className="mt-1 space-y-1 pl-4">
-                            {item.conflictItems.map((conflict) => <li key={conflict.periciaId}>#{conflict.periciaId} · {conflict.nome} · {conflict.data} {conflict.horario || ""}</li>)}
-                          </ul>
-                        </details>
+                        <div className="mt-3 space-y-3">
+                          {item.conflictItems.map((conflict) => (
+                            <div key={conflict.periciaId} className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                              <p className="font-medium">Escolha o evento de #{conflict.periciaId} · {conflict.nome} · {conflict.data} {conflict.horario || ""}</p>
+                              <div className="mt-2 space-y-2">
+                                {conflict.candidates.map((candidate) => {
+                                  const key = `${item.destination}:${conflict.periciaId}:${candidate.eventId}`;
+                                  return (
+                                    <button
+                                      key={candidate.eventId}
+                                      type="button"
+                                      disabled={Boolean(resolvingConflict)}
+                                      onClick={() => resolveConflict(item.destination, conflict.periciaId, candidate.eventId)}
+                                      className="block w-full rounded-md border border-amber-200 bg-white p-2 text-left transition hover:border-blue-400 hover:bg-blue-50 disabled:cursor-wait disabled:opacity-60 dark:border-amber-900 dark:bg-zinc-950 dark:hover:border-blue-700 dark:hover:bg-blue-950/30"
+                                    >
+                                      <span className="block font-medium text-zinc-900 dark:text-zinc-100">{candidate.title}</span>
+                                      <span className="mt-1 block text-zinc-500 dark:text-zinc-400">
+                                        {formatCandidateMoment(candidate.start)}{candidate.location ? ` · ${candidate.location}` : ""}
+                                      </span>
+                                      <span className="mt-1 block font-medium text-blue-600 dark:text-blue-400">
+                                        {resolvingConflict === key ? "Vinculando…" : "Usar este evento"}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
                   );
