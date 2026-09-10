@@ -23,6 +23,7 @@ import { Select } from "@/components/ui/Select";
 
 const DEFAULT_TITLE_TEMPLATE = "{tipo} - {data} - {horario} - {nome} - {telefone} - {processo}";
 const DEFAULT_DESCRIPTION_TEMPLATE = [
+  "{descricao_original}",
   "TIPO: {tipo};",
   "DATA: {data};",
   "HORÁRIO: {horario};",
@@ -34,6 +35,10 @@ const DEFAULT_DESCRIPTION_TEMPLATE = [
   "PROFISSIONAL/PERITO: {profissional};",
 ].join("\n");
 const TEMPLATE_TOKENS = ["{tipo}", "{data}", "{horario}", "{local}", "{nome}", "{telefone}", "{whatsapp}", "{processo}", "{profissional}"];
+const ORIGINAL_DESCRIPTION_TOKEN = "{descricao_original}";
+const ORIGINAL_DESCRIPTION_PATTERN = /\{(?:descricao|descrição)_original\}/gi;
+const DESCRIPTION_START = "--- INÍCIO DISPARAZAP ---";
+const DESCRIPTION_END = "--- FIM DISPARAZAP ---";
 
 function ToggleLine({ checked, onChange, children }: {
   checked: boolean;
@@ -57,6 +62,7 @@ function newDestination(destination: number): GoogleCalendarDestinationConfig {
     calendarName: "",
     titleTemplate: DEFAULT_TITLE_TEMPLATE,
     descriptionTemplate: DEFAULT_DESCRIPTION_TEMPLATE,
+    descriptionMode: "preserve",
     uppercaseTitle: true,
     timingMode: "appointment_time",
     startDaysBefore: 0,
@@ -105,10 +111,21 @@ function descriptionPreview(config: GoogleCalendarDestinationConfig): string {
     processo: "1016617-71.2025.8.26.0477",
     profissional: "",
   };
-  return config.descriptionTemplate.replace(
+  const rendered = config.descriptionTemplate.replace(
     /\{(tipo|data|horario|nome|telefone|whatsapp|processo|profissional|local)\}/gi,
     (_match, token: string) => values[token.toLowerCase()] || ""
-  );
+  ).trim();
+  const original = "Informações que já existiam na descrição do evento.";
+  const withoutOriginal = rendered.replace(ORIGINAL_DESCRIPTION_PATTERN, "").trim();
+  if (config.descriptionMode === "keep_original") return original;
+  if (config.descriptionMode === "replace") return withoutOriginal;
+
+  const block = (value: string) => value.trim() ? `${DESCRIPTION_START}\n${value.trim()}\n${DESCRIPTION_END}` : "";
+  const token = rendered.match(/\{(?:descricao|descrição)_original\}/i);
+  if (!token || token.index === undefined) return [original, block(withoutOriginal)].filter(Boolean).join("\n\n");
+  const before = rendered.slice(0, token.index).replace(ORIGINAL_DESCRIPTION_PATTERN, "").trim();
+  const after = rendered.slice(token.index + token[0].length).replace(ORIGINAL_DESCRIPTION_PATTERN, "").trim();
+  return [block(before), original, block(after)].filter(Boolean).join("\n\n");
 }
 
 function formatCandidateMoment(value: string): string {
@@ -254,15 +271,31 @@ function DestinationEditor({ config, calendars, onChange, onRemove, isPrimary }:
       </div>
 
       <div>
+        <Label>Tratamento da descrição existente</Label>
+        <Select
+          value={config.descriptionMode}
+          onChange={(event) => update("descriptionMode", event.target.value as GoogleCalendarDestinationConfig["descriptionMode"])}
+        >
+          <option value="preserve">Preservar e complementar (recomendado)</option>
+          <option value="replace">Substituir pela descrição configurada</option>
+          <option value="keep_original">Manter somente a descrição original</option>
+        </Select>
+        <p className="mt-1 text-xs text-zinc-400">
+          No modo preservar, somente o bloco identificado do DisparaZap será atualizado nas próximas sincronizações.
+        </p>
+      </div>
+
+      <div>
         <Label>Modelo da descrição</Label>
         <Textarea
           rows={10}
           value={config.descriptionTemplate}
           onChange={(event) => update("descriptionTemplate", event.target.value)}
           className="font-mono text-xs leading-5"
+          disabled={config.descriptionMode === "keep_original"}
         />
         <div className="mt-2 flex flex-wrap gap-1.5">
-          {TEMPLATE_TOKENS.map((token) => (
+          {[...(config.descriptionMode === "preserve" ? [ORIGINAL_DESCRIPTION_TOKEN] : []), ...TEMPLATE_TOKENS].map((token) => (
             <button
               key={token}
               type="button"
@@ -273,7 +306,13 @@ function DestinationEditor({ config, calendars, onChange, onRemove, isPrimary }:
             </button>
           ))}
         </div>
-        <p className="mt-2 text-xs text-zinc-400">Mantenha cada informação em uma linha. Os campos sem dados permanecerão vazios.</p>
+        <p className="mt-2 text-xs text-zinc-400">
+          {config.descriptionMode === "preserve"
+            ? `Use ${ORIGINAL_DESCRIPTION_TOKEN} para escolher onde o texto original aparecerá. Sem a variável, ele ficará no início.`
+            : config.descriptionMode === "replace"
+              ? "A descrição atual será substituída integralmente por este modelo."
+              : "A descrição do Google não será alterada pelo sistema."}
+        </p>
         <pre className="mt-2 whitespace-pre-wrap break-words rounded-lg bg-white px-3 py-2 font-sans text-xs leading-5 text-zinc-500 dark:bg-zinc-950 dark:text-zinc-400">
           {descriptionPreview(config)}
         </pre>

@@ -12,6 +12,7 @@ const TIME_ZONE = "America/Sao_Paulo";
 const CONFIG_KEY = "google_calendar_config";
 
 export type GoogleCalendarTimingMode = "all_day" | "fixed_time" | "appointment_time";
+export type GoogleCalendarDescriptionMode = "preserve" | "replace" | "keep_original";
 
 export interface GoogleCalendarDestinationConfig {
   destination: number;
@@ -21,6 +22,7 @@ export interface GoogleCalendarDestinationConfig {
   calendarName: string;
   titleTemplate: string;
   descriptionTemplate: string;
+  descriptionMode: GoogleCalendarDescriptionMode;
   uppercaseTitle: boolean;
   timingMode: GoogleCalendarTimingMode;
   startDaysBefore: number;
@@ -145,6 +147,7 @@ export class GoogleCalendarError extends Error {
 
 export const DEFAULT_GOOGLE_CALENDAR_TITLE_TEMPLATE = "{tipo} - {data} - {horario} - {nome} - {telefone} - {processo}";
 export const DEFAULT_GOOGLE_CALENDAR_DESCRIPTION_TEMPLATE = [
+  "{descricao_original}",
   "TIPO: {tipo};",
   "DATA: {data};",
   "HORÁRIO: {horario};",
@@ -164,6 +167,7 @@ const DEFAULT_DESTINATION = (destination: number): GoogleCalendarDestinationConf
   calendarName: "",
   titleTemplate: DEFAULT_GOOGLE_CALENDAR_TITLE_TEMPLATE,
   descriptionTemplate: DEFAULT_GOOGLE_CALENDAR_DESCRIPTION_TEMPLATE,
+  descriptionMode: "preserve",
   uppercaseTitle: true,
   timingMode: destination === 1 ? "all_day" : destination === 2 ? "fixed_time" : "appointment_time",
   startDaysBefore: destination === 1 ? 5 : 0,
@@ -223,6 +227,7 @@ function sanitizeDestination(
 ): GoogleCalendarDestinationConfig {
   const fallback = DEFAULT_DESTINATION(destination);
   const timingModes: GoogleCalendarTimingMode[] = ["all_day", "fixed_time", "appointment_time"];
+  const descriptionModes: GoogleCalendarDescriptionMode[] = ["preserve", "replace", "keep_original"];
   const titleTemplate = typeof value?.titleTemplate === "string" && value.titleTemplate.trim()
     ? value.titleTemplate.trim().slice(0, 500)
     : fallback.titleTemplate;
@@ -238,6 +243,9 @@ function sanitizeDestination(
     calendarName: typeof value?.calendarName === "string" ? value.calendarName.trim().slice(0, 200) : "",
     titleTemplate,
     descriptionTemplate,
+    descriptionMode: descriptionModes.includes(value?.descriptionMode as GoogleCalendarDescriptionMode)
+      ? (value?.descriptionMode as GoogleCalendarDescriptionMode)
+      : fallback.descriptionMode,
     uppercaseTitle: value?.uppercaseTitle !== false,
     timingMode: timingModes.includes(value?.timingMode as GoogleCalendarTimingMode)
       ? (value?.timingMode as GoogleCalendarTimingMode)
@@ -556,6 +564,48 @@ function renderGoogleTemplate(template: string, pericia: PericiaAgendada): strin
   );
 }
 
+const DISPARAZAP_DESCRIPTION_START = "--- INÍCIO DISPARAZAP ---";
+const DISPARAZAP_DESCRIPTION_END = "--- FIM DISPARAZAP ---";
+const ORIGINAL_DESCRIPTION_TOKEN = /\{(?:descricao|descrição)_original\}/gi;
+const DISPARAZAP_DESCRIPTION_BLOCK = /(?:\r?\n)?--- INÍCIO DISPARAZAP ---[\s\S]*?--- FIM DISPARAZAP ---(?:\r?\n)?/gi;
+
+function managedDescriptionBlock(value: string): string {
+  const content = value.trim();
+  return content ? `${DISPARAZAP_DESCRIPTION_START}\n${content}\n${DISPARAZAP_DESCRIPTION_END}` : "";
+}
+
+function originalGoogleDescription(value: string | null | undefined, currentManagedContent: string): string {
+  const current = (value || "").replace(DISPARAZAP_DESCRIPTION_BLOCK, "\n").trim();
+  // Migração das versões anteriores: se toda a descrição atual foi produzida pelo modelo
+  // antigo, ela não é tratada como conteúdo manual para não duplicar o mesmo texto.
+  return normalizeText(current) === normalizeText(currentManagedContent) ? "" : current;
+}
+
+export function buildGoogleDescription(
+  pericia: PericiaAgendada,
+  destination: GoogleCalendarDestinationConfig,
+  existingDescription: string | null | undefined = ""
+): string | undefined {
+  const rendered = renderGoogleTemplate(destination.descriptionTemplate, pericia).trim();
+  const managedWithoutOriginal = rendered.replace(ORIGINAL_DESCRIPTION_TOKEN, "").trim();
+  if (destination.descriptionMode === "keep_original") {
+    return originalGoogleDescription(existingDescription, managedWithoutOriginal);
+  }
+  if (destination.descriptionMode === "replace") return managedWithoutOriginal;
+
+  const original = originalGoogleDescription(existingDescription, managedWithoutOriginal);
+  const tokenMatch = ORIGINAL_DESCRIPTION_TOKEN.exec(rendered);
+  ORIGINAL_DESCRIPTION_TOKEN.lastIndex = 0;
+  if (!tokenMatch || tokenMatch.index === undefined) {
+    return [original, managedDescriptionBlock(managedWithoutOriginal)].filter(Boolean).join("\n\n");
+  }
+
+  const before = rendered.slice(0, tokenMatch.index).replace(ORIGINAL_DESCRIPTION_TOKEN, "").trim();
+  const after = rendered.slice(tokenMatch.index + tokenMatch[0].length).replace(ORIGINAL_DESCRIPTION_TOKEN, "").trim();
+  ORIGINAL_DESCRIPTION_TOKEN.lastIndex = 0;
+  return [managedDescriptionBlock(before), original, managedDescriptionBlock(after)].filter(Boolean).join("\n\n");
+}
+
 function titleFor(pericia: PericiaAgendada, destination: GoogleCalendarDestinationConfig): string {
   const rendered = renderGoogleTemplate(destination.titleTemplate, pericia).replace(/\s+/g, " ").trim();
   const title = rendered || `${pericia.tipo} - ${pericia.nome}`;
@@ -591,9 +641,10 @@ function eventTiming(
 
 export function buildGoogleEvent(
   pericia: PericiaAgendada,
-  destination: GoogleCalendarDestinationConfig
+  destination: GoogleCalendarDestinationConfig,
+  existingDescription: string | null | undefined = ""
 ): GoogleCalendarEvent {
-  const description = renderGoogleTemplate(destination.descriptionTemplate, pericia).trim();
+  const description = buildGoogleDescription(pericia, destination, existingDescription);
 
   const event: GoogleCalendarEvent = {
     summary: titleFor(pericia, destination),
@@ -865,7 +916,7 @@ async function adoptManualEvent(
 
   const updated = await googleRequest<GoogleCalendarEvent>(
     `/calendars/${encodeURIComponent(destination.calendarId)}/events/${encodeURIComponent(event.id)}`,
-    { method: "PATCH", body: JSON.stringify(buildGoogleEvent(pericia, destination)) }
+    { method: "PATCH", body: JSON.stringify(buildGoogleEvent(pericia, destination, event.description)) }
   );
   saveLink(pericia.id, destination.destination, destination.calendarId, updated.id || event.id);
   return { deletedGeneratedCopy };
@@ -876,7 +927,8 @@ async function syncPericiaToDestination(
   destination: GoogleCalendarDestinationConfig,
   skipExistingLookup = false,
   allowManualMatch = true,
-  allowCreateMissing = true
+  allowCreateMissing = true,
+  knownEvent?: GoogleCalendarEvent
 ): Promise<"linked" | "created" | "updated" | "skipped" | "conflict"> {
   let link = getLinkStmt.get(pericia.id, destination.destination) as GoogleEventLink | undefined;
   if (link && link.calendar_id !== destination.calendarId) {
@@ -886,9 +938,15 @@ async function syncPericiaToDestination(
     link = undefined;
   }
 
-  const payload = buildGoogleEvent(pericia, destination);
   if (link) {
     try {
+      let currentEvent = knownEvent?.id === link.google_event_id ? knownEvent : undefined;
+      if (destination.descriptionMode !== "replace" && !currentEvent) {
+        currentEvent = await googleRequest<GoogleCalendarEvent>(
+          `/calendars/${encodeURIComponent(destination.calendarId)}/events/${encodeURIComponent(link.google_event_id)}`
+        );
+      }
+      const payload = buildGoogleEvent(pericia, destination, currentEvent?.description);
       const updated = await googleRequest<GoogleCalendarEvent>(
         `/calendars/${encodeURIComponent(destination.calendarId)}/events/${encodeURIComponent(link.google_event_id)}`,
         { method: "PATCH", body: JSON.stringify(payload) }
@@ -922,6 +980,7 @@ async function syncPericiaToDestination(
   if (!allowCreateMissing || !destination.createMissing) return "skipped";
 
   const googleEventId = deterministicGoogleEventId(destination.calendarId, pericia.id, destination.destination);
+  const payload = buildGoogleEvent(pericia, destination);
   try {
     const created = await googleRequest<GoogleCalendarEvent>(
       `/calendars/${encodeURIComponent(destination.calendarId)}/events`,
@@ -1179,7 +1238,14 @@ export async function syncAllGoogleCalendar(): Promise<GoogleCalendarSyncResult>
               continue;
             }
           }
-          const action = await syncPericiaToDestination(pericia, destination, true, isPrimaryDestination, !isPrimaryDestination);
+          const action = await syncPericiaToDestination(
+            pericia,
+            destination,
+            true,
+            isPrimaryDestination,
+            !isPrimaryDestination,
+            events.find((event) => event.id === currentLink.google_event_id)
+          );
           result[action === "conflict" ? "conflicts" : action] += 1;
           continue;
         }

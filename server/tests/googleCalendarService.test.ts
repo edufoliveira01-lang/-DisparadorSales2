@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildGoogleEvent,
+  buildGoogleDescription,
   DEFAULT_GOOGLE_CALENDAR_CONFIG,
   findExistingEvent,
   getGoogleCalendarSyncJob,
@@ -50,6 +51,7 @@ describe("integração com o Google Agenda", () => {
       timingMode: "fixed_time",
       fixedTime: "23:00",
       durationMinutes: 60,
+      descriptionMode: "replace",
     })) as Record<string, any>;
 
     expect(event.summary).toBe("PERÍCIA MÉDICA - 20/12/2026 - 23:30 - CLIENTE TESTE - (11) 99999 - 8888 - 0000000-00.2026.0.00.0000");
@@ -91,6 +93,42 @@ describe("integração com o Google Agenda", () => {
 
     expect(event.start.dateTime).toBe("2026-12-20T23:30:00-03:00");
     expect(event.end.dateTime).toBe("2026-12-21T01:00:00-03:00");
+  });
+
+  it("preserva a descrição original e atualiza somente o bloco do DisparaZap", () => {
+    const destino = destination({
+      descriptionMode: "preserve",
+      descriptionTemplate: "{descricao_original}\nTIPO: {tipo};\nPROCESSO: {processo};",
+    });
+    const anterior = [
+      "Observação manual importante.",
+      "",
+      "--- INÍCIO DISPARAZAP ---",
+      "DADOS ANTIGOS",
+      "--- FIM DISPARAZAP ---",
+    ].join("\n");
+
+    expect(buildGoogleDescription(pericia(), destino, anterior)).toBe([
+      "Observação manual importante.",
+      "",
+      "--- INÍCIO DISPARAZAP ---",
+      "TIPO: PERÍCIA MÉDICA;",
+      "PROCESSO: 0000000-00.2026.0.00.0000;",
+      "--- FIM DISPARAZAP ---",
+    ].join("\n"));
+  });
+
+  it("permite substituir integralmente ou manter a descrição original", () => {
+    const compromisso = pericia();
+    const original = "Texto criado manualmente no Google.";
+
+    expect(buildGoogleDescription(compromisso, destination({
+      descriptionMode: "replace",
+      descriptionTemplate: "PROCESSO: {processo};",
+    }), original)).toBe("PROCESSO: 0000000-00.2026.0.00.0000;");
+    expect(buildGoogleDescription(compromisso, destination({
+      descriptionMode: "keep_original",
+    }), original)).toBe(original);
   });
 
   it("prioriza processo e confirma nome, tipo e data sem exigir o mesmo horário", () => {

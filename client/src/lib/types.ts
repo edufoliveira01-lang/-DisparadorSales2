@@ -134,6 +134,7 @@ export interface GoogleCalendarDestinationConfig {
   calendarName: string;
   titleTemplate: string;
   descriptionTemplate: string;
+  descriptionMode: "preserve" | "replace" | "keep_original";
   uppercaseTitle: boolean;
   timingMode: GoogleCalendarTimingMode;
   startDaysBefore: number;
