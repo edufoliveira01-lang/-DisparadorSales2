@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { normalizePhone } from "../utils/phone";
+import { whatsappMessageStableKey } from "../utils/whatsappMessageId";
 import { whatsappManager } from "./whatsappService";
 
 export type PendingReplyStatus = "aguardando" | "respondido" | "cancelado";
@@ -32,14 +33,27 @@ const cancelAwaitingForPhoneStmt = db.prepare(
   `UPDATE pending_replies SET status = 'cancelado', resolved_at = CURRENT_TIMESTAMP WHERE telefone_digits = ? AND status = 'aguardando'`
 );
 const insertStmt = db.prepare(
-  `INSERT INTO pending_replies (card_id, card_nome, telefone, telefone_digits, whatsapp_chat_id, whatsapp_message_id, status)
-   VALUES (@card_id, @card_nome, @telefone, @telefone_digits, @whatsapp_chat_id, @whatsapp_message_id, 'aguardando')`
+  `INSERT INTO pending_replies (card_id, card_nome, telefone, telefone_digits, whatsapp_chat_id, whatsapp_message_id, status, ack)
+   VALUES (@card_id, @card_nome, @telefone, @telefone_digits, @whatsapp_chat_id, @whatsapp_message_id, 'aguardando', 1)`
 );
 const getStmt = db.prepare("SELECT * FROM pending_replies WHERE id = ?");
-const getByMessageIdStmt = db.prepare("SELECT * FROM pending_replies WHERE whatsapp_message_id = ?");
-const findAwaitingByMessageIdStmt = db.prepare(
-  "SELECT * FROM pending_replies WHERE whatsapp_message_id = ? AND status = 'aguardando' ORDER BY created_at DESC LIMIT 1"
-);
+const getByMessageIdStmt = db.prepare(`
+  SELECT * FROM pending_replies
+  WHERE whatsapp_message_id = @message_id
+     OR substr(whatsapp_message_id, -length(@stable_id)) = @stable_id
+  ORDER BY id DESC
+  LIMIT 1
+`);
+const findAwaitingByMessageIdStmt = db.prepare(`
+  SELECT * FROM pending_replies
+  WHERE status = 'aguardando'
+    AND (
+      whatsapp_message_id = @message_id
+      OR substr(whatsapp_message_id, -length(@stable_id)) = @stable_id
+    )
+  ORDER BY created_at DESC
+  LIMIT 1
+`);
 const findAwaitingByChatIdStmt = db.prepare(
   "SELECT * FROM pending_replies WHERE whatsapp_chat_id = ? AND status = 'aguardando' ORDER BY created_at DESC LIMIT 1"
 );
@@ -60,9 +74,15 @@ const cancelStmt = db.prepare(
   `UPDATE pending_replies SET status = 'cancelado', resolved_at = CURRENT_TIMESTAMP WHERE id = ?`
 );
 const deleteStmt = db.prepare("DELETE FROM pending_replies WHERE id = ?");
-const updateAckStmt = db.prepare(
-  "UPDATE pending_replies SET ack = ?, ack_updated_at = CURRENT_TIMESTAMP WHERE whatsapp_message_id = ?"
-);
+const updateAckStmt = db.prepare(`
+  UPDATE pending_replies
+  SET ack = @ack, ack_updated_at = CURRENT_TIMESTAMP
+  WHERE (
+    whatsapp_message_id = @message_id
+    OR substr(whatsapp_message_id, -length(@stable_id)) = @stable_id
+  )
+    AND (@ack = -1 OR ack IS NULL OR @ack > ack)
+`);
 const linkSendLogStmt = db.prepare("UPDATE pending_replies SET send_log_id = ? WHERE id = ?");
 
 /**
@@ -104,9 +124,14 @@ export function createPendingReply(
 
 /** Atualiza o nível de confirmação (ack) do pendente associado a essa mensagem do WhatsApp. */
 export function updatePendingReplyAckByMessageId(whatsappMessageId: string, ack: number): PendingReply | undefined {
-  const info = updateAckStmt.run(ack, whatsappMessageId);
+  const params = {
+    message_id: whatsappMessageId,
+    stable_id: whatsappMessageStableKey(whatsappMessageId),
+    ack,
+  };
+  const info = updateAckStmt.run(params);
   if (info.changes === 0) return undefined;
-  return getByMessageIdStmt.get(whatsappMessageId) as PendingReply;
+  return getByMessageIdStmt.get(params) as PendingReply;
 }
 
 export function findAwaitingByPhoneDigits(telefoneDigits: string): PendingReply | undefined {
@@ -124,7 +149,10 @@ export function findAwaitingByChatIdentifier(chatId: string): PendingReply | und
 }
 
 export function findAwaitingByWhatsappMessageId(whatsappMessageId: string): PendingReply | undefined {
-  return findAwaitingByMessageIdStmt.get(whatsappMessageId) as PendingReply | undefined;
+  return findAwaitingByMessageIdStmt.get({
+    message_id: whatsappMessageId,
+    stable_id: whatsappMessageStableKey(whatsappMessageId),
+  }) as PendingReply | undefined;
 }
 
 export function linkPendingReplyToSendLog(pendingId: number, sendLogId: number): PendingReply | undefined {

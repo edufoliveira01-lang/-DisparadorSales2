@@ -4,6 +4,7 @@ import path from "node:path";
 import QRCode from "qrcode";
 import { Client, LocalAuth, type Message, type Reaction } from "whatsapp-web.js";
 import { dataDir } from "../db";
+import { whatsappMessageIdCandidates, whatsappMessageStableKey } from "../utils/whatsappMessageId";
 import { emitEvent } from "../websocket";
 import { getSetting } from "./settingsService";
 import { enviarMensagemTelegram } from "./telegramService";
@@ -776,16 +777,27 @@ class WhatsappManager {
         return;
       }
 
-      const toDigits = message.to.split("@")[0];
+      const messageId = whatsappMessageIdCandidates(message.id)[0];
+      const toDigits = String(message.to || "").split("@")[0];
       console.log(`[WhatsApp] message_create detectado (fromMe) para: ${toDigits}`);
+      if (!messageId) {
+        console.warn("[WhatsApp] message_create sem identificador utilizável.");
+        return;
+      }
 
-      // Match por dígitos para evitar problemas com @c.us vs @s.whatsapp.net
-      const idx = this.enviosAguardandoId.findIndex((e) => e.chatId.split("@")[0] === toDigits);
+      // Prefere chat + texto exatos e usa somente o chat como fallback. Como os envios para o
+      // mesmo contato são sequenciais, isso associa o ID ao envio que está aguardando agora.
+      let idx = this.enviosAguardandoId.findIndex(
+        (e) => e.chatId.split("@")[0] === toDigits && e.texto === message.body
+      );
+      if (idx === -1) {
+        idx = this.enviosAguardandoId.findIndex((e) => e.chatId.split("@")[0] === toDigits);
+      }
       if (idx === -1) return;
 
       const [aguardando] = this.enviosAguardandoId.splice(idx, 1);
-      console.log(`[WhatsApp] ID capturado via fallback para ${toDigits}: ${message.id._serialized}`);
-      aguardando.resolve(message.id._serialized);
+      console.log(`[WhatsApp] ID capturado via fallback para ${toDigits}: ${messageId}`);
+      aguardando.resolve(messageId);
     });
 
     // "message_ack" dispara a cada mudança no status de confirmação de uma mensagem NOSSA
@@ -794,9 +806,28 @@ class WhatsappManager {
     // monitoramento de resposta ativo) no momento do envio, em dispatchService.
     client.on("message_ack", (message: Message, ack: number) => {
       try {
-        const messageId = message.id._serialized;
+        const messageId = whatsappMessageIdCandidates(message.id)[0];
+        if (!messageId) {
+          console.warn(`[WhatsApp] message_ack sem identificador utilizável. ACK=${ack}`);
+          return;
+        }
+
+        // Em algumas versões do WhatsApp Web, message_ack chega antes de message_create. Nesse
+        // caso ele também conclui a captura do ID para que o log seja salvo com rastreamento.
+        const toDigits = String(message.to || "").split("@")[0];
+        let waitingIndex = this.enviosAguardandoId.findIndex(
+          (e) => e.chatId.split("@")[0] === toDigits && e.texto === message.body
+        );
+        if (waitingIndex === -1) {
+          waitingIndex = this.enviosAguardandoId.findIndex((e) => e.chatId.split("@")[0] === toDigits);
+        }
+        if (waitingIndex !== -1) {
+          const [aguardando] = this.enviosAguardandoId.splice(waitingIndex, 1);
+          aguardando.resolve(messageId);
+        }
+
         console.log(`[WhatsApp] Evento message_ack recebido: ID=${messageId}, ACK=${ack}`);
-        
+
         const log = updateLogAckByMessageId(messageId, ack);
         const pending = updatePendingReplyAckByMessageId(messageId, ack);
 
@@ -812,10 +843,14 @@ class WhatsappManager {
         // Se não encontrou nem log nem pendente, pode ser que o registro ainda não tenha sido
         // salvo no banco (race condition). Guardamos o ack para tentar aplicar logo em seguida.
         if (!log && !pending) {
-          console.log(`[WhatsApp] ACK órfão detectado (race condition), guardando: ${messageId}`);
-          this.acksPendentes.set(messageId, ack);
+          const stableKey = whatsappMessageStableKey(messageId);
+          console.log(`[WhatsApp] ACK órfão detectado (race condition), guardando: ${stableKey}`);
+          const previousAck = this.acksPendentes.get(stableKey);
+          if (previousAck === undefined || ack === -1 || ack > previousAck) {
+            this.acksPendentes.set(stableKey, ack);
+          }
           // Limpa do cache após 30 segundos para não vazar memória
-          setTimeout(() => this.acksPendentes.delete(messageId), 30000);
+          setTimeout(() => this.acksPendentes.delete(stableKey), 30000);
         }
       } catch (err) {
         console.error("Erro ao processar confirmação de entrega/leitura:", err);
@@ -971,7 +1006,7 @@ class WhatsappManager {
    * cache é só o setTimeout de 30s lá embaixo (em client.on("message_ack")).
    */
   processarAckPendente(messageId: string) {
-    const ack = this.acksPendentes.get(messageId);
+    const ack = this.acksPendentes.get(whatsappMessageStableKey(messageId));
     if (ack === undefined) return;
 
     const log = updateLogAckByMessageId(messageId, ack);
@@ -1047,11 +1082,13 @@ class WhatsappManager {
       // Pequena pausa para o WhatsApp Web processar o ID interno
       await new Promise(r => setTimeout(r, 500));
 
-      // Prioridade 1: ID retornado diretamente pelo sendMessage
-      if (sent?.id?._serialized) {
-        console.log(`[WhatsApp] ID retornado no envio direto: ${sent.id._serialized}`);
+      // Prioridade 1: ID retornado diretamente pelo sendMessage. Aceita tanto o formato
+      // completo quanto o stanza ID reduzido, pois ambos aparecem em versões reais da lib.
+      const directId = whatsappMessageIdCandidates(sent?.id)[0];
+      if (directId) {
+        console.log(`[WhatsApp] ID retornado no envio direto: ${directId}`);
         this.removerEnvioAguardando(chatId, mensagem);
-        return sent.id._serialized;
+        return directId;
       }
       
       // Prioridade 2: Fallback via message_create (evento disparado pela lib)
@@ -1067,8 +1104,11 @@ class WhatsappManager {
         if (chat.lastMessage && chat.lastMessage.fromMe) {
           const bodyStart = chat.lastMessage.body.slice(0, 20);
           if (mensagem.includes(bodyStart)) {
-            console.log(`[WhatsApp] ID capturado via lastMessage: ${chat.lastMessage.id._serialized}`);
-            return chat.lastMessage.id._serialized;
+            const lastMessageId = whatsappMessageIdCandidates(chat.lastMessage.id)[0];
+            if (lastMessageId) {
+              console.log(`[WhatsApp] ID capturado via lastMessage: ${lastMessageId}`);
+              return lastMessageId;
+            }
           }
         }
       } catch (e) {
@@ -1084,16 +1124,17 @@ class WhatsappManager {
           const messages = await chat.fetchMessages({ limit: 5 });
           const lastSent = messages.reverse().find(m => m.fromMe && mensagem.includes(m.body.slice(0, 20)));
           
-          if (lastSent && lastSent.id?._serialized) {
-            console.log(`[WhatsApp] ID capturado na busca persistente (T${i+1}): ${lastSent.id._serialized}`);
-            return lastSent.id._serialized;
+          const fetchedId = lastSent ? whatsappMessageIdCandidates(lastSent.id)[0] : null;
+          if (fetchedId) {
+            console.log(`[WhatsApp] ID capturado na busca persistente (T${i+1}): ${fetchedId}`);
+            return fetchedId;
           }
         }
       } catch (fetchErr) {
         console.error(`[WhatsApp] Erro na busca persistente para ${chatId}:`, fetchErr);
       }
 
-      console.error(`[WhatsApp] FALHA TOTAL ao capturar ID para ${chatId}. Status ficará como "—".`);
+      console.error(`[WhatsApp] FALHA TOTAL ao capturar ID para ${chatId}. Status permanecerá como "Enviado".`);
       return null;
     } catch (err) {
       this.removerEnvioAguardando(chatId, mensagem);
@@ -1130,10 +1171,8 @@ class WhatsappManager {
   }
 
   /**
-   * Verifica, para cada pendente ainda "aguardando", se o cliente já respondeu por texto
-   * enquanto a sessão estava fora do ar. Reações perdidas durante a desconexão não têm como
-   * ser recuperadas por aqui (a lib não expõe reações antigas por mensagem de forma prática) —
-   * ficam para o usuário resolver manualmente na tela de Pendentes de Resposta.
+   * Reconcilia os ACKs e verifica, para cada pendente ainda "aguardando", se o cliente respondeu
+   * enquanto a sessão estava fora do ar. Reações perdidas não podem ser recuperadas pela lib.
    */
   private async reconciliarPendentesAoReconectar(): Promise<void> {
     const client = this.client;
@@ -1165,7 +1204,26 @@ class WhatsappManager {
     for (const chatId of chatIds) {
       try {
         const chat = await client.getChatById(chatId);
-        const mensagens = await chat.fetchMessages({ limit: 50, fromMe: false });
+        const mensagens = await chat.fetchMessages({ limit: 50 });
+
+        // Recupera confirmações perdidas durante reinícios/desconexões. A comparação usa o
+        // stanza ID estável, funcionando com o ID completo ou reduzido salvo no banco.
+        if (pendente.whatsapp_message_id) {
+          const pendingKey = whatsappMessageStableKey(pendente.whatsapp_message_id);
+          const enviada = mensagens.find((m) =>
+            m.fromMe && whatsappMessageIdCandidates(m.id).some(
+              (candidate) => whatsappMessageStableKey(candidate) === pendingKey
+            )
+          );
+          const recoveredAck = Number(enviada?.ack);
+          if (Number.isInteger(recoveredAck) && recoveredAck >= -1 && recoveredAck <= 4) {
+            const log = updateLogAckByMessageId(pendente.whatsapp_message_id, recoveredAck);
+            const updatedPending = updatePendingReplyAckByMessageId(pendente.whatsapp_message_id, recoveredAck);
+            if (log) emitEvent("send:ack-update", log);
+            if (updatedPending) emitEvent("pendingReply:ack-update", updatedPending);
+          }
+        }
+
         const resposta = mensagens.find((m) => !m.fromMe && m.timestamp * 1000 >= criadoEmMs);
         if (!resposta) continue;
 

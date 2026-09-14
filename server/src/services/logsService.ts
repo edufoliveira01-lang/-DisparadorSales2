@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { whatsappMessageStableKey } from "../utils/whatsappMessageId";
 import { whatsappManager } from "./whatsappService";
 
 export interface SendLog {
@@ -42,8 +43,8 @@ export interface NewSendLog {
 }
 
 const insertStmt = db.prepare(
-  `INSERT INTO send_logs (card_id, card_nome, contact_id, telefone, pericias_json, mensagem_enviada, status, erro, whatsapp_message_id, tipo_envio)
-   VALUES (@card_id, @card_nome, @contact_id, @telefone, @pericias_json, @mensagem_enviada, @status, @erro, @whatsapp_message_id, @tipo_envio)`
+  `INSERT INTO send_logs (card_id, card_nome, contact_id, telefone, pericias_json, mensagem_enviada, status, erro, whatsapp_message_id, tipo_envio, ack)
+   VALUES (@card_id, @card_nome, @contact_id, @telefone, @pericias_json, @mensagem_enviada, @status, @erro, @whatsapp_message_id, @tipo_envio, @ack)`
 );
 // LEFT JOIN pelo vínculo direto; whatsapp_message_id fica como compatibilidade para registros
 // antigos. Assim o Histórico enxerga a resposta mesmo quando a API do WhatsApp não devolveu o ID
@@ -67,10 +68,22 @@ const listStmt = db.prepare(`
 `);
 const lastForCardStmt = db.prepare("SELECT * FROM send_logs WHERE card_id = ? ORDER BY created_at DESC, id DESC LIMIT 1");
 const getStmt = db.prepare("SELECT * FROM send_logs WHERE id = ?");
-const getByMessageIdStmt = db.prepare("SELECT * FROM send_logs WHERE whatsapp_message_id = ?");
-const updateAckStmt = db.prepare(
-  "UPDATE send_logs SET ack = ?, ack_updated_at = CURRENT_TIMESTAMP WHERE whatsapp_message_id = ?"
-);
+const getByMessageIdStmt = db.prepare(`
+  SELECT * FROM send_logs
+  WHERE whatsapp_message_id = @message_id
+     OR substr(whatsapp_message_id, -length(@stable_id)) = @stable_id
+  ORDER BY id DESC
+  LIMIT 1
+`);
+const updateAckStmt = db.prepare(`
+  UPDATE send_logs
+  SET ack = @ack, ack_updated_at = CURRENT_TIMESTAMP
+  WHERE (
+    whatsapp_message_id = @message_id
+    OR substr(whatsapp_message_id, -length(@stable_id)) = @stable_id
+  )
+    AND (@ack = -1 OR ack IS NULL OR @ack > ack)
+`);
 const deleteStmt = db.prepare("DELETE FROM send_logs WHERE id = ?");
 
 export function createLog(entry: NewSendLog): SendLog {
@@ -78,6 +91,9 @@ export function createLog(entry: NewSendLog): SendLog {
     ...entry,
     whatsapp_message_id: entry.whatsapp_message_id ?? null,
     tipo_envio: entry.tipo_envio ?? "disparo",
+    // Se sendMessage terminou sem erro, o primeiro estágio já é "Enviado", mesmo que o
+    // callback de confirmação chegue somente depois ou o ID completo não esteja disponível.
+    ack: entry.status === "sucesso" ? 1 : null,
   });
   const log = getStmt.get(info.lastInsertRowid) as SendLog;
 
@@ -104,9 +120,14 @@ export function getLog(id: number): SendLog | undefined {
 
 /** Atualiza o nível de confirmação (ack) do envio associado a essa mensagem do WhatsApp. */
 export function updateLogAckByMessageId(whatsappMessageId: string, ack: number): SendLog | undefined {
-  const info = updateAckStmt.run(ack, whatsappMessageId);
+  const params = {
+    message_id: whatsappMessageId,
+    stable_id: whatsappMessageStableKey(whatsappMessageId),
+    ack,
+  };
+  const info = updateAckStmt.run(params);
   if (info.changes === 0) return undefined;
-  return getByMessageIdStmt.get(whatsappMessageId) as SendLog;
+  return getByMessageIdStmt.get(params) as SendLog;
 }
 
 /**

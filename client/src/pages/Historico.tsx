@@ -437,7 +437,7 @@ export function Historico() {
       <div className="grid grid-cols-3 gap-2 md:gap-3">
         <StatCard icon={<Send />} label="Envios" value={resumo.envios} tone="accent" />
         <StatCard icon={<CheckCheck />} label="Entregues" value={resumo.entregues} tone="warning" />
-        <StatCard icon={<Eye />} label="Respondidos" value={resumo.respondidos} tone="info" />
+        <StatCard icon={<Eye />} label="Respondidas" value={resumo.respondidos} tone="info" />
       </div>
 
       <section className="surface-panel p-3 md:p-4">
@@ -588,7 +588,7 @@ export function Historico() {
                       )}
                       <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400">
                         {log.telefone ? formatPhoneDisplay(log.telefone) : "—"}
-                        <AckIndicator ack={log.ack} respondido={log.resposta_status === "respondido"} />
+                        <AckIndicator ack={log.ack} sendStatus={log.status} respondido={log.resposta_status === "respondido"} />
                       </span>
                       <span className="mt-1 block text-xs text-zinc-400">{formatarData(log)}</span>
                     </span>
@@ -681,7 +681,7 @@ export function Historico() {
                           {formatarData(log)}
                         </td>
                         <td className="px-5 py-3 text-center">
-                          <AckIndicator ack={log.ack} respondido={log.resposta_status === "respondido"} />
+                          <AckIndicator ack={log.ack} sendStatus={log.status} respondido={log.resposta_status === "respondido"} />
                         </td>
                         <td className="px-5 py-3 text-center">
                           <StatusBadge sendStatus={log.status} ack={log.ack} respostaStatus={log.resposta_status} />

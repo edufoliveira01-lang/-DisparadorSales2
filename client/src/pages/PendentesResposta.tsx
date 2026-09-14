@@ -44,7 +44,7 @@ const FILTRO_OPTIONS: { value: Filtro; label: string }[] = [
   { value: "todos", label: "Todos os envios" },
   { value: "enviado", label: "Somente enviados" },
   { value: "entregue", label: "Somente entregues" },
-  { value: "lido", label: "Somente lidos" },
+  { value: "lido", label: "Somente lidas" },
 ];
 
 const ORDENACAO_OPTIONS: { value: Ordenacao; label: string }[] = [
@@ -270,7 +270,7 @@ export function PendentesResposta() {
       <div className="grid grid-cols-3 gap-2 md:gap-3">
         <StatCard icon={<Clock3 />} label="Aguardando" value={resumo.total} tone="accent" />
         <StatCard icon={<CheckCheck />} label="Entregues" value={resumo.entregues} tone="warning" />
-        <StatCard icon={<Eye />} label="Lidos" value={resumo.lidos} tone="info" />
+        <StatCard icon={<Eye />} label="Lidas" value={resumo.lidos} tone="info" />
       </div>
 
       <section className="surface-panel p-3 md:p-4">
