@@ -1,4 +1,5 @@
 import { emitEvent } from "../websocket";
+import { startBatch, updateBatch, finishBatch } from "./batchProgressService";
 import { db } from "../db";
 import { createLog, type SendLog } from "./logsService";
 import { getContact, listContacts, updateContact, type Contact } from "./contactsService";
@@ -202,6 +203,7 @@ async function enviarGrupoLembrete(
     throw new Error(erro);
   } finally {
     for (const evento of alvos) enviosEmAndamento.delete(evento.id);
+    emitEvent("lembrete:sent", {});
   }
 }
 
@@ -224,6 +226,7 @@ export function loteLembretesEmAndamento(): boolean {
 export async function enviarLembretesEmMassa(ids: number[], intervalMinSec: number, intervalMaxSec: number): Promise<void> {
   if (loteEmAndamento) throw new Error("Já existe um lote de lembretes em andamento.");
   loteEmAndamento = true;
+  let loteId: string | null = null;
 
   try {
     const eventos = Array.from(new Set(ids))
@@ -237,6 +240,7 @@ export async function enviarLembretesEmMassa(ids: number[], intervalMinSec: numb
     let enviados = 0;
     let falhas = 0;
 
+    loteId = startBatch("lembretes", grupos.length, ignorados);
     emitEvent("lembrete:batch-started", { total: grupos.length, ignorados });
 
     for (let i = 0; i < grupos.length; i++) {
@@ -277,13 +281,18 @@ export async function enviarLembretesEmMassa(ids: number[], intervalMinSec: numb
         });
       }
 
+      updateBatch(loteId, { processados: i + 1, enviados, falhas });
       if (i < grupos.length - 1) {
         await new Promise((resolve) => setTimeout(resolve, randomDelayMs(intervalMinSec, intervalMaxSec)));
       }
     }
 
     emitEvent("lembrete:batch-completed", { total: grupos.length, enviados, falhas, ignorados });
+  } catch (err) {
+    emitEvent("lembrete:batch-paused", { reason: (err as Error).message });
+    throw err;
   } finally {
+    if (loteId) finishBatch(loteId);
     loteEmAndamento = false;
   }
 }

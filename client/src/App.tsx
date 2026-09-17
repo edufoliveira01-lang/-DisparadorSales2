@@ -1,6 +1,7 @@
 import { Route, Routes, useLocation } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { WhatsappProvider } from "@/context/WhatsappContext";
+import { BatchProgressProvider } from "@/context/BatchProgressContext";
 import { Dashboard } from "@/pages/Dashboard";
 import { Agenda } from "@/pages/Agenda";
 import { Calendario } from "@/pages/Calendario";
@@ -28,22 +29,24 @@ export default function App() {
 
   return (
     <WhatsappProvider>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/agenda" element={<Agenda />} />
-          <Route path="/calendario" element={<Calendario />} />
-          <Route path="/templates" element={<TemplatesPericia />} />
-          <Route path="/templates/cobranca" element={<TemplatesCobranca />} />
-          <Route path="/templates/audiencia" element={<TemplatesAudiencia />} />
-          <Route path="/templates/lembretes" element={<TemplatesLembretes />} />
-          <Route path="/historico" element={<Historico />} />
-          <Route path="/logs" element={<Logs />} />
-          <Route path="/pendentes" element={<PendentesResposta />} />
-          <Route path="/configuracoes" element={<Configuracoes />} />
-          <Route path="/login" element={<Login />} />
-        </Routes>
-      </Layout>
+      <BatchProgressProvider>
+        <Layout>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/agenda" element={<Agenda />} />
+            <Route path="/calendario" element={<Calendario />} />
+            <Route path="/templates" element={<TemplatesPericia />} />
+            <Route path="/templates/cobranca" element={<TemplatesCobranca />} />
+            <Route path="/templates/audiencia" element={<TemplatesAudiencia />} />
+            <Route path="/templates/lembretes" element={<TemplatesLembretes />} />
+            <Route path="/historico" element={<Historico />} />
+            <Route path="/logs" element={<Logs />} />
+            <Route path="/pendentes" element={<PendentesResposta />} />
+            <Route path="/configuracoes" element={<Configuracoes />} />
+            <Route path="/login" element={<Login />} />
+          </Routes>
+        </Layout>
+      </BatchProgressProvider>
     </WhatsappProvider>
   );
 }
