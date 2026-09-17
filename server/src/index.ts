@@ -19,6 +19,7 @@ import { trelloRouter } from "./routes/trello";
 import { whatsappRouter } from "./routes/whatsapp";
 import { googleCalendarRouter } from "./routes/googleCalendar";
 import { initWebsocket } from "./websocket";
+import { notifyDashboardChanges } from "./websocket/dashboardChanges";
 import { whatsappManager } from "./services/whatsappService";
 import { verificarNotificacoesPendentes } from "./services/notificationService";
 import { podarPericiasAgendadasAntigas } from "./services/periciasAgendadasService";
@@ -51,6 +52,7 @@ app.use("/api", (req, res, next) => {
   next();
 });
 
+app.use("/api", notifyDashboardChanges);
 app.use("/api/settings", settingsRouter);
 app.use("/api/backup", backupRouter);
 app.use("/api/trello", trelloRouter);

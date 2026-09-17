@@ -1,6 +1,7 @@
 import { type ReactNode, useState } from "react";
 import { Menu, Send } from "lucide-react";
 import { Sidebar } from "./Sidebar";
+import { GlobalBatchProgress } from "./GlobalBatchProgress";
 
 export function Layout({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -36,7 +37,8 @@ export function Layout({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1">
+          <GlobalBatchProgress />
           <div className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8 xl:px-10">{children}</div>
         </main>
       </div>

@@ -1,7 +1,12 @@
 import { Router } from "express";
 import { dispatchBatch, dispatchSingle, type SendItem } from "../services/dispatchService";
+import { batchInProgress, listActiveBatches } from "../services/batchProgressService";
 
 export const sendRouter = Router();
+
+sendRouter.get("/batches", (_req, res) => {
+  res.json(listActiveBatches());
+});
 
 sendRouter.post("/single", async (req, res) => {
   const { cardId, nomeCliente, telefone, contactId, pericias, templateId, modo } = req.body as SendItem & {
@@ -25,6 +30,9 @@ sendRouter.post("/single", async (req, res) => {
 });
 
 sendRouter.post("/batch", (req, res) => {
+  if (batchInProgress("mensagens")) {
+    return res.status(409).json({ error: "Já existe um lote de mensagens em andamento." });
+  }
   const { items, templateId, intervalMinSec, intervalMaxSec } = req.body as {
     items: SendItem[];
     templateId?: number;

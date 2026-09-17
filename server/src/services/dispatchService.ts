@@ -1,4 +1,5 @@
 import { emitEvent } from "../websocket";
+import { startBatch, updateBatch, finishBatch } from "./batchProgressService";
 import { sortPericiasByDate, type Pericia } from "./parserService";
 import {
   AUDIENCIA_HIBRIDA_MENSAGEM_PADRAO,
@@ -180,39 +181,50 @@ export async function dispatchBatch(
   intervalMinSec: number,
   intervalMaxSec: number
 ): Promise<void> {
+  const loteId = startBatch("mensagens", items.length);
+  let enviados = 0;
+  let falhas = 0;
   emitEvent("send:batch-started", { total: items.length });
 
-  for (let i = 0; i < items.length; i++) {
-    if (!whatsappManager.isReady()) {
-      emitEvent("send:batch-waiting-reconnect", {
-        reason: "O WhatsApp desconectou durante o envio em lote. Aguardando reconexão para continuar automaticamente...",
-        enviados: i,
-        total: items.length,
-      });
-
-      const reconectou = await aguardarReconexao(TEMPO_LIMITE_RECONEXAO_MS);
-      if (!reconectou) {
-        emitEvent("send:batch-paused", {
-          reason: "O WhatsApp continua desconectado. Reconecte e tente novamente para os cards restantes.",
-          enviados: i,
+  try {
+    for (let i = 0; i < items.length; i++) {
+      if (!whatsappManager.isReady()) {
+        updateBatch(loteId, { aguardandoReconexao: true });
+        emitEvent("send:batch-waiting-reconnect", {
+          reason: "O WhatsApp desconectou durante o envio em lote. Aguardando reconexão para continuar automaticamente...",
+          enviados,
           total: items.length,
         });
-        return;
+        const reconectou = await aguardarReconexao(TEMPO_LIMITE_RECONEXAO_MS);
+        if (!reconectou) {
+          emitEvent("send:batch-paused", {
+            reason: "O WhatsApp continua desconectado. Reconecte e tente novamente para os cards restantes.",
+            enviados,
+            falhas,
+            total: items.length,
+          });
+          return;
+        }
+        updateBatch(loteId, { aguardandoReconexao: false });
+        emitEvent("send:batch-resumed", { enviados, total: items.length });
       }
-
-      emitEvent("send:batch-resumed", { enviados: i, total: items.length });
+      try {
+        await dispatchSingle(items[i], templateId);
+        enviados++;
+      } catch {
+        falhas++;
+        // O erro já foi registrado e emitido por dispatchSingle.
+      }
+      updateBatch(loteId, { processados: i + 1, enviados, falhas });
+      if (i < items.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, randomDelayMs(intervalMinSec, intervalMaxSec)));
+      }
     }
-
-    try {
-      await dispatchSingle(items[i], templateId);
-    } catch {
-      // erro já registrado no log e emitido via websocket dentro de dispatchSingle
-    }
-
-    if (i < items.length - 1) {
-      await new Promise((resolve) => setTimeout(resolve, randomDelayMs(intervalMinSec, intervalMaxSec)));
-    }
+    emitEvent("send:batch-completed", { total: items.length, enviados, falhas });
+  } catch (err) {
+    emitEvent("send:batch-paused", { reason: (err as Error).message, enviados, falhas, total: items.length });
+    throw err;
+  } finally {
+    finishBatch(loteId);
   }
-
-  emitEvent("send:batch-completed", { total: items.length });
 }

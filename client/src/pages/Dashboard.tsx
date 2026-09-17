@@ -37,6 +37,8 @@ import type {
 import { classificarModalidadeAudiencia } from "@/lib/audiencia";
 import { useWhatsapp } from "@/context/WhatsappContext";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
+import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
+import { useBatchProgress } from "@/context/BatchProgressContext";
 import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, Textarea } from "@/components/ui/Input";
@@ -49,6 +51,13 @@ import { CardItem } from "@/components/CardItem";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatCard } from "@/components/ui/StatCard";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+
+const PANORAMA_EVENTS = [
+  "send:update", "send:ack-update", "pendingReply:ack-update", "pendingReply:resolved",
+  "lembrete:sent", "lembrete:update", "lembrete:batch-completed", "lembrete:batch-paused",
+  "send:batch-completed", "send:batch-paused", "dashboard:changed",
+] as const;
+const CARDS_EVENTS = ["send:batch-completed", "dashboard:changed"] as const;
 
 type FiltroStatus = "todos" | "enviado" | "nao_enviado" | "falhou";
 type FiltroTipo = "todos" | "medica" | "social" | "audiencia";
@@ -171,9 +180,9 @@ export function Dashboard() {
   const [preview, setPreview] = useState<{ card: CardViewModel; mensagens: string[]; modo: ModoEnvio } | null>(null);
   const [batchConfirm, setBatchConfirm] = useState(false);
   const [batchLoading, setBatchLoading] = useState(false);
-  const [batchProgress, setBatchProgress] = useState<{ ativo: boolean; total: number; aguardandoReconexao?: boolean } | null>(
-    null
-  );
+  const { lotes } = useBatchProgress();
+  const batchProgress = lotes.find((lote) => lote.tipo === "mensagens");
+  const lembreteBatchProgress = lotes.find((lote) => lote.tipo === "lembretes");
 
   const [enviandoLembreteId, setEnviandoLembreteId] = useState<number | null>(null);
   const [lembreteReenvioConfirm, setLembreteReenvioConfirm] = useState<PericiaAgendada | null>(null);
@@ -181,13 +190,6 @@ export function Dashboard() {
     null
   );
   const [lembreteBatchLoading, setLembreteBatchLoading] = useState(false);
-  const [lembreteBatchProgress, setLembreteBatchProgress] = useState<{
-    ativo: boolean;
-    total: number;
-    enviados: number;
-    falhas: number;
-    ignorados: number;
-  } | null>(null);
   const [processoLembrete, setProcessoLembrete] = useState<FluxoProcessoLembrete | null>(null);
   const [salvandoProcessoLembrete, setSalvandoProcessoLembrete] = useState(false);
 
@@ -204,17 +206,19 @@ export function Dashboard() {
   const [edicaoNome, setEdicaoNome] = useState<{ card: CardViewModel; nome: string } | null>(null);
   const [edicaoPericia, setEdicaoPericia] = useState<{ card: CardViewModel; index: number; pericia: Pericia } | null>(null);
 
-  const carregarCards = useCallback(async () => {
-    setCarregando(true);
-    setErro(null);
+  const carregarCards = useCallback(async (silencioso = false) => {
+    if (!silencioso) setCarregando(true);
+    if (!silencioso) setErro(null);
     try {
       const data = await api.get<CardViewModel[]>("/cards");
       setCards(data);
     } catch (err) {
-      setCards([]);
-      setErro(err instanceof ApiError ? err.message : "Erro ao carregar os cards do Trello.");
+      if (!silencioso) {
+        setCards([]);
+        setErro(err instanceof ApiError ? err.message : "Erro ao carregar os cards do Trello.");
+      }
     } finally {
-      setCarregando(false);
+      if (!silencioso) setCarregando(false);
     }
   }, []);
 
@@ -267,61 +271,11 @@ export function Dashboard() {
     );
   });
 
-  useSocketEvent<{ total: number }>("send:batch-started", ({ total }) => {
-    setBatchProgress({ ativo: true, total });
-    show(`Envio em lote iniciado (${total} card${total > 1 ? "s" : ""}).`, "info");
-  });
-  useSocketEvent<{ reason: string; total: number }>("send:batch-waiting-reconnect", ({ reason, total }) => {
-    setBatchProgress({ ativo: true, total, aguardandoReconexao: true });
-    show(reason, "error");
-  });
-  useSocketEvent("send:batch-resumed", () => {
-    setBatchProgress((prev) => (prev ? { ...prev, aguardandoReconexao: false } : prev));
-    show("WhatsApp reconectado — envio em lote retomado automaticamente.", "success");
-  });
-  useSocketEvent<{ reason: string }>("send:batch-paused", ({ reason }) => {
-    setBatchProgress(null);
-    show(reason, "error");
-  });
-  useSocketEvent("send:batch-completed", () => {
-    setBatchProgress(null);
-    show("Envio em lote concluído.", "success");
-    setSelecionados(new Set());
-    carregarCards();
-    carregarPanorama();
-  });
-
-  useSocketEvent("pendingReply:resolved", carregarPanorama);
-
-  useSocketEvent<{ total: number; ignorados: number }>("lembrete:batch-started", ({ total, ignorados }) => {
-    setLembreteBatchProgress({ ativo: true, total, enviados: 0, falhas: 0, ignorados });
-    show(`Envio de lembretes iniciado para ${total} cliente${total === 1 ? "" : "s"}.`, "info");
-  });
-  useSocketEvent<{ enviados: number; falhas: number; total: number }>("lembrete:update", ({ enviados, falhas, total }) => {
-    setLembreteBatchProgress((atual) => ({
-      ativo: true,
-      total,
-      enviados,
-      falhas,
-      ignorados: atual?.ignorados ?? 0,
-    }));
-  });
-  useSocketEvent<{ reason: string; enviados: number; falhas: number; ignorados: number }>("lembrete:batch-paused", ({ reason, enviados, falhas, ignorados }) => {
-    setLembreteBatchProgress(null);
-    show(`${reason} Enviados: ${enviados}. Falhas: ${falhas}. Ignorados: ${ignorados}.`, "error");
-    carregarPanorama();
-  });
-  useSocketEvent<{ total: number; enviados: number; falhas: number; ignorados: number }>(
-    "lembrete:batch-completed",
-    ({ enviados, falhas, ignorados }) => {
-    setLembreteBatchProgress(null);
-      show(
-        `Lembretes concluídos. Enviados: ${enviados}. Falhas: ${falhas}. Ignorados: ${ignorados}.`,
-        falhas > 0 ? "error" : "success"
-      );
-      carregarPanorama();
-    }
-  );
+  // ACKs, respostas, envios e alterações em outras telas invalidam os totais.
+  useRealtimeRefresh(carregarPanorama, PANORAMA_EVENTS);
+  const atualizarCardsEmSegundoPlano = useCallback(() => carregarCards(true), [carregarCards]);
+  useRealtimeRefresh(atualizarCardsEmSegundoPlano, CARDS_EVENTS, 60000);
+  useSocketEvent("send:batch-completed", () => setSelecionados(new Set()));
 
   function contatoEfetivo(card: CardViewModel): Contact | null {
     return contatoOverrides[card.cardId] || card.contato || null;
@@ -594,8 +548,6 @@ export function Dashboard() {
     try {
       const ids = lembreteBatchConfirm.eventos.map((e) => e.id);
       await api.post("/pericias-agendadas/lembrete-em-massa", { ids });
-      const total = agruparEventosPorDestinatario(lembreteBatchConfirm.eventos).length;
-      setLembreteBatchProgress({ ativo: true, total, enviados: 0, falhas: 0, ignorados: 0 });
       setLembreteBatchConfirm(null);
     } catch (err) {
       show(err instanceof ApiError ? err.message : "Erro ao iniciar envio dos lembretes.", "error");
@@ -875,14 +827,6 @@ export function Dashboard() {
         <StatCard layout="inline" icon={<CheckCheck />} label="Enviados" value={resumo.enviados} tone="info" helper="Envios concluídos" />
       </div>
 
-      {lembreteBatchProgress?.ativo && (
-        <div className="flex items-center gap-2 rounded-xl bg-accent-50 px-4 py-2.5 text-sm text-accent-700 dark:bg-accent-900/20 dark:text-accent-300">
-          <RefreshCw className="h-4 w-4 animate-spin" />
-          Enviando lembretes: {lembreteBatchProgress.enviados} de {lembreteBatchProgress.total}
-          {lembreteBatchProgress.falhas > 0 && ` · ${lembreteBatchProgress.falhas} falha(s)`}
-        </div>
-      )}
-
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <PainelEventosDashboard
           titulo="Agenda de hoje"
@@ -896,7 +840,7 @@ export function Dashboard() {
           onEnviarItem={solicitarLembreteIndividual}
           onEnviarTodos={() => abrirConfirmLembreteBatch("hoje")}
           enviandoId={enviandoLembreteId}
-          enviandoBatch={Boolean(lembreteBatchProgress?.ativo)}
+          enviandoBatch={Boolean(lembreteBatchProgress)}
         />
         <PainelEventosDashboard
           titulo="Próxima data"
@@ -913,7 +857,7 @@ export function Dashboard() {
           onEnviarItem={solicitarLembreteIndividual}
           onEnviarTodos={() => abrirConfirmLembreteBatch("proximaData")}
           enviandoId={enviandoLembreteId}
-          enviandoBatch={Boolean(lembreteBatchProgress?.ativo)}
+          enviandoBatch={Boolean(lembreteBatchProgress)}
         />
         <PainelEventosDashboard
           titulo="Próximos compromissos"
@@ -1026,18 +970,6 @@ export function Dashboard() {
               </div>
             </div>
           </div>
-
-          {batchProgress?.ativo && batchProgress.aguardandoReconexao && (
-            <div className="flex items-center gap-2 rounded-xl bg-amber-50 px-4 py-2.5 text-sm text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
-              <WifiOff className="h-4 w-4" /> WhatsApp desconectou — aguardando reconexão para continuar o envio em lote
-              automaticamente.
-            </div>
-          )}
-          {batchProgress?.ativo && !batchProgress.aguardandoReconexao && (
-            <div className="flex items-center gap-2 rounded-xl bg-accent-50 px-4 py-2.5 text-sm text-accent-700 dark:bg-accent-900/20 dark:text-accent-300">
-              <RefreshCw className="h-4 w-4 animate-spin" /> Enviando em lote… acompanhe os status atualizando em tempo real.
-            </div>
-          )}
 
           {cards === null ? (
             <div className="space-y-3">
