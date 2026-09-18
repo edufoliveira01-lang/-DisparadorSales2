@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getLastStatusForCard } from "../services/logsService";
+import { getLastStatusForCard, getLog } from "../services/logsService";
 import { type Pericia, sortPericiasByDate } from "../services/parserService";
 import { getSetting } from "../services/settingsService";
 import { COBRANCA_AUDIENCIA_MENSAGEM_PADRAO, COBRANCA_MENSAGEM_PADRAO, renderCobranca } from "../services/templateService";
@@ -14,12 +14,18 @@ import {
 } from "../services/pendingRepliesService";
 import { whatsappManager } from "../services/whatsappService";
 import { emitEvent } from "../websocket";
+import { normalizePhone } from "../utils/phone";
+import { recordSystemLog } from "../services/systemLogsService";
+
+const cobrancasEmAndamento = new Set<string>();
+const cobrancasRecentes = new Map<string, number>();
+const INTERVALO_COBRANCA_MS = 30000;
 
 /** Perícia mais próxima do card, usada para preencher {{TIPO_PERICIA}}/{{DATA}}/{{HORARIO}}/
  * {{LOCAL}} na mensagem de cobrança — null quando o log original não tem esses dados (ex: log
  * bem antigo) ou não existe mais. */
-function periciaMaisRelevante(cardId: string): Pericia | null {
-  const log = getLastStatusForCard(cardId);
+function periciaMaisRelevante(cardId: string, sendLogId: number | null): Pericia | null {
+  const log = (sendLogId ? getLog(sendLogId) : undefined) || getLastStatusForCard(cardId);
   if (!log?.pericias_json) return null;
   try {
     const pericias = JSON.parse(log.pericias_json) as Pericia[];
@@ -71,23 +77,57 @@ pendingRepliesRouter.post("/:id/cobrar", async (req, res) => {
   if (pending.status !== "aguardando") return res.status(400).json({ error: "Este registro já foi resolvido." });
   if (!whatsappManager.isReady()) return res.status(400).json({ error: "WhatsApp não está conectado." });
 
+  // telefone_digits pode ser um LID, e não um telefone. Consultamos o número real
+  // novamente, em vez de confiar em um identificador antigo da sessão anterior.
+  const telefone = normalizePhone(pending.telefone);
+  if (!/^\d{10,15}$/.test(telefone)) return res.status(400).json({ error: "O registro não possui um telefone válido para a cobrança." });
+  for (const [chave, ate] of cobrancasRecentes) if (ate <= Date.now()) cobrancasRecentes.delete(chave);
+  if (cobrancasEmAndamento.has(telefone) || cobrancasRecentes.has(telefone)) {
+    return res.status(409).json({ error: "Uma cobrança para este telefone está em andamento ou acabou de ser tentada. Aguarde 30 segundos e confira a conversa antes de reenviar." });
+  }
+  cobrancasEmAndamento.add(telefone);
+  let chatId: string | null = null;
+  let tentouEnviar = false;
   try {
-    // Preferimos o chat id completo já resolvido no envio original (funciona mesmo quando o
-    // contato usa "LID" em vez de telefone). Só re-resolvemos via telefone_digits para
-    // registros antigos, criados antes desse campo existir.
-    const chatId = pending.whatsapp_chat_id || (await whatsappManager.resolveChatId(pending.telefone_digits));
-    if (!chatId) return res.status(400).json({ error: "Este telefone não foi encontrado no WhatsApp." });
+    chatId = await whatsappManager.resolveChatId(telefone);
+    if (!chatId) throw new Error("Este telefone não foi encontrado no WhatsApp.");
+    // O cliente pode ter respondido enquanto o telefone era consultado.
+    if (getPendingReply(id)?.status !== "aguardando") {
+      return res.status(400).json({ error: "Este registro já foi resolvido." });
+    }
 
-    const pericia = periciaMaisRelevante(pending.card_id);
+    const pericia = periciaMaisRelevante(pending.card_id, pending.send_log_id);
     const ehAudiencia = pericia?.origem === "audiencia";
     const mensagemConfigurada = ehAudiencia
       ? getSetting("cobranca_audiencia_mensagem") || COBRANCA_AUDIENCIA_MENSAGEM_PADRAO
       : getSetting("cobranca_mensagem") || COBRANCA_MENSAGEM_PADRAO;
     const texto = renderCobranca(mensagemConfigurada, pending.card_nome || "", pericia);
-    await whatsappManager.sendMessage(chatId, texto);
-    res.json({ ok: true });
+    if (!texto.trim()) throw new Error("A mensagem de cobrança está vazia. Revise o modelo nas configurações.");
+    tentouEnviar = true;
+    const resultado = await whatsappManager.sendMessageConfirmed(chatId, texto);
+    recordSystemLog({
+      nivel: "info", categoria: "whatsapp", evento: "cobranca_enviada",
+      titulo: "Mensagem de cobrança enviada", origem: "usuario",
+      mensagem: `Envio de cobrança confirmado pelo servidor do WhatsApp para ${pending.card_nome || "cliente"}. Isso não confirma entrega ou leitura no aparelho.`,
+      detalhes: { pending_id: id, cliente: pending.card_nome, telefone: pending.telefone,
+        chat_id_anterior: pending.whatsapp_chat_id, chat_id: chatId,
+        whatsapp_message_id: resultado.messageId, ack: resultado.ack, mensagem: texto },
+    });
+    // Mantemos o vínculo, o ACK e o status do envio ORIGINAL: cobrar não confirma resposta.
+    res.json({ ok: true, whatsapp_message_id: resultado.messageId, ack: resultado.ack });
   } catch (err) {
-    res.status(502).json({ error: (err as Error).message || "Erro ao enviar mensagem de cobrança." });
+    const mensagem = err instanceof Error ? err.message : "Erro ao enviar mensagem de cobrança.";
+    console.error(`[WhatsApp] Falha na cobrança do pendente ${id}:`, err);
+    recordSystemLog({
+      nivel: "erro", categoria: "whatsapp", evento: "cobranca_falhou",
+      titulo: "Falha na mensagem de cobrança", origem: "usuario", mensagem,
+      detalhes: { pending_id: id, cliente: pending.card_nome, telefone: pending.telefone,
+        chat_id_anterior: pending.whatsapp_chat_id, chat_id: chatId, tentativa_envio: tentouEnviar },
+    });
+    res.status(502).json({ error: mensagem });
+  } finally {
+    cobrancasEmAndamento.delete(telefone);
+    if (tentouEnviar) cobrancasRecentes.set(telefone, Date.now() + INTERVALO_COBRANCA_MS);
   }
 });
 

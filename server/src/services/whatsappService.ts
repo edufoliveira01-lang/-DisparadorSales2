@@ -11,6 +11,7 @@ import { enviarMensagemTelegram } from "./telegramService";
 import { recordSystemLog } from "./systemLogsService";
 import { moveCard } from "./trelloService";
 import { updateLogAckByMessageId } from "./logsService";
+import { sendConfirmedWhatsappMessage, type ConfirmedWhatsappSend } from "./confirmedWhatsappSend";
 import {
   atrasoRetryConexaoMs,
   deveInvalidarSessao,
@@ -1057,6 +1058,32 @@ class WhatsappManager {
 
     const result = await this.comRetryTransitorio(() => client.getNumberId(target));
     return result ? result._serialized : null;
+  }
+
+  /** Cobrança exige ACK real, sem reutilizar a captura permissiva de IDs do envio legado. */
+  async sendMessageConfirmed(chatId: string, mensagem: string): Promise<ConfirmedWhatsappSend> {
+    if (!this.client || this.status !== "conectado") throw new Error("WhatsApp não está conectado.");
+    const client = this.client;
+    let aliases: string[] = [];
+    let aliasTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const contatos = await Promise.race([
+        client.getContactLidAndPhone([chatId]),
+        new Promise<never>((_resolve, reject) => {
+          aliasTimer = setTimeout(() => reject(new Error("Timeout PN/LID")), 5000);
+        }),
+      ]);
+      aliases = contatos.flatMap((contato) => [contato.lid, contato.pn]).filter(Boolean);
+    } catch {
+      // ACK pelo ID direto continua funcionando mesmo sem o mapeamento PN/LID.
+      console.warn("[WhatsApp] Não foi possível consultar aliases PN/LID da cobrança.");
+    } finally {
+      clearTimeout(aliasTimer);
+    }
+    console.log(`[WhatsApp] Enviando cobrança com confirmação para ${chatId}...`);
+    const resultado = await sendConfirmedWhatsappMessage(client, chatId, mensagem, aliases);
+    console.log(`[WhatsApp] Cobrança confirmada: ID=${resultado.messageId}, ACK=${resultado.ack}`);
+    return resultado;
   }
 
   /**
