@@ -77,6 +77,7 @@ export function PendentesResposta() {
   const { show } = useToast();
   const [pendentes, setPendentes] = useState<PendingReply[] | null>(null);
   const [processando, setProcessando] = useState<number | null>(null);
+  const [cobrando, setCobrando] = useState<number | null>(null);
   const [selecionados, setSelecionados] = useState<Set<number>>(new Set());
   const [apagandoSelecionados, setApagandoSelecionados] = useState(false);
   const [filtro, setFiltro] = useState<Filtro>("todos");
@@ -130,13 +131,16 @@ export function PendentesResposta() {
   }
 
   async function cobrar(item: PendingReply) {
+    if (processando !== null) return;
     setProcessando(item.id);
+    setCobrando(item.id);
     try {
       await api.post(`/pending-replies/${item.id}/cobrar`);
       show(`Mensagem de cobrança enviada para ${item.card_nome || "cliente"}.`, "success");
     } catch (err) {
       show(err instanceof ApiError ? err.message : "Erro ao enviar mensagem de cobrança.", "error");
     } finally {
+      setCobrando(null);
       setProcessando(null);
     }
   }
@@ -381,11 +385,11 @@ export function PendentesResposta() {
                         <span className="text-xs text-zinc-400">Enviado em {formatarData(item)}</span>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
-                        <Button className="col-span-2" size="sm" onClick={() => confirmar(item)} loading={processando === item.id}>
+                        <Button className="col-span-2" size="sm" onClick={() => confirmar(item)} loading={processando === item.id && cobrando !== item.id} disabled={processando !== null}>
                           <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar recebimento
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => cobrar(item)} disabled={processando === item.id}>
-                          <MessageCircleQuestion className="h-3.5 w-3.5" /> Cobrar resposta
+                        <Button variant="outline" size="sm" onClick={() => cobrar(item)} loading={cobrando === item.id} disabled={processando !== null}>
+                          <MessageCircleQuestion className="h-3.5 w-3.5" /> {cobrando === item.id ? "Confirmando envio…" : "Cobrar resposta"}
                         </Button>
                         <Button variant="outline" size="sm" onClick={() => cancelar(item)} disabled={processando === item.id}>
                           <X className="h-3.5 w-3.5" /> Cancelar
@@ -419,11 +423,11 @@ export function PendentesResposta() {
                   </div>
                 </div>
                 <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
-                  <Button size="sm" onClick={() => confirmar(item)} loading={processando === item.id}>
+                  <Button size="sm" onClick={() => confirmar(item)} loading={processando === item.id && cobrando !== item.id} disabled={processando !== null}>
                     <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => cobrar(item)} disabled={processando === item.id}>
-                    <MessageCircleQuestion className="h-3.5 w-3.5" /> Cobrar resposta
+                  <Button variant="outline" size="sm" onClick={() => cobrar(item)} loading={cobrando === item.id} disabled={processando !== null}>
+                    <MessageCircleQuestion className="h-3.5 w-3.5" /> {cobrando === item.id ? "Confirmando envio…" : "Cobrar resposta"}
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => cancelar(item)} disabled={processando === item.id}>
                     <X className="h-3.5 w-3.5" /> Cancelar
