@@ -47,7 +47,7 @@ export interface SendLog {
   /** -1 erro, 0 pendente, 1 enviado ao servidor, 2 entregue (✓✓ cinza), 3 lido (✓✓ azul), 4 áudio reproduzido. */
   ack: number | null;
   ack_updated_at: string | null;
-  tipo_envio: "disparo" | "lembrete";
+  tipo_envio: "disparo" | "lembrete" | "reenvio";
   created_at: string;
   /** Dados do pending_reply correlato (mesmo whatsapp_message_id), quando esse envio estava sob
    * monitoramento de resposta. Ausente/null quando nunca houve monitoramento para esse envio. */

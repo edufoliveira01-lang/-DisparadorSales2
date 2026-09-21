@@ -192,7 +192,15 @@ function PainelAgendamento({ log }: { log: SendLog }) {
   );
 }
 
-function PainelComunicacao({ log }: { log: SendLog }) {
+function PainelComunicacao({
+  log,
+  onReenviarInformacoes,
+  reenviando,
+}: {
+  log: SendLog;
+  onReenviarInformacoes: (log: SendLog) => void;
+  reenviando: boolean;
+}) {
   const temMensagem = Boolean(log.mensagem_enviada);
   const temResposta = temRespostaRecebida(log);
   if (!temMensagem && !temResposta) return null;
@@ -206,7 +214,7 @@ function PainelComunicacao({ log }: { log: SendLog }) {
         <div>
           <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Comunicação com o cliente</h3>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            {temResposta ? "Resposta recebida" : "Mensagem enviada, aguardando resposta"}
+            {temResposta ? "Resposta recebida" : log.tipo_envio === "reenvio" ? "Informações reenviadas" : "Mensagem enviada, aguardando resposta"}
           </p>
         </div>
       </div>
@@ -223,6 +231,17 @@ function PainelComunicacao({ log }: { log: SendLog }) {
             </div>
           </div>
         )}
+        {log.tipo_envio !== "lembrete" && log.mensagem_enviada && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={() => onReenviarInformacoes(log)}
+            loading={reenviando}
+          >
+            <Send className="h-3.5 w-3.5" /> Reenviar informações
+          </Button>
+        )}
       </div>
     </section>
   );
@@ -235,6 +254,8 @@ export function Historico() {
   const [templateId, setTemplateId] = useState<number | null>(null);
   const [expandido, setExpandido] = useState<number | null>(null);
   const [reenviando, setReenviando] = useState<number | null>(null);
+  const [reenviandoInformacoes, setReenviandoInformacoes] = useState<number | null>(null);
+  const [reenviarInformacoesAlvo, setReenviarInformacoesAlvo] = useState<SendLog | null>(null);
   const [pagina, setPagina] = useState(0);
   const [selecionados, setSelecionados] = useState<Set<number>>(new Set());
   const [apagando, setApagando] = useState<number | null>(null);
@@ -348,6 +369,23 @@ export function Historico() {
       show(err instanceof ApiError ? err.message : "Erro ao reenviar mensagem.", "error");
     } finally {
       setReenviando(null);
+    }
+  }
+
+  async function confirmarReenvioInformacoes() {
+    if (!reenviarInformacoesAlvo) return;
+    const alvo = reenviarInformacoesAlvo;
+    setReenviandoInformacoes(alvo.id);
+    try {
+      await api.post(`/logs/${alvo.id}/reenviar-informacoes`);
+      show(`Informações da perícia reenviadas para ${alvo.card_nome || "cliente"}.`, "success");
+      setReenviarInformacoesAlvo(null);
+      await carregar();
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao reenviar as informações da perícia.", "error");
+      setReenviarInformacoesAlvo(null);
+    } finally {
+      setReenviandoInformacoes(null);
     }
   }
 
@@ -586,6 +624,9 @@ export function Historico() {
                       {log.tipo_envio === "lembrete" && (
                         <Badge tone="info" className="mt-1.5"><AlarmClock className="h-3 w-3" /> Lembrete</Badge>
                       )}
+                      {log.tipo_envio === "reenvio" && (
+                        <Badge tone="accent" className="mt-1.5"><Send className="h-3 w-3" /> Reenvio</Badge>
+                      )}
                       <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400">
                         {log.telefone ? formatPhoneDisplay(log.telefone) : "—"}
                         <AckIndicator ack={log.ack} sendStatus={log.status} respondido={log.resposta_status === "respondido"} />
@@ -616,8 +657,12 @@ export function Historico() {
                       </div>
                       {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
                       <PainelAgendamento log={log} />
-                      <PainelComunicacao log={log} />
-                      {log.status === "falha" && log.tipo_envio !== "lembrete" && (
+                      <PainelComunicacao
+                        log={log}
+                        onReenviarInformacoes={setReenviarInformacoesAlvo}
+                        reenviando={reenviandoInformacoes === log.id}
+                      />
+                      {log.status === "falha" && log.tipo_envio === "disparo" && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -673,6 +718,9 @@ export function Historico() {
                           {log.tipo_envio === "lembrete" && (
                             <Badge tone="info" className="ml-2 align-middle"><AlarmClock className="h-3 w-3" /> Lembrete</Badge>
                           )}
+                          {log.tipo_envio === "reenvio" && (
+                            <Badge tone="accent" className="ml-2 align-middle"><Send className="h-3 w-3" /> Reenvio</Badge>
+                          )}
                         </td>
                         <td className="whitespace-nowrap px-5 py-3 text-center text-zinc-600 dark:text-zinc-400">
                           {log.telefone ? formatPhoneDisplay(log.telefone) : "—"}
@@ -691,7 +739,7 @@ export function Historico() {
                             <Button variant="ghost" size="icon" title="Ver detalhes" onClick={() => setExpandido(aberto ? null : log.id)}>
                               {aberto ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                             </Button>
-                            {log.status === "falha" && log.tipo_envio !== "lembrete" && (
+                            {log.status === "falha" && log.tipo_envio === "disparo" && (
                               <Button variant="outline" size="sm" onClick={() => reenviar(log)} loading={reenviando === log.id}>
                                 <RotateCcw className="h-3.5 w-3.5" /> Reenviar
                               </Button>
@@ -715,6 +763,7 @@ export function Historico() {
                               <div className="flex items-center gap-2">
                                 <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Detalhes do registro</p>
                                 {log.tipo_envio === "lembrete" && <Badge tone="info"><AlarmClock className="h-3 w-3" /> Lembrete</Badge>}
+                                {log.tipo_envio === "reenvio" && <Badge tone="accent"><Send className="h-3 w-3" /> Reenvio</Badge>}
                               </div>
                               <p className="inline-flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
                                 <Clock className="h-3.5 w-3.5" /> Enviado em {formatarData(log)}
@@ -723,7 +772,11 @@ export function Historico() {
                             {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
                             <div className={cn("grid items-stretch gap-4", temAgendamento && temComunicacao && "lg:grid-cols-2")}>
                               <PainelAgendamento log={log} />
-                              <PainelComunicacao log={log} />
+                              <PainelComunicacao
+                                log={log}
+                                onReenviarInformacoes={setReenviarInformacoesAlvo}
+                                reenviando={reenviandoInformacoes === log.id}
+                              />
                             </div>
                           </td>
                         </tr>
@@ -738,6 +791,16 @@ export function Historico() {
         </>
       )}
 
+      <ConfirmDialog
+        open={reenviarInformacoesAlvo !== null}
+        title="Reenviar informações da perícia?"
+        message={`A mesma mensagem exibida neste registro será enviada novamente para ${reenviarInformacoesAlvo?.card_nome || "este cliente"}. Isso criará um novo registro no Histórico, sem reabrir a espera por resposta.`}
+        confirmLabel="Reenviar informações"
+        confirmVariant="primary"
+        loading={reenviandoInformacoes === reenviarInformacoesAlvo?.id}
+        onConfirm={confirmarReenvioInformacoes}
+        onCancel={() => setReenviarInformacoesAlvo(null)}
+      />
       <ConfirmDialog
         open={apagarAlvo !== null}
         title="Apagar registro?"
