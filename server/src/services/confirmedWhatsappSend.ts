@@ -7,7 +7,7 @@ export interface ConfirmedWhatsappSend {
 }
 
 /**
- * message_create confirma somente a criação local. A cobrança só é considerada enviada
+ * message_create confirma somente a criação local. A mensagem só é considerada enviada
  * quando a chamada termina E a própria mensagem recebe ACK >= 1 (servidor do WhatsApp).
  * Nunca repetimos um envio automaticamente: um timeout pode ter resultado incerto.
  */
@@ -18,7 +18,7 @@ export function sendConfirmedWhatsappMessage(
   chatAliases: string[] = [],
   timeoutMs = 20000,
 ): Promise<ConfirmedWhatsappSend> {
-  if (!texto.trim()) return Promise.reject(new Error("A mensagem de cobrança está vazia."));
+  if (!texto.trim()) return Promise.reject(new Error("A mensagem está vazia."));
 
   const destinatarios = new Set([chatId, ...chatAliases]);
   const iniciadoEm = Math.floor(Date.now() / 1000);
@@ -47,14 +47,14 @@ export function sendConfirmedWhatsappMessage(
     function verificar() {
       if (encerrado || !chamadaConcluida) return;
       if (!directId && candidates.size > 1) {
-        falhar(new Error("Não foi possível identificar a cobrança com segurança: mais de uma mensagem corresponde ao envio. Confira a conversa antes de tentar novamente."));
+        falhar(new Error("Não foi possível identificar o envio com segurança: mais de uma mensagem corresponde à tentativa. Confira a conversa antes de tentar novamente."));
         return;
       }
       const messageId = directId || candidates.values().next().value;
       if (!messageId) return;
       const ack = acks.get(whatsappMessageStableKey(messageId));
       if (ack === -1) {
-        falhar(new Error("O WhatsApp informou falha no envio da cobrança (ACK -1)."));
+        falhar(new Error("O WhatsApp informou falha no envio da mensagem (ACK -1)."));
       } else if (chamadaConcluida && ack !== undefined && ack >= 1) {
         encerrado = true;
         limpar();
@@ -89,11 +89,11 @@ export function sendConfirmedWhatsappMessage(
     }
 
     function onDisconnected() {
-      falhar(new Error("O WhatsApp desconectou durante a cobrança. Confira a conversa antes de tentar novamente."));
+      falhar(new Error("O WhatsApp desconectou durante o envio. Confira a conversa antes de tentar novamente."));
     }
 
     const timer = setTimeout(() => falhar(new Error(
-      "Não foi possível confirmar o envio da cobrança no WhatsApp. Confira a conversa antes de tentar novamente; o sistema não reenviou automaticamente.",
+      "Não foi possível confirmar o envio no WhatsApp. Confira a conversa antes de tentar novamente; o sistema não reenviou automaticamente.",
     )), timeoutMs);
 
     client.on("message_create", onCreate);
@@ -115,7 +115,7 @@ export function sendConfirmedWhatsappMessage(
         }
         verificar();
       }).catch((err: unknown) => falhar(new Error(
-        `Falha ao enviar cobrança: ${err instanceof Error ? err.message : String(err)}. Confira a conversa antes de tentar novamente.`,
+        `Falha ao enviar mensagem: ${err instanceof Error ? err.message : String(err)}. Confira a conversa antes de tentar novamente.`,
       )));
   });
 }

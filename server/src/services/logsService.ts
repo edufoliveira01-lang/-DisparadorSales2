@@ -18,7 +18,7 @@ export interface SendLog {
    * (ex: falha antes do envio) ou o evento de confirmação ainda não chegou. */
   ack: number | null;
   ack_updated_at: string | null;
-  tipo_envio: "disparo" | "lembrete";
+  tipo_envio: "disparo" | "lembrete" | "reenvio";
   created_at: string;
   /** Dados do pending_reply correlato pelo vínculo direto ou pelo whatsapp_message_id legado,
    * quando esse envio estava sob monitoramento de resposta (lista de confirmação configurada no
@@ -39,7 +39,7 @@ export interface NewSendLog {
   status: "sucesso" | "falha";
   erro: string | null;
   whatsapp_message_id?: string | null;
-  tipo_envio?: "disparo" | "lembrete";
+  tipo_envio?: "disparo" | "lembrete" | "reenvio";
 }
 
 const insertStmt = db.prepare(

@@ -1060,7 +1060,7 @@ class WhatsappManager {
     return result ? result._serialized : null;
   }
 
-  /** Cobrança exige ACK real, sem reutilizar a captura permissiva de IDs do envio legado. */
+  /** Envio sensível exige ACK real, sem reutilizar a captura permissiva de IDs do fluxo legado. */
   async sendMessageConfirmed(chatId: string, mensagem: string): Promise<ConfirmedWhatsappSend> {
     if (!this.client || this.status !== "conectado") throw new Error("WhatsApp não está conectado.");
     const client = this.client;
@@ -1080,9 +1080,9 @@ class WhatsappManager {
     } finally {
       clearTimeout(aliasTimer);
     }
-    console.log(`[WhatsApp] Enviando cobrança com confirmação para ${chatId}...`);
+    console.log(`[WhatsApp] Enviando mensagem com confirmação para ${chatId}...`);
     const resultado = await sendConfirmedWhatsappMessage(client, chatId, mensagem, aliases);
-    console.log(`[WhatsApp] Cobrança confirmada: ID=${resultado.messageId}, ACK=${resultado.ack}`);
+    console.log(`[WhatsApp] Mensagem confirmada: ID=${resultado.messageId}, ACK=${resultado.ack}`);
     return resultado;
   }
 

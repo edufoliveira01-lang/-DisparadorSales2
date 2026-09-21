@@ -6,6 +6,7 @@ interface ConfirmDialogProps {
   title: string;
   message: string;
   confirmLabel?: string;
+  confirmVariant?: "primary" | "danger";
   loading?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -16,6 +17,7 @@ export function ConfirmDialog({
   title,
   message,
   confirmLabel = "Apagar",
+  confirmVariant = "danger",
   loading,
   onConfirm,
   onCancel,
@@ -31,7 +33,7 @@ export function ConfirmDialog({
           <Button variant="outline" onClick={onCancel} disabled={loading}>
             Cancelar
           </Button>
-          <Button variant="danger" onClick={onConfirm} loading={loading}>
+          <Button variant={confirmVariant} onClick={onConfirm} loading={loading}>
             {confirmLabel}
           </Button>
         </>

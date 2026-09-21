@@ -178,7 +178,7 @@ function DetalhesNotificacao({ detalhes }: { detalhes: DetalhesLog }) {
                 </div>
                 <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
                   <span className="flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" /> Enviado em {formatarDataHora(item.enviado_em)}</span>
-                  {item.tipo_envio && <span className="flex items-center gap-1.5"><Send className="h-3.5 w-3.5" /> {item.tipo_envio === "lembrete" ? "Lembrete" : "Disparo"}</span>}
+                  {item.tipo_envio && <span className="flex items-center gap-1.5"><Send className="h-3.5 w-3.5" /> {item.tipo_envio === "lembrete" ? "Lembrete" : item.tipo_envio === "reenvio" ? "Reenvio" : "Disparo"}</span>}
                 </div>
               </div>
             ))}
