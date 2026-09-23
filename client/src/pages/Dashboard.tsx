@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
@@ -22,6 +22,7 @@ import {
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay, formatPhoneInput } from "@/lib/phone";
 import { cn } from "@/lib/utils";
+import { createInFlightGuard } from "@/lib/inFlightGuard";
 import { classificarEvento, type CategoriaEvento } from "@/lib/eventVisual";
 import type {
   CardViewModel,
@@ -185,6 +186,7 @@ export function Dashboard() {
   const lembreteBatchProgress = lotes.find((lote) => lote.tipo === "lembretes");
 
   const [enviandoLembreteId, setEnviandoLembreteId] = useState<number | null>(null);
+  const envioLembreteGuard = useRef(createInFlightGuard<number>()).current;
   const [lembreteReenvioConfirm, setLembreteReenvioConfirm] = useState<PericiaAgendada | null>(null);
   const [lembreteBatchConfirm, setLembreteBatchConfirm] = useState<{ periodo: "hoje" | "proximaData"; eventos: PericiaAgendada[] } | null>(
     null
@@ -452,6 +454,9 @@ export function Dashboard() {
       navigate("/configuracoes");
       return;
     }
+    // useState só desabilita o botão no próximo render. A trava síncrona impede que um clique
+    // duplo crie duas requisições antes disso e faça a segunda exibir um falso erro de conflito.
+    if (!envioLembreteGuard.tryStart(pericia.id)) return;
     setEnviandoLembreteId(pericia.id);
     try {
       await api.post(`/pericias-agendadas/${pericia.id}/lembrete`, { forcar });
@@ -464,9 +469,14 @@ export function Dashboard() {
         setLembreteReenvioConfirm(null);
         iniciarFluxoProcesso([pendencia], { tipo: "individual", pericia, forcar });
       } else {
-        show(err instanceof ApiError ? err.message : "Erro ao enviar lembrete.", "error");
+        if (err instanceof ApiError && err.data?.code === "LEMBRETE_EM_ANDAMENTO") {
+          show("O lembrete já está sendo processado. Aguarde a conclusão.", "info");
+        } else {
+          show(err instanceof ApiError ? err.message : "Erro ao enviar lembrete.", "error");
+        }
       }
     } finally {
+      envioLembreteGuard.finish(pericia.id);
       setEnviandoLembreteId(null);
     }
   }
@@ -1430,7 +1440,7 @@ function PainelEventosDashboard({
               variant="outline"
               size="icon"
               onClick={onEnviarTodos}
-              disabled={eventos.length === 0 || eventos.every((evento) => Boolean(evento.ultimo_lembrete_em)) || enviandoBatch}
+              disabled={eventos.length === 0 || eventos.every((evento) => Boolean(evento.ultimo_lembrete_em)) || enviandoBatch || enviandoId != null}
               title="Enviar todos"
               aria-label="Enviar lembretes para todos"
             >
@@ -1507,7 +1517,7 @@ function PainelEventosDashboard({
                       size="sm"
                       onClick={() => onEnviarItem(evento)}
                       loading={enviandoId === evento.id}
-                      disabled={enviandoBatch}
+                      disabled={enviandoBatch || enviandoId != null}
                     >
                       <Send className="h-3.5 w-3.5" /> {jaEnviado ? "Reenviar" : "Enviar"}
                     </Button>

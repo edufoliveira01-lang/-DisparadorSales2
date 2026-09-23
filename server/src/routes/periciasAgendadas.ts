@@ -15,6 +15,7 @@ import {
   enviarLembretesEmMassa,
   listarPendenciasProcessoLembrete,
   loteLembretesEmAndamento,
+  LembreteEmAndamentoError,
   ProcessoLembretePendenteError,
 } from "../services/lembreteService";
 import { getSetting } from "../services/settingsService";
@@ -105,6 +106,12 @@ periciasAgendadasRouter.post("/:id/lembrete", async (req, res) => {
     }
     res.json({ ok: true, resultado });
   } catch (err) {
+    if (err instanceof LembreteEmAndamentoError) {
+      return res.status(409).json({
+        error: err.message,
+        code: "LEMBRETE_EM_ANDAMENTO",
+      });
+    }
     if (err instanceof ProcessoLembretePendenteError) {
       return res.status(409).json({
         error: err.message,

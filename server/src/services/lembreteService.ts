@@ -41,6 +41,12 @@ export class ProcessoLembretePendenteError extends Error {
   }
 }
 
+export class LembreteEmAndamentoError extends Error {
+  constructor() {
+    super("Já existe um lembrete sendo enviado para este compromisso.");
+  }
+}
+
 const enviosEmAndamento = new Set<number>();
 let loteEmAndamento = false;
 
@@ -147,7 +153,7 @@ async function enviarGrupoLembrete(
   if (alvos.length === 0) return { status: "ignorado", ids: ativos.map((evento) => evento.id) };
 
   if (alvos.some((evento) => enviosEmAndamento.has(evento.id))) {
-    throw new Error("Já existe um lembrete sendo enviado para este compromisso.");
+    throw new LembreteEmAndamentoError();
   }
   for (const evento of alvos) enviosEmAndamento.add(evento.id);
 
