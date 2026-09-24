@@ -12,6 +12,7 @@ import {
   Eye,
   MapPin,
   MessageSquareReply,
+  NotebookPen,
   Phone,
   RefreshCw,
   RotateCcw,
@@ -78,7 +79,11 @@ function formatarDataHora(data?: string | null): string | null {
 }
 
 function temRespostaRecebida(log: SendLog): boolean {
-  return log.resposta_status === "respondido" || Boolean(log.resposta_preview || log.resposta_resolved_at);
+  return log.resposta_status === "respondido";
+}
+
+function temFinalizacaoSemResposta(log: SendLog): boolean {
+  return log.resposta_status === "cancelado";
 }
 
 function RespostaRecebida({ log, integrada = false }: { log: SendLog; integrada?: boolean }) {
@@ -86,7 +91,8 @@ function RespostaRecebida({ log, integrada = false }: { log: SendLog; integrada?
   if (!temRespostaRecebida(log)) return null;
 
   const reacao = log.resposta_tipo === "reacao";
-  const IconeResposta = reacao ? SmilePlus : MessageSquareReply;
+  const confirmacaoManual = log.resposta_preview === "Confirmado manualmente";
+  const IconeResposta = confirmacaoManual ? CheckCheck : reacao ? SmilePlus : MessageSquareReply;
   const conteudo = log.resposta_preview || (reacao ? "Reação recebida" : "Mensagem recebida");
 
   return (
@@ -100,10 +106,10 @@ function RespostaRecebida({ log, integrada = false }: { log: SendLog; integrada?
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-accent-700 dark:text-accent-300">
-          Mensagem recebida
+          {confirmacaoManual ? "Recebimento confirmado manualmente" : "Mensagem recebida"}
         </p>
         <span className="rounded-full bg-accent-50 px-2 py-0.5 text-[11px] font-medium text-accent-700 dark:bg-accent-900/30 dark:text-accent-300">
-          {reacao ? "Reação" : "Mensagem"}
+          {confirmacaoManual ? "Manual" : reacao ? "Reação" : "Mensagem"}
         </span>
       </div>
       <div className="mt-2.5 flex items-start gap-2 text-sm text-zinc-700 dark:text-zinc-300">
@@ -111,7 +117,35 @@ function RespostaRecebida({ log, integrada = false }: { log: SendLog; integrada?
         <p className="min-w-0 whitespace-pre-wrap break-words font-medium">{conteudo}</p>
       </div>
       {respondidoEm && (
-        <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">Recebida em {respondidoEm}</p>
+        <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+          {confirmacaoManual ? "Confirmado em" : "Recebida em"} {respondidoEm}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function FinalizacaoSemResposta({ log }: { log: SendLog }) {
+  if (!temFinalizacaoSemResposta(log)) return null;
+  const finalizadoEm = formatarDataHora(log.resposta_resolved_at);
+  const observacao = log.resposta_observacao_finalizacao || "Espera encerrada sem observação registrada.";
+
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3.5 dark:border-amber-900/70 dark:bg-amber-950/20">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+          Espera finalizada sem resposta
+        </p>
+        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+          Encerramento
+        </span>
+      </div>
+      <div className="mt-2.5 flex items-start gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+        <NotebookPen className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+        <p className="min-w-0 whitespace-pre-wrap break-words font-medium">{observacao}</p>
+      </div>
+      {finalizadoEm && (
+        <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">Finalizada em {finalizadoEm}</p>
       )}
     </div>
   );
@@ -203,7 +237,8 @@ function PainelComunicacao({
 }) {
   const temMensagem = Boolean(log.mensagem_enviada);
   const temResposta = temRespostaRecebida(log);
-  if (!temMensagem && !temResposta) return null;
+  const temFinalizacao = temFinalizacaoSemResposta(log);
+  if (!temMensagem && !temResposta && !temFinalizacao) return null;
 
   return (
     <section className="h-full overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900/70">
@@ -214,12 +249,19 @@ function PainelComunicacao({
         <div>
           <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Comunicação com o cliente</h3>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            {temResposta ? "Resposta recebida" : log.tipo_envio === "reenvio" ? "Informações reenviadas" : "Mensagem enviada, aguardando resposta"}
+            {temResposta
+              ? "Resposta recebida"
+              : temFinalizacao
+                ? "Espera finalizada sem resposta"
+                : log.tipo_envio === "reenvio"
+                  ? "Informações reenviadas"
+                  : "Mensagem enviada, aguardando resposta"}
           </p>
         </div>
       </div>
       <div className="space-y-3 p-4">
         <RespostaRecebida log={log} integrada />
+        <FinalizacaoSemResposta log={log} />
         {log.mensagem_enviada && (
           <div className="overflow-hidden rounded-xl border border-zinc-200 bg-zinc-50/70 dark:border-zinc-800 dark:bg-zinc-800/30">
             <div className="flex items-center gap-2 border-b border-zinc-200 px-3 py-2.5 dark:border-zinc-800">
@@ -703,7 +745,7 @@ export function Historico() {
                 {logsPaginados.map((log) => {
                   const aberto = expandido === log.id;
                   const temAgendamento = periciasDoLog(log).length > 0;
-                  const temComunicacao = temRespostaRecebida(log) || Boolean(log.mensagem_enviada);
+                  const temComunicacao = temRespostaRecebida(log) || temFinalizacaoSemResposta(log) || Boolean(log.mensagem_enviada);
                   return (
                     <Fragment key={log.id}>
                       <tr

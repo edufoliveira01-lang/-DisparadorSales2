@@ -8,6 +8,7 @@ import {
   cancelPendingReply,
   deletePendingReplies,
   deletePendingReply,
+  finalizePendingReply,
   getPendingReply,
   listPendingReplies,
   resolvePendingReply,
@@ -140,6 +141,44 @@ pendingRepliesRouter.post("/:id/cancelar", (req, res) => {
   const cancelled = cancelPendingReply(id);
   emitEvent("pendingReply:resolved", cancelled);
   res.json({ ok: true, log: cancelled });
+});
+
+// Encerra o acompanhamento sem registrar uma resposta inexistente. A observação obrigatória
+// permanece vinculada ao envio original e aparece nos detalhes do Histórico.
+pendingRepliesRouter.post("/:id/finalizar", (req, res) => {
+  const id = Number(req.params.id);
+  const pending = getPendingReply(id);
+  if (!pending) return res.status(404).json({ error: "Registro não encontrado." });
+  if (pending.status !== "aguardando") return res.status(400).json({ error: "Este registro já foi resolvido." });
+
+  const observacao = typeof req.body?.observacao === "string" ? req.body.observacao.trim() : "";
+  if (observacao.length < 3) {
+    return res.status(400).json({ error: "Informe uma observação com pelo menos 3 caracteres." });
+  }
+  if (observacao.length > 1000) {
+    return res.status(400).json({ error: "A observação deve ter no máximo 1000 caracteres." });
+  }
+
+  const finalized = finalizePendingReply(id, observacao);
+  if (!finalized) return res.status(409).json({ error: "Esta espera já foi finalizada por outra ação." });
+
+  recordSystemLog({
+    nivel: "info",
+    categoria: "whatsapp",
+    evento: "espera_resposta_finalizada",
+    titulo: "Espera por resposta finalizada",
+    origem: "usuario",
+    mensagem: `A espera por resposta de ${pending.card_nome || "cliente"} foi finalizada manualmente.`,
+    detalhes: {
+      pending_id: id,
+      send_log_id: pending.send_log_id,
+      cliente: pending.card_nome,
+      telefone: pending.telefone,
+      observacao,
+    },
+  });
+  emitEvent("pendingReply:resolved", finalized);
+  res.json({ ok: true, log: finalized });
 });
 
 // Apaga o registro em definitivo — útil quando o cliente só reagiu à mensagem durante uma

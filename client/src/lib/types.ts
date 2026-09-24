@@ -55,6 +55,7 @@ export interface SendLog {
   resposta_resolved_at?: string | null;
   resposta_tipo?: "mensagem" | "reacao" | null;
   resposta_preview?: string | null;
+  resposta_observacao_finalizacao?: string | null;
 }
 
 export interface SystemLog {
@@ -256,6 +257,7 @@ export interface PendingReply {
   status: "aguardando" | "respondido" | "cancelado";
   tipo_resposta: "mensagem" | "reacao" | null;
   resposta_preview: string | null;
+  observacao_finalizacao: string | null;
   whatsapp_message_id: string | null;
   send_log_id: number | null;
   /** -1 erro, 0 pendente, 1 enviado ao servidor, 2 entregue (✓✓ cinza), 3 lido (✓✓ azul), 4 áudio reproduzido. */

@@ -9,6 +9,7 @@ import {
   Eye,
   MessageCircleQuestion,
   MessageSquareReply,
+  NotebookPen,
   Phone,
   RefreshCw,
   Search,
@@ -26,7 +27,8 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { Input, Label } from "@/components/ui/Input";
+import { Input, Label, Textarea } from "@/components/ui/Input";
+import { Modal } from "@/components/ui/Modal";
 import { Pagination } from "@/components/ui/Pagination";
 import { SelectableCard } from "@/components/ui/SelectableCard";
 import { Select } from "@/components/ui/Select";
@@ -84,6 +86,8 @@ export function PendentesResposta() {
   const [paginaAguardando, setPaginaAguardando] = useState(0);
   const [apagarAlvo, setApagarAlvo] = useState<PendingReply | null>(null);
   const [confirmMassaAberto, setConfirmMassaAberto] = useState(false);
+  const [finalizarAlvo, setFinalizarAlvo] = useState<PendingReply | null>(null);
+  const [observacaoFinalizacao, setObservacaoFinalizacao] = useState("");
   const [expandido, setExpandido] = useState<number | null>(null);
   const [busca, setBusca] = useState("");
   const [ordenacao, setOrdenacao] = useState<Ordenacao>("recentes");
@@ -117,14 +121,28 @@ export function PendentesResposta() {
     }
   }
 
-  async function cancelar(item: PendingReply) {
+  function abrirFinalizacao(item: PendingReply) {
+    setObservacaoFinalizacao("");
+    setFinalizarAlvo(item);
+  }
+
+  async function finalizarEspera() {
+    if (!finalizarAlvo) return;
+    const item = finalizarAlvo;
+    const observacao = observacaoFinalizacao.trim();
+    if (observacao.length < 3) {
+      show("Informe uma observação com pelo menos 3 caracteres.", "error");
+      return;
+    }
     setProcessando(item.id);
     try {
-      await api.post(`/pending-replies/${item.id}/cancelar`);
-      show("Monitoramento cancelado.", "info");
-      carregar();
+      await api.post(`/pending-replies/${item.id}/finalizar`, { observacao });
+      show("Espera finalizada e observação registrada no Histórico.", "success");
+      setFinalizarAlvo(null);
+      setObservacaoFinalizacao("");
+      await carregar();
     } catch (err) {
-      show(err instanceof ApiError ? err.message : "Erro ao cancelar monitoramento.", "error");
+      show(err instanceof ApiError ? err.message : "Erro ao finalizar a espera.", "error");
     } finally {
       setProcessando(null);
     }
@@ -391,8 +409,8 @@ export function PendentesResposta() {
                         <Button variant="outline" size="sm" onClick={() => cobrar(item)} loading={cobrando === item.id} disabled={processando !== null}>
                           <MessageCircleQuestion className="h-3.5 w-3.5" /> {cobrando === item.id ? "Confirmando envio…" : "Cobrar resposta"}
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => cancelar(item)} disabled={processando === item.id}>
-                          <X className="h-3.5 w-3.5" /> Cancelar
+                        <Button variant="outline" size="sm" onClick={() => abrirFinalizacao(item)} disabled={processando !== null}>
+                          <NotebookPen className="h-3.5 w-3.5" /> Finalizar espera
                         </Button>
                         <Button variant="ghost" size="sm" className="col-span-2 text-red-600 dark:text-red-400" onClick={() => setApagarAlvo(item)} disabled={processando === item.id}>
                           <Trash2 className="h-3.5 w-3.5 text-red-500 dark:text-red-400" /> Apagar registro
@@ -429,8 +447,8 @@ export function PendentesResposta() {
                   <Button variant="outline" size="sm" onClick={() => cobrar(item)} loading={cobrando === item.id} disabled={processando !== null}>
                     <MessageCircleQuestion className="h-3.5 w-3.5" /> {cobrando === item.id ? "Confirmando envio…" : "Cobrar resposta"}
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => cancelar(item)} disabled={processando === item.id}>
-                    <X className="h-3.5 w-3.5" /> Cancelar
+                  <Button variant="ghost" size="sm" onClick={() => abrirFinalizacao(item)} disabled={processando !== null}>
+                    <NotebookPen className="h-3.5 w-3.5" /> Finalizar espera
                   </Button>
                   <Button variant="ghost" size="icon" className="ml-auto" title="Apagar registro" onClick={() => setApagarAlvo(item)} disabled={processando === item.id}>
                     <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
@@ -447,7 +465,7 @@ export function PendentesResposta() {
       <ConfirmDialog
         open={apagarAlvo !== null}
         title="Apagar registro?"
-        message={`Isso vai apagar em definitivo o registro de ${apagarAlvo?.card_nome || "este cliente"}. Essa ação não pode ser desfeita.`}
+        message={`Isso vai excluir definitivamente o monitoramento de ${apagarAlvo?.card_nome || "este cliente"} e qualquer informação sobre como a espera terminou. A mensagem enviada continuará no Histórico, mas esta ação não pode ser desfeita. Para apenas encerrar a espera, use “Finalizar espera”.`}
         loading={processando === apagarAlvo?.id}
         onConfirm={confirmarApagar}
         onCancel={() => setApagarAlvo(null)}
@@ -461,6 +479,52 @@ export function PendentesResposta() {
         onConfirm={confirmarApagarSelecionados}
         onCancel={() => setConfirmMassaAberto(false)}
       />
+      <Modal
+        open={finalizarAlvo !== null}
+        onClose={() => {
+          if (processando !== finalizarAlvo?.id) {
+            setFinalizarAlvo(null);
+            setObservacaoFinalizacao("");
+          }
+        }}
+        title="Finalizar espera sem resposta"
+        description={`O atendimento de ${finalizarAlvo?.card_nome || "cliente"} deixará de aparecer como pendente. A observação ficará registrada nos detalhes do Histórico.`}
+        footer={
+          <>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setFinalizarAlvo(null);
+                setObservacaoFinalizacao("");
+              }}
+              disabled={processando === finalizarAlvo?.id}
+            >
+              Voltar
+            </Button>
+            <Button
+              onClick={finalizarEspera}
+              loading={processando === finalizarAlvo?.id}
+              disabled={observacaoFinalizacao.trim().length < 3}
+            >
+              <NotebookPen className="h-4 w-4" /> Finalizar espera
+            </Button>
+          </>
+        }
+      >
+        <div>
+          <Label htmlFor="observacao-finalizacao">Observação obrigatória</Label>
+          <Textarea
+            id="observacao-finalizacao"
+            autoFocus
+            rows={5}
+            maxLength={1000}
+            value={observacaoFinalizacao}
+            onChange={(e) => setObservacaoFinalizacao(e.target.value)}
+            placeholder="Ex.: Cliente não respondeu às tentativas de contato e bloqueou o número."
+          />
+          <p className="mt-1.5 text-right text-xs text-zinc-400">{observacaoFinalizacao.length}/1000</p>
+        </div>
+      </Modal>
     </div>
   );
 }

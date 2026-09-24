@@ -27,6 +27,7 @@ export interface SendLog {
   resposta_resolved_at?: string | null;
   resposta_tipo?: "mensagem" | "reacao" | null;
   resposta_preview?: string | null;
+  resposta_observacao_finalizacao?: string | null;
 }
 
 export interface NewSendLog {
@@ -55,7 +56,8 @@ const listStmt = db.prepare(`
     pending_replies.status AS resposta_status,
     pending_replies.resolved_at AS resposta_resolved_at,
     pending_replies.tipo_resposta AS resposta_tipo,
-    pending_replies.resposta_preview AS resposta_preview
+    pending_replies.resposta_preview AS resposta_preview,
+    pending_replies.observacao_finalizacao AS resposta_observacao_finalizacao
   FROM send_logs
   LEFT JOIN pending_replies ON
     pending_replies.send_log_id = send_logs.id

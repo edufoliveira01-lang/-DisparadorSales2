@@ -64,6 +64,7 @@ export function runMigrations(db: Database.Database): void {
       status TEXT CHECK(status IN ('aguardando','respondido','cancelado')) DEFAULT 'aguardando',
       tipo_resposta TEXT CHECK(tipo_resposta IN ('mensagem','reacao')),
       resposta_preview TEXT,
+      observacao_finalizacao TEXT,
       whatsapp_message_id TEXT,
       send_log_id INTEGER,
       ack INTEGER,
@@ -214,6 +215,7 @@ export function runMigrations(db: Database.Database): void {
     "ALTER TABLE pending_replies ADD COLUMN send_log_id INTEGER",
     "ALTER TABLE pending_replies ADD COLUMN ack INTEGER",
     "ALTER TABLE pending_replies ADD COLUMN ack_updated_at DATETIME",
+    "ALTER TABLE pending_replies ADD COLUMN observacao_finalizacao TEXT",
     "ALTER TABLE contacts ADD COLUMN processo TEXT",
     "ALTER TABLE contacts ADD COLUMN processo_chave TEXT NOT NULL DEFAULT ''",
     // Id completo do chat (com domínio, ex: "5511999999999@c.us" ou "123456789@lid"), guardado
