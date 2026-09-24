@@ -180,10 +180,8 @@ export function getPendingReply(id: number): PendingReply | undefined {
   return getStmt.get(id) as PendingReply | undefined;
 }
 
-/**
- * Pendentes ainda "aguardando" há mais de horasLimite horas, ainda não notificados no Telegram.
- * Usado pela verificação periódica que avisa sobre clientes que não responderam.
- */
+/** Pendentes entregues (ack >= 2) que continuam sem resposta além do prazo. Uma mensagem que
+ * ainda está apenas "enviada" pertence exclusivamente à regra de não entrega. */
 export function listPendingRepliesPendentesDeAlerta(
   horasLimite: number,
   canal?: NotificationChannel
@@ -191,24 +189,32 @@ export function listPendingRepliesPendentesDeAlerta(
   if (canal) {
     return db
       .prepare(
-        `SELECT * FROM pending_replies
-         WHERE status = 'aguardando'
+        `SELECT pending_replies.*
+         FROM pending_replies
+         LEFT JOIN send_logs ON send_logs.id = pending_replies.send_log_id
+         WHERE pending_replies.status = 'aguardando'
            AND NOT EXISTS (
              SELECT 1 FROM notification_deliveries
              WHERE tipo = 'resposta' AND origem_id = pending_replies.id AND canal = ?
            )
-           AND created_at <= datetime('now', '-' || ? || ' hours')
-         ORDER BY created_at ASC`
+           AND MAX(COALESCE(pending_replies.ack, -1), COALESCE(send_logs.ack, -1)) >= 2
+           AND COALESCE(pending_replies.ack_updated_at, send_logs.ack_updated_at, pending_replies.created_at)
+             <= datetime('now', '-' || ? || ' hours')
+         ORDER BY pending_replies.created_at ASC`
       )
       .all(canal, horasLimite) as PendingReply[];
   }
   return db
     .prepare(
-      `SELECT * FROM pending_replies
-       WHERE status = 'aguardando'
-         AND alerta_resposta_enviado_em IS NULL
-         AND created_at <= datetime('now', '-' || ? || ' hours')
-       ORDER BY created_at ASC`
+      `SELECT pending_replies.*
+       FROM pending_replies
+       LEFT JOIN send_logs ON send_logs.id = pending_replies.send_log_id
+       WHERE pending_replies.status = 'aguardando'
+         AND pending_replies.alerta_resposta_enviado_em IS NULL
+         AND MAX(COALESCE(pending_replies.ack, -1), COALESCE(send_logs.ack, -1)) >= 2
+         AND COALESCE(pending_replies.ack_updated_at, send_logs.ack_updated_at, pending_replies.created_at)
+           <= datetime('now', '-' || ? || ' hours')
+       ORDER BY pending_replies.created_at ASC`
     )
     .all(horasLimite) as PendingReply[];
 }

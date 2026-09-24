@@ -138,8 +138,9 @@ describe("seleção de respostas pendentes para notificação", () => {
   it("mantém a tentativa da Whapi depois de o Telegram receber o alerta", () => {
     const info = db.prepare(`
       INSERT INTO pending_replies
-        (card_id, card_nome, telefone, telefone_digits, status, created_at)
-      VALUES (?, 'CLIENTE SEM RESPOSTA', '(13) 99123-8064', '5513991238064', 'aguardando', datetime('now', '-30 hours'))
+        (card_id, card_nome, telefone, telefone_digits, status, ack, ack_updated_at, created_at)
+      VALUES (?, 'CLIENTE SEM RESPOSTA', '(13) 99123-8064', '5513991238064', 'aguardando', 2,
+        datetime('now', '-30 hours'), datetime('now', '-30 hours'))
     `).run(`${prefixo}resposta-por-canal`);
     const id = Number(info.lastInsertRowid);
 
@@ -150,6 +151,33 @@ describe("seleção de respostas pendentes para notificação", () => {
 
     expect(listPendingRepliesPendentesDeAlerta(24, "Telegram").some((item) => item.id === id)).toBe(false);
     expect(listPendingRepliesPendentesDeAlerta(24, "Whapi").some((item) => item.id === id)).toBe(true);
+  });
+
+  it("não classifica como sem resposta uma mensagem que ainda não foi entregue", () => {
+    const info = db.prepare(`
+      INSERT INTO pending_replies
+        (card_id, card_nome, telefone, telefone_digits, status, ack, ack_updated_at, created_at)
+      VALUES (?, 'CLIENTE NÃO ENTREGUE', '(13) 99123-8064', '5513991238064', 'aguardando', 1,
+        datetime('now', '-72 hours'), datetime('now', '-72 hours'))
+    `).run(`${prefixo}ainda-nao-entregue`);
+
+    expect(listPendingRepliesPendentesDeAlerta(48, "Telegram").some((item) => item.id === Number(info.lastInsertRowid)))
+      .toBe(false);
+  });
+
+  it("conta o prazo sem resposta a partir da confirmação de entrega", () => {
+    const info = db.prepare(`
+      INSERT INTO pending_replies
+        (card_id, card_nome, telefone, telefone_digits, status, ack, ack_updated_at, created_at)
+      VALUES (?, 'CLIENTE ENTREGUE', '(13) 99123-8064', '5513991238064', 'aguardando', 2,
+        datetime('now', '-2 hours'), datetime('now', '-72 hours'))
+    `).run(`${prefixo}entregue-recentemente`);
+    const id = Number(info.lastInsertRowid);
+
+    expect(listPendingRepliesPendentesDeAlerta(48, "Telegram").some((item) => item.id === id)).toBe(false);
+
+    db.prepare("UPDATE pending_replies SET ack_updated_at = datetime('now', '-50 hours') WHERE id = ?").run(id);
+    expect(listPendingRepliesPendentesDeAlerta(48, "Telegram").some((item) => item.id === id)).toBe(true);
   });
 });
 
