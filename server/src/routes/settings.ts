@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getAllSettings, getSetting, setSetting } from "../services/settingsService";
+import { getAllSettings, getSetting, setSetting, SettingDecryptionError } from "../services/settingsService";
 import { detectarChatId, enviarMensagemTelegram, TelegramError } from "../services/telegramService";
 import { enviarMensagemWhapi, WhapiError } from "../services/whapiService";
 import {
@@ -32,6 +32,17 @@ const DEFAULTS: Record<string, string> = {
 
 settingsRouter.get("/", (_req, res) => {
   const settings = getAllSettings();
+  for (const key of ["telegram_bot_token", "whapi_token"] as const) {
+    if (!settings[`${key}_configurado`]) continue;
+    try {
+      settings[`${key}_valido`] = getSetting(key) ? "true" : "false";
+    } catch (err) {
+      settings[`${key}_valido`] = "false";
+      if (!(err instanceof SettingDecryptionError)) {
+        console.error(`[Configurações] Erro ao validar ${key}:`, err);
+      }
+    }
+  }
   res.json({ ...DEFAULTS, ...settings });
 });
 
@@ -86,6 +97,11 @@ settingsRouter.get("/trello-status", (_req, res) => {
 });
 
 function handleTelegramError(res: import("express").Response, err: unknown) {
+  if (err instanceof SettingDecryptionError) {
+    return res.status(409).json({
+      error: "O token salvo do Telegram não pode ser lido com a chave atual. Cole o token novamente, salve e repita o teste.",
+    });
+  }
   if (err instanceof TelegramError) {
     return res.status(err.status && err.status >= 400 && err.status < 500 ? err.status : 502).json({ error: err.message });
   }
@@ -125,6 +141,11 @@ settingsRouter.post("/telegram/testar", async (req, res) => {
 });
 
 function handleWhapiError(res: import("express").Response, err: unknown) {
+  if (err instanceof SettingDecryptionError) {
+    return res.status(409).json({
+      error: "O token salvo da Whapi não pode ser lido com a chave atual. Cole o token novamente, salve e repita o teste.",
+    });
+  }
   if (err instanceof WhapiError) {
     return res.status(err.status && err.status >= 400 && err.status < 500 ? err.status : 502).json({ error: err.message });
   }

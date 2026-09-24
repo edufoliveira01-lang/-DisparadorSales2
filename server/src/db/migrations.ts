@@ -92,6 +92,17 @@ export function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_system_logs_created_at ON system_logs(created_at);
     CREATE INDEX IF NOT EXISTS idx_system_logs_categoria ON system_logs(categoria);
 
+    CREATE TABLE IF NOT EXISTS notification_deliveries (
+      tipo TEXT NOT NULL CHECK(tipo IN ('entrega','resposta')),
+      origem_id INTEGER NOT NULL,
+      canal TEXT NOT NULL CHECK(canal IN ('Telegram','Whapi')),
+      enviado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (tipo, origem_id, canal)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_notification_deliveries_lookup
+      ON notification_deliveries(tipo, canal, origem_id);
+
     CREATE TABLE IF NOT EXISTS pericias_agendadas (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       card_id TEXT NOT NULL,
@@ -325,6 +336,27 @@ export function runMigrations(db: Database.Database): void {
     );
     db.prepare("INSERT INTO settings (chave, valor) VALUES ('resposta_alerta_backfill_feito', '1')").run();
   }
+
+  // O controle antigo registrava apenas que "algum canal" recebeu o alerta. A partir desta
+  // versão Telegram e Whapi têm confirmações independentes. Para não reenviar alertas antigos,
+  // considera os registros marcados pelo modelo anterior como entregues nos dois canais.
+  db.exec(`
+    INSERT OR IGNORE INTO notification_deliveries (tipo, origem_id, canal, enviado_em)
+    SELECT 'entrega', id, 'Telegram', alerta_entrega_enviado_em
+    FROM send_logs WHERE alerta_entrega_enviado_em IS NOT NULL;
+
+    INSERT OR IGNORE INTO notification_deliveries (tipo, origem_id, canal, enviado_em)
+    SELECT 'entrega', id, 'Whapi', alerta_entrega_enviado_em
+    FROM send_logs WHERE alerta_entrega_enviado_em IS NOT NULL;
+
+    INSERT OR IGNORE INTO notification_deliveries (tipo, origem_id, canal, enviado_em)
+    SELECT 'resposta', id, 'Telegram', alerta_resposta_enviado_em
+    FROM pending_replies WHERE alerta_resposta_enviado_em IS NOT NULL;
+
+    INSERT OR IGNORE INTO notification_deliveries (tipo, origem_id, canal, enviado_em)
+    SELECT 'resposta', id, 'Whapi', alerta_resposta_enviado_em
+    FROM pending_replies WHERE alerta_resposta_enviado_em IS NOT NULL;
+  `);
 
   // Backfill de uma vez só: popula pericias_agendadas a partir do histórico de envios já
   // existente (send_logs) — sem isso, o calendário nasceria vazio para quem já usava o sistema
