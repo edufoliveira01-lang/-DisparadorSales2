@@ -8,8 +8,10 @@ import {
   findAwaitingByWhatsappMessageId,
   finalizePendingReply,
   linkPendingReplyToSendLog,
+  listPendingRepliesPendentesDeAlerta,
   resolvePendingReplyIfAwaiting,
 } from "../src/services/pendingRepliesService";
+import { markNotificationDelivered } from "../src/services/notificationDeliveryService";
 
 const prefixo = `TESTE-LOG-${Date.now()}-`;
 
@@ -87,6 +89,11 @@ describe("logs de sistema", () => {
 
 describe("seleção de envios para alerta de entrega", () => {
   afterEach(() => {
+    db.prepare(`
+      DELETE FROM notification_deliveries
+      WHERE tipo = 'entrega'
+        AND origem_id IN (SELECT id FROM send_logs WHERE card_id LIKE ?)
+    `).run(`${prefixo}%`);
     db.prepare("DELETE FROM send_logs WHERE card_id LIKE ?").run(`${prefixo}%`);
   });
 
@@ -103,6 +110,46 @@ describe("seleção de envios para alerta de entrega", () => {
   it("mantém a confirmação de entrega para disparos normais", () => {
     const id = inserirEnvio("disparo", "sucesso");
     expect(listLogsPendentesDeAlerta(24).some((log) => log.id === id)).toBe(true);
+  });
+
+  it("controla Telegram e Whapi separadamente quando só um canal confirmou o alerta", () => {
+    const id = inserirEnvio("disparo", "falha");
+
+    expect(listLogsPendentesDeAlerta(24, "Telegram").some((log) => log.id === id)).toBe(true);
+    expect(listLogsPendentesDeAlerta(24, "Whapi").some((log) => log.id === id)).toBe(true);
+
+    markNotificationDelivered("entrega", "Telegram", [id]);
+
+    expect(listLogsPendentesDeAlerta(24, "Telegram").some((log) => log.id === id)).toBe(false);
+    expect(listLogsPendentesDeAlerta(24, "Whapi").some((log) => log.id === id)).toBe(true);
+  });
+});
+
+describe("seleção de respostas pendentes para notificação", () => {
+  afterEach(() => {
+    db.prepare(`
+      DELETE FROM notification_deliveries
+      WHERE tipo = 'resposta'
+        AND origem_id IN (SELECT id FROM pending_replies WHERE card_id LIKE ?)
+    `).run(`${prefixo}%`);
+    db.prepare("DELETE FROM pending_replies WHERE card_id LIKE ?").run(`${prefixo}%`);
+  });
+
+  it("mantém a tentativa da Whapi depois de o Telegram receber o alerta", () => {
+    const info = db.prepare(`
+      INSERT INTO pending_replies
+        (card_id, card_nome, telefone, telefone_digits, status, created_at)
+      VALUES (?, 'CLIENTE SEM RESPOSTA', '(13) 99123-8064', '5513991238064', 'aguardando', datetime('now', '-30 hours'))
+    `).run(`${prefixo}resposta-por-canal`);
+    const id = Number(info.lastInsertRowid);
+
+    expect(listPendingRepliesPendentesDeAlerta(24, "Telegram").some((item) => item.id === id)).toBe(true);
+    expect(listPendingRepliesPendentesDeAlerta(24, "Whapi").some((item) => item.id === id)).toBe(true);
+
+    markNotificationDelivered("resposta", "Telegram", [id]);
+
+    expect(listPendingRepliesPendentesDeAlerta(24, "Telegram").some((item) => item.id === id)).toBe(false);
+    expect(listPendingRepliesPendentesDeAlerta(24, "Whapi").some((item) => item.id === id)).toBe(true);
   });
 });
 

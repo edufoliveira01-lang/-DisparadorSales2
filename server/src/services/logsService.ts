@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { whatsappMessageStableKey } from "../utils/whatsappMessageId";
+import type { NotificationChannel } from "./notificationDeliveryService";
 import { whatsappManager } from "./whatsappService";
 
 export interface SendLog {
@@ -139,7 +140,28 @@ export function updateLogAckByMessageId(whatsappMessageId: string, ack: number):
  * e só geram alerta quando o próprio envio falha de fato.
  * Usado pela verificação periódica que avisa no Telegram.
  */
-export function listLogsPendentesDeAlerta(horasLimite: number): SendLog[] {
+export function listLogsPendentesDeAlerta(horasLimite: number, canal?: NotificationChannel): SendLog[] {
+  if (canal) {
+    return db
+      .prepare(
+        `SELECT * FROM send_logs
+         WHERE NOT EXISTS (
+             SELECT 1 FROM notification_deliveries
+             WHERE tipo = 'entrega' AND origem_id = send_logs.id AND canal = ?
+           )
+           AND (
+             status = 'falha'
+             OR (
+               tipo_envio != 'lembrete'
+               AND status = 'sucesso'
+               AND (ack IS NULL OR ack < 2)
+               AND created_at <= datetime('now', '-' || ? || ' hours')
+             )
+           )
+         ORDER BY created_at ASC`
+      )
+      .all(canal, horasLimite) as SendLog[];
+  }
   return db
     .prepare(
       `SELECT * FROM send_logs

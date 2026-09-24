@@ -4,6 +4,16 @@ import { db } from "../db";
 const ENCRYPTED_KEYS = new Set(["trello_token", "telegram_bot_token", "whapi_token", "google_refresh_token"]);
 const LEGACY_DEFAULT_SECRET = "chave-padrao-nao-segura-troque-no-env";
 
+export class SettingDecryptionError extends Error {
+  chave: string;
+
+  constructor(chave: string) {
+    super(`A credencial salva em "${chave}" não pode ser lida com a ENCRYPTION_KEY atual.`);
+    this.name = "SettingDecryptionError";
+    this.chave = chave;
+  }
+}
+
 function getEncryptionKey(secret = process.env.ENCRYPTION_KEY || LEGACY_DEFAULT_SECRET): Buffer {
   return crypto.createHash("sha256").update(secret).digest();
 }
@@ -45,14 +55,20 @@ export function getSetting(chave: string): string | null {
   if (!ENCRYPTED_KEYS.has(chave)) return row.valor;
   try {
     return decrypt(row.valor);
-  } catch (err) {
+  } catch {
     // Instalações antigas podiam ter salvo tokens com a chave padrão. Quando o administrador
     // adiciona ENCRYPTION_KEY para habilitar o Google Agenda, recupera uma única vez com a
     // chave legada e já regrava usando a chave segura, sem interromper Trello/Telegram/Whapi.
-    if (!process.env.ENCRYPTION_KEY) throw err;
-    const plain = decrypt(row.valor, LEGACY_DEFAULT_SECRET);
-    upsertStmt.run(chave, encrypt(plain));
-    return plain;
+    if (process.env.ENCRYPTION_KEY) {
+      try {
+        const plain = decrypt(row.valor, LEGACY_DEFAULT_SECRET);
+        upsertStmt.run(chave, encrypt(plain));
+        return plain;
+      } catch {
+        // A credencial foi cifrada com outra chave e precisa ser informada novamente.
+      }
+    }
+    throw new SettingDecryptionError(chave);
   }
 }
 

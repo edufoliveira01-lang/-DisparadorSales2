@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AlertTriangle,
   Bell,
   CheckCircle2,
   Database,
@@ -791,12 +792,15 @@ export function Configuracoes() {
         title="Notificações"
         storageKey="notificacoes"
         headerExtra={
-          settings?.telegram_bot_token_configurado &&
-          settings?.telegram_chat_id && (
+          settings?.telegram_bot_token_configurado && settings?.telegram_bot_token_valido === "false" ? (
+            <Badge tone="danger">
+              <AlertTriangle className="h-3.5 w-3.5" /> Requer novo token
+            </Badge>
+          ) : settings?.telegram_bot_token_configurado && settings?.telegram_chat_id ? (
             <Badge tone="success">
               <CheckCircle2 className="h-3.5 w-3.5" /> Ativo
             </Badge>
-          )
+          ) : null
         }
       >
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
@@ -804,6 +808,13 @@ export function Configuracoes() {
             cliente não responder dentro dos prazos abaixo — pra você decidir o que fazer (reenviar, cobrar, ligar pro
             cliente, etc).
           </p>
+
+          {settings?.telegram_bot_token_valido === "false" && (
+            <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-300">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>O token salvo não pode ser lido com a chave atual. Cole novamente o token do bot e clique em Salvar notificações.</p>
+            </div>
+          )}
 
           <div>
             <Label>Token do bot</Label>
@@ -879,18 +890,28 @@ export function Configuracoes() {
         title="Notificações por WhatsApp (Whapi)"
         storageKey="notificacoes-whapi"
         headerExtra={
-          settings?.whapi_token_configurado &&
-          settings?.whapi_numero_notificacao && (
+          settings?.whapi_token_configurado && settings?.whapi_token_valido === "false" ? (
+            <Badge tone="danger">
+              <AlertTriangle className="h-3.5 w-3.5" /> Requer novo token
+            </Badge>
+          ) : settings?.whapi_token_configurado && settings?.whapi_numero_notificacao ? (
             <Badge tone="success">
               <CheckCircle2 className="h-3.5 w-3.5" /> Ativo
             </Badge>
-          )
+          ) : null
         }
       >
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
             Além (ou no lugar) do Telegram, você pode receber os mesmos alertas direto no WhatsApp de um número escolhido,
             usando uma conta na <span className="font-medium">Whapi</span>.
           </p>
+
+          {settings?.whapi_token_valido === "false" && (
+            <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-300">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>O token salvo não pode ser lido com a chave atual. Cole novamente o token do canal Whapi e clique em Salvar.</p>
+            </div>
+          )}
 
           <div>
             <Label>URL da API</Label>

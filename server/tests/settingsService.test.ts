@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { deleteSetting, getSetting, setSetting } from "../src/services/settingsService";
+import { deleteSetting, getSetting, setSetting, SettingDecryptionError } from "../src/services/settingsService";
 
 const TEST_KEY = "google_refresh_token";
 const originalEncryptionKey = process.env.ENCRYPTION_KEY;
@@ -20,5 +20,14 @@ describe("configurações criptografadas", () => {
 
     // A segunda leitura já usa o valor regravado com a nova chave.
     expect(getSetting(TEST_KEY)).toBe("token-legado-de-teste");
+  });
+
+  it("informa de forma controlada quando a credencial foi cifrada com outra chave", () => {
+    process.env.ENCRYPTION_KEY = "primeira-chave-segura-de-teste-com-32-caracteres";
+    setSetting(TEST_KEY, "token-cifrado-com-a-primeira-chave");
+
+    process.env.ENCRYPTION_KEY = "segunda-chave-segura-de-teste-com-32-caracteres";
+    expect(() => getSetting(TEST_KEY)).toThrow(SettingDecryptionError);
+    expect(() => getSetting(TEST_KEY)).toThrow(/não pode ser lida com a ENCRYPTION_KEY atual/);
   });
 });

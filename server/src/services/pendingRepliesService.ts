@@ -2,6 +2,7 @@ import { db } from "../db";
 import { normalizePhone } from "../utils/phone";
 import { whatsappMessageStableKey } from "../utils/whatsappMessageId";
 import { whatsappManager } from "./whatsappService";
+import type { NotificationChannel } from "./notificationDeliveryService";
 
 export type PendingReplyStatus = "aguardando" | "respondido" | "cancelado";
 export type TipoResposta = "mensagem" | "reacao";
@@ -183,7 +184,24 @@ export function getPendingReply(id: number): PendingReply | undefined {
  * Pendentes ainda "aguardando" há mais de horasLimite horas, ainda não notificados no Telegram.
  * Usado pela verificação periódica que avisa sobre clientes que não responderam.
  */
-export function listPendingRepliesPendentesDeAlerta(horasLimite: number): PendingReply[] {
+export function listPendingRepliesPendentesDeAlerta(
+  horasLimite: number,
+  canal?: NotificationChannel
+): PendingReply[] {
+  if (canal) {
+    return db
+      .prepare(
+        `SELECT * FROM pending_replies
+         WHERE status = 'aguardando'
+           AND NOT EXISTS (
+             SELECT 1 FROM notification_deliveries
+             WHERE tipo = 'resposta' AND origem_id = pending_replies.id AND canal = ?
+           )
+           AND created_at <= datetime('now', '-' || ? || ' hours')
+         ORDER BY created_at ASC`
+      )
+      .all(canal, horasLimite) as PendingReply[];
+  }
   return db
     .prepare(
       `SELECT * FROM pending_replies
