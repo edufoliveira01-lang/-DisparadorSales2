@@ -16,6 +16,7 @@ export interface PendingReply {
   status: PendingReplyStatus;
   tipo_resposta: TipoResposta | null;
   resposta_preview: string | null;
+  observacao_finalizacao: string | null;
   whatsapp_message_id: string | null;
   send_log_id: number | null;
   /** -1 erro, 0 pendente, 1 enviado ao servidor, 2 entregue (✓✓ cinza), 3 lido (✓✓ azul), 4 áudio reproduzido. */
@@ -30,7 +31,11 @@ export interface PendingReply {
 // número antes do cliente responder ao anterior, o pendente antigo perde o sentido
 // (a resposta que chegar deve ser associada ao cartão do disparo mais recente).
 const cancelAwaitingForPhoneStmt = db.prepare(
-  `UPDATE pending_replies SET status = 'cancelado', resolved_at = CURRENT_TIMESTAMP WHERE telefone_digits = ? AND status = 'aguardando'`
+  `UPDATE pending_replies
+   SET status = 'cancelado',
+       observacao_finalizacao = 'Espera encerrada automaticamente após um novo envio para o mesmo telefone.',
+       resolved_at = CURRENT_TIMESTAMP
+   WHERE telefone_digits = ? AND status = 'aguardando'`
 );
 const insertStmt = db.prepare(
   `INSERT INTO pending_replies (card_id, card_nome, telefone, telefone_digits, whatsapp_chat_id, whatsapp_message_id, status, ack)
@@ -72,6 +77,11 @@ const resolveAwaitingStmt = db.prepare(
 );
 const cancelStmt = db.prepare(
   `UPDATE pending_replies SET status = 'cancelado', resolved_at = CURRENT_TIMESTAMP WHERE id = ?`
+);
+const finalizeAwaitingStmt = db.prepare(
+  `UPDATE pending_replies
+   SET status = 'cancelado', observacao_finalizacao = ?, resolved_at = CURRENT_TIMESTAMP
+   WHERE id = ? AND status = 'aguardando'`
 );
 const deleteStmt = db.prepare("DELETE FROM pending_replies WHERE id = ?");
 const updateAckStmt = db.prepare(`
@@ -211,6 +221,13 @@ export function resolvePendingReplyIfAwaiting(
 
 export function cancelPendingReply(id: number): PendingReply {
   cancelStmt.run(id);
+  return getStmt.get(id) as PendingReply;
+}
+
+/** Encerra uma espera sem fingir que houve resposta e preserva o motivo para o Histórico. */
+export function finalizePendingReply(id: number, observacao: string): PendingReply | undefined {
+  const info = finalizeAwaitingStmt.run(observacao.trim(), id);
+  if (info.changes === 0) return undefined;
   return getStmt.get(id) as PendingReply;
 }
 

@@ -6,6 +6,7 @@ import { listLogs, listLogsPendentesDeAlerta } from "../src/services/logsService
 import {
   findAwaitingByChatIdentifier,
   findAwaitingByWhatsappMessageId,
+  finalizePendingReply,
   linkPendingReplyToSendLog,
   resolvePendingReplyIfAwaiting,
 } from "../src/services/pendingRepliesService";
@@ -147,6 +148,35 @@ describe("correlação da resposta com o Histórico", () => {
       resposta_status: "respondido",
       resposta_tipo: "mensagem",
       resposta_preview: "Boa tarde! Recebi o comunicado.",
+    });
+  });
+
+  it("finaliza a espera sem inventar resposta e preserva a observação no Histórico", () => {
+    const cardId = `${prefixo}finalizado-sem-resposta`;
+    const logInfo = db.prepare(`
+      INSERT INTO send_logs (card_id, card_nome, telefone, status, tipo_envio)
+      VALUES (?, 'CLIENTE SEM RESPOSTA', '(13) 99123-8064', 'sucesso', 'disparo')
+    `).run(cardId);
+    const pendingInfo = db.prepare(`
+      INSERT INTO pending_replies
+        (card_id, card_nome, telefone, telefone_digits, whatsapp_chat_id, status, send_log_id)
+      VALUES (?, 'CLIENTE SEM RESPOSTA', '(13) 99123-8064', '5513991238064', '5513991238064@c.us', 'aguardando', ?)
+    `).run(cardId, logInfo.lastInsertRowid);
+
+    const pendingId = Number(pendingInfo.lastInsertRowid);
+    expect(finalizePendingReply(pendingId, "Cliente não respondeu e bloqueou o contato.")).toMatchObject({
+      status: "cancelado",
+      tipo_resposta: null,
+      resposta_preview: null,
+      observacao_finalizacao: "Cliente não respondeu e bloqueou o contato.",
+    });
+    expect(finalizePendingReply(pendingId, "Tentativa duplicada")).toBeUndefined();
+
+    expect(listLogs().find((log) => log.id === Number(logInfo.lastInsertRowid))).toMatchObject({
+      resposta_status: "cancelado",
+      resposta_tipo: null,
+      resposta_preview: null,
+      resposta_observacao_finalizacao: "Cliente não respondeu e bloqueou o contato.",
     });
   });
 

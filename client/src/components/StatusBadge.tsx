@@ -26,6 +26,9 @@ export function StatusBadge({ sendStatus, ack, respostaStatus }: StatusBadgeProp
   if (respostaStatus === "aguardando") {
     return <Badge tone="info">Aguardando resposta</Badge>;
   }
+  if (respostaStatus === "cancelado") {
+    return <Badge tone="neutral">Finalizado sem resposta</Badge>;
+  }
   if (ack !== null && ack !== undefined && ack >= 2) {
     return <Badge tone="warning">Entregue</Badge>;
   }
