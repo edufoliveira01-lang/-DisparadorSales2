@@ -24,6 +24,7 @@ import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Pagination } from "@/components/ui/Pagination";
 import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { StatCard } from "@/components/ui/StatCard";
@@ -53,8 +54,11 @@ interface DetalhesLog {
   canais?: ResultadoCanal[];
   envios?: ItemNotificacao[];
   pendentes?: ItemNotificacao[];
+  regra_alerta?: "falha_envio" | "nao_entregue" | "falha_ou_nao_entregue" | "nao_respondida";
   [chave: string]: unknown;
 }
+
+const ITENS_POR_PAGINA = 12;
 
 function formatarDataHora(valor?: string | null): string {
   if (!valor) return "—";
@@ -109,10 +113,31 @@ function ackDescricao(ack?: number | null): string {
   return `Confirmação ${ack}`;
 }
 
+function descricaoRegra(detalhes: DetalhesLog): string {
+  const horas = detalhes.horas_limite;
+  const falhas = detalhes.envios?.filter((item) => item.status === "falha").length ?? 0;
+  const totalEnvios = detalhes.envios?.length ?? 0;
+  if (detalhes.regra_alerta === "falha_envio") return "Falha no envio da mensagem";
+  if (detalhes.regra_alerta === "falha_ou_nao_entregue") {
+    return horas ? `Falha no envio ou mensagem não entregue após ${horas}h` : "Falha no envio ou mensagem não entregue";
+  }
+  if (!detalhes.regra_alerta && totalEnvios > 0 && falhas === totalEnvios) return "Falha no envio da mensagem";
+  if (!detalhes.regra_alerta && falhas > 0) {
+    return horas ? `Falha no envio ou mensagem não entregue após ${horas}h` : "Falha no envio ou mensagem não entregue";
+  }
+  if (detalhes.regra_alerta === "nao_respondida" || detalhes.pendentes) {
+    return horas ? `Mensagem entregue e sem resposta após ${horas}h` : "Mensagem entregue e sem resposta";
+  }
+  if (detalhes.regra_alerta === "nao_entregue" || detalhes.envios) {
+    return horas ? `Mensagem não entregue após ${horas}h` : "Mensagem não entregue";
+  }
+  return horas ? `Prazo de ${horas}h ultrapassado` : "Regra automática";
+}
+
 function DetalhesNotificacao({ detalhes }: { detalhes: DetalhesLog }) {
   const itens = detalhes.envios ?? detalhes.pendentes ?? [];
   const rotuloItem = detalhes.envios ? "Envio" : "Pendente";
-  const camposConhecidos = new Set(["tipo_verificacao", "horas_limite", "detectado_em", "canais", "envios", "pendentes"]);
+  const camposConhecidos = new Set(["tipo_verificacao", "regra_alerta", "horas_limite", "detectado_em", "canais", "envios", "pendentes"]);
   const extras = Object.fromEntries(Object.entries(detalhes).filter(([chave]) => !camposConhecidos.has(chave)));
 
   return (
@@ -128,7 +153,7 @@ function DetalhesNotificacao({ detalhes }: { detalhes: DetalhesLog }) {
           {detalhes.horas_limite && (
             <div className="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-800/60">
               <span className="text-xs text-zinc-500 dark:text-zinc-400">Regra que gerou o alerta</span>
-              <p className="mt-0.5 font-medium text-zinc-800 dark:text-zinc-200">Mais de {detalhes.horas_limite}h sem confirmação</p>
+              <p className="mt-0.5 font-medium text-zinc-800 dark:text-zinc-200">{descricaoRegra(detalhes)}</p>
             </div>
           )}
         </div>
@@ -204,6 +229,7 @@ export function Logs() {
   const [nivel, setNivel] = useState("todos");
   const [categoria, setCategoria] = useState("todas");
   const [abertos, setAbertos] = useState<Set<number>>(new Set());
+  const [pagina, setPagina] = useState(0);
 
   async function carregar() {
     setCarregando(true);
@@ -230,6 +256,18 @@ export function Logs() {
         .some((valor) => valor?.toLocaleLowerCase("pt-BR").includes(termo));
     });
   }, [logs, busca, nivel, categoria]);
+
+  useEffect(() => {
+    setPagina(0);
+    setAbertos(new Set());
+  }, [busca, nivel, categoria]);
+
+  const totalPaginas = Math.max(1, Math.ceil(filtrados.length / ITENS_POR_PAGINA));
+  const paginaAtual = Math.min(pagina, totalPaginas - 1);
+  const logsPaginados = filtrados.slice(
+    paginaAtual * ITENS_POR_PAGINA,
+    paginaAtual * ITENS_POR_PAGINA + ITENS_POR_PAGINA
+  );
 
   const ultimas24h = logs.filter((log) => Date.now() - new Date(`${log.created_at}Z`).getTime() <= 24 * 60 * 60 * 1000).length;
   const avisos = logs.filter((log) => log.nivel === "aviso").length;
@@ -285,7 +323,7 @@ export function Logs() {
         <EmptyState icon={ScrollText} title={logs.length ? "Nenhum log encontrado" : "Nenhum evento registrado ainda"} description={logs.length ? "Tente alterar os filtros ou a busca." : "Os próximos alertas automáticos e erros aparecerão aqui com todos os detalhes."} />
       ) : (
         <div className="space-y-3">
-          {filtrados.map((log) => {
+          {logsPaginados.map((log) => {
             const detalhes = lerDetalhes(log);
             const nivelVisual = badgeNivel(log.nivel);
             const aberto = abertos.has(log.id);
@@ -318,6 +356,16 @@ export function Logs() {
               </Card>
             );
           })}
+          <Pagination
+            page={paginaAtual}
+            totalItems={filtrados.length}
+            pageSize={ITENS_POR_PAGINA}
+            onPageChange={(proximaPagina) => {
+              setPagina(proximaPagina);
+              setAbertos(new Set());
+              window.scrollTo({ top: 0, behavior: "smooth" });
+            }}
+          />
         </div>
       )}
     </div>

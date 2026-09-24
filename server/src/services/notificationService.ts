@@ -29,13 +29,13 @@ function lerHorasLimite(chave: string): number {
 function montarMensagemEntrega(logs: SendLog[], horasLimite: number): string {
   const titulo =
     logs.length === 1
-      ? "⚠️ 1 mensagem do DisparaZap pode não ter chegado ao cliente:"
-      : `⚠️ ${logs.length} mensagens do DisparaZap podem não ter chegado aos clientes:`;
+      ? "⚠️ 1 mensagem do DisparaZap não foi entregue ao cliente:"
+      : `⚠️ ${logs.length} mensagens do DisparaZap não foram entregues aos clientes:`;
   const falhas = logs.filter((log) => log.status === "falha").length;
   const semConfirmacao = logs.length - falhas;
   const resumo = [
     falhas ? `${falhas} com falha de envio` : null,
-    semConfirmacao ? `${semConfirmacao} sem confirmação há mais de ${horasLimite}h` : null,
+    semConfirmacao ? `${semConfirmacao} não entregue há mais de ${horasLimite}h` : null,
   ].filter(Boolean).join("; ");
   return `${titulo}\n\nOrigem: verificação automática do sistema.\nResumo: ${resumo}.\n\nConfira clientes, horários e resultado por canal na área Logs do DisparaZap.`;
 }
@@ -120,6 +120,12 @@ async function verificarEntregasPendentes(canais: CanalNotificacao[], origemVeri
   for (const canal of canais) {
     const logs = listLogsPendentesDeAlerta(horasLimite, canal.nome);
     if (logs.length === 0) continue;
+    const falhas = logs.filter((log) => log.status === "falha").length;
+    const regraAlerta = falhas === logs.length
+      ? "falha_envio"
+      : falhas === 0
+        ? "nao_entregue"
+        : "falha_ou_nao_entregue";
 
     const resultado = await enviarPeloCanal(canal, montarMensagemEntrega(logs, horasLimite));
     recordSystemLog({
@@ -128,11 +134,12 @@ async function verificarEntregasPendentes(canais: CanalNotificacao[], origemVeri
       evento: "alerta_entrega",
       titulo: `${logs.length} ${logs.length === 1 ? "envio requer" : "envios requerem"} atenção (${canal.nome})`,
       mensagem: resultado.sucesso
-        ? `O sistema detectou envios sem confirmação e encaminhou o alerta pelo canal ${canal.nome}.`
-        : `O sistema detectou envios sem confirmação, mas o canal ${canal.nome} não confirmou o recebimento do alerta.`,
+        ? `O sistema detectou falha de envio ou mensagem não entregue e encaminhou o alerta pelo canal ${canal.nome}.`
+        : `O sistema detectou falha de envio ou mensagem não entregue, mas o canal ${canal.nome} não confirmou o recebimento do alerta.`,
       origem: "automatico",
       detalhes: {
         tipo_verificacao: origemVerificacao,
+        regra_alerta: regraAlerta,
         horas_limite: horasLimite,
         detectado_em: new Date().toISOString(),
         canais: [resultado],
@@ -177,6 +184,7 @@ async function verificarRespostasPendentes(canais: CanalNotificacao[], origemVer
       origem: "automatico",
       detalhes: {
         tipo_verificacao: origemVerificacao,
+        regra_alerta: "nao_respondida",
         horas_limite: horasLimite,
         detectado_em: new Date().toISOString(),
         canais: [resultado],
@@ -186,6 +194,7 @@ async function verificarRespostasPendentes(canais: CanalNotificacao[], origemVer
           telefone: pendente.telefone,
           enviado_em: pendente.created_at,
           status: pendente.status,
+          ack: pendente.ack,
         })),
       },
     });
