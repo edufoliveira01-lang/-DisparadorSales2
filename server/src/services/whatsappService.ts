@@ -341,10 +341,39 @@ async function resolveWaVersionCache(): Promise<WaVersionCache> {
 // então fazemos isso automaticamente em vez de exigir que o usuário clique de novo.
 const ERRO_TRANSITORIO = /execution context was destroyed|protocol error/i;
 
+/**
+ * Diferencia uma navegação momentânea da página de um Chromium/CDP efetivamente travado.
+ * Nesse segundo caso repetir a mesma chamada não resolve: é preciso recriar o browser mantendo
+ * o profile do LocalAuth. A mensagem original do Puppeteer cita protocolTimeout, enquanto o
+ * nosso watchdog usa o marcador abaixo para não deixar o usuário esperando cinco minutos.
+ */
+const MARCADOR_TIMEOUT_OPERACAO = "WHATSAPP_BROWSER_OPERATION_TIMEOUT";
+const ERRO_BROWSER_TRAVADO = /Runtime\.callFunctionOn timed out|protocolTimeout|WHATSAPP_BROWSER_OPERATION_TIMEOUT/i;
+
+export function isWhatsappBrowserStalledError(err: unknown): boolean {
+  const mensagem = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+  return ERRO_BROWSER_TRAVADO.test(mensagem);
+}
+
+function comTempoLimiteDeOperacao<T>(promessa: Promise<T>, timeoutMs: number, operacao: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    promessa,
+    new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error(
+        `${MARCADOR_TIMEOUT_OPERACAO}: tempo esgotado ao ${operacao}.`,
+      )), timeoutMs);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 // Retry de operações pontuais já em conexão estabelecida (ex: enviar mensagem que esbarrou
 // num "Protocol error" pontual) — precisa ser rápido, o usuário está esperando a ação terminar.
 const MAX_TENTATIVAS_AUTOMATICAS = 3;
 const INTERVALO_ENTRE_TENTATIVAS_MS = 3000;
+const TEMPO_LIMITE_RESOLVER_CONTATO_MS = 60 * 1000;
+const TEMPO_LIMITE_ENVIAR_MENSAGEM_MS = 90 * 1000;
+const TEMPO_LIMITE_ENCERRAR_BROWSER_MS = 15 * 1000;
 
 // Retry do fluxo de CONEXÃO/QR Code (iniciarTentativa) — deliberadamente mais generoso que o
 // de cima. O whatsapp-web.js trata qualquer estado do WhatsApp fora de
@@ -437,6 +466,8 @@ class WhatsappManager {
    * que quem desconectou sabe disso. false é o padrão: qualquer queda que chegue em
    * failAndCleanUp sem essa flag é inesperada (o WhatsApp caiu sozinho) e merece aviso. */
   private desconexaoManual = false;
+  /** Uma única recuperação pode controlar o profile do Chromium por vez. */
+  private recuperacaoBrowserEmAndamento: Promise<void> | null = null;
 
   onChange(listener: Listener) {
     this.listeners.add(listener);
@@ -476,6 +507,88 @@ class WhatsappManager {
     if (!this.estabilidadeTimer) return;
     clearTimeout(this.estabilidadeTimer);
     this.estabilidadeTimer = null;
+  }
+
+  /**
+   * Reinicia apenas o Chromium/whatsapp-web.js, preservando o LocalAuth e o marcador da sessão.
+   * É o equivalente seguro à reconexão manual que antes destravava o envio, mas sem logout e
+   * sem exigir um novo QR Code. Chamadas concorrentes compartilham a mesma recuperação.
+   */
+  private async recuperarBrowserTravado(motivo: string): Promise<void> {
+    if (this.recuperacaoBrowserEmAndamento) return this.recuperacaoBrowserEmAndamento;
+
+    const recuperacao = (async () => {
+      const clientTravado = this.client;
+      this.geracao++;
+      const minhaGeracao = this.geracao;
+      this.client = null;
+      this.tentativa = 0;
+      this.desconexaoManual = false;
+      this.limparEstabilidadeTimer();
+      this.setState({
+        status: "inicializando",
+        lastError: "A conexão interna do WhatsApp travou e está sendo reiniciada automaticamente.",
+        qrDataUrl: null,
+        syncProgress: null,
+      });
+
+      recordSystemLog({
+        nivel: "aviso",
+        categoria: "whatsapp",
+        evento: "recuperacao_automatica_browser",
+        titulo: "Navegador do WhatsApp reiniciado automaticamente",
+        mensagem: "O canal interno com o Chromium parou de responder; a sessão autenticada foi preservada.",
+        origem: "sistema",
+        detalhes: { motivo, instancia: `${os.hostname()}:${process.pid}` },
+      });
+
+      if (clientTravado) {
+        let encerrou = false;
+        try {
+          await Promise.race([
+            clientTravado.destroy().then(() => { encerrou = true; }),
+            new Promise<void>((resolve) => setTimeout(resolve, TEMPO_LIMITE_ENCERRAR_BROWSER_MS)),
+          ]);
+        } catch {
+          // O processo filho será encerrado abaixo se destroy() também estiver travado.
+        }
+
+        if (!encerrou) {
+          try {
+            clientTravado.pupBrowser?.process()?.kill("SIGKILL");
+          } catch {
+            // limpeza best-effort restrita ao Chromium desta instância
+          }
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      }
+
+      if (minhaGeracao !== this.geracao) return;
+      clearLegacyWebVersionCache();
+      this.iniciarTentativaSegura(minhaGeracao);
+    })();
+
+    this.recuperacaoBrowserEmAndamento = recuperacao;
+    try {
+      await recuperacao;
+    } finally {
+      if (this.recuperacaoBrowserEmAndamento === recuperacao) this.recuperacaoBrowserEmAndamento = null;
+    }
+  }
+
+  private async tratarTravamentoDeOperacao(err: unknown, resultadoIncerto: boolean): Promise<never> {
+    const mensagem = err instanceof Error ? err.message : String(err);
+    await this.recuperarBrowserTravado(mensagem);
+    if (resultadoIncerto) {
+      throw new Error(
+        "O navegador do WhatsApp travou durante o envio e foi reiniciado automaticamente. " +
+        "Confira a conversa antes de reenviar, pois a mensagem pode ter sido concluída.",
+      );
+    }
+    throw new Error(
+      "A conexão interna do WhatsApp travou e está sendo reiniciada automaticamente. " +
+      "Aguarde o status voltar para conectado e tente novamente.",
+    );
   }
 
   private iniciarTentativaSegura(minhaGeracao: number): void {
@@ -582,7 +695,9 @@ class WhatsappManager {
           "--disable-renderer-backgrounding",
           "--disable-background-timer-throttling",
         ],
-        protocolTimeout: 300000,
+        // O limite do protocolo fica folgado para inicialização/sincronização. Nas operações de
+        // envio e consulta usamos watchdogs menores, que reiniciam o browser automaticamente.
+        protocolTimeout: 600000,
       },
       webVersionCache,
       // Quantas vezes o QR Code pode ser renovado (o WhatsApp Web troca a imagem sozinho a
@@ -1030,6 +1145,8 @@ class WhatsappManager {
         return await fn();
       } catch (err) {
         const mensagem = (err as Error)?.message ?? String(err);
+        // Um timeout real do canal CDP não melhora repetindo a operação no mesmo browser.
+        if (isWhatsappBrowserStalledError(err)) throw err;
         if (tentativa >= MAX_TENTATIVAS_AUTOMATICAS || !ERRO_TRANSITORIO.test(mensagem)) throw err;
         await new Promise((resolve) => setTimeout(resolve, INTERVALO_ENTRE_TENTATIVAS_MS));
       }
@@ -1056,8 +1173,17 @@ class WhatsappManager {
       target = "55" + target;
     }
 
-    const result = await this.comRetryTransitorio(() => client.getNumberId(target));
-    return result ? result._serialized : null;
+    try {
+      const result = await this.comRetryTransitorio(() => comTempoLimiteDeOperacao(
+        client.getNumberId(target),
+        TEMPO_LIMITE_RESOLVER_CONTATO_MS,
+        "consultar o número no WhatsApp",
+      ));
+      return result ? result._serialized : null;
+    } catch (err) {
+      if (isWhatsappBrowserStalledError(err)) return this.tratarTravamentoDeOperacao(err, false);
+      throw err;
+    }
   }
 
   /** Envio sensível exige ACK real, sem reutilizar a captura permissiva de IDs do fluxo legado. */
@@ -1081,9 +1207,14 @@ class WhatsappManager {
       clearTimeout(aliasTimer);
     }
     console.log(`[WhatsApp] Enviando mensagem com confirmação para ${chatId}...`);
-    const resultado = await sendConfirmedWhatsappMessage(client, chatId, mensagem, aliases);
-    console.log(`[WhatsApp] Mensagem confirmada: ID=${resultado.messageId}, ACK=${resultado.ack}`);
-    return resultado;
+    try {
+      const resultado = await sendConfirmedWhatsappMessage(client, chatId, mensagem, aliases);
+      console.log(`[WhatsApp] Mensagem confirmada: ID=${resultado.messageId}, ACK=${resultado.ack}`);
+      return resultado;
+    } catch (err) {
+      if (isWhatsappBrowserStalledError(err)) return this.tratarTravamentoDeOperacao(err, true);
+      throw err;
+    }
   }
 
   /**
@@ -1104,7 +1235,13 @@ class WhatsappManager {
 
     try {
       console.log(`[WhatsApp] Enviando mensagem para ${chatId}...`);
-      const sent = await this.comRetryTransitorio(() => client.sendMessage(chatId, mensagem));
+      // Nunca repetimos automaticamente um sendMessage que terminou em timeout: o WhatsApp
+      // pode ter aceitado a mensagem antes de o retorno do Chromium travar, causando duplicata.
+      const sent = await comTempoLimiteDeOperacao(
+        client.sendMessage(chatId, mensagem),
+        TEMPO_LIMITE_ENVIAR_MENSAGEM_MS,
+        "enviar a mensagem",
+      );
       
       // Pequena pausa para o WhatsApp Web processar o ID interno
       await new Promise(r => setTimeout(r, 500));
@@ -1165,6 +1302,7 @@ class WhatsappManager {
       return null;
     } catch (err) {
       this.removerEnvioAguardando(chatId, mensagem);
+      if (isWhatsappBrowserStalledError(err)) return this.tratarTravamentoDeOperacao(err, true);
       throw err;
     }
   }
