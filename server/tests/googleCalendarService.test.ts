@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   buildGoogleEvent,
@@ -193,7 +194,7 @@ describe("integração com o Google Agenda", () => {
     });
   });
 
-  it("não reaproveita evento manual nos destinos adicionais", () => {
+  it("reaproveita evento manual antes de criar nos destinos adicionais", () => {
     const compromisso = pericia();
     const eventoManual = {
       id: "evento-principal",
@@ -202,10 +203,38 @@ describe("integração com o Google Agenda", () => {
       end: { dateTime: "2026-12-21T00:30:00-03:00" },
     };
 
-    expect(findExistingEvent(compromisso, destination({ destination: 2 }), [eventoManual], new Set(), false)).toEqual({
-      event: null,
+    expect(findExistingEvent(compromisso, destination({ destination: 2 }), [eventoManual], new Set(), true)).toEqual({
+      event: eventoManual,
       conflict: false,
-      candidates: [],
+      candidates: [eventoManual],
+    });
+  });
+
+  it("prioriza o evento manual quando uma cópia determinística do DisparaZap também existe", () => {
+    const compromisso = pericia();
+    const destino = destination({ destination: 2, calendarId: "agenda-2", eventMode: "create_additional" });
+    const generatedId = crypto.createHash("sha256")
+      .update(`${destino.calendarId}:${compromisso.id}:${destino.destination}`)
+      .digest("hex")
+      .slice(0, 48);
+    const copiaDisparaZap = {
+      id: generatedId,
+      summary: "PERÍCIA MÉDICA - CLIENTE TESTE - 0000000-00.2026.0.00.0000",
+      start: { dateTime: "2026-12-20T23:30:00-03:00" },
+      end: { dateTime: "2026-12-21T00:30:00-03:00" },
+      extendedProperties: { private: { disparazapId: String(compromisso.id), disparazapDestination: "2" } },
+    };
+    const eventoManual = {
+      id: "evento-manual-original",
+      summary: "PERÍCIA MÉDICA - CLIENTE TESTE - 0000000-00.2026.0.00.0000",
+      start: { dateTime: "2026-12-20T23:30:00-03:00" },
+      end: { dateTime: "2026-12-21T00:30:00-03:00" },
+    };
+
+    expect(findExistingEvent(compromisso, destino, [copiaDisparaZap, eventoManual], new Set(), true)).toEqual({
+      event: eventoManual,
+      conflict: false,
+      candidates: [eventoManual],
     });
   });
 

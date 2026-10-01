@@ -189,13 +189,13 @@ function DestinationEditor({ config, calendars, onChange, onRemove }: {
           value={config.eventMode}
           onChange={(event) => update("eventMode", event.target.value as GoogleCalendarDestinationConfig["eventMode"])}
         >
-          <option value="reuse_manual">Reaproveitar evento manual existente</option>
-          <option value="create_additional">Criar evento adicional</option>
+          <option value="reuse_manual">Somente reaproveitar evento existente</option>
+          <option value="create_additional">Reaproveitar existente ou criar se não existir</option>
         </Select>
         <p className="mt-1 text-xs leading-5 text-zinc-400">
           {config.eventMode === "reuse_manual"
             ? "Procura por processo, nome, tipo e data. Se não encontrar, não cria uma cópia."
-            : "Não vincula eventos manuais: cria e mantém um evento próprio do DisparaZap."}
+            : "Procura primeiro por processo, nome, tipo e data. Só cria um evento quando não encontra nenhuma correspondência."}
         </p>
       </div>
 
@@ -339,7 +339,7 @@ function DestinationEditor({ config, calendars, onChange, onRemove }: {
         <p className={config.eventMode === "reuse_manual" ? "text-blue-700 dark:text-blue-400" : "text-zinc-500 dark:text-zinc-400"}>
           {config.eventMode === "reuse_manual"
             ? "Este destino preserva o evento manual e passa a atualizá-lo depois da vinculação."
-            : "Este destino cria somente o evento adicional configurado. Os lembretes do Google permanecem desativados."}
+            : "Este destino reaproveita o evento já existente; a criação é apenas o último recurso. Os lembretes do Google permanecem desativados."}
         </p>
       </div>
     </div>
@@ -586,7 +586,7 @@ export function GoogleCalendarSettings() {
           <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-4 text-sm text-blue-800 dark:border-blue-900/60 dark:bg-blue-950/20 dark:text-blue-300">
             <p className="flex items-center gap-2 font-medium"><Link2 className="h-4 w-4" /> Vinculação segura, sem duplicidade</p>
             <p className="mt-1 text-xs leading-5 text-blue-700 dark:text-blue-400">
-              Cada destino decide se reaproveita um evento manual ou cria um evento adicional. A busca manual usa principalmente o processo e confirma nome, tipo e data em uma faixa de sete dias. Casos ambíguos aguardam sua escolha e não geram cópias.
+              Todos os destinos procuram primeiro o evento manual, usando principalmente o processo e confirmando nome, tipo e data em uma faixa de sete dias. A configuração decide apenas se um evento ausente deve aguardar ou ser criado. Casos ambíguos aguardam sua escolha e não geram cópias.
             </p>
           </div>
 
@@ -600,7 +600,7 @@ export function GoogleCalendarSettings() {
                     <div key={item.destination} className="rounded-lg bg-zinc-50 p-3 text-sm dark:bg-zinc-900">
                       <p className="font-medium">{item.name}: {item.calendarName}</p>
                       <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                        {item.linked} já vinculados · {item.matched} existentes encontrados · {item.missing} não encontrados {destination?.eventMode === "reuse_manual" ? "(aguardam evento manual)" : "(serão criados)"} · {item.conflicts} para revisão
+                        {item.linked} já vinculados · {item.matched} existentes encontrados · {item.missing} não encontrados {destination?.eventMode === "reuse_manual" ? "(aguardam evento manual)" : "(serão criados somente se continuarem ausentes)"} · {item.conflicts} para revisão
                       </p>
                       {item.conflictItems.length > 0 && (
                         <div className="mt-3 space-y-3">

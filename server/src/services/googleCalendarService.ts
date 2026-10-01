@@ -773,14 +773,26 @@ export function findExistingEvent(
     return event.id && !usedIds.has(event.id) && properties?.disparazapId === String(pericia.id)
       && (!properties.disparazapDestination || properties.disparazapDestination === String(destination.destination));
   });
-  if (byInternalId.length === 1) return { event: byInternalId[0], conflict: false, candidates: byInternalId };
-  if (byInternalId.length > 1) return { event: null, conflict: true, candidates: byInternalId };
-  if (!allowManualMatch) return { event: null, conflict: false, candidates: [] };
+  const generatedId = deterministicGoogleEventId(destination.calendarId, pericia.id, destination.destination);
+  // Um evento manual já adotado também possui disparazapId, mas conserva seu ID original.
+  // Ele continua sendo a correspondência mais forte caso o vínculo local tenha sido perdido.
+  const adoptedInternal = byInternalId.filter((event) => event.id !== generatedId);
+  if (adoptedInternal.length === 1) return { event: adoptedInternal[0], conflict: false, candidates: adoptedInternal };
+  if (adoptedInternal.length > 1) return { event: null, conflict: true, candidates: adoptedInternal };
+  if (!allowManualMatch) {
+    if (byInternalId.length === 1) return { event: byInternalId[0], conflict: false, candidates: byInternalId };
+    if (byInternalId.length > 1) return { event: null, conflict: true, candidates: byInternalId };
+    return { event: null, conflict: false, candidates: [] };
+  }
 
   const candidates = manualCandidates(pericia, events, usedIds);
-  if (candidates.length === 0) return { event: null, conflict: false, candidates };
   if (candidates.length > 1) return { event: null, conflict: true, candidates };
-  return { event: candidates[0], conflict: false, candidates };
+  if (candidates.length === 1) return { event: candidates[0], conflict: false, candidates };
+
+  // Só usa a cópia determinística do DisparaZap quando realmente não existe evento manual.
+  if (byInternalId.length === 1) return { event: byInternalId[0], conflict: false, candidates: byInternalId };
+  if (byInternalId.length > 1) return { event: null, conflict: true, candidates: byInternalId };
+  return { event: null, conflict: false, candidates: [] };
 }
 
 function deterministicGoogleEventId(calendarId: string, periciaId: number, destination: number): string {
@@ -910,16 +922,17 @@ async function adoptManualEvent(
   pericia: PericiaAgendada,
   destination: GoogleCalendarDestinationConfig,
   event: GoogleCalendarEvent,
-  previousLink?: GoogleEventLink
+  previousLink?: GoogleEventLink,
+  generatedCopyPresent = false
 ): Promise<{ deletedGeneratedCopy: boolean }> {
   if (!event.id) throw new GoogleCalendarError("O evento selecionado não possui um identificador válido.", 409);
 
   let deletedGeneratedCopy = false;
   const generatedId = deterministicGoogleEventId(destination.calendarId, pericia.id, destination.destination);
-  if (previousLink?.google_event_id === generatedId && previousLink.google_event_id !== event.id) {
+  if ((previousLink?.google_event_id === generatedId || generatedCopyPresent) && generatedId !== event.id) {
     try {
       await googleRequest<Record<string, never>>(
-        `/calendars/${encodeURIComponent(destination.calendarId)}/events/${encodeURIComponent(previousLink.google_event_id)}`,
+        `/calendars/${encodeURIComponent(destination.calendarId)}/events/${encodeURIComponent(generatedId)}`,
         { method: "DELETE" }
       );
       deletedGeneratedCopy = true;
@@ -953,15 +966,6 @@ async function syncPericiaToDestination(
     deleteLinkStmt.run(link.pericia_id, link.destination);
     link = undefined;
   }
-  if (link && destination.eventMode === "create_additional" && link.google_event_id !== generatedId) {
-    // Ao trocar um destino de "reaproveitar" para "criar adicional", o evento manual
-    // permanece intacto no Google e somente o vínculo local é removido.
-    deleteLinkStmt.run(link.pericia_id, link.destination);
-    link = undefined;
-    skipExistingLookup = true;
-    knownEvent = undefined;
-  }
-
   if (link) {
     try {
       let currentEvent = knownEvent?.id === link.google_event_id ? knownEvent : undefined;
@@ -996,7 +1000,13 @@ async function syncPericiaToDestination(
     const existing = findExistingEvent(pericia, destination, existingEvents, new Set(), allowManualMatch);
     if (existing.conflict) return "conflict";
     if (existing.event?.id) {
-      await adoptManualEvent(pericia, destination, existing.event);
+      await adoptManualEvent(
+        pericia,
+        destination,
+        existing.event,
+        undefined,
+        existingEvents.some((event) => event.id === generatedId)
+      );
       return "linked";
     }
   }
@@ -1031,15 +1041,15 @@ export async function syncGoogleCalendarPericia(periciaId: number): Promise<Goog
 
   const destinations = config.destinations.filter((item) => item.enabled && item.calendarId);
   for (const destination of destinations) {
-    const reuseManual = destination.eventMode === "reuse_manual";
+    const createWhenMissing = destination.eventMode === "create_additional";
     result.total += 1;
     try {
       const action = await syncPericiaToDestination(
         pericia,
         destination,
         false,
-        reuseManual,
-        !reuseManual
+        true,
+        createWhenMissing
       );
       result[action === "conflict" ? "conflicts" : action] += 1;
     } catch (err) {
@@ -1085,10 +1095,7 @@ export async function analyzeGoogleCalendar(): Promise<GoogleCalendarAnalysis> {
   const activeDestinations = config.destinations.filter((item) => item.enabled && item.calendarId);
 
   for (const destination of activeDestinations) {
-    const reuseManual = destination.eventMode === "reuse_manual";
-    const firstSearchDate = reuseManual
-      ? addDays(todayInSaoPaulo(), -MANUAL_MATCH_WINDOW_DAYS)
-      : todayInSaoPaulo();
+    const firstSearchDate = addDays(todayInSaoPaulo(), -MANUAL_MATCH_WINDOW_DAYS);
     const events = await listGoogleEvents(destination.calendarId, `${firstSearchDate}T00:00:00-03:00`);
     const savedLinks = db.prepare(
       "SELECT * FROM google_calendar_event_links WHERE destination = ? AND calendar_id = ?"
@@ -1109,7 +1116,10 @@ export async function analyzeGoogleCalendar(): Promise<GoogleCalendarAnalysis> {
       const link = getLinkStmt.get(pericia.id, destination.destination) as GoogleEventLink | undefined;
       if (link && link.calendar_id === destination.calendarId) {
         const generatedId = deterministicGoogleEventId(destination.calendarId, pericia.id, destination.destination);
-        if (reuseManual && link.google_event_id === generatedId) {
+        // Uma versão anterior podia criar uma cópia sem procurar o evento manual nos destinos
+        // configurados para criação. A análise agora encontra a opção manual também nesses
+        // destinos, permitindo que a sincronização seguinte adote a original e remova a cópia.
+        if (link.google_event_id === generatedId) {
           const candidates = manualCandidates(pericia, events, used);
           if (candidates.length === 1) {
             summary.matched += 1;
@@ -1128,20 +1138,10 @@ export async function analyzeGoogleCalendar(): Promise<GoogleCalendarAnalysis> {
             continue;
           }
         }
-        if (!reuseManual && link.google_event_id !== generatedId) {
-          const generatedMatch = findExistingEvent(pericia, destination, events, used, false);
-          if (generatedMatch.event?.id) {
-            summary.matched += 1;
-            used.add(generatedMatch.event.id);
-          } else {
-            summary.missing += 1;
-          }
-          continue;
-        }
         summary.linked += 1;
         continue;
       }
-      const match = findExistingEvent(pericia, destination, events, used, reuseManual);
+      const match = findExistingEvent(pericia, destination, events, used, true);
       if (match.conflict) {
         summary.conflicts += 1;
         summary.conflictItems.push({
@@ -1173,10 +1173,6 @@ export async function resolveGoogleCalendarConflict(
   const activeDestinations = config.destinations.filter((item) => item.enabled && item.calendarId);
   const destination = activeDestinations.find((item) => item.destination === destinationId);
   if (!destination) throw new GoogleCalendarError("O destino selecionado não está ativo.", 400);
-  if (destination.eventMode !== "reuse_manual") {
-    throw new GoogleCalendarError("A escolha manual só é permitida em destinos configurados para reaproveitar eventos.", 400);
-  }
-
   const pericia = db.prepare("SELECT * FROM pericias_agendadas WHERE id = ?").get(periciaId) as PericiaAgendada | undefined;
   if (!pericia || pericia.status !== "ativa") throw new GoogleCalendarError("O compromisso não está mais ativo.", 404);
 
@@ -1197,7 +1193,13 @@ export async function resolveGoogleCalendarConflict(
     throw new GoogleCalendarError("O evento escolhido não está mais disponível ou não corresponde ao compromisso.", 409);
   }
 
-  const adoption = await adoptManualEvent(pericia, destination, selected, currentLink);
+  const adoption = await adoptManualEvent(
+    pericia,
+    destination,
+    selected,
+    currentLink,
+    events.some((event) => event.id === generatedId)
+  );
   recordSystemLog({
     nivel: "info",
     categoria: "google_calendar",
@@ -1239,10 +1241,8 @@ export async function syncAllGoogleCalendar(): Promise<GoogleCalendarSyncResult>
   // compromissos diferentes dentro do mesmo destino durante a reconciliação.
   const activeDestinations = config.destinations.filter((item) => item.enabled && item.calendarId);
   for (const destination of activeDestinations) {
-    const reuseManual = destination.eventMode === "reuse_manual";
-    const firstSearchDate = reuseManual
-      ? addDays(todayInSaoPaulo(), -MANUAL_MATCH_WINDOW_DAYS)
-      : todayInSaoPaulo();
+    const createWhenMissing = destination.eventMode === "create_additional";
+    const firstSearchDate = addDays(todayInSaoPaulo(), -MANUAL_MATCH_WINDOW_DAYS);
     const events = await listGoogleEvents(destination.calendarId, `${firstSearchDate}T00:00:00-03:00`);
     const usedIds = new Set<string>();
     const currentLinks = db.prepare(
@@ -1256,7 +1256,10 @@ export async function syncAllGoogleCalendar(): Promise<GoogleCalendarSyncResult>
         const currentLink = getLinkStmt.get(pericia.id, destination.destination) as GoogleEventLink | undefined;
         if (currentLink?.calendar_id === destination.calendarId) {
           const generatedId = deterministicGoogleEventId(destination.calendarId, pericia.id, destination.destination);
-          if (reuseManual && currentLink.google_event_id === generatedId) {
+          // Repara duplicidades geradas pelas versões antigas: se o vínculo aponta para a cópia
+          // determinística do DisparaZap e agora encontramos o evento manual, adotamos o manual
+          // e apagamos somente a cópia que o próprio sistema criou.
+          if (currentLink.google_event_id === generatedId) {
             const candidates = manualCandidates(pericia, events, usedIds);
             if (candidates.length > 1) {
               result.conflicts += 1;
@@ -1276,8 +1279,8 @@ export async function syncAllGoogleCalendar(): Promise<GoogleCalendarSyncResult>
             pericia,
             destination,
             true,
-            reuseManual,
-            !reuseManual,
+            true,
+            createWhenMissing,
             events.find((event) => event.id === currentLink.google_event_id)
           );
           result[action === "conflict" ? "conflicts" : action] += 1;
@@ -1287,19 +1290,27 @@ export async function syncAllGoogleCalendar(): Promise<GoogleCalendarSyncResult>
           deleteLinkStmt.run(currentLink.pericia_id, currentLink.destination);
         }
 
-        const match = findExistingEvent(pericia, destination, events, usedIds, reuseManual);
+        const match = findExistingEvent(pericia, destination, events, usedIds, true);
         if (match.conflict) {
           result.conflicts += 1;
           continue;
         }
         if (match.event?.id) {
-          await adoptManualEvent(pericia, destination, match.event);
+          const generatedId = deterministicGoogleEventId(destination.calendarId, pericia.id, destination.destination);
+          const adoption = await adoptManualEvent(
+            pericia,
+            destination,
+            match.event,
+            undefined,
+            events.some((event) => event.id === generatedId)
+          );
           usedIds.add(match.event.id);
           result.linked += 1;
+          if (adoption.deletedGeneratedCopy) result.deleted += 1;
           continue;
         }
 
-        const action = await syncPericiaToDestination(pericia, destination, true, reuseManual, !reuseManual);
+        const action = await syncPericiaToDestination(pericia, destination, true, true, createWhenMissing);
         result[action === "conflict" ? "conflicts" : action] += 1;
       } catch (err) {
         result.errors += 1;
