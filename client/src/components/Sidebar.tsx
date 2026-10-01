@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { APP_VERSION } from "@/lib/appVersion";
 
 const itemsAntesTemplates = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -147,7 +148,7 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
       </nav>
 
       <div className="border-t border-zinc-200 px-5 py-4 text-xs text-zinc-400 dark:border-zinc-800">
-        Uso 100% local · v2.33.13
+        Uso 100% local · v{APP_VERSION}
       </div>
     </aside>
   );

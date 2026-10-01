@@ -5,6 +5,7 @@ import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { APP_VERSION } from "@/lib/appVersion";
 
 export function Login() {
   const { show } = useToast();
@@ -199,7 +200,7 @@ export function Login() {
         </Card>
         
         <p className="text-center text-xs text-zinc-400">
-          Uso 100% local · v2.33.13
+          Uso 100% local · v{APP_VERSION}
         </p>
       </div>
     </div>
