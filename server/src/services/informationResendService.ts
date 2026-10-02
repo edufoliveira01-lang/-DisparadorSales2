@@ -43,6 +43,7 @@ export async function resendStoredInformation(original: SendLog): Promise<SendLo
       contact_id: original.contact_id,
       telefone: original.telefone,
       pericias_json: original.pericias_json,
+      remarcacoes_json: original.remarcacoes_json ?? null,
       mensagem_enviada: original.mensagem_enviada,
       status: "sucesso",
       erro: null,
@@ -70,6 +71,7 @@ export async function resendStoredInformation(original: SendLog): Promise<SendLo
       contact_id: original.contact_id,
       telefone: original.telefone,
       pericias_json: original.pericias_json,
+      remarcacoes_json: original.remarcacoes_json ?? null,
       mensagem_enviada: null,
       status: "falha",
       erro,
@@ -86,3 +88,4 @@ export async function resendStoredInformation(original: SendLog): Promise<SendLo
     throw new Error(erro);
   }
 }
+

@@ -53,6 +53,7 @@ export function runMigrations(db: Database.Database): void {
       telefone TEXT,
       pericias_json TEXT,
       mensagem_enviada TEXT,
+      remarcacoes_json TEXT,
       status TEXT CHECK(status IN ('sucesso','falha')),
       erro TEXT,
       whatsapp_message_id TEXT,
@@ -229,6 +230,7 @@ export function runMigrations(db: Database.Database): void {
   // resposta — cada ALTER isolado no seu próprio try/catch para não pular as colunas
   // seguintes se uma já existir.
   for (const stmt of [
+    "ALTER TABLE send_logs ADD COLUMN remarcacoes_json TEXT",
     "ALTER TABLE send_logs ADD COLUMN whatsapp_message_id TEXT",
     "ALTER TABLE send_logs ADD COLUMN ack INTEGER",
     "ALTER TABLE send_logs ADD COLUMN ack_updated_at DATETIME",

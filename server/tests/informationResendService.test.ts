@@ -48,6 +48,12 @@ describe("reenvio das informações guardadas no Histórico", () => {
     expect(mocks.recordSystemLog).toHaveBeenCalledWith(expect.objectContaining({ evento: "informacoes_reenviadas" }));
   });
 
+  it("preserva o retrato da remarcação ao reenviar a mensagem armazenada", async () => {
+    const remarcacoes_json = JSON.stringify([{ anterior: { data: "09/10/2026" }, novo: { data: "14/10/2026" } }]);
+    await resendStoredInformation({ ...original, remarcacoes_json } as any);
+    expect(mocks.createLog).toHaveBeenCalledWith(expect.objectContaining({ remarcacoes_json, tipo_envio: "reenvio" }));
+  });
+
   it("preserva envios originalmente separados, sem mandar o separador visual", async () => {
     mocks.sendMessageConfirmed
       .mockResolvedValueOnce({ messageId: "REENVIO-1", ack: 1 })
@@ -96,3 +102,4 @@ describe("reenvio das informações guardadas no Histórico", () => {
     expect(mocks.resolveChatId).not.toHaveBeenCalled();
   });
 });
+

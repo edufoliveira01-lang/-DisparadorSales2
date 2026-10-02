@@ -10,6 +10,7 @@ export interface SendLog {
   contact_id: number | null;
   telefone: string | null;
   pericias_json: string | null;
+  remarcacoes_json?: string | null;
   mensagem_enviada: string | null;
   status: "sucesso" | "falha";
   erro: string | null;
@@ -37,6 +38,7 @@ export interface NewSendLog {
   contact_id: number | null;
   telefone: string | null;
   pericias_json: string | null;
+  remarcacoes_json?: string | null;
   mensagem_enviada: string | null;
   status: "sucesso" | "falha";
   erro: string | null;
@@ -45,8 +47,8 @@ export interface NewSendLog {
 }
 
 const insertStmt = db.prepare(
-  `INSERT INTO send_logs (card_id, card_nome, contact_id, telefone, pericias_json, mensagem_enviada, status, erro, whatsapp_message_id, tipo_envio, ack)
-   VALUES (@card_id, @card_nome, @contact_id, @telefone, @pericias_json, @mensagem_enviada, @status, @erro, @whatsapp_message_id, @tipo_envio, @ack)`
+  `INSERT INTO send_logs (card_id, card_nome, contact_id, telefone, pericias_json, mensagem_enviada, status, erro, whatsapp_message_id, tipo_envio, ack, remarcacoes_json)
+   VALUES (@card_id, @card_nome, @contact_id, @telefone, @pericias_json, @mensagem_enviada, @status, @erro, @whatsapp_message_id, @tipo_envio, @ack, @remarcacoes_json)`
 );
 // LEFT JOIN pelo vínculo direto; whatsapp_message_id fica como compatibilidade para registros
 // antigos. Assim o Histórico enxerga a resposta mesmo quando a API do WhatsApp não devolveu o ID
@@ -93,6 +95,7 @@ export function createLog(entry: NewSendLog): SendLog {
   const info = insertStmt.run({
     ...entry,
     whatsapp_message_id: entry.whatsapp_message_id ?? null,
+    remarcacoes_json: entry.remarcacoes_json ?? null,
     tipo_envio: entry.tipo_envio ?? "disparo",
     // Se sendMessage terminou sem erro, o primeiro estágio já é "Enviado", mesmo que o
     // callback de confirmação chegue somente depois ou o ID completo não esteja disponível.
@@ -197,3 +200,4 @@ export function deleteLogs(ids: number[]): number {
   const info = db.prepare(`DELETE FROM send_logs WHERE id IN (${placeholders})`).run(...ids);
   return info.changes;
 }
+

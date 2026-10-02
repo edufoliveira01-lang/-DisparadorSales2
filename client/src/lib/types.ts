@@ -39,12 +39,22 @@ export interface Template {
   created_at: string;
 }
 
+export interface RemarcacaoSnapshot {
+  tipo: string;
+  origem?: string;
+  processo: string;
+  agendamento_anterior_id: number;
+  anterior: { data: string; horario: string; local: string };
+  novo: { data: string; horario: string; local: string };
+}
+
 export interface SendLog {
   id: number;
   card_id: string;
   card_nome: string | null;
   contact_id: number | null;
   telefone: string | null;
+  remarcacoes_json?: string | null;
   pericias_json: string | null;
   mensagem_enviada: string | null;
   status: "sucesso" | "falha";

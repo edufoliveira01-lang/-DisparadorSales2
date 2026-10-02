@@ -14,7 +14,20 @@ function validateMessages(messages: string[]): string[] {
   return messages;
 }
 
+export interface RemarcacaoSnapshot {
+  tipo: string;
+  origem?: string;
+  processo: string;
+  agendamento_anterior_id: number;
+  anterior: { data: string; horario: string; local: string };
+  novo: { data: string; horario: string; local: string };
+}
+
 export function composeMessages(item: MessageInput, templateId: number | null): string[] {
+  return composeDispatch(item, templateId).mensagens;
+}
+
+export function composeDispatch(item: MessageInput, templateId: number | null): { mensagens: string[]; remarcacoes: RemarcacaoSnapshot[] } {
   const modo = item.modo || "template";
   if (!["template", "audiencia_presencial", "audiencia_online", "audiencia_hibrida"].includes(modo)) throw new Error("Modo de envio inválido.");
   const sorted = sortPericiasByDate((item.pericias || []).map(p => ({ ...p, nome: p.nome || item.nomeCliente, telefone: p.telefone || item.telefone || "" })));
@@ -27,12 +40,19 @@ export function composeMessages(item: MessageInput, templateId: number | null): 
     return events.length ? [renderAudiencia(getSetting(`${modo}_mensagem`) || defaults[modo], item.nomeCliente, events[0])] : [];
   };
   const changes = pericias.map(p => detectarRemarcacao(item.cardId, p));
-  if (!changes.some(Boolean)) return validateMessages(normal(pericias));
+  if (!changes.some(Boolean)) return { mensagens: validateMessages(normal(pericias)), remarcacoes: [] };
+  const remarcacoes: RemarcacaoSnapshot[] = [];
   // Quando apenas um dos compromissos muda, o outro continua usando seu texto normal.
-  return validateMessages(pericias.flatMap((p, index) => {
+  const mensagens = validateMessages(pericias.flatMap((p, index) => {
     const change = changes[index];
     if (!change) return normal([p]);
     const anterior = getPericiaAgendada(change.agendamento_anterior_id);
+    remarcacoes.push({
+      tipo: p.tipo, origem: p.origem, processo: p.processo || "",
+      agendamento_anterior_id: change.agendamento_anterior_id,
+      anterior: { data: change.data_anterior, horario: change.horario_anterior || "", local: anterior?.local || "" },
+      novo: { data: p.data, horario: p.horario, local: p.local },
+    });
     const scope = p.origem === "audiencia" || modo !== "template" || /audi[eê]ncia/i.test(p.tipo) ? "audiencia" : p.origem === "social" || /social/i.test(p.tipo) ? "social" : "medica";
     const messageTemplate = defaultRescheduleTemplate(scope);
     if (!messageTemplate) throw new Error("Configure um template padrão de remarcação.");
@@ -43,4 +63,5 @@ export function composeMessages(item: MessageInput, templateId: number | null): 
       NOVA_DATA: p.data, NOVO_HORARIO: p.horario, NOVO_LOCAL: p.local,
     })];
   }));
+  return { mensagens, remarcacoes };
 }

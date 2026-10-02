@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { db } from "../src/db";
 import { getSetting, setSetting } from "../src/services/settingsService";
 import { GROUPS, initializeMessageTemplates, listMessageTemplates, saveMessageTemplate, deleteMessageTemplate, defaultRescheduleTemplate, type MessageTemplate } from "../src/services/messageTemplateService";
-import { composeMessages } from "../src/services/messageComposer";
+import { composeMessages, composeDispatch } from "../src/services/messageComposer";
 import { createPericiaAgendadaManual, deletePericiaAgendada, getPericiaAgendada } from "../src/services/periciasAgendadasService";
 import { listTemplates } from "../src/services/templateService";
 import type { Pericia } from "../src/services/parserService";
@@ -92,6 +92,18 @@ describe("mensagens de remarcação", () => {
     expect(result).toEqual(["CLIENTE TEMPLATE TESTE | 09/10/2026 08:00 Local anterior | 14/10/2026 10:00 Novo local | 5001234-11.2026.8.26.0001"]);
     expect(getPericiaAgendada(old.id)?.status).toBe("ativa");
   });
+  it("captura dados antigos e novos junto com o texto antes da substituição no calendário", () => {
+    const event = pericia();
+    const old = previous(event);
+    const composed = composeDispatch({ cardId: "card-snapshot", nomeCliente: event.nome, pericias: [event] }, listTemplates()[0].id);
+    expect(composed.remarcacoes).toEqual([expect.objectContaining({
+      agendamento_anterior_id: old.id,
+      anterior: { data: "09/10/2026", horario: "08:00", local: "Local anterior" },
+      novo: { data: "14/10/2026", horario: "10:00", local: "Novo local" },
+    })]);
+    expect(getPericiaAgendada(old.id)?.status).toBe("ativa");
+  });
+
   it.each(["medica", "social", "audiencia"] as const)("seleciona remarcação específica de %s", scope => {
     const event = pericia({ origem: scope, tipo: scope === "audiencia" ? "Online" : scope === "social" ? "Perícia Social" : "Perícia Médica" });
     previous(event);

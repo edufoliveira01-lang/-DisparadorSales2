@@ -1,7 +1,7 @@
 import { emitEvent } from "../websocket";
 import { startBatch, updateBatch, finishBatch } from "./batchProgressService";
 import { sortPericiasByDate, type Pericia } from "./parserService";
-import { composeMessages, type ModoEnvio } from "./messageComposer";
+import { composeDispatch, type ModoEnvio } from "./messageComposer";
 export type { ModoEnvio } from "./messageComposer";
 import { createLog, type SendLog } from "./logsService";
 import { whatsappManager } from "./whatsappService";
@@ -29,7 +29,10 @@ function onlyDigits(value: string): string {
 export async function dispatchSingle(item: SendItem, templateId: number | null): Promise<SendLog> {
   const modo: ModoEnvio = item.modo ?? "template";
 
+  let remarcacoesJson: string | null = null;
   try {
+    const composicao = composeDispatch(item, templateId);
+    remarcacoesJson = composicao.remarcacoes.length ? JSON.stringify(composicao.remarcacoes) : null;
     if (!whatsappManager.isReady()) throw new Error("WhatsApp não está conectado.");
 
     const chatId = await whatsappManager.resolveChatId(onlyDigits(item.telefone));
@@ -37,7 +40,7 @@ export async function dispatchSingle(item: SendItem, templateId: number | null):
 
     const sortedPericias = sortPericiasByDate(item.pericias);
 
-    const mensagens = composeMessages(item, templateId);
+    const mensagens = composicao.mensagens;
     if (mensagens.some(mensagem => !mensagem.trim())) throw new Error("A mensagem ficou vazia. Revise o template antes de enviar.");
     if (mensagens.length === 0) throw new Error("Nenhuma perícia válida para gerar mensagem.");
 
@@ -94,6 +97,7 @@ export async function dispatchSingle(item: SendItem, templateId: number | null):
       card_nome: item.nomeCliente,
       contact_id: item.contactId,
       telefone: item.telefone,
+      remarcacoes_json: remarcacoesJson,
       pericias_json: JSON.stringify(sortedPericias),
       mensagem_enviada: mensagens.join("\n\n---\n\n"),
       status: "sucesso",
@@ -110,6 +114,7 @@ export async function dispatchSingle(item: SendItem, templateId: number | null):
       card_nome: item.nomeCliente,
       contact_id: item.contactId,
       telefone: item.telefone,
+      remarcacoes_json: remarcacoesJson,
       pericias_json: JSON.stringify(item.pericias),
       mensagem_enviada: null,
       status: "falha",

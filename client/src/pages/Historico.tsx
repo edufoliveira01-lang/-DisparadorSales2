@@ -1,8 +1,10 @@
+import { remarcacoesDoLog, comparacaoRemarcacao } from "@/lib/remarcacaoHistorico";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   AlarmClock,
   BriefcaseBusiness,
   Calendar,
+  CalendarClock,
   CheckCheck,
   ChevronDown,
   ChevronUp,
@@ -179,12 +181,40 @@ function classesEventoHistorico(categoria: CategoriaEvento): string {
   return "border-l-accent-500 bg-accent-50/20 dark:border-l-accent-400 dark:bg-accent-900/10";
 }
 
+function ResumoRemarcacao({ log }: { log: SendLog }) {
+  const changes = remarcacoesDoLog(log);
+  if (!changes.length) return null;
+  return <span className="mt-1.5 block min-w-0 space-y-1">
+    <Badge tone="warning"><CalendarClock className="h-3 w-3" /> Remarcação</Badge>
+    {changes.map((change, index) => <span key={index} className="block break-words text-xs font-normal text-zinc-500 dark:text-zinc-400">{comparacaoRemarcacao(change)}</span>)}
+  </span>;
+}
+
+function DetalhesRemarcacao({ log }: { log: SendLog }) {
+  const changes = remarcacoesDoLog(log);
+  if (!changes.length) return null;
+  return <div className="min-w-0 space-y-3 border-b border-zinc-100 p-4 dark:border-zinc-800">
+    <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-amber-700 dark:text-amber-300"><CalendarClock className="h-4 w-4 shrink-0" /> {log.status === "falha" ? "Tentativa de comunicar remarcação" : log.tipo_envio === "reenvio" ? "Informações da remarcação reenviadas" : "Remarcação comunicada"}</p>
+    {changes.map((change, index) => <div key={index} className="min-w-0 space-y-2">
+      <p className="break-words text-xs font-medium text-zinc-600 dark:text-zinc-300">{change.origem === "audiencia" ? "Audiência" : change.origem === "social" ? "Perícia social" : change.origem === "medica" ? "Perícia médica" : change.tipo}{change.processo ? ` · Processo: ${change.processo}` : ""}</p>
+      <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+        {[{ title: "Anterior", event: change.anterior }, { title: "Novo agendamento", event: change.novo }].map(({ title, event }) => <div key={title} className="min-w-0 rounded-xl bg-zinc-50 p-3 text-xs dark:bg-zinc-800/60">
+          <p className="mb-2 font-semibold text-zinc-700 dark:text-zinc-200">{title}</p>
+          <p className="break-words text-zinc-600 dark:text-zinc-300">Data: {event.data || "Não informada"}</p>
+          <p className="mt-1 break-words text-zinc-600 dark:text-zinc-300">Horário: {event.horario || "Não informado"}</p>
+          <p className="mt-1 break-words text-zinc-500 dark:text-zinc-400">Local: {event.local || "Não informado"}</p>
+        </div>)}
+      </div>
+    </div>)}
+  </div>;
+}
+
 function PainelAgendamento({ log }: { log: SendLog }) {
   const pericias = periciasDoLog(log);
   if (pericias.length === 0) return null;
 
   return (
-    <section className="h-full overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900/70">
+    <section className="min-w-0 h-full overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900/70">
       <div className="flex items-center gap-3 border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
         <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent-50 text-accent-600 dark:bg-accent-900/30 dark:text-accent-300">
           <Calendar className="h-4 w-4" />
@@ -196,6 +226,7 @@ function PainelAgendamento({ log }: { log: SendLog }) {
           </p>
         </div>
       </div>
+      <DetalhesRemarcacao log={log} />
       <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
         {pericias.map((pericia, index) => {
           const tipo = classificarEvento(pericia);
@@ -213,9 +244,9 @@ function PainelAgendamento({ log }: { log: SendLog }) {
                 </div>
               </div>
               <div className="mt-3 space-y-2 text-xs text-zinc-500 dark:text-zinc-400">
-                {pericia.local && <p className="flex items-start gap-2"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span className="break-words">{pericia.local}</span></p>}
+                {pericia.local && <p className="flex items-start gap-2"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">{pericia.local}</span></p>}
                 {pericia.processo && <p className="flex items-start gap-2"><FileText className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span className="break-all">{pericia.processo}</span></p>}
-                {pericia.profissionalPerito && <p className="flex items-start gap-2"><BriefcaseBusiness className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span className="break-words">{pericia.profissionalPerito}</span></p>}
+                {pericia.profissionalPerito && <p className="flex items-start gap-2"><BriefcaseBusiness className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">{pericia.profissionalPerito}</span></p>}
                 {pericia.telefone && <p className="flex items-start gap-2"><Phone className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>{formatPhoneDisplay(pericia.telefone)}</span></p>}
               </div>
             </div>
@@ -241,7 +272,7 @@ function PainelComunicacao({
   if (!temMensagem && !temResposta && !temFinalizacao) return null;
 
   return (
-    <section className="h-full overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900/70">
+    <section className="min-w-0 h-full overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900/70">
       <div className="flex items-center gap-3 border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
         <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-300">
           <MessageSquareReply className="h-4 w-4" />
@@ -305,6 +336,7 @@ export function Historico() {
   const [apagarAlvo, setApagarAlvo] = useState<SendLog | null>(null);
   const [confirmMassaAberto, setConfirmMassaAberto] = useState(false);
   const [busca, setBusca] = useState("");
+  const [tipoFiltro, setTipoFiltro] = useState<"todos" | "remarcacao">("todos");
   const [ordenacao, setOrdenacao] = useState<Ordenacao>("recentes");
   const [dataDe, setDataDe] = useState("");
   const [dataAte, setDataAte] = useState("");
@@ -320,7 +352,7 @@ export function Historico() {
     carregar();
     api.get<Template[]>("/templates").then((data) => {
       setTemplates(data);
-      if (data.length > 0) setTemplateId(data[0].id);
+      if (data.length > 0) setTemplateId((data.find(template => template.padrao) || data[0]).id);
     });
   }, []);
 
@@ -341,10 +373,11 @@ export function Historico() {
     const termo = busca.trim().toLowerCase();
     const termoDigits = termo.replace(/\D/g, "");
     const filtrados = logs.filter((log) => {
+      if (tipoFiltro === "remarcacao" && !remarcacoesDoLog(log).length) return false;
       if (termo) {
         const nomeMatch = (log.card_nome || "").toLowerCase().includes(termo);
         const telefoneMatch = termoDigits.length > 0 && (log.telefone || "").replace(/\D/g, "").includes(termoDigits);
-        const mensagemMatch = (log.mensagem_enviada || "").toLowerCase().includes(termo);
+        const mensagemMatch = (log.mensagem_enviada || "").toLowerCase().includes(termo) || remarcacoesDoLog(log).some(change => [comparacaoRemarcacao(change), change.anterior.local, change.novo.local].some(value => value.toLowerCase().includes(termo)));
         const dadosMatch = periciasDoLog(log).some(
           (pericia) =>
             (pericia.processo || "").toLowerCase().includes(termo) ||
@@ -372,7 +405,7 @@ export function Historico() {
           return (b.card_nome || "").localeCompare(a.card_nome || "", "pt-BR");
       }
     });
-  }, [logs, busca, dataDe, dataAte, letra, ordenacao]);
+  }, [logs, busca, dataDe, dataAte, letra, ordenacao, tipoFiltro]);
 
   const logsPaginados = useMemo(
     () => logsFiltrados.slice(pagina * ITENS_POR_PAGINA, (pagina + 1) * ITENS_POR_PAGINA),
@@ -395,7 +428,7 @@ export function Historico() {
 
   useEffect(() => {
     setPagina(0);
-  }, [busca, dataDe, dataAte, letra, ordenacao]);
+  }, [busca, dataDe, dataAte, letra, ordenacao, tipoFiltro]);
 
   async function reenviar(log: SendLog) {
     if (!templateId) {
@@ -505,7 +538,7 @@ export function Historico() {
   const periodoAtivo = Boolean(dataDe || dataAte);
 
   return (
-    <div className="space-y-5 md:space-y-6">
+    <div className="min-w-0 max-w-full space-y-5 [overflow-wrap:anywhere] md:space-y-6">
       <PageHeader
         title="Histórico"
         description="Consulte mensagens enviadas, dados utilizados, confirmações de entrega e respostas dos clientes."
@@ -521,7 +554,7 @@ export function Historico() {
       </div>
 
       <section className="surface-panel p-3 md:p-4">
-        <div className="grid gap-3 lg:grid-cols-[minmax(320px,1fr)_240px_auto] lg:items-end lg:gap-4">
+        <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_180px_180px_auto] xl:items-end xl:gap-4">
           <div>
             <Label className="text-xs">Buscar no histórico</Label>
             <div className="relative">
@@ -540,6 +573,13 @@ export function Historico() {
               {ORDENACAO_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
+            </Select>
+          </div>
+          <div className="min-w-0">
+            <Label className="text-xs">Tipo de envio</Label>
+            <Select value={tipoFiltro} onChange={event => setTipoFiltro(event.target.value as "todos" | "remarcacao")} className="w-full">
+              <option value="todos">Todos os envios</option>
+              <option value="remarcacao">Remarcações</option>
             </Select>
           </div>
           <Button
@@ -645,7 +685,7 @@ export function Historico() {
       ) : (
         <>
           {/* Mobile: cards compactos (nome + status + entrega), detalhes por trás do expandir */}
-          <div className="space-y-3 md:hidden">
+          <div className="space-y-3 xl:hidden">
             <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
               <Checkbox
                 checked={logsPaginados.length > 0 && logsPaginados.every((l) => selecionados.has(l.id))}
@@ -663,6 +703,7 @@ export function Historico() {
                   >
                     <span className="min-w-0 flex-1">
                       <span className="block break-words font-semibold leading-snug text-zinc-900 dark:text-zinc-100">{log.card_nome || "Sem nome"}</span>
+                      <ResumoRemarcacao log={log} />
                       {log.tipo_envio === "lembrete" && (
                         <Badge tone="info" className="mt-1.5"><AlarmClock className="h-3 w-3" /> Lembrete</Badge>
                       )}
@@ -723,22 +764,26 @@ export function Historico() {
           </div>
 
           {/* Desktop: tabela compacta de 6 colunas, detalhes num accordion por linha */}
-          <div className="hidden overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 md:block">
-            <table className="w-full text-sm">
+          <div className="hidden min-w-0 max-w-full overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 xl:block">
+            <table className="w-full table-fixed text-sm">
+              <colgroup>
+                <col style={{ width: "5%" }} /><col style={{ width: "23%" }} /><col style={{ width: "16%" }} />
+                <col style={{ width: "17%" }} /><col style={{ width: "14%" }} /><col style={{ width: "12%" }} /><col style={{ width: "13%" }} />
+              </colgroup>
               <thead className="bg-zinc-50 text-center text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
                 <tr>
-                  <th className="w-10 px-5 py-3">
+                  <th className="w-10 px-3 py-3">
                     <Checkbox
                       checked={logsPaginados.length > 0 && logsPaginados.every((l) => selecionados.has(l.id))}
                       onChange={alternarSelecionarTodos}
                     />
                   </th>
-                  <th className="px-5 py-3">Cliente</th>
-                  <th className="px-5 py-3">Telefone</th>
-                  <th className="px-5 py-3">Enviado em</th>
-                  <th className="px-5 py-3">Entrega</th>
-                  <th className="w-16 px-5 py-3">Status</th>
-                  <th className="px-5 py-3">Ações</th>
+                  <th className="px-3 py-3">Cliente</th>
+                  <th className="px-3 py-3">Telefone</th>
+                  <th className="px-3 py-3">Enviado em</th>
+                  <th className="px-3 py-3">Entrega</th>
+                  <th className="w-16 px-3 py-3">Status</th>
+                  <th className="px-3 py-3">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -752,11 +797,12 @@ export function Historico() {
                         className="cursor-pointer bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800/40"
                         onClick={() => setExpandido(aberto ? null : log.id)}
                       >
-                        <td className="px-5 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                        <td className="px-3 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                           <Checkbox checked={selecionados.has(log.id)} onChange={() => alternarSelecionado(log.id)} />
                         </td>
-                        <td className="max-w-[240px] break-words px-5 py-3 text-left font-medium text-zinc-900 dark:text-zinc-100">
+                        <td className="min-w-0 break-words px-3 py-3 text-left font-medium text-zinc-900 dark:text-zinc-100">
                           {log.card_nome || "—"}
+                          <ResumoRemarcacao log={log} />
                           {log.tipo_envio === "lembrete" && (
                             <Badge tone="info" className="ml-2 align-middle"><AlarmClock className="h-3 w-3" /> Lembrete</Badge>
                           )}
@@ -764,20 +810,20 @@ export function Historico() {
                             <Badge tone="accent" className="ml-2 align-middle"><Send className="h-3 w-3" /> Reenvio</Badge>
                           )}
                         </td>
-                        <td className="whitespace-nowrap px-5 py-3 text-center text-zinc-600 dark:text-zinc-400">
+                        <td className="break-words px-3 py-3 text-center text-zinc-600 dark:text-zinc-400">
                           {log.telefone ? formatPhoneDisplay(log.telefone) : "—"}
                         </td>
-                        <td className="whitespace-nowrap px-5 py-3 text-center text-xs text-zinc-500 dark:text-zinc-400">
+                        <td className="break-words px-3 py-3 text-center text-xs text-zinc-500 dark:text-zinc-400">
                           {formatarData(log)}
                         </td>
-                        <td className="px-5 py-3 text-center">
+                        <td className="px-3 py-3 text-center">
                           <AckIndicator ack={log.ack} sendStatus={log.status} respondido={log.resposta_status === "respondido"} />
                         </td>
-                        <td className="px-5 py-3 text-center">
+                        <td className="px-3 py-3 text-center">
                           <StatusBadge sendStatus={log.status} ack={log.ack} respostaStatus={log.resposta_status} />
                         </td>
-                        <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex justify-center gap-1">
+                        <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex flex-wrap justify-center gap-1">
                             <Button variant="ghost" size="icon" title="Ver detalhes" onClick={() => setExpandido(aberto ? null : log.id)}>
                               {aberto ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                             </Button>
@@ -800,10 +846,11 @@ export function Historico() {
                       </tr>
                       {aberto && (
                         <tr className="bg-zinc-50 dark:bg-zinc-800/30">
-                          <td colSpan={7} className="space-y-4 px-5 py-4">
+                          <td colSpan={7} className="space-y-4 px-3 py-4">
                             <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="flex items-center gap-2">
+                              <div className="flex min-w-0 flex-wrap items-center gap-2">
                                 <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Detalhes do registro</p>
+                                {remarcacoesDoLog(log).length > 0 && <Badge tone="warning"><CalendarClock className="h-3 w-3" /> Remarcação</Badge>}
                                 {log.tipo_envio === "lembrete" && <Badge tone="info"><AlarmClock className="h-3 w-3" /> Lembrete</Badge>}
                                 {log.tipo_envio === "reenvio" && <Badge tone="accent"><Send className="h-3 w-3" /> Reenvio</Badge>}
                               </div>
@@ -812,7 +859,7 @@ export function Historico() {
                               </p>
                             </div>
                             {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
-                            <div className={cn("grid items-stretch gap-4", temAgendamento && temComunicacao && "lg:grid-cols-2")}>
+                            <div className={cn("grid min-w-0 items-stretch gap-4", temAgendamento && temComunicacao && "xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]")}>
                               <PainelAgendamento log={log} />
                               <PainelComunicacao
                                 log={log}
@@ -863,3 +910,4 @@ export function Historico() {
     </div>
   );
 }
+
