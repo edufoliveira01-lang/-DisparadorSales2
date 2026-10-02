@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   createPericiaAgendadaManual,
   deletePericiaAgendada,
+  getPericiaAgendada,
   PericiaAgendadaConflictError,
   PericiaAgendadaInputError,
 } from "../src/services/periciasAgendadasService";
@@ -49,5 +50,33 @@ describe("criação manual de eventos do calendário", () => {
     criadas.push(criada.id);
 
     expect(() => createPericiaAgendadaManual(entrada)).toThrow(PericiaAgendadaConflictError);
+  });
+
+  it("trata como remarcação quando processo e telefone coincidem mesmo com nome abreviado", () => {
+    const antiga = createPericiaAgendadaManual({
+      ...dados("REMARCACAO"),
+      nome: "JULIANA THEREZINHA DE LIBORIO TEBAR AZEVEDO",
+      processo: "1025863-88.2025.8.26.0381",
+      telefone: "(18) 99710-5161",
+      data: "03/10/2026",
+      horario: "08:00",
+    });
+    criadas.push(antiga.id);
+
+    const nova = createPericiaAgendadaManual({
+      ...dados("REMARCACAO"),
+      nome: "JULIANA THEREZINHA DE LIBORIO TEBAR",
+      processo: "1025863-88.2025.8.26.0381",
+      telefone: "(18) 99710-5161",
+      data: "09/10/2026",
+      horario: "12:00",
+    });
+    criadas.push(nova.id);
+
+    expect(getPericiaAgendada(antiga.id)).toMatchObject({
+      status: "substituida",
+      substituida_por_id: nova.id,
+    });
+    expect(getPericiaAgendada(nova.id)).toMatchObject({ status: "ativa", data: "09/10/2026" });
   });
 });

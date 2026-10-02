@@ -22,7 +22,7 @@ import { initWebsocket } from "./websocket";
 import { notifyDashboardChanges } from "./websocket/dashboardChanges";
 import { whatsappManager } from "./services/whatsappService";
 import { verificarNotificacoesPendentes } from "./services/notificationService";
-import { podarPericiasAgendadasAntigas } from "./services/periciasAgendadasService";
+import { podarPericiasAgendadasAntigas, reconciliarRemarcacoesAntigas } from "./services/periciasAgendadasService";
 import { recordSystemLog } from "./services/systemLogsService";
 
 const app = express();
@@ -91,6 +91,14 @@ initWebsocket(httpServer);
 const port = Number(process.env.PORT) || 3333;
 httpServer.listen(port, () => {
   console.log(`Servidor do Disparador de Perícias rodando em http://localhost:${port}`);
+  try {
+    const remarcacoesCorrigidas = reconciliarRemarcacoesAntigas();
+    if (remarcacoesCorrigidas > 0) {
+      console.log(`[Calendário] ${remarcacoesCorrigidas} agendamento(s) antigo(s) de remarcação foram substituídos.`);
+    }
+  } catch (error) {
+    console.error("[Calendário] Falha ao reconciliar remarcações antigas:", error);
+  }
   if (whatsappManager.restoreSavedSession()) {
     console.log("[WhatsApp] Restaurando sessão salva automaticamente...");
   }

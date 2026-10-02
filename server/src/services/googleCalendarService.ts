@@ -877,7 +877,8 @@ export function transferGoogleCalendarLinks(previousPericiaId: number, nextPeric
     for (const link of links) {
       const nextLink = getLinkStmt.get(nextPericiaId, link.destination) as GoogleEventLink | undefined;
       if (nextLink) {
-        deleteLinkStmt.run(previousPericiaId, link.destination);
+        // Mantém temporariamente o vínculo antigo para a fila abaixo apagar do Google apenas
+        // o evento substituído. Remover o vínculo aqui deixaria uma cópia remota órfã.
         continue;
       }
       db.prepare(
@@ -886,6 +887,7 @@ export function transferGoogleCalendarLinks(previousPericiaId: number, nextPeric
     }
   });
   transfer();
+  scheduleGoogleCalendarDelete(previousPericiaId);
 }
 
 function saveLink(periciaId: number, destination: number, calendarId: string, googleEventId: string): void {

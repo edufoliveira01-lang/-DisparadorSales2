@@ -1,6 +1,7 @@
 import { db } from "../db";
 import { randomUUID } from "node:crypto";
 import { normalizePhone } from "../utils/phone";
+import { normalizeProcesso } from "../utils/processo";
 import { parseBrazilianDate, type Pericia } from "./parserService";
 import {
   scheduleGoogleCalendarDelete,
@@ -126,10 +127,6 @@ const mergeDuplicadaStmt = db.prepare(
      fonte = CASE WHEN @fonte = 'whatsapp' THEN 'whatsapp' ELSE fonte END
    WHERE id = @id`
 );
-const findAtivasPorChaveStmt = db.prepare(
-  `SELECT * FROM pericias_agendadas
-   WHERE status = 'ativa' AND tipo_chave = ? AND nome_chave = ? AND telefone_digits = ? AND processo_chave = ?`
-);
 const findAtivasPorCardStmt = db.prepare(
   `SELECT * FROM pericias_agendadas
    WHERE status = 'ativa' AND card_id = ? AND tipo_chave = ? AND nome_chave = ?`
@@ -144,6 +141,60 @@ const listStmt = db.prepare(`${SELECT_COM_LEMBRETE} ORDER BY p.data_hora_ms ASC`
 const deleteAntigasStmt = db.prepare(
   `DELETE FROM pericias_agendadas WHERE created_at <= datetime('now', '-' || ? || ' days')`
 );
+
+const findAtivasDoMesmoTipoStmt = db.prepare(
+  `SELECT * FROM pericias_agendadas
+   WHERE status = 'ativa' AND tipo_chave = ? AND id <> ?`
+);
+
+function nomeComparavel(valor: string | null | undefined): string {
+  return (valor || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/**
+ * O processo é a identidade principal de uma remarcação. Telefone igual ou nome compatível
+ * confirma que se trata do mesmo cliente, sem exigir que o nome venha idêntico (ex.: sobrenome
+ * omitido na nova comunicação). Sem processo, mantemos os critérios conservadores anteriores.
+ */
+function encontrarAnterioresAtivos(params: {
+  idAtual?: number;
+  cardId: string;
+  tipoChave: string;
+  nomeChave: string;
+  nome: string;
+  telefoneDigits: string;
+  processo: string | null | undefined;
+}): PericiaAgendada[] {
+  const idAtual = params.idAtual || 0;
+  const processo = normalizeProcesso(params.processo);
+  const nome = nomeComparavel(params.nome);
+  const candidatas = findAtivasDoMesmoTipoStmt.all(params.tipoChave, idAtual) as PericiaAgendada[];
+
+  return candidatas.filter((anterior) => {
+    const mesmoProcesso = Boolean(processo && normalizeProcesso(anterior.processo) === processo);
+    const mesmoTelefone = Boolean(
+      params.telefoneDigits && anterior.telefone_digits && anterior.telefone_digits === params.telefoneDigits
+    );
+    const nomeAnterior = nomeComparavel(anterior.nome);
+    const nomeCompativel = Boolean(nome && nomeAnterior && (nome.includes(nomeAnterior) || nomeAnterior.includes(nome)));
+
+    if (mesmoProcesso && (mesmoTelefone || nomeCompativel)) return true;
+    if (!processo && anterior.card_id === params.cardId) return true;
+    return !processo && mesmoTelefone && chave(anterior.nome) === params.nomeChave;
+  });
+}
+
+function substituirAnteriores(nova: PericiaAgendada, anteriores: PericiaAgendada[]): void {
+  for (const anterior of anteriores) {
+    supersedeStmt.run(nova.id, anterior.id);
+    transferGoogleCalendarLinks(anterior.id, nova.id);
+  }
+}
 
 /**
  * Registra uma perícia como "agendada e comunicada ao cliente" (chamado só após o envio de
@@ -178,7 +229,7 @@ export function registrarPericiaAgendadaComResultado(
   const tipoChave = chave(pericia.tipo);
   const nomeChave = chave(pericia.nome);
   const telefoneDigits = normalizePhone(pericia.telefone);
-  const processoChave = chave(pericia.processo);
+  const processoChave = normalizeProcesso(pericia.processo);
 
   // A identidade do evento é o que o usuário enxerga no calendário. Card, fonte, processo,
   // telefone e local são dados complementares e não podem gerar uma segunda entrada.
@@ -207,7 +258,14 @@ export function registrarPericiaAgendadaComResultado(
   // Sem telefone e processo, restringe a busca de reagendamento ao mesmo card para não unir
   // por engano duas pessoas homônimas importadas de cartões diferentes.
   const anteriores = telefoneDigits || processoChave
-    ? (findAtivasPorChaveStmt.all(tipoChave, nomeChave, telefoneDigits, processoChave) as PericiaAgendada[])
+    ? encontrarAnterioresAtivos({
+        cardId,
+        tipoChave,
+        nomeChave,
+        nome: pericia.nome,
+        telefoneDigits,
+        processo: pericia.processo,
+      })
     : (findAtivasPorCardStmt.all(cardId, tipoChave, nomeChave) as PericiaAgendada[]);
 
   const info = insertStmt.run({
@@ -231,10 +289,7 @@ export function registrarPericiaAgendadaComResultado(
   });
   const nova = getStmt.get(info.lastInsertRowid) as PericiaAgendada;
 
-  for (const anterior of anteriores) {
-    supersedeStmt.run(nova.id, anterior.id);
-    transferGoogleCalendarLinks(anterior.id, nova.id);
-  }
+  substituirAnteriores(nova, anteriores);
 
   scheduleGoogleCalendarSync(nova.id);
 
@@ -330,8 +385,18 @@ export function createPericiaAgendadaManual(dados: AtualizacaoPericiaAgendada): 
     throw new PericiaAgendadaConflictError("Já existe um evento idêntico para este cliente na mesma data e horário.");
   }
 
+  const cardId = `manual:${randomUUID()}`;
+  const anteriores = encontrarAnterioresAtivos({
+    cardId,
+    tipoChave,
+    nomeChave,
+    nome,
+    telefoneDigits: normalizePhone(telefone),
+    processo,
+  });
+
   const info = insertStmt.run({
-    card_id: `manual:${randomUUID()}`,
+    card_id: cardId,
     tipo,
     tipo_chave: tipoChave,
     origem: origemPeloTipo(tipo, null),
@@ -340,7 +405,7 @@ export function createPericiaAgendadaManual(dados: AtualizacaoPericiaAgendada): 
     telefone,
     telefone_digits: normalizePhone(telefone),
     processo: processo || null,
-    processo_chave: chave(processo),
+    processo_chave: normalizeProcesso(processo),
     data,
     horario: horario || null,
     local: local || null,
@@ -352,6 +417,7 @@ export function createPericiaAgendadaManual(dados: AtualizacaoPericiaAgendada): 
     fonte: "whatsapp",
   });
   const criada = getStmt.get(info.lastInsertRowid) as PericiaAgendada;
+  substituirAnteriores(criada, anteriores);
   scheduleGoogleCalendarSync(criada.id);
   return criada;
 }
@@ -386,7 +452,7 @@ export function updatePericiaAgendada(
     const tipoChave = chave(tipo);
     const nomeChave = chave(nome);
     const telefoneDigits = normalizePhone(telefone);
-    const processoChave = chave(processo);
+    const processoChave = normalizeProcesso(processo);
     const identidadeMudou =
       tipoChave !== chave(atual.tipo) ||
       nomeChave !== chave(atual.nome) ||
@@ -435,8 +501,55 @@ export function updatePericiaAgendada(
       lembrete_resetado: lembreteResetado,
     };
   })();
-  if (resultado) scheduleGoogleCalendarSync(resultado.pericia.id);
+  if (resultado) {
+    const atual = resultado.pericia;
+    const anteriores = encontrarAnterioresAtivos({
+      idAtual: atual.id,
+      cardId: atual.card_id,
+      tipoChave: chave(atual.tipo),
+      nomeChave: chave(atual.nome),
+      nome: atual.nome,
+      telefoneDigits: atual.telefone_digits,
+      processo: atual.processo,
+    });
+    substituirAnteriores(atual, anteriores);
+    scheduleGoogleCalendarSync(atual.id);
+  }
   return resultado;
+}
+
+/**
+ * Corrige registros antigos que permaneceram simultaneamente ativos porque uma remarcação veio
+ * com o nome abreviado. Executada na inicialização; é idempotente e só consolida processo, tipo
+ * e telefone iguais. O registro mais recente é mantido como ativo.
+ */
+export function reconciliarRemarcacoesAntigas(): number {
+  const ativas = db.prepare(
+    `SELECT * FROM pericias_agendadas
+     WHERE status = 'ativa' AND processo IS NOT NULL AND processo <> '' AND telefone_digits <> ''
+     ORDER BY id ASC`
+  ).all() as PericiaAgendada[];
+  const grupos = new Map<string, PericiaAgendada[]>();
+
+  for (const pericia of ativas) {
+    const processo = normalizeProcesso(pericia.processo);
+    if (!processo) continue;
+    const key = `${chave(pericia.tipo)}|${processo}|${pericia.telefone_digits}`;
+    const grupo = grupos.get(key) || [];
+    grupo.push(pericia);
+    grupos.set(key, grupo);
+  }
+
+  let substituidas = 0;
+  for (const grupo of grupos.values()) {
+    if (grupo.length < 2) continue;
+    const nova = grupo.reduce((maisRecente, atual) => atual.id > maisRecente.id ? atual : maisRecente);
+    const anteriores = grupo.filter((item) => item.id !== nova.id);
+    substituirAnteriores(nova, anteriores);
+    scheduleGoogleCalendarSync(nova.id);
+    substituidas += anteriores.length;
+  }
+  return substituidas;
 }
 
 export function marcarLembreteEnviado(ids: number[], logId: number): void {
