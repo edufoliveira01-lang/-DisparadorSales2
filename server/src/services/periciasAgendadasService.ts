@@ -53,6 +53,12 @@ export interface ResultadoAtualizacaoPericiaAgendada {
   lembrete_resetado: boolean;
 }
 
+export interface RemarcacaoDetectada {
+  agendamento_anterior_id: number;
+  data_anterior: string;
+  horario_anterior: string | null;
+}
+
 export class PericiaAgendadaInputError extends Error {}
 export class PericiaAgendadaConflictError extends Error {}
 
@@ -194,6 +200,41 @@ function substituirAnteriores(nova: PericiaAgendada, anteriores: PericiaAgendada
     supersedeStmt.run(nova.id, anterior.id);
     transferGoogleCalendarLinks(anterior.id, nova.id);
   }
+}
+
+/**
+ * Identifica uma remarcação para a Dashboard sem alterar o calendário. A baixa do compromisso
+ * anterior continua acontecendo apenas depois que o novo envio for confirmado pelo WhatsApp.
+ */
+export function detectarRemarcacao(cardId: string, pericia: Pericia): RemarcacaoDetectada | null {
+  const dataHoraNova = parseBrazilianDate(pericia.data, pericia.horario);
+  if (!Number.isFinite(dataHoraNova)) return null;
+
+  const tipoChave = chave(pericia.tipo);
+  const nomeChave = chave(pericia.nome);
+  const telefoneDigits = normalizePhone(pericia.telefone);
+  const processo = normalizeProcesso(pericia.processo);
+  const candidatas = telefoneDigits || processo
+    ? encontrarAnterioresAtivos({
+        cardId,
+        tipoChave,
+        nomeChave,
+        nome: pericia.nome,
+        telefoneDigits,
+        processo: pericia.processo,
+      })
+    : (findAtivasPorCardStmt.all(cardId, tipoChave, nomeChave) as PericiaAgendada[]);
+
+  const anterior = candidatas
+    .filter((item) => item.data_hora_ms !== dataHoraNova)
+    .sort((a, b) => b.id - a.id)[0];
+  if (!anterior) return null;
+
+  return {
+    agendamento_anterior_id: anterior.id,
+    data_anterior: anterior.data,
+    horario_anterior: anterior.horario,
+  };
 }
 
 /**

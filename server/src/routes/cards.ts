@@ -12,6 +12,7 @@ import { getSetting } from "../services/settingsService";
 import { getCardsFromList, TrelloError } from "../services/trelloService";
 import { normalizePhone } from "../utils/phone";
 import { normalizeProcesso } from "../utils/processo";
+import { detectarRemarcacao } from "../services/periciasAgendadasService";
 
 export const cardsRouter = Router();
 
@@ -67,6 +68,13 @@ cardsRouter.get("/", async (_req, res) => {
       // 2. Fallback inteligente do título do card (limpando datas e códigos)
       // 3. Título bruto do card (último caso, dentro do próprio extractNomeFromCardTitle)
       const nomeCliente = pericias[0]?.nome || extractNomeFromCardTitle(card.name);
+      const periciasComRemarcacao = pericias.map((pericia) => ({
+        ...pericia,
+        remarcacao: detectarRemarcacao(card.id, {
+          ...pericia,
+          nome: pericia.nome || nomeCliente,
+        }),
+      }));
       const processoCliente = pericias.map((p) => p.processo || "").find((p) => p.trim()) || "";
       let match = matchContact(nomeCliente, [...contacts, ...novosContatos], processoCliente);
       let criterioContato: MatchCriterio | null = match.criterio;
@@ -97,7 +105,7 @@ cardsRouter.get("/", async (_req, res) => {
         cardNome: card.name,
         shortUrl: card.shortUrl,
         due: card.due,
-        pericias,
+        pericias: periciasComRemarcacao,
         incompleta,
         nomeCliente,
         contato: match.exact,

@@ -9,6 +9,11 @@ export interface Pericia {
   processo?: string;
   profissionalPerito?: string;
   origem?: "medica" | "social" | "geral" | "audiencia";
+  remarcacao?: {
+    agendamento_anterior_id: number;
+    data_anterior: string;
+    horario_anterior: string | null;
+  } | null;
 }
 
 export type ModoEnvio = "template" | "audiencia_presencial" | "audiencia_online" | "audiencia_hibrida";

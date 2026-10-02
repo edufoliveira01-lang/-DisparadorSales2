@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   createPericiaAgendadaManual,
   deletePericiaAgendada,
+  detectarRemarcacao,
   getPericiaAgendada,
   PericiaAgendadaConflictError,
   PericiaAgendadaInputError,
@@ -78,5 +79,56 @@ describe("criação manual de eventos do calendário", () => {
       substituida_por_id: nova.id,
     });
     expect(getPericiaAgendada(nova.id)).toMatchObject({ status: "ativa", data: "09/10/2026" });
+  });
+
+  it("sinaliza a remarcação na Dashboard sem substituir o evento antes do envio", () => {
+    const antiga = createPericiaAgendadaManual({
+      ...dados("PREVIA"),
+      processo: "5000001-22.2026.8.26.0001",
+      data: "03/10/2026",
+      horario: "08:00",
+    });
+    criadas.push(antiga.id);
+
+    const remarcacao = detectarRemarcacao("card-trello-previa", {
+      ...dados("PREVIA"),
+      processo: "5000001-22.2026.8.26.0001",
+      data: "09/10/2026",
+      horario: "12:00",
+      profissionalPerito: "PROFISSIONAL TESTE",
+    });
+
+    expect(remarcacao).toEqual({
+      agendamento_anterior_id: antiga.id,
+      data_anterior: "03/10/2026",
+      horario_anterior: "08:00",
+    });
+    expect(getPericiaAgendada(antiga.id)?.status).toBe("ativa");
+  });
+
+  it("também sinaliza remarcação de audiência", () => {
+    const antiga = createPericiaAgendadaManual({
+      ...dados("AUDIENCIA"),
+      tipo: "Audiência",
+      processo: "5000002-33.2026.8.26.0001",
+      data: "10/10/2026",
+      horario: "15:00",
+    });
+    criadas.push(antiga.id);
+
+    expect(detectarRemarcacao("card-audiencia", {
+      ...dados("AUDIENCIA"),
+      tipo: "Audiência",
+      origem: "audiencia",
+      processo: "5000002-33.2026.8.26.0001",
+      data: "17/10/2026",
+      horario: "16:00",
+      profissionalPerito: "PROFISSIONAL TESTE",
+    })).toMatchObject({
+      agendamento_anterior_id: antiga.id,
+      data_anterior: "10/10/2026",
+      horario_anterior: "15:00",
+    });
+    expect(getPericiaAgendada(antiga.id)?.status).toBe("ativa");
   });
 });

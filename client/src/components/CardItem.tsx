@@ -11,6 +11,7 @@ import {
   MessageCircle,
   Pencil,
   Phone,
+  RefreshCw,
   Send,
   ShieldCheck,
   Smartphone,
@@ -176,16 +177,43 @@ export function CardItem({
             <section
               key={i}
               className={cn(
-                "rounded-xl border p-3.5 md:p-4",
+                "relative rounded-xl border p-3.5 md:p-4",
                 classesSecaoEvento(classificarEvento(p).categoria)
               )}
             >
+              {p.remarcacao && (
+                <span
+                  className="absolute -left-3 -top-3 inline-flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-violet-600 text-white shadow-md dark:border-zinc-900 dark:bg-violet-500"
+                  title="Remarcação detectada"
+                  aria-label="Remarcação detectada"
+                >
+                  <RefreshCw className="h-4 w-4" strokeWidth={2.25} />
+                </span>
+              )}
               <div className="flex items-start justify-between gap-3">
-                <p className="font-semibold text-zinc-800 dark:text-zinc-100">
-                  {p.origem === "audiencia"
-                    ? `AUDIÊNCIA · ${MODALIDADE_LABEL[classificarModalidadeAudiencia(p.tipo)]}`
-                    : formatPlaceholder(p.tipo) || "Tipo não identificado"}
-                </p>
+                <div className={cn("min-w-0", p.remarcacao && "pl-3")}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-semibold text-zinc-800 dark:text-zinc-100">
+                      {p.origem === "audiencia"
+                        ? `AUDIÊNCIA · ${MODALIDADE_LABEL[classificarModalidadeAudiencia(p.tipo)]}`
+                        : formatPlaceholder(p.tipo) || "Tipo não identificado"}
+                    </p>
+                    {p.remarcacao && (
+                      <Badge tone="violet" className="px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                        Remarcação
+                      </Badge>
+                    )}
+                  </div>
+                  {p.remarcacao && (
+                    <p className="mt-1 text-xs font-medium text-violet-700 dark:text-violet-300">
+                      {p.remarcacao.data_anterior}
+                      {p.remarcacao.horario_anterior ? ` às ${p.remarcacao.horario_anterior}` : ""}
+                      {" → "}
+                      {formatPlaceholder(p.data)}
+                      {p.horario ? ` às ${formatPlaceholder(p.horario)}` : ""}
+                    </p>
+                  )}
+                </div>
                 <button
                   onClick={() => onEditarPericia(i)}
                   title="Editar informações da perícia"
