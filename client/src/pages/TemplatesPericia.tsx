@@ -46,7 +46,7 @@ export function TemplatesPericia() {
     const data = await api.get<Template[]>("/templates");
     setTemplates(data);
     if (data.length > 0 && selecionadoId === null) {
-      selecionarTemplate(data[0]);
+      selecionarTemplate(data.find(t => t.padrao) || data[0]);
     }
   }
 
@@ -79,7 +79,8 @@ export function TemplatesPericia() {
         await api.put(`/templates/${selecionadoId}`, form);
         show("Template atualizado.", "success");
       } else {
-        await api.post("/templates", form);
+        const criado = await api.post<Template>("/templates", form);
+        selecionarTemplate(criado);
         show("Template criado.", "success");
       }
       carregar();
@@ -88,6 +89,15 @@ export function TemplatesPericia() {
     } finally {
       setSalvando(false);
     }
+  }
+
+  async function definirPadrao() {
+    if (!selecionadoId) return;
+    try {
+      await api.put(`/templates/${selecionadoId}/default`, {});
+      await carregar();
+      show("Template padrão atualizado.", "success");
+    } catch (err) { show(err instanceof ApiError ? err.message : "Erro ao definir padrão.", "error"); }
   }
 
   async function excluir() {
@@ -175,6 +185,7 @@ export function TemplatesPericia() {
             >
               <MessageSquareText className="h-4 w-4 shrink-0" />
               <span className="truncate">{t.nome}</span>
+              {t.padrao && <span className="ml-auto text-[10px]">✓ Padrão</span>}
             </button>
           ))}
         </div>
@@ -198,6 +209,8 @@ export function TemplatesPericia() {
                   </Select>
                 </div>
               </div>
+
+              {selecionadoId && <Button variant="outline" onClick={definirPadrao} disabled={templates?.find(t => t.id === selecionadoId)?.padrao}>Usar como padrão</Button>}
 
               <div className="flex gap-2 border-b border-zinc-200 dark:border-zinc-800">
                 <button
@@ -338,3 +351,4 @@ export function TemplatesPericia() {
     </div>
   );
 }
+

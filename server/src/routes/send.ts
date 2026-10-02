@@ -2,7 +2,14 @@ import { Router } from "express";
 import { dispatchBatch, dispatchSingle, type SendItem } from "../services/dispatchService";
 import { batchInProgress, listActiveBatches } from "../services/batchProgressService";
 
+import { composeMessages } from "../services/messageComposer";
+
 export const sendRouter = Router();
+
+sendRouter.post("/preview", (req, res) => {
+  try { res.json({ mensagens: composeMessages(req.body, req.body.templateId ?? null) }); }
+  catch (error) { res.status(400).json({ error: (error as Error).message }); }
+});
 
 sendRouter.get("/batches", (_req, res) => {
   res.json(listActiveBatches());
@@ -52,3 +59,4 @@ sendRouter.post("/batch", (req, res) => {
   dispatchBatch(items, templateId ?? null, intervalMinSec ?? 5, intervalMaxSec ?? 15).catch(() => {});
   res.json({ ok: true, total: items.length });
 });
+

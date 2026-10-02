@@ -77,12 +77,6 @@ const TIPO_OPTIONS: { value: FiltroTipo; label: string }[] = [
   { value: "audiencia", label: "Audiência" },
 ];
 
-const MODALIDADE_POR_MODO: Record<Exclude<ModoEnvio, "template">, "presencial" | "online" | "hibrida"> = {
-  audiencia_presencial: "presencial",
-  audiencia_online: "online",
-  audiencia_hibrida: "hibrida",
-};
-
 interface PanoramaDashboard {
   pericias: PericiaAgendada[];
   pendentes: PendingReply[];
@@ -170,7 +164,6 @@ export function Dashboard() {
   const [nomeOverrides, setNomeOverrides] = useState<Record<string, string>>({});
   const [periciasOverrides, setPericiasOverrides] = useState<Record<string, Pericia[]>>({});
   const [modoOverrides, setModoOverrides] = useState<Record<string, ModoEnvio>>({});
-  const [mensagensAudiencia, setMensagensAudiencia] = useState({ presencial: "", online: "", hibrida: "" });
   const [intervaloEnvio, setIntervaloEnvio] = useState({ min: 5, max: 15 });
   const [enviandoCardId, setEnviandoCardId] = useState<string | null>(null);
 
@@ -245,14 +238,9 @@ export function Dashboard() {
     carregarPanorama();
     api.get<Template[]>("/templates").then((data) => {
       setTemplates(data);
-      if (data.length > 0) setTemplateId(data[0].id);
+      if (data.length > 0) setTemplateId((data.find(t => t.padrao) || data[0]).id);
     });
     api.get<Settings>("/settings").then((data) => {
-      setMensagensAudiencia({
-        presencial: data.audiencia_presencial_mensagem ?? "",
-        online: data.audiencia_online_mensagem ?? "",
-        hibrida: data.audiencia_hibrida_mensagem ?? "",
-      });
       setIntervaloEnvio({
         min: Number(data.send_interval_min) || 5,
         max: Number(data.send_interval_max) || 15,
@@ -327,19 +315,6 @@ export function Dashboard() {
   /** Modo efetivo: usa o override manual se o usuário tiver ajustado, senão o detectado automaticamente. */
   function modoEfetivo(card: CardViewModel): ModoEnvio {
     return modoOverrides[card.cardId] ?? modoDetectado(card);
-  }
-
-  function renderAudienciaLocal(mensagem: string, nome: string, pericia: Pericia): string {
-    return mensagem
-      .replace(/\{\{NOME\}\}/g, nome)
-      .replace(/\{\{TIPO_PERICIA\}\}/g, pericia.tipo)
-      .replace(/\{\{DATA\}\}/g, pericia.data)
-      .replace(/\{\{HORARIO\}\}/g, pericia.horario)
-      .replace(/\{\{LOCAL\}\}/g, pericia.local)
-      .replace(/\{\{TELEFONE\}\}/g, pericia.telefone || "")
-      .replace(/\{\{WHATSAPP\}\}/g, pericia.whatsapp || "")
-      .replace(/\{\{PROCESSO\}\}/g, pericia.processo || "")
-      .replace(/\{\{PROFISSIONAL_PERITO\}\}/g, pericia.profissionalPerito || "");
   }
 
   const cardsFiltrados = useMemo(() => {
@@ -675,29 +650,20 @@ export function Dashboard() {
     const modo = modoEfetivo(card);
     const cardComOverrides = cardEfetivo(card);
 
-    if (modo !== "template") {
-      const pericia = cardComOverrides.pericias[0];
-      if (!pericia) {
-        show("Nenhuma perícia identificada para gerar mensagem.", "error");
-        return;
-      }
-      const mensagemConfigurada = mensagensAudiencia[MODALIDADE_POR_MODO[modo]];
-      const mensagem = renderAudienciaLocal(mensagemConfigurada, cardComOverrides.nomeCliente, pericia);
-      setPreview({ card: cardComOverrides, mensagens: [mensagem], modo });
-      return;
-    }
-
-    if (!templateId) {
+    if (modo === "template" && !templateId) {
       show("Selecione um template de mensagem.", "error");
       return;
     }
     try {
-      const { mensagens } = await api.post<{ mensagens: string[] }>("/templates/preview", {
+      const { mensagens } = await api.post<{ mensagens: string[] }>("/send/preview", {
         templateId,
-        nome: cardComOverrides.nomeCliente,
+        cardId: cardComOverrides.cardId,
+        telefone: contato.telefone,
+        modo,
+        nomeCliente: cardComOverrides.nomeCliente,
         pericias: cardComOverrides.pericias,
       });
-      setPreview({ card: cardComOverrides, mensagens, modo: "template" });
+      setPreview({ card: cardComOverrides, mensagens, modo });
     } catch (err) {
       show(err instanceof ApiError ? err.message : "Erro ao gerar pré-visualização.", "error");
     }
@@ -1582,3 +1548,4 @@ function PanoramaItem({
     </div>
   );
 }
+

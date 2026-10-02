@@ -5,10 +5,7 @@ import { BatchProgressProvider } from "@/context/BatchProgressContext";
 import { Dashboard } from "@/pages/Dashboard";
 import { Agenda } from "@/pages/Agenda";
 import { Calendario } from "@/pages/Calendario";
-import { TemplatesPericia } from "@/pages/TemplatesPericia";
-import { TemplatesCobranca } from "@/pages/TemplatesCobranca";
-import { TemplatesAudiencia } from "@/pages/TemplatesAudiencia";
-import { TemplatesLembretes } from "@/pages/TemplatesLembretes";
+import { Templates } from "@/pages/Templates";
 import { Historico } from "@/pages/Historico";
 import { Logs } from "@/pages/Logs";
 import { PendentesResposta } from "@/pages/PendentesResposta";
@@ -35,10 +32,11 @@ export default function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/agenda" element={<Agenda />} />
             <Route path="/calendario" element={<Calendario />} />
-            <Route path="/templates" element={<TemplatesPericia />} />
-            <Route path="/templates/cobranca" element={<TemplatesCobranca />} />
-            <Route path="/templates/audiencia" element={<TemplatesAudiencia />} />
-            <Route path="/templates/lembretes" element={<TemplatesLembretes />} />
+            <Route path="/templates" element={<Templates />} />
+            <Route path="/templates/cobranca" element={<Templates />} />
+            <Route path="/templates/audiencia" element={<Templates />} />
+            <Route path="/templates/remarcacao" element={<Templates />} />
+            <Route path="/templates/lembretes" element={<Templates />} />
             <Route path="/historico" element={<Historico />} />
             <Route path="/logs" element={<Logs />} />
             <Route path="/pendentes" element={<PendentesResposta />} />
@@ -50,3 +48,4 @@ export default function App() {
     </WhatsappProvider>
   );
 }
+

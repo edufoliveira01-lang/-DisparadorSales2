@@ -14,6 +14,7 @@ import { periciasAgendadasRouter } from "./routes/periciasAgendadas";
 import { sendRouter } from "./routes/send";
 import { settingsRouter } from "./routes/settings";
 import { systemLogsRouter } from "./routes/systemLogs";
+import { messageTemplatesRouter } from "./routes/messageTemplates";
 import { templatesRouter } from "./routes/templates";
 import { trelloRouter } from "./routes/trello";
 import { whatsappRouter } from "./routes/whatsapp";
@@ -58,6 +59,7 @@ app.use("/api/backup", backupRouter);
 app.use("/api/trello", trelloRouter);
 app.use("/api/contacts", contactsRouter);
 app.use("/api/templates", templatesRouter);
+app.use("/api/message-templates", messageTemplatesRouter);
 app.use("/api/whatsapp", whatsappRouter);
 app.use("/api/cards", cardsRouter);
 app.use("/api/send", sendRouter);
@@ -162,3 +164,4 @@ async function shutdown() {
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+

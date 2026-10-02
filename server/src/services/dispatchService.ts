@@ -1,31 +1,14 @@
 import { emitEvent } from "../websocket";
 import { startBatch, updateBatch, finishBatch } from "./batchProgressService";
 import { sortPericiasByDate, type Pericia } from "./parserService";
-import {
-  AUDIENCIA_HIBRIDA_MENSAGEM_PADRAO,
-  AUDIENCIA_ONLINE_MENSAGEM_PADRAO,
-  AUDIENCIA_PRESENCIAL_MENSAGEM_PADRAO,
-  getTemplate,
-  renderAudiencia,
-  renderMessages,
-} from "./templateService";
+import { composeMessages, type ModoEnvio } from "./messageComposer";
+export type { ModoEnvio } from "./messageComposer";
 import { createLog, type SendLog } from "./logsService";
 import { whatsappManager } from "./whatsappService";
 import { getSetting } from "./settingsService";
 import { moveCard } from "./trelloService";
 import { createPendingReply, linkPendingReplyToSendLog, type PendingReply } from "./pendingRepliesService";
 import { registrarPericiaAgendada } from "./periciasAgendadasService";
-
-export type ModoEnvio = "template" | "audiencia_presencial" | "audiencia_online" | "audiencia_hibrida";
-
-const CONFIGURACAO_AUDIENCIA: Record<
-  Exclude<ModoEnvio, "template">,
-  { chaveSetting: string; padrao: string }
-> = {
-  audiencia_presencial: { chaveSetting: "audiencia_presencial_mensagem", padrao: AUDIENCIA_PRESENCIAL_MENSAGEM_PADRAO },
-  audiencia_online: { chaveSetting: "audiencia_online_mensagem", padrao: AUDIENCIA_ONLINE_MENSAGEM_PADRAO },
-  audiencia_hibrida: { chaveSetting: "audiencia_hibrida_mensagem", padrao: AUDIENCIA_HIBRIDA_MENSAGEM_PADRAO },
-};
 
 export interface SendItem {
   cardId: string;
@@ -34,8 +17,8 @@ export interface SendItem {
   telefone: string;
   contactId: number | null;
   pericias: Pericia[];
-  /** "template" (padrão) usa o template de perícia selecionado; os outros dois ignoram o
-   * template e mandam a mensagem de audiência configurada em Templates > Audiência. */
+  /** "template" (padrão) usa o template de perícia selecionado; os modos de audiência ignoram o
+   * template e mandam o padrão da modalidade de audiência. Remarcações usam seu padrão próprio. */
   modo?: ModoEnvio;
 }
 
@@ -46,13 +29,6 @@ function onlyDigits(value: string): string {
 export async function dispatchSingle(item: SendItem, templateId: number | null): Promise<SendLog> {
   const modo: ModoEnvio = item.modo ?? "template";
 
-  let template: ReturnType<typeof getTemplate>;
-  if (modo === "template") {
-    if (!templateId) throw new Error("Selecione um template de mensagem.");
-    template = getTemplate(templateId);
-    if (!template) throw new Error("Template não encontrado.");
-  }
-
   try {
     if (!whatsappManager.isReady()) throw new Error("WhatsApp não está conectado.");
 
@@ -61,15 +37,8 @@ export async function dispatchSingle(item: SendItem, templateId: number | null):
 
     const sortedPericias = sortPericiasByDate(item.pericias);
 
-    let mensagens: string[];
-    if (modo !== "template") {
-      if (sortedPericias.length === 0) throw new Error("Nenhuma perícia válida para gerar mensagem.");
-      const { chaveSetting, padrao } = CONFIGURACAO_AUDIENCIA[modo];
-      const mensagemConfigurada = getSetting(chaveSetting) || padrao;
-      mensagens = [renderAudiencia(mensagemConfigurada, item.nomeCliente, sortedPericias[0])];
-    } else {
-      mensagens = renderMessages(template!, item.nomeCliente, sortedPericias);
-    }
+    const mensagens = composeMessages(item, templateId);
+    if (mensagens.some(mensagem => !mensagem.trim())) throw new Error("A mensagem ficou vazia. Revise o template antes de enviar.");
     if (mensagens.length === 0) throw new Error("Nenhuma perícia válida para gerar mensagem.");
 
     // Guarda o id da última mensagem enviada para rastrear entrega/leitura (✓✓) no Histórico.
@@ -228,3 +197,4 @@ export async function dispatchBatch(
     finishBatch(loteId);
   }
 }
+

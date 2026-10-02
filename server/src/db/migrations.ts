@@ -29,6 +29,17 @@ export function runMigrations(db: Database.Database): void {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS message_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      categoria TEXT NOT NULL,
+      escopo TEXT NOT NULL,
+      nome TEXT NOT NULL,
+      mensagem TEXT NOT NULL,
+      padrao INTEGER NOT NULL DEFAULT 0 CHECK(padrao IN (0,1))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_message_template_default
+      ON message_templates(categoria, escopo) WHERE padrao = 1;
+
     CREATE TABLE IF NOT EXISTS settings (
       chave TEXT PRIMARY KEY,
       valor TEXT
@@ -701,3 +712,4 @@ export function runMigrations(db: Database.Database): void {
     templatePadraoAntigo.social
   );
 }
+

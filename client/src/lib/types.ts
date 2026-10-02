@@ -28,6 +28,7 @@ export interface Contact {
 }
 
 export interface Template {
+  padrao?: boolean;
   id: number;
   nome: string;
   conteudo_1_pericia: string;
@@ -273,3 +274,4 @@ export interface PendingReply {
   created_at: string;
   resolved_at: string | null;
 }
+

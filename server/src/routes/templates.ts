@@ -9,7 +9,16 @@ import {
   updateTemplate,
 } from "../services/templateService";
 
+import { setSetting } from "../services/settingsService";
+
 export const templatesRouter = Router();
+
+templatesRouter.put("/:id/default", (req, res) => {
+  const id = Number(req.params.id);
+  if (!getTemplate(id)) return res.status(404).json({ error: "Template não encontrado." });
+  setSetting("template_padrao_id", String(id));
+  res.json({ ok: true });
+});
 
 templatesRouter.get("/", (_req, res) => {
   res.json(listTemplates());
@@ -120,3 +129,4 @@ templatesRouter.post("/preview", (req, res) => {
     res.status(400).json({ error: `Erro ao renderizar template: ${(err as Error).message}` });
   }
 });
+

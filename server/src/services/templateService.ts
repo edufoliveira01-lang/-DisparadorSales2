@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { getSetting } from "./settingsService";
 export { renderAudiencia, renderCobranca, renderLembrete, renderMessages } from "./templateRenderer";
 
 export const COBRANCA_MENSAGEM_PADRAO =
@@ -34,6 +35,7 @@ export interface Template {
   conteudo_pericia_social: string | null;
   modo_envio_2_pericias: "combinada" | "separadas";
   created_at: string;
+  padrao?: boolean;
 }
 
 const listStmt = db.prepare("SELECT * FROM templates ORDER BY id ASC");
@@ -47,7 +49,10 @@ const updateStmt = db.prepare(
 const deleteStmt = db.prepare("DELETE FROM templates WHERE id = ?");
 
 export function listTemplates(): Template[] {
-  return listStmt.all() as Template[];
+  const templates = listStmt.all() as Template[];
+  const selected = Number(getSetting("template_padrao_id"));
+  const padraoId = templates.some(t => t.id === selected) ? selected : templates[0]?.id;
+  return templates.map(t => ({ ...t, padrao: t.id === padraoId }));
 }
 
 export function getTemplate(id: number): Template | undefined {
@@ -82,3 +87,4 @@ export function updateTemplate(id: number, data: Omit<Template, "id" | "created_
 export function deleteTemplate(id: number): void {
   deleteStmt.run(id);
 }
+
