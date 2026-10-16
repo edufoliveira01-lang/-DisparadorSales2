@@ -20,7 +20,14 @@ const insertStmt = db.prepare(
 const updateStmt = db.prepare(
   "UPDATE contacts SET nome = ?, telefone = ?, processo = ?, processo_chave = ?, observacoes = ? WHERE id = ?"
 );
-const deleteStmt = db.prepare("DELETE FROM contacts WHERE id = ?");
+// O histórico guarda os dados do envio e deve sobreviver à exclusão da agenda.
+// Desvincula somente o contato; a transação reverte tudo se a exclusão falhar.
+const deleteContactsTransaction = db.transaction((ids: number[]): number => {
+  const placeholders = ids.map(() => "?").join(",");
+  db.prepare(`UPDATE send_logs SET contact_id = NULL WHERE contact_id IN (${placeholders})`).run(...ids);
+  const info = db.prepare(`DELETE FROM contacts WHERE id IN (${placeholders})`).run(...ids);
+  return info.changes;
+});
 
 export function listContacts(): Contact[] {
   return listStmt.all() as Contact[];
@@ -62,13 +69,11 @@ export function updateContact(
 }
 
 export function deleteContact(id: number): void {
-  deleteStmt.run(id);
+  deleteContacts([id]);
 }
 
 /** Apaga em massa; ids inexistentes são ignorados. Retorna quantos registros foram de fato apagados. */
 export function deleteContacts(ids: number[]): number {
   if (ids.length === 0) return 0;
-  const placeholders = ids.map(() => "?").join(",");
-  const info = db.prepare(`DELETE FROM contacts WHERE id IN (${placeholders})`).run(...ids);
-  return info.changes;
+  return deleteContactsTransaction(ids);
 }
