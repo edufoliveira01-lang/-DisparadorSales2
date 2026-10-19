@@ -1369,20 +1369,18 @@ function PainelEventosDashboard({
                     {tipo.rotulo} · {evento.data}
                     {evento.horario ? ` · ${evento.horario}` : " · Sem horário"}
                   </span>
-                  {evento.local && (
-                    <span
-                      title={evento.local}
-                      aria-label={`Local: ${evento.local}`}
-                    >
-                      <MapPin className="h-3 w-3" />
-                    </span>
-                  )}
                   {jaEnviado && (
                     <Badge tone="accent">
                       <CheckCheck className="h-3 w-3" /> Lembrete enviado
                     </Badge>
                   )}
                 </div>
+                {evento.local && (
+                  <p className="mb-[9px] -mt-1 flex items-start gap-1 text-[10px] leading-[15.5px] text-zinc-500 dark:text-zinc-400">
+                    <MapPin className="mt-0.5 h-3 w-3 shrink-0" />
+                    <span className="min-w-0 [overflow-wrap:anywhere]">{evento.local}</span>
+                  </p>
+                )}
                 {onEnviarItem && (
                   <Button
                     variant="outline"
