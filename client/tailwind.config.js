@@ -5,13 +5,13 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
+        sans: ["-apple-system", "BlinkMacSystemFont", "Segoe UI", "Arial", "sans-serif"],
       },
       colors: {
         zinc: {
           50: "#f6f8f5", 100: "#eef2ed", 200: "#e3e9e3",
-          300: "#cbd5cc", 400: "#8a9a8f", 500: "#65786b",
-          600: "#506456", 700: "#3e5145", 800: "#2b3c31",
+          300: "#cbd5cc", 400: "#9ba89f", 500: "#8b9c90",
+          600: "#72867a", 700: "#3e5145", 800: "#2b3c31",
           900: "#24382f", 950: "#102019",
         },
         accent: {
@@ -28,8 +28,8 @@ export default {
         },
       },
       boxShadow: {
-        soft: "0 1px 3px rgb(36 56 47 / 0.03)",
-        card: "0 2px 5px rgb(36 56 47 / 0.035)",
+        soft: "0 5px 30px rgb(24 61 33 / 0.012)",
+        card: "0 5px 30px rgb(24 61 33 / 0.012)",
       },
       borderRadius: {
         xl: "0.625rem",

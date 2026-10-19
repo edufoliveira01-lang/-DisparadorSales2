@@ -34,9 +34,9 @@ interface SidebarProps {
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   cn(
-    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-colors",
+    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-normal transition-colors",
     isActive
-      ? "bg-accent-50 text-accent-700 ring-1 ring-inset ring-accent-100 dark:bg-accent-900/30 dark:text-accent-300 dark:ring-accent-800"
+      ? "bg-accent-50 font-semibold text-[#2c8455] ring-1 ring-inset ring-accent-100 dark:bg-accent-900/30 dark:text-accent-300 dark:ring-accent-800"
       : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
   );
 

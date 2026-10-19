@@ -23,11 +23,11 @@ export function WorkspacePanel({
       {(title || aside) && (
         <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-5 sm:px-6">
           <div>
-            <h2 className="text-[15px] font-semibold text-zinc-900 dark:text-zinc-100">
+            <h2 className="text-[13px] font-medium text-zinc-900 dark:text-zinc-100">
               {title}
             </h2>
             {description && (
-              <div className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+              <div className="mt-1 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
                 {description}
               </div>
             )}

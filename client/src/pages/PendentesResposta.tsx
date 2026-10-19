@@ -373,7 +373,7 @@ export function PendentesResposta() {
         >
           {aguardandoPaginado.map(item => <WorkspaceRow key={item.id} selected={selecionados.has(item.id)}
             selection={<Checkbox aria-label={`Selecionar ${item.card_nome || "cliente"}`} checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />}
-            primary={<div><h3 className="break-words text-sm font-semibold text-zinc-900 dark:text-zinc-100">{item.card_nome || "Sem nome"}</h3><p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{formatPhoneDisplay(item.telefone)}</p></div>}
+            primary={<div><h3 className="break-words text-[13px] font-medium text-zinc-900 dark:text-zinc-100">{item.card_nome || "Sem nome"}</h3><p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{formatPhoneDisplay(item.telefone)}</p></div>}
             secondary={<div className="space-y-2"><StatusBadge ack={item.ack} respostaStatus={item.status} /><div><AckIndicator ack={item.ack} /></div><p className="text-[11px] text-zinc-500 dark:text-zinc-400">Enviado em {formatarData(item)}</p></div>}
             actions={<>
               <Button size="sm" onClick={() => confirmar(item)} loading={processando === item.id && cobrando !== item.id} disabled={processando !== null}><CheckCircle2 className="h-3.5 w-3.5" /> Confirmar recebimento</Button>

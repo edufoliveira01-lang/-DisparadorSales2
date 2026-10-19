@@ -756,7 +756,7 @@ export function Dashboard() {
     : null;
 
   return (
-    <div className="space-y-5 md:space-y-6">
+    <div className="space-y-5">
       <PageHeader
         title="Dashboard"
         description="Acompanhe os compromissos e pendências do dia, revise os dados do Trello e envie mensagens com segurança."
@@ -782,13 +782,13 @@ export function Dashboard() {
       />
 
 
-      <div className="grid grid-cols-3 gap-2 md:gap-3">
+      <div className="grid grid-cols-3 gap-[13px]">
         <StatCard layout="inline" icon={<Clock3 />} label="Pendentes" value={resumo.pendentes} tone="warning" helper="Ainda não enviados" />
         <StatCard layout="inline" icon={<ShieldCheck />} label="Prontos" value={resumo.prontos} tone="accent" helper="Contato e compromisso conferidos" />
         <StatCard layout="inline" icon={<CheckCheck />} label="Enviados" value={resumo.enviados} tone="info" helper="Envios concluídos" />
       </div>
 
-      <section className="grid gap-4 min-[1100px]:grid-cols-3" aria-label="Compromissos e lembretes">
+      <section className="grid gap-[15px] min-[1100px]:grid-cols-3" aria-label="Compromissos e lembretes">
         <PainelEventosDashboard
           titulo="Agenda de hoje"
           descricao={`${visaoGeral.hoje.length} ${visaoGeral.hoje.length === 1 ? "compromisso" : "compromissos"} para hoje`}
@@ -828,6 +828,9 @@ export function Dashboard() {
           carregando={panorama === null}
           vazio="Nenhum compromisso futuro encontrado."
           onVerTudo={() => navigate("/calendario")}
+          onEnviarItem={solicitarLembreteIndividual}
+          enviandoId={enviandoLembreteId}
+          enviandoBatch={Boolean(lembreteBatchProgress)}
           expandirLocalmente={false}
         />
       </section>
@@ -872,7 +875,7 @@ export function Dashboard() {
           footer="Os avisos usam os dados do Trello e os contatos deste serviço. Confira as informações antes de confirmar o envio."
         >
           {cards === null ? <div className="grid gap-4 p-4 lg:grid-cols-2">{Array.from({length: 4}).map((_, index) => <Skeleton key={index} className="h-64" />)}</div> : cardsFiltrados.length === 0 ? <EmptyState icon={Inbox} title={cards.length === 0 ? "Nenhum card encontrado na lista" : "Nenhum card corresponde aos filtros"} description={cards.length === 0 ? "Confira a lista do Trello em Configurações." : "Tente ajustar a busca ou os filtros."} /> : (
-            <div className="grid items-stretch gap-4 p-4 min-[1100px]:grid-cols-2 sm:p-5">
+            <div className="grid items-stretch gap-[15px] p-[17px] min-[1100px]:grid-cols-2">
               {cardsFiltrados.map((card) => (
                 <DispatchCard
                   key={card.cardId}
@@ -1283,9 +1286,9 @@ function PainelEventosDashboard({
   vazio: string;
   somenteHorario?: boolean;
   onVerTudo: () => void;
-  /** Quando presente, cada evento ganha um botão individual de "Enviar mensagem". */
+  /** Quando presente, cada evento ganha um botão individual de "Lembrete". */
   onEnviarItem?: (evento: PericiaAgendada) => void;
-  /** Quando presente, o cabeçalho ganha um botão "Enviar todos". */
+  /** Quando presente, o painel ganha a ação "Lembrar todos". */
   onEnviarTodos?: () => void;
   enviandoId?: number | null;
   enviandoBatch?: boolean;
@@ -1294,108 +1297,104 @@ function PainelEventosDashboard({
 }) {
   const [expandido, setExpandido] = useState(false);
   const limiteInicial = 3;
-  const eventosVisiveis = expandirLocalmente && expandido ? eventos : eventos.slice(0, limiteInicial);
+  const eventosVisiveis =
+    expandirLocalmente && expandido ? eventos : eventos.slice(0, limiteInicial);
 
   return (
-    <div className="surface-panel flex h-full flex-col overflow-hidden">
-      <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-4 py-3.5 dark:border-zinc-800">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300">
-            <CalendarDays className="h-4 w-4" />
-          </span>
-          <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold text-zinc-950 dark:text-white">{titulo}</h2>
-            <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">{descricao}</p>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {onEnviarTodos && (
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={onEnviarTodos}
-              disabled={eventos.length === 0 || eventos.every((evento) => Boolean(evento.ultimo_lembrete_em)) || enviandoBatch || enviandoId != null}
-              title="Enviar todos"
-              aria-label="Enviar lembretes para todos"
-            >
-              <Send className="h-3.5 w-3.5" />
-              <span className="sr-only">Enviar lembretes para todos</span>
-            </Button>
-          )}
-          <Button variant="ghost" size="icon" onClick={onVerTudo} title="Ver calendário" aria-label="Ver calendário">
-            <ArrowRight className="h-3.5 w-3.5" />
-            <span className="sr-only">Ver calendário</span>
-          </Button>
-        </div>
+    <section className="surface-panel h-full p-[18px]">
+      <div className="flex h-5 items-center justify-between gap-2">
+        <h2 className="flex min-w-0 items-center gap-2 text-[13px] font-semibold leading-[20.15px] text-zinc-900 dark:text-zinc-100">
+          <CalendarDays className="h-4 w-4 shrink-0 text-accent-600 dark:text-accent-300" />
+          <span className="truncate">{titulo}</span>
+        </h2>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-5 w-5"
+          onClick={onVerTudo}
+          title="Ver calendário"
+          aria-label="Ver calendário"
+        >
+          <ArrowRight className="h-3.5 w-3.5" />
+        </Button>
       </div>
+      <p className="mt-[5px] text-[10px] font-normal leading-[15.5px] text-zinc-400 dark:text-zinc-400">
+        {descricao}
+      </p>
 
       {carregando ? (
-        <div className="space-y-2 p-4">
-          {Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-14 w-full" />)}
+        <div className="mt-[13px] space-y-2">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Skeleton key={index} className="h-14" />
+          ))}
         </div>
       ) : eventos.length === 0 ? (
-        <div className="flex min-h-40 flex-col items-center justify-center px-4 py-8 text-center">
-          <CalendarDays className="h-6 w-6 text-zinc-300 dark:text-zinc-700" />
-          <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{vazio}</p>
+        <div className="py-[27px] text-center">
+          <CalendarDays className="mx-auto h-5 w-5 text-zinc-300 dark:text-zinc-600" />
+          <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-400">
+            {vazio}
+          </p>
         </div>
       ) : (
-        <div className="flex-1 divide-y divide-zinc-100 dark:divide-zinc-800">
+        <div className="mt-[13px] space-y-3">
           {eventosVisiveis.map((evento) => {
             const tipo = classificarEvento(evento);
             const jaEnviado = Boolean(evento.ultimo_lembrete_em);
             return (
-              <article key={evento.id} className="flex flex-col gap-2 px-4 py-3 transition-colors hover:bg-zinc-50/70 dark:hover:bg-zinc-800/30">
-                <div className="flex items-start gap-3">
+              <article
+                key={evento.id}
+                className="border-t border-zinc-100 pt-3 dark:border-zinc-800"
+              >
+                <div className="flex items-start gap-2">
                   <span
                     className={cn(
-                      "mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl",
-                      classesIconeEventoDashboard(tipo.categoria)
+                      "mt-0.5 inline-flex shrink-0 rounded-md p-0.5",
+                      classesIconeEventoDashboard(tipo.categoria),
                     )}
                   >
                     {tipo.categoria === "audiencia_online" ? (
-                      <Video className="h-4 w-4" />
+                      <Video className="h-3.5 w-3.5" />
                     ) : tipo.audiencia ? (
-                      <Gavel className="h-4 w-4" />
+                      <Gavel className="h-3.5 w-3.5" />
                     ) : (
-                      <CalendarDays className="h-4 w-4" />
+                      <CalendarDays className="h-3.5 w-3.5" />
                     )}
                   </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-                        {somenteHorario
-                          ? evento.horario || "Sem horário"
-                          : `${evento.data}${evento.horario ? ` às ${evento.horario}` : ""}`}
-                      </span>
-                      <Badge tone={toneEventoDashboard(tipo.categoria)} className="px-2 py-0.5">
-                        {tipo.rotulo}
-                      </Badge>
-                      {jaEnviado && (
-                        <Badge tone="accent" className="px-2 py-0.5">
-                          <CheckCheck className="h-3 w-3" /> Lembrete enviado
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="mt-1 break-words text-sm font-medium text-zinc-950 dark:text-white">{evento.nome}</p>
-                    {evento.local && (
-                      <p className="mt-0.5 flex items-start gap-1 text-xs text-zinc-500 dark:text-zinc-400" title={evento.local}>
-                        <MapPin className="mt-0.5 h-3 w-3 shrink-0" /> <span className="line-clamp-2">{evento.local}</span>
-                      </p>
-                    )}
-                  </div>
+                  <p className="break-words text-xs font-[550] leading-[18.6px] text-zinc-900 dark:text-zinc-100">
+                    {evento.nome}
+                  </p>
+                </div>
+                <div className="mb-[9px] mt-1 flex flex-wrap items-center gap-x-1 gap-y-1 text-[10px] font-normal leading-[15.5px] text-zinc-400 dark:text-zinc-400">
+                  <span>
+                    {tipo.rotulo} · {evento.data}
+                    {evento.horario ? ` · ${evento.horario}` : " · Sem horário"}
+                  </span>
+                  {evento.local && (
+                    <span
+                      title={evento.local}
+                      aria-label={`Local: ${evento.local}`}
+                    >
+                      <MapPin className="h-3 w-3" />
+                    </span>
+                  )}
+                  {jaEnviado && (
+                    <Badge tone="accent">
+                      <CheckCheck className="h-3 w-3" /> Lembrete enviado
+                    </Badge>
+                  )}
                 </div>
                 {onEnviarItem && (
-                  <div className="flex justify-end">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onEnviarItem(evento)}
-                      loading={enviandoId === evento.id}
-                      disabled={enviandoBatch || enviandoId != null}
-                    >
-                      <Send className="h-3.5 w-3.5" /> {jaEnviado ? "Reenviar" : "Enviar"}
-                    </Button>
-                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-[29px] px-2"
+                    onClick={() => onEnviarItem(evento)}
+                    loading={enviandoId === evento.id}
+                    disabled={enviandoBatch || enviandoId != null}
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                    {jaEnviado ? "Reenviar lembrete" : "Lembrete"}
+                  </Button>
                 )}
               </article>
             );
@@ -1403,26 +1402,59 @@ function PainelEventosDashboard({
           {eventos.length > limiteInicial && (
             <button
               type="button"
-              onClick={expandirLocalmente ? () => setExpandido((valor) => !valor) : onVerTudo}
-              className="flex w-full items-center justify-center gap-1 px-4 py-3 text-xs font-medium text-accent-700 hover:bg-accent-50/60 dark:text-accent-300 dark:hover:bg-accent-900/20"
+              onClick={
+                expandirLocalmente
+                  ? () => setExpandido((valor) => !valor)
+                  : onVerTudo
+              }
+              className="flex items-center gap-1 py-2 text-[10px] text-accent-700 dark:text-accent-300"
             >
               {!expandirLocalmente ? (
-                <><ArrowRight className="h-3.5 w-3.5" /> Ver mais no calendário</>
+                <>
+                  <ArrowRight className="h-3.5 w-3.5" />
+                  Ver mais no calendário
+                </>
               ) : expandido ? (
-                <><ChevronUp className="h-3.5 w-3.5" /> Mostrar menos</>
+                <>
+                  <ChevronUp className="h-3.5 w-3.5" />
+                  Mostrar menos
+                </>
               ) : (
-                <><ChevronDown className="h-3.5 w-3.5" /> Mostrar mais {eventos.length - limiteInicial}</>
+                <>
+                  <ChevronDown className="h-3.5 w-3.5" />
+                  Mostrar mais {eventos.length - limiteInicial}
+                </>
               )}
             </button>
           )}
           {total > eventos.length && (
-            <button type="button" onClick={onVerTudo} className="w-full px-4 py-3 text-left text-xs font-medium text-accent-700 hover:bg-accent-50/60 dark:text-accent-300 dark:hover:bg-accent-900/20">
+            <button
+              type="button"
+              onClick={onVerTudo}
+              className="py-2 text-[10px] text-accent-700 dark:text-accent-300"
+            >
               +{total - eventos.length} compromisso(s) no calendário
             </button>
           )}
         </div>
       )}
-    </div>
+      {onEnviarTodos && (
+        <Button
+          variant="outline"
+          className="mt-[13px]"
+          onClick={onEnviarTodos}
+          disabled={
+            eventos.length === 0 ||
+            eventos.every((evento) => Boolean(evento.ultimo_lembrete_em)) ||
+            enviandoBatch ||
+            enviandoId != null
+          }
+        >
+          <Send className="h-3.5 w-3.5" />
+          Lembrar todos
+        </Button>
+      )}
+    </section>
   );
 }
 

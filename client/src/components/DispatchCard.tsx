@@ -17,7 +17,6 @@ import { Checkbox } from "./ui/Checkbox";
 import { Modal } from "./ui/Modal";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { formatPlaceholder, cn } from "@/lib/utils";
-import { classificarEvento } from "@/lib/eventVisual";
 
 export function DispatchCard(props: CardItemProps) {
   const {
@@ -51,7 +50,7 @@ export function DispatchCard(props: CardItemProps) {
     <>
       <article
         className={cn(
-          "flex min-w-0 flex-col rounded-xl border bg-white [overflow-wrap:anywhere] p-4 dark:bg-zinc-900 sm:p-5",
+          "flex min-w-0 flex-col rounded-xl border bg-white [overflow-wrap:anywhere] p-[18px] dark:bg-zinc-900",
           selecionado
             ? "border-accent-400 ring-1 ring-accent-200 dark:ring-accent-800"
             : "border-zinc-200 dark:border-zinc-800",
@@ -67,16 +66,14 @@ export function DispatchCard(props: CardItemProps) {
             <h3 className="break-words text-sm font-semibold text-zinc-900 dark:text-zinc-100">
               {card.nomeCliente}
             </h3>
-            <p className="mt-1 break-all text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+            <p className="mt-[6px] break-all text-[10px] leading-relaxed text-[#a0ada2] dark:text-zinc-400">
               {processos.join(" · ") ||
                 contato?.processo ||
                 "Processo não informado"}
+              {contato && (
+                <span> · {formatPhoneDisplay(contato.telefone)}</span>
+              )}
             </p>
-            {contato && (
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                {formatPhoneDisplay(contato.telefone)}
-              </p>
-            )}
           </div>
           <Button
             variant="ghost"
@@ -96,24 +93,15 @@ export function DispatchCard(props: CardItemProps) {
         )}
         <div className="my-4 space-y-2">
           {card.pericias.map((p, index) => {
-            const categoria = classificarEvento(p).categoria;
-            const tone =
-              categoria === "pericia_social"
-                ? "violet"
-                : categoria.startsWith("audiencia")
-                  ? "info"
-                  : categoria === "pericia_medica"
-                    ? "accent"
-                    : "warning";
             return (
               <section
                 key={index}
-                className="rounded-lg border border-zinc-200 bg-zinc-50/60 p-3 dark:border-zinc-800 dark:bg-zinc-800/30"
+                className="rounded-[7px] border border-[#eaf0e5] bg-[#f7faf5] px-3 py-[11px] text-[11px] leading-[1.9] text-[#7e9687] dark:border-zinc-800 dark:bg-zinc-800/30 dark:text-zinc-400"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <Badge tone={tone} className="whitespace-normal">
+                  <span className="font-medium text-[#67836e] dark:text-accent-300">
                     {formatPlaceholder(p.tipo) || "Tipo não identificado"}
-                  </Badge>
+                  </span>
                   <button
                     type="button"
                     title="Editar informações da perícia"
@@ -124,7 +112,7 @@ export function DispatchCard(props: CardItemProps) {
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
                 </div>
-                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-700 dark:text-zinc-200">
+                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
                   <span className="inline-flex items-center gap-1.5">
                     <CalendarDays className="h-3.5 w-3.5 text-zinc-400" />
                     {formatPlaceholder(p.data)}
@@ -134,17 +122,15 @@ export function DispatchCard(props: CardItemProps) {
                     {formatPlaceholder(p.horario)}
                   </span>
                 </div>
-                <p className="mt-2 flex items-start gap-1.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+                <p className="mt-1 flex items-start gap-1.5">
                   <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   {formatPlaceholder(p.local) || "Local não informado"}
                 </p>
                 {p.profissionalPerito && (
-                  <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-                    Profissional: {p.profissionalPerito}
-                  </p>
+                  <p className="mt-1">Profissional: {p.profissionalPerito}</p>
                 )}
                 {p.remarcacao && (
-                  <p className="mt-2 flex items-start gap-1.5 text-xs leading-relaxed text-violet-700 dark:text-violet-300">
+                  <p className="mt-1 flex items-start gap-1.5 text-[10px] text-[#b39153] dark:text-amber-300">
                     <RefreshCw className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     <span>
                       Remarcação: de {p.remarcacao.data_anterior}{" "}
@@ -162,7 +148,7 @@ export function DispatchCard(props: CardItemProps) {
             </p>
           )}
         </div>
-        <div className="mt-auto space-y-3">
+        <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <Badge
               tone={
@@ -212,7 +198,7 @@ export function DispatchCard(props: CardItemProps) {
                 : `Último aviso: ${new Date(card.ultimoEnvio.data).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`}
             </p>
           )}
-          <div className="flex flex-wrap gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+          <div className="flex flex-wrap gap-[7px] pt-0.5">
             <Button
               size="sm"
               onClick={props.onEnviar}
@@ -229,7 +215,11 @@ export function DispatchCard(props: CardItemProps) {
               Ver detalhes
             </Button>
             {contato ? (
-              <Button size="sm" variant="ghost" onClick={props.onEditarContato}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={props.onEditarContato}
+              >
                 Editar contato
               </Button>
             ) : (

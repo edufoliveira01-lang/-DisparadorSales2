@@ -22,7 +22,7 @@ export function Layout({ children }: { children: ReactNode }) {
       <header className="sticky top-0 z-20 flex h-20 shrink-0 items-center justify-between gap-3 border-b border-zinc-200 bg-white/95 px-4 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95 sm:px-6 lg:px-8">
         <div className="flex min-w-0 items-center gap-3">
           <button type="button" onClick={() => setSidebarOpen(true)} className="rounded-lg border border-zinc-200 p-2 text-zinc-500 dark:border-zinc-700 dark:text-zinc-300 lg:hidden" aria-label="Abrir menu"><Menu className="h-4 w-4" /></button>
-          <div className="min-w-0"><p className="truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100">{pageName}</p><p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">Serviço: Perícias e avisos</p></div>
+          <div className="min-w-0"><p className="truncate text-[13px] font-medium text-zinc-800 dark:text-zinc-100">{pageName}</p><p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">Serviço: Perícias e avisos</p></div>
         </div>
         <div className="hidden shrink-0 sm:block"><Badge tone={whatsapp.status === "conectado" ? "success" : "warning"}><span className={`h-1.5 w-1.5 rounded-full ${whatsapp.status === "conectado" ? "bg-accent-500" : "bg-amber-500"}`} />{whatsapp.status === "conectado" ? "WhatsApp conectado" : "WhatsApp desconectado"}</Badge></div>
       </header>

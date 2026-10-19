@@ -281,7 +281,7 @@ export function Agenda() {
         {contacts === null ? <div className="p-5"><Skeleton className="h-40" /></div> : filtrados.length === 0 ? <EmptyState icon={Users} title={busca || letra ? "Nenhum contato encontrado" : "Nenhum contato cadastrado ainda"} description="Adicione um contato ou ajuste os filtros da busca." action={!busca && !letra && <Button onClick={abrirNovo}>Novo contato</Button>} /> : <>
           {contatosPaginados.map(c => <WorkspaceRow key={c.id} selected={selecionados.has(c.id)}
             selection={<Checkbox aria-label={`Selecionar ${c.nome}`} checked={selecionados.has(c.id)} onChange={() => alternarSelecionado(c.id)} />}
-            primary={<div><h3 className="break-words text-sm font-semibold text-zinc-900 dark:text-zinc-100">{c.nome}</h3><p className="mt-1 break-all text-xs text-zinc-500 dark:text-zinc-400">{c.processo || "Processo não informado"}</p></div>}
+            primary={<div><h3 className="break-words text-[13px] font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</h3><p className="mt-1 break-all text-xs text-zinc-500 dark:text-zinc-400">{c.processo || "Processo não informado"}</p></div>}
             secondary={<span className="inline-flex items-center gap-2 text-sm"><Phone className="h-3.5 w-3.5 text-zinc-400" />{formatPhoneDisplay(c.telefone)}</span>}
             actions={<>
               {c.observacoes && <Button size="sm" variant="ghost" aria-expanded={expandido === c.id} onClick={() => setExpandido(expandido === c.id ? null : c.id)}><StickyNote className="h-3.5 w-3.5" /> Observações</Button>}
