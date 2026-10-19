@@ -114,7 +114,7 @@ export function CardItem({
   return (
     <article
       className={cn(
-        "overflow-hidden rounded-2xl border bg-white shadow-card transition-all hover:-translate-y-0.5 hover:shadow-md dark:bg-zinc-900",
+        "overflow-hidden rounded-2xl border bg-white shadow-card transition-shadow hover:shadow-md dark:bg-zinc-900",
         temNaoIdentificado
           ? "border-amber-300 dark:border-amber-500/50"
           : temAudiencia

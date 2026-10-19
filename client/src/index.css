@@ -5,11 +5,11 @@
 @layer base {
   html {
     -webkit-font-smoothing: antialiased;
-    background: #fafafa;
+    background: #f6f8f5;
   }
 
   html.dark {
-    background: #09090b;
+    background: #102019;
   }
 
   body {

@@ -5,7 +5,7 @@ export function GlobalBatchProgress() {
   const { lotes, conectado } = useBatchProgress();
   if (!lotes.length) return null;
   return (
-    <div className="sticky top-16 z-20 border-b border-accent-200 bg-accent-50/95 px-4 py-3 backdrop-blur dark:border-accent-900 dark:bg-zinc-900/95 sm:px-6 lg:top-0 lg:px-8">
+    <div className="sticky top-16 z-20 border-b border-accent-200 bg-accent-50/95 px-4 py-3 backdrop-blur dark:border-accent-900 dark:bg-zinc-900/95 sm:px-6 lg:px-8">
       <div className="mx-auto grid max-w-[1360px] gap-3" aria-live="polite">
         {lotes.map((lote) => (
           <div key={lote.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-zinc-700 dark:text-zinc-200">

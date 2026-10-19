@@ -1543,9 +1543,8 @@ function PanoramaItem({
       </span>
       <div className="min-w-0">
         <p className="text-lg font-bold tabular-nums text-zinc-950 dark:text-white">{value}</p>
-        <p className="truncate text-[11px] text-zinc-500 dark:text-zinc-400 sm:text-xs">{label}</p>
+        <p className="text-[11px] text-zinc-500 dark:text-zinc-400 sm:truncate sm:text-xs">{label}</p>
       </div>
     </div>
   );
 }
-
