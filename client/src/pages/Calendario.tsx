@@ -700,7 +700,7 @@ export function Calendario() {
               {diasDaSemana.map(dia => {
                 const partes = formatarPartesData(dia);
                 const itens = porDia.get(dia) ?? [];
-                return <button key={dia} type="button" onClick={() => setDiaSelecionado(dia)} aria-label={`Ver compromissos de ${dia.split("-").reverse().join("/")}`} className={cn("min-h-36 rounded-lg border p-3 text-left",dia === hoje ? "border-accent-300 bg-accent-50/70 dark:border-accent-700 dark:bg-accent-900/20" : "border-zinc-200 dark:border-zinc-800")}>
+                return <button key={dia} type="button" onClick={() => setDiaSelecionado(dia)} aria-label={`Ver compromissos de ${dia.split("-").reverse().join("/")}`} className={cn("flex min-h-36 flex-col items-stretch justify-start rounded-lg border p-3 text-left",dia === hoje ? "border-accent-300 bg-accent-50/70 dark:border-accent-700 dark:bg-accent-900/20" : "border-zinc-200 dark:border-zinc-800")}>
                   <span className="block text-[10px] capitalize text-zinc-500 dark:text-zinc-400">{partes.diaSemana}</span><strong className="mt-1 block text-xl font-semibold text-zinc-700 dark:text-zinc-200">{partes.dia}</strong>
                   {itens.slice(0,3).map(item => <span key={item.id} className={cn("mt-2 block rounded p-1.5 text-[10px] leading-relaxed",classesEventoCalendario(item))}><span className="block font-medium">{item.horario || "Sem horário"}</span><span className="line-clamp-2">{item.nome}</span></span>)}
                   {itens.length > 3 && <span className="mt-2 block text-[10px] text-zinc-500 dark:text-zinc-400">+{itens.length - 3} compromissos</span>}
