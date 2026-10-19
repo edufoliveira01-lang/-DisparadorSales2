@@ -1,3 +1,4 @@
+import { SettingsOverview, type SettingsSectionKey } from "@/components/SettingsOverview";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -79,6 +80,7 @@ const STATUS_LABEL: Record<WhatsappState["status"], string> = {
 export function Configuracoes() {
   const { show } = useToast();
   const { theme, setTheme } = useTheme();
+  const [configSection, setConfigSection] = useState<SettingsSectionKey | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [trelloKey, setTrelloKey] = useState("");
   const [trelloToken, setTrelloToken] = useState("");
@@ -452,13 +454,15 @@ export function Configuracoes() {
     <div className="space-y-6">
       <PageHeader
         title="Configurações"
-        description="Gerencie aparência, acesso, integrações, notificações e segurança do DisparaZap."
+        description="Gerencie aparência, acesso, integrações, notificações e segurança do serviço de perícias e avisos."
         actions={<Button variant="outline" onClick={handleLogout} className="danger-action">
           <LogOut className="h-4 w-4" /> Sair do sistema
         </Button>}
       />
 
-      <Card>
+      {configSection === null ? <SettingsOverview onOpen={setConfigSection} whatsappConnected={whatsapp.status === "conectado"} /> : <Button variant="ghost" onClick={() => setConfigSection(null)}>← Voltar para as configurações</Button>}
+
+      <section hidden={configSection !== "aparencia"}><Card>
         <CardContent className="pt-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">
@@ -494,9 +498,9 @@ export function Configuracoes() {
             </div>
           </div>
         </CardContent>
-      </Card>
+      </Card></section>
 
-      <CollapsibleCard icon={<Lock className="h-4 w-4 text-amber-500" />} title="Dados de Acesso" storageKey="dados-acesso">
+      <section hidden={configSection !== "acesso"}><CollapsibleCard alwaysOpen icon={<Lock className="h-4 w-4 text-amber-500" />} title="Dados de Acesso" storageKey="dados-acesso">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label>Usuário</Label>
@@ -525,9 +529,9 @@ export function Configuracoes() {
               Atualizar dados de acesso
             </Button>
           </div>
-      </CollapsibleCard>
+      </CollapsibleCard></section>
 
-      <CollapsibleCard
+      <section hidden={configSection !== "trello"}><CollapsibleCard alwaysOpen
         icon={<Trello className="h-4 w-4 text-blue-500" />}
         title="Integração com o Trello"
         storageKey="trello"
@@ -705,9 +709,9 @@ export function Configuracoes() {
               Salvar integração
             </Button>
           </div>
-      </CollapsibleCard>
+      </CollapsibleCard></section>
 
-      <CollapsibleCard
+      <section hidden={configSection !== "whatsapp"}><CollapsibleCard alwaysOpen
         icon={<Wifi className="h-4 w-4 text-accent-500" />}
         title="Conexão com o WhatsApp"
         storageKey="whatsapp"
@@ -785,9 +789,9 @@ export function Configuracoes() {
               </>
             )}
           </div>
-      </CollapsibleCard>
+      </CollapsibleCard></section>
 
-      <CollapsibleCard
+      <section hidden={configSection !== "notificacoes"}><CollapsibleCard alwaysOpen
         icon={<Bell className="h-4 w-4 text-rose-500" />}
         title="Notificações"
         storageKey="notificacoes"
@@ -881,11 +885,11 @@ export function Configuracoes() {
               Salvar notificações
             </Button>
           </div>
-      </CollapsibleCard>
+      </CollapsibleCard></section>
 
-      <GoogleCalendarSettings />
+      <section hidden={configSection !== "google"}><GoogleCalendarSettings alwaysOpen /></section>
 
-      <CollapsibleCard
+      <section hidden={configSection !== "notificacoes"}><CollapsibleCard alwaysOpen
         icon={<MessageCircle className="h-4 w-4 text-emerald-500" />}
         title="Notificações por WhatsApp (Whapi)"
         storageKey="notificacoes-whapi"
@@ -955,9 +959,9 @@ export function Configuracoes() {
               Salvar
             </Button>
           </div>
-      </CollapsibleCard>
+      </CollapsibleCard></section>
 
-      <CollapsibleCard title="Intervalo entre envios" storageKey="intervalo">
+      <section hidden={configSection !== "intervalo"}><CollapsibleCard alwaysOpen title="Intervalo entre envios" storageKey="intervalo">
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
             Ao enviar em lote, o sistema aguarda um tempo aleatório entre esses limites antes de cada mensagem, para reduzir o
             risco de bloqueio da conta.
@@ -977,9 +981,9 @@ export function Configuracoes() {
               Salvar intervalo
             </Button>
           </div>
-      </CollapsibleCard>
+      </CollapsibleCard></section>
 
-      <CollapsibleCard icon={<Database className="h-4 w-4 text-emerald-500" />} title="Backup" storageKey="backup">
+      <section hidden={configSection !== "backup"}><CollapsibleCard alwaysOpen icon={<Database className="h-4 w-4 text-emerald-500" />} title="Backup" storageKey="backup">
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
             Baixe uma cópia completa dos dados do sistema (contatos, templates, histórico de envios, pendentes de resposta e
             configurações) para guardar em local seguro. Em caso de problema, restaure esse arquivo para voltar tudo ao
@@ -1006,7 +1010,7 @@ export function Configuracoes() {
             Restaurar substitui <span className="font-medium">todos</span> os dados atuais pelo conteúdo do arquivo e reinicia
             o sistema automaticamente.
           </p>
-      </CollapsibleCard>
+      </CollapsibleCard></section>
 
       <ConfirmDialog
         open={confirmRestoreOpen}

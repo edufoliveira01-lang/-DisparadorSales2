@@ -12,7 +12,7 @@ export function Login() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [carregando, setCarregando] = useState(false);
-  
+
   // Estados para recuperação
   const [modo, setModo] = useState<"login" | "esqueci" | "reset">("login");
   const [token, setToken] = useState("");
@@ -74,13 +74,13 @@ export function Login() {
       <div className="relative w-full max-w-md space-y-8">
         <div className="flex flex-col items-center text-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-500 text-white shadow-soft">
-            <Send className="h-7 w-7" />
+            <span className="font-serif text-3xl">S</span>
           </div>
           <h2 className="mt-5 text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
-            DisparaZap
+            Sales &amp; Associados
           </h2>
           <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-            {modo === "login" ? "Acesse sua conta para gerenciar os disparos." : 
+            {modo === "login" ? "Acesse o serviço de perícias e avisos." :
              modo === "esqueci" ? "Recupere seu acesso ao sistema." : "Defina sua nova senha."}
           </p>
         </div>
@@ -114,8 +114,8 @@ export function Login() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label htmlFor="password">Senha</Label>
-                    <button 
-                      type="button" 
+                    <button
+                      type="button"
                       onClick={() => setModo("esqueci")}
                       className="text-xs text-accent-600 hover:underline"
                     >
@@ -156,8 +156,8 @@ export function Login() {
                 <Button type="submit" className="w-full" loading={carregando}>
                   Enviar link de recuperação
                 </Button>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   onClick={() => setModo("login")}
                   className="flex w-full items-center justify-center gap-1 text-sm text-zinc-500 hover:text-zinc-700"
                 >
@@ -185,7 +185,7 @@ export function Login() {
                 </Button>
               </form>
             )}
-            
+
             <div className="mt-6 rounded-lg bg-amber-50 p-3 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
               <p className="flex items-center gap-1.5 font-semibold">
                 <ShieldAlert className="h-3.5 w-3.5" /> Segurança
@@ -196,7 +196,7 @@ export function Login() {
             </div>
           </CardContent>
         </Card>
-        
+
         <p className="text-center text-xs text-zinc-400">
           Uso 100% local · v{APP_VERSION}
         </p>

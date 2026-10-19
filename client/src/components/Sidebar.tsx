@@ -7,11 +7,11 @@ import {
   History,
   MessageSquareReply,
   Settings,
-  Send,
   ScrollText,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Select } from "@/components/ui/Select";
 import { APP_VERSION } from "@/lib/appVersion";
 
 const itemsAntesTemplates = [
@@ -50,26 +50,21 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
         open ? "translate-x-0" : "-translate-x-full"
       )}
     >
-      <div className="flex h-20 shrink-0 items-center gap-3 border-b border-zinc-100 px-5 dark:border-zinc-800">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-500 text-white shadow-soft">
-          <Send className="h-5 w-5" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-base font-bold leading-tight tracking-tight text-zinc-950 dark:text-white">DisparaZap</p>
-          <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">Sales &amp; Associados</p>
-        </div>
-        <button
-          type="button"
-          onClick={onNavigate}
-          className="rounded-xl p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 lg:hidden"
-          aria-label="Fechar menu"
-        >
-          <X className="h-5 w-5" />
-        </button>
+      <div className="flex h-20 shrink-0 items-center gap-3 border-b border-zinc-200 px-5 dark:border-zinc-800">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-500 font-serif text-2xl text-white">S</div>
+        <div className="min-w-0 flex-1"><p className="text-sm font-semibold leading-snug tracking-tight text-zinc-900 dark:text-white">Sales &amp; Associados</p><p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">Plataforma de serviços</p></div>
+        <button type="button" onClick={onNavigate} className="rounded-lg p-1 text-zinc-400 lg:hidden" aria-label="Fechar menu"><X className="h-4 w-4" /></button>
+      </div>
+      <div className="border-b border-zinc-200 px-4 py-5 dark:border-zinc-800">
+        <label htmlFor="active-service" className="mb-2 block text-[9px] font-semibold uppercase tracking-[0.15em] text-zinc-500 dark:text-zinc-400">Serviço ativo</label>
+        <Select id="active-service" defaultValue="pericias" className="text-xs font-medium">
+          <option value="pericias">Perícias e avisos</option>
+          <option value="processos" disabled>Andamentos e prazos · em breve</option>
+        </Select>
       </div>
 
       <nav aria-label="Menu principal" className="scrollbar-thin flex-1 space-y-1 overflow-y-auto px-3 py-5">
-        <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Operação</p>
+        <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Perícias e avisos</p>
         {itemsAntesTemplates.map(({ to, label, icon: Icon, end }) => (
           <NavLink key={to} to={to} end={end} onClick={onNavigate} className={linkClass}>
             <Icon className="h-5 w-5" />
@@ -77,7 +72,7 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
           </NavLink>
         ))}
 
-        <p className="px-3 pb-1 pt-5 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Comunicação</p>
+        <p className="px-3 pb-1 pt-5 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Comunicação de perícias</p>
         <NavLink to="/templates" onClick={onNavigate} className={linkClass}>
           <MessageSquareText className="h-5 w-5" /> Templates
         </NavLink>
@@ -99,8 +94,8 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
       </nav>
 
       <div className="border-t border-zinc-200 px-5 py-4 text-xs text-zinc-400 dark:border-zinc-800">
-        <p className="mb-1 font-medium text-zinc-600 dark:text-zinc-300">Perícias e avisos</p>
-        <p>Uso 100% local · v{APP_VERSION}</p>
+        <p className="mb-1 leading-relaxed text-zinc-500 dark:text-zinc-400">Controle de perícias e avisos</p>
+        <p className="text-[10px]">DisparaZap · v{APP_VERSION}</p>
       </div>
     </aside>
   );

@@ -6,14 +6,17 @@ interface PageHeaderProps {
   description: ReactNode;
   actions?: ReactNode;
   className?: string;
+  compact?: boolean;
 }
 
-export function PageHeader({ title, description, actions, className }: PageHeaderProps) {
+export function PageHeader({ title, description, actions, className, compact = false }: PageHeaderProps) {
+  const Heading = compact ? "h2" : "h1";
   return (
     <header className={cn("flex flex-col gap-4 pb-1 sm:flex-row sm:items-start sm:justify-between", className)}>
       <div className="min-w-0">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-950 dark:text-white md:text-3xl">{title}</h1>
-        <div className="mt-2 max-w-3xl text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">{description}</div>
+        {!compact && <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.14em] text-accent-600 dark:text-accent-300">Perícias e avisos</p>}
+        <Heading className={cn("font-semibold tracking-tight text-zinc-950 dark:text-white", compact ? "text-lg" : "text-2xl md:text-[27px]")}>{title}</Heading>
+        <div className="mt-2 max-w-3xl text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">{description}</div>
       </div>
       {actions && <div className="flex w-full flex-wrap items-center gap-2 self-start sm:w-auto sm:shrink-0">{actions}</div>}
     </header>

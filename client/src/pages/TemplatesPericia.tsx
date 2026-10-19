@@ -1,3 +1,4 @@
+import { WorkspacePanel } from "@/components/ui/Workspace";
 import { useEffect, useRef, useState } from "react";
 import { MessageSquareText, Plus, Save, Trash2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
@@ -162,7 +163,7 @@ export function TemplatesPericia() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHeader compact
         title="Mensagens de Perícia"
         description="Edite os textos, variáveis e formatos usados nas mensagens de agendamento."
         actions={<Button onClick={novoTemplate}>
@@ -170,14 +171,13 @@ export function TemplatesPericia() {
         </Button>}
       />
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[220px_1fr]">
-        <div className="flex gap-1.5 overflow-x-auto pb-1 lg:block lg:space-y-1.5 lg:overflow-visible lg:pb-0">
+      <WorkspacePanel title="Modelos salvos" description="Escolha um modelo para editar. A prévia acompanha o texto ao lado." toolbar={<div className="flex flex-wrap gap-2">
           {templates?.map((t) => (
             <button
               key={t.id}
               onClick={() => selecionarTemplate(t)}
               className={cn(
-                "flex shrink-0 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors lg:w-full lg:shrink",
+                "flex shrink-0 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors ",
                 selecionadoId === t.id
                   ? "bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300"
                   : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
@@ -188,10 +188,7 @@ export function TemplatesPericia() {
               {t.padrao && <span className="ml-auto text-[10px]">✓ Padrão</span>}
             </button>
           ))}
-        </div>
-
-        <div className="space-y-4">
-          <Card>
+        </div>}><div className="grid items-start gap-5 p-4 xl:grid-cols-2 sm:p-5"><Card>
             <CardContent className="space-y-4 pt-5">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
                 <div className="flex-1">
@@ -327,9 +324,7 @@ export function TemplatesPericia() {
                 </Button>
               </div>
             </CardContent>
-          </Card>
-
-          <Card>
+          </Card><aside className="xl:sticky xl:top-24"><Card>
             <CardContent className="pt-5">
               <p className="mb-3 text-xs font-medium uppercase tracking-wide text-zinc-400">
                 Pré-visualização ({aba === "1" ? "1 perícia" : "2 perícias"})
@@ -345,10 +340,7 @@ export function TemplatesPericia() {
                 ))}
               </div>
             </CardContent>
-          </Card>
-        </div>
-      </div>
+          </Card></aside></div></WorkspacePanel>
     </div>
   );
 }
-

@@ -346,7 +346,7 @@ function DestinationEditor({ config, calendars, onChange, onRemove }: {
   );
 }
 
-export function GoogleCalendarSettings() {
+export function GoogleCalendarSettings({ alwaysOpen = false }: { alwaysOpen?: boolean }) {
   const { show } = useToast();
   const [status, setStatus] = useState<GoogleCalendarStatus | null>(null);
   const [config, setConfig] = useState<GoogleCalendarConfig | null>(null);
@@ -506,7 +506,7 @@ export function GoogleCalendarSettings() {
   }
 
   return (
-    <CollapsibleCard
+    <CollapsibleCard alwaysOpen={alwaysOpen}
       icon={<CalendarSync className="h-4 w-4 text-blue-500" />}
       title="Integração com o Google Agenda"
       storageKey="google-calendar"

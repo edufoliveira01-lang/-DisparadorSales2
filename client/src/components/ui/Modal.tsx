@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useId } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,8 @@ interface ModalProps {
 }
 
 export function Modal({ open, onClose, title, description, leftAction, rightAction, children, footer, maxWidth = "max-w-lg" }: ModalProps) {
+  const titleId = useId();
+  const descriptionId = useId();
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -40,11 +42,11 @@ export function Modal({ open, onClose, title, description, leftAction, rightActi
             {leftAction}
           </div>
         )}
-        <div className="relative w-full animate-slide-up rounded-2xl border border-zinc-200 bg-white p-6 shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="mb-4 flex items-start justify-between gap-4">
+        <div role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={description ? descriptionId : undefined} className="relative flex max-h-[calc(100dvh-2rem)] w-full animate-slide-up flex-col rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-800 dark:bg-zinc-900 sm:p-6">
+          <div className="mb-4 flex shrink-0 items-start justify-between gap-4">
             <div className="min-w-0">
-              <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{title}</h2>
-              {description && <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{description}</p>}
+              <h2 id={titleId} className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{title}</h2>
+              {description && <p id={descriptionId} className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{description}</p>}
             </div>
             <button
               onClick={onClose}
@@ -54,8 +56,8 @@ export function Modal({ open, onClose, title, description, leftAction, rightActi
               <X className="h-5 w-5" />
             </button>
           </div>
-          <div className="max-h-[70vh] overflow-y-auto scrollbar-thin">{children}</div>
-          {footer && <div className="mt-6 flex justify-end gap-2">{footer}</div>}
+          <div className="min-h-0 max-h-[70vh] overflow-y-auto scrollbar-thin">{children}</div>
+          {footer && <div className="mt-5 flex shrink-0 flex-wrap justify-end gap-2">{footer}</div>}
         </div>
         {rightAction && (
           <div className="absolute left-full top-1/2 z-10 ml-2 -translate-y-1/2">

@@ -1,3 +1,5 @@
+import { calendarWeek, shiftCalendarDate } from "@/lib/calendarWeek";
+import { WorkspacePanel } from "@/components/ui/Workspace";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CalendarDays, CalendarPlus, CalendarRange, ChevronDown, ChevronLeft, ChevronRight, Clock, FileText, Gavel, History, MapPin, Pencil, Phone, RefreshCw, Save, Search, Stethoscope, Trash2, Users, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
@@ -278,6 +280,8 @@ export function Calendario() {
     const [y, m] = hojeYMD().split("-").map(Number);
     return { ano: y, mes: m };
   });
+  const [visualizacao, setVisualizacao] = useState<"semana" | "mes">("semana");
+  const [semanaReferencia, setSemanaReferencia] = useState(hojeYMD);
   const [busca, setBusca] = useState("");
   const [tipoFiltro, setTipoFiltro] = useState("todos");
   const [mostrarSubstituidas, setMostrarSubstituidas] = useState(false);
@@ -356,6 +360,7 @@ export function Calendario() {
         ? await api.post<RespostaSalvarEvento>("/pericias-agendadas", payload)
         : await api.put<RespostaSalvarEvento>(`/pericias-agendadas/${edicao.id}`, payload);
       const diaAtualizado = diaLocalYMD(resposta.pericia.data_hora_ms);
+      setSemanaReferencia(diaAtualizado);
       const [novoAno, novoMes] = diaAtualizado.split("-").map(Number);
       setAnoMes({ ano: novoAno, mes: novoMes });
       setDiasExpandidos((atuais) => new Set([...atuais, diaAtualizado]));
@@ -434,6 +439,22 @@ export function Calendario() {
 
   const celulas = useMemo(() => montarGrade(ano, mes), [ano, mes]);
   const hoje = hojeYMD();
+  const diasDaSemana = useMemo(() => calendarWeek(semanaReferencia), [semanaReferencia]);
+  const eventosDaSemana = diasDaSemana.flatMap(dia => porDia.get(dia) ?? []);
+  function navegarSemana(delta: number) {
+    const proxima = shiftCalendarDate(semanaReferencia, delta * 7);
+    setSemanaReferencia(proxima);
+    const [ano, mes] = proxima.split("-").map(Number);
+    setAnoMes({ano, mes});
+  }
+  function escolherVisualizacao(valor: "semana" | "mes") {
+    if (valor === "semana") {
+      const prefixo = `${ano}-${String(mes).padStart(2, "0")}`;
+      if (!semanaReferencia.startsWith(prefixo)) setSemanaReferencia(`${prefixo}-01`);
+    }
+    setVisualizacao(valor);
+  }
+
   const resumo = useMemo(() => {
     const ativos = (pericias ?? []).filter((pericia) => pericia.status !== "substituida");
     const hojeEFuturos = ativos.filter((pericia) => diaLocalYMD(pericia.data_hora_ms) >= hoje);
@@ -455,6 +476,7 @@ export function Calendario() {
     setAnoMes(({ ano, mes }) => (mes === 12 ? { ano: ano + 1, mes: 1 } : { ano, mes: mes + 1 }));
   }
   function irParaHoje() {
+    setSemanaReferencia(hojeYMD());
     const [y, m] = hojeYMD().split("-").map(Number);
     setAnoMes({ ano: y, mes: m });
   }
@@ -491,6 +513,13 @@ export function Calendario() {
         }
       />
 
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex rounded-lg border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-900" aria-label="Visualização do calendário">
+          {(["semana", "mes"] as const).map(valor => <button key={valor} type="button" aria-pressed={visualizacao === valor} onClick={() => escolherVisualizacao(valor)} className={cn("rounded-md px-4 py-2 text-xs font-medium", visualizacao === valor ? "bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300" : "text-zinc-500 dark:text-zinc-400")}>{valor === "semana" ? "Semana" : "Mês"}</button>)}
+        </div>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">{resumo.todos.total} agendamentos · {resumo.hojeEFuturos.total} de hoje em diante</p>
+      </div>
+      <details className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"><summary className="cursor-pointer px-5 py-3 text-xs text-zinc-500 dark:text-zinc-400">Ver resumo por tipo de compromisso</summary><div className="p-4 pt-0">
       <div className="grid gap-3 lg:grid-cols-2">
         <ResumoCalendarioGrupo
           icon={<CalendarDays />}
@@ -517,6 +546,8 @@ export function Calendario() {
         </ResumoCalendarioGrupo>
       </div>
 
+      </div></details>
+
       <div className="surface-panel flex flex-col gap-3 p-3 md:flex-row md:items-center md:justify-between md:p-4">
         {buscaAtiva ? (
           <div className="flex min-h-10 w-full items-center gap-2 md:w-auto">
@@ -530,13 +561,13 @@ export function Calendario() {
           </div>
         ) : (
           <div className="grid w-full grid-cols-[2.25rem_minmax(0,1fr)_2.25rem_auto] items-center gap-2 md:flex md:w-auto">
-            <Button variant="outline" size="icon" onClick={irParaMesAnterior} title="Mês anterior">
+            <Button variant="outline" size="icon" onClick={() => visualizacao === "semana" ? navegarSemana(-1) : irParaMesAnterior()} title={visualizacao === "semana" ? "Semana anterior" : "Mês anterior"}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <span className="min-w-0 text-center text-base font-semibold text-zinc-900 dark:text-zinc-100 md:w-40">
-              {NOMES_MES[mes - 1]} {ano}
+            <span className="min-w-0 text-center text-xs font-semibold text-zinc-900 dark:text-zinc-100 md:w-56">
+              {visualizacao === "semana" ? `${diasDaSemana[0].split("-").reverse().join("/")} — ${diasDaSemana[6].split("-").reverse().join("/")}` : `${NOMES_MES[mes - 1]} ${ano}`}
             </span>
-            <Button variant="outline" size="icon" onClick={irParaProximoMes} title="Próximo mês">
+            <Button variant="outline" size="icon" onClick={() => visualizacao === "semana" ? navegarSemana(1) : irParaProximoMes()} title={visualizacao === "semana" ? "Próxima semana" : "Próximo mês"}>
               <ChevronRight className="h-4 w-4" />
             </Button>
             <Button variant="ghost" size="sm" onClick={irParaHoje}>
@@ -662,6 +693,26 @@ export function Calendario() {
             </div>
           </div>
         )
+      ) : visualizacao === "semana" ? (
+        <>
+          <section className="surface-panel overflow-hidden" aria-label="Dias da semana">
+            <div className="scrollbar-thin overflow-x-auto p-4"><div className="grid min-w-[770px] grid-cols-7 gap-2">
+              {diasDaSemana.map(dia => {
+                const partes = formatarPartesData(dia);
+                const itens = porDia.get(dia) ?? [];
+                return <button key={dia} type="button" onClick={() => setDiaSelecionado(dia)} aria-label={`Ver compromissos de ${dia.split("-").reverse().join("/")}`} className={cn("min-h-36 rounded-lg border p-3 text-left",dia === hoje ? "border-accent-300 bg-accent-50/70 dark:border-accent-700 dark:bg-accent-900/20" : "border-zinc-200 dark:border-zinc-800")}>
+                  <span className="block text-[10px] capitalize text-zinc-500 dark:text-zinc-400">{partes.diaSemana}</span><strong className="mt-1 block text-xl font-semibold text-zinc-700 dark:text-zinc-200">{partes.dia}</strong>
+                  {itens.slice(0,3).map(item => <span key={item.id} className={cn("mt-2 block rounded p-1.5 text-[10px] leading-relaxed",classesEventoCalendario(item))}><span className="block font-medium">{item.horario || "Sem horário"}</span><span className="line-clamp-2">{item.nome}</span></span>)}
+                  {itens.length > 3 && <span className="mt-2 block text-[10px] text-zinc-500 dark:text-zinc-400">+{itens.length - 3} compromissos</span>}
+                  {!itens.length && <span className="mt-3 block text-[10px] text-zinc-400">Sem eventos</span>}
+                </button>;
+              })}
+            </div></div>
+          </section>
+          <WorkspacePanel title="Compromissos da semana" description="Abra os dados para consultar, editar ou remover um agendamento." aside={<span className="text-xs text-zinc-500 dark:text-zinc-400">{eventosDaSemana.length} eventos</span>}>
+            {eventosDaSemana.length ? eventosDaSemana.map(pericia => <ResultadoBuscaLinha key={pericia.id} showDate pericia={pericia} substituidaPor={pericia.substituida_por_id ? porId.get(pericia.substituida_por_id) ?? null : null} onEditar={() => abrirEdicao(pericia)} onExcluir={() => setApagarAlvo(pericia)} excluindo={apagando === pericia.id} />) : <p className="px-6 py-10 text-center text-sm text-zinc-500 dark:text-zinc-400">Nenhum compromisso nesta semana com os filtros atuais.</p>}
+          </WorkspacePanel>
+        </>
       ) : (
         <>
           {/* Desktop/tablet: grade mensal tradicional */}
@@ -1013,12 +1064,14 @@ function formatarPartesData(ymd: string): { dia: string; mes: string; ano: numbe
 
 function ResultadoBuscaLinha({
   pericia,
+  showDate = false,
   substituidaPor,
   onEditar,
   onExcluir,
   excluindo,
 }: {
   pericia: PericiaAgendada;
+  showDate?: boolean;
   substituidaPor?: PericiaAgendada | null;
   onEditar: () => void;
   onExcluir: () => void;
@@ -1040,6 +1093,7 @@ function ResultadoBuscaLinha({
             <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
               <Clock className="h-3.5 w-3.5" /> {pericia.horario || "Sem horário"}
             </span>
+            {showDate && <Badge tone="neutral">{pericia.data}</Badge>}
             <Badge tone={toneTipo(tipo)}>{tipo.rotulo}</Badge>
             {pericia.card_id.startsWith("manual:") && <Badge tone="accent">Manual</Badge>}
             {pericia.fonte === "trello_sync" && <Badge tone="neutral">Importado</Badge>}

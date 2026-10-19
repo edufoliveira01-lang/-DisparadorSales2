@@ -1,3 +1,4 @@
+import { WorkspacePanel, WorkspaceRow } from "@/components/ui/Workspace";
 import { remarcacoesDoLog, comparacaoRemarcacao } from "@/lib/remarcacaoHistorico";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import {
@@ -684,198 +685,16 @@ export function Historico() {
         />
       ) : (
         <>
-          {/* Mobile: cards compactos (nome + status + entrega), detalhes por trás do expandir */}
-          <div className="space-y-3 xl:hidden">
-            <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-              <Checkbox
-                checked={logsPaginados.length > 0 && logsPaginados.every((l) => selecionados.has(l.id))}
-                onChange={alternarSelecionarTodos}
-              />
-              <span>Selecionar todos nesta página</span>
-            </div>
-            {logsPaginados.map((log) => {
-              const aberto = expandido === log.id;
-              return (
-                <SelectableCard key={log.id} checked={selecionados.has(log.id)} onToggle={() => alternarSelecionado(log.id)}>
-                  <button
-                    className="flex w-full items-center justify-between gap-2 text-left"
-                    onClick={() => setExpandido(aberto ? null : log.id)}
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="block break-words font-semibold leading-snug text-zinc-900 dark:text-zinc-100">{log.card_nome || "Sem nome"}</span>
-                      <ResumoRemarcacao log={log} />
-                      {log.tipo_envio === "lembrete" && (
-                        <Badge tone="info" className="mt-1.5"><AlarmClock className="h-3 w-3" /> Lembrete</Badge>
-                      )}
-                      {log.tipo_envio === "reenvio" && (
-                        <Badge tone="accent" className="mt-1.5"><Send className="h-3 w-3" /> Reenvio</Badge>
-                      )}
-                      <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400">
-                        {log.telefone ? formatPhoneDisplay(log.telefone) : "—"}
-                        <AckIndicator ack={log.ack} sendStatus={log.status} respondido={log.resposta_status === "respondido"} />
-                      </span>
-                      <span className="mt-1 block text-xs text-zinc-400">{formatarData(log)}</span>
-                    </span>
-                    {aberto ? (
-                      <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" />
-                    ) : (
-                      <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
-                    )}
-                  </button>
-
-                  {aberto && (
-                    <div className="space-y-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
-                      <div className="flex items-center justify-between gap-2">
-                        <StatusBadge sendStatus={log.status} ack={log.ack} respostaStatus={log.resposta_status} />
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Apagar"
-                          aria-label={`Apagar registro de ${log.card_nome || "cliente"}`}
-                          onClick={() => setApagarAlvo(log)}
-                          disabled={apagando === log.id}
-                        >
-                          <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
-                        </Button>
-                      </div>
-                      {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
-                      <PainelAgendamento log={log} />
-                      <PainelComunicacao
-                        log={log}
-                        onReenviarInformacoes={setReenviarInformacoesAlvo}
-                        reenviando={reenviandoInformacoes === log.id}
-                      />
-                      {log.status === "falha" && log.tipo_envio === "disparo" && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full"
-                          onClick={() => reenviar(log)}
-                          loading={reenviando === log.id}
-                        >
-                          <RotateCcw className="h-3.5 w-3.5" /> Reenviar
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                </SelectableCard>
-              );
-            })}
-          </div>
-
-          {/* Desktop: tabela compacta de 6 colunas, detalhes num accordion por linha */}
-          <div className="hidden min-w-0 max-w-full overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 xl:block">
-            <table className="w-full table-fixed text-sm">
-              <colgroup>
-                <col style={{ width: "5%" }} /><col style={{ width: "23%" }} /><col style={{ width: "16%" }} />
-                <col style={{ width: "17%" }} /><col style={{ width: "14%" }} /><col style={{ width: "12%" }} /><col style={{ width: "13%" }} />
-              </colgroup>
-              <thead className="bg-zinc-50 text-center text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
-                <tr>
-                  <th className="w-10 px-3 py-3">
-                    <Checkbox
-                      checked={logsPaginados.length > 0 && logsPaginados.every((l) => selecionados.has(l.id))}
-                      onChange={alternarSelecionarTodos}
-                    />
-                  </th>
-                  <th className="px-3 py-3">Cliente</th>
-                  <th className="px-3 py-3">Telefone</th>
-                  <th className="px-3 py-3">Enviado em</th>
-                  <th className="px-3 py-3">Entrega</th>
-                  <th className="w-16 px-3 py-3">Status</th>
-                  <th className="px-3 py-3">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {logsPaginados.map((log) => {
-                  const aberto = expandido === log.id;
-                  const temAgendamento = periciasDoLog(log).length > 0;
-                  const temComunicacao = temRespostaRecebida(log) || temFinalizacaoSemResposta(log) || Boolean(log.mensagem_enviada);
-                  return (
-                    <Fragment key={log.id}>
-                      <tr
-                        className="cursor-pointer bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800/40"
-                        onClick={() => setExpandido(aberto ? null : log.id)}
-                      >
-                        <td className="px-3 py-3 text-center" onClick={(e) => e.stopPropagation()}>
-                          <Checkbox checked={selecionados.has(log.id)} onChange={() => alternarSelecionado(log.id)} />
-                        </td>
-                        <td className="min-w-0 break-words px-3 py-3 text-left font-medium text-zinc-900 dark:text-zinc-100">
-                          {log.card_nome || "—"}
-                          <ResumoRemarcacao log={log} />
-                          {log.tipo_envio === "lembrete" && (
-                            <Badge tone="info" className="ml-2 align-middle"><AlarmClock className="h-3 w-3" /> Lembrete</Badge>
-                          )}
-                          {log.tipo_envio === "reenvio" && (
-                            <Badge tone="accent" className="ml-2 align-middle"><Send className="h-3 w-3" /> Reenvio</Badge>
-                          )}
-                        </td>
-                        <td className="break-words px-3 py-3 text-center text-zinc-600 dark:text-zinc-400">
-                          {log.telefone ? formatPhoneDisplay(log.telefone) : "—"}
-                        </td>
-                        <td className="break-words px-3 py-3 text-center text-xs text-zinc-500 dark:text-zinc-400">
-                          {formatarData(log)}
-                        </td>
-                        <td className="px-3 py-3 text-center">
-                          <AckIndicator ack={log.ack} sendStatus={log.status} respondido={log.resposta_status === "respondido"} />
-                        </td>
-                        <td className="px-3 py-3 text-center">
-                          <StatusBadge sendStatus={log.status} ack={log.ack} respostaStatus={log.resposta_status} />
-                        </td>
-                        <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex flex-wrap justify-center gap-1">
-                            <Button variant="ghost" size="icon" title="Ver detalhes" onClick={() => setExpandido(aberto ? null : log.id)}>
-                              {aberto ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                            </Button>
-                            {log.status === "falha" && log.tipo_envio === "disparo" && (
-                              <Button variant="outline" size="sm" onClick={() => reenviar(log)} loading={reenviando === log.id}>
-                                <RotateCcw className="h-3.5 w-3.5" /> Reenviar
-                              </Button>
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              title="Apagar"
-                              onClick={() => setApagarAlvo(log)}
-                              disabled={apagando === log.id}
-                            >
-                              <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                      {aberto && (
-                        <tr className="bg-zinc-50 dark:bg-zinc-800/30">
-                          <td colSpan={7} className="space-y-4 px-3 py-4">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                                <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Detalhes do registro</p>
-                                {remarcacoesDoLog(log).length > 0 && <Badge tone="warning"><CalendarClock className="h-3 w-3" /> Remarcação</Badge>}
-                                {log.tipo_envio === "lembrete" && <Badge tone="info"><AlarmClock className="h-3 w-3" /> Lembrete</Badge>}
-                                {log.tipo_envio === "reenvio" && <Badge tone="accent"><Send className="h-3 w-3" /> Reenvio</Badge>}
-                              </div>
-                              <p className="inline-flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-                                <Clock className="h-3.5 w-3.5" /> Enviado em {formatarData(log)}
-                              </p>
-                            </div>
-                            {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
-                            <div className={cn("grid min-w-0 items-stretch gap-4", temAgendamento && temComunicacao && "xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]")}>
-                              <PainelAgendamento log={log} />
-                              <PainelComunicacao
-                                log={log}
-                                onReenviarInformacoes={setReenviarInformacoesAlvo}
-                                reenviando={reenviandoInformacoes === log.id}
-                              />
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <WorkspacePanel title="Mensagens enviadas" description="Entrega, resposta e dados usados em cada aviso."
+            aside={<label className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400"><Checkbox checked={logsPaginados.length > 0 && logsPaginados.every(l => selecionados.has(l.id))} onChange={alternarSelecionarTodos} />Selecionar esta página</label>}
+          >
+            {logsPaginados.map(log => <WorkspaceRow key={log.id} selected={selecionados.has(log.id)}
+              selection={<Checkbox aria-label={`Selecionar registro de ${log.card_nome || "cliente"}`} checked={selecionados.has(log.id)} onChange={() => alternarSelecionado(log.id)} />}
+              primary={<div><h3 className="break-words text-sm font-semibold text-zinc-900 dark:text-zinc-100">{log.card_nome || "Sem nome"}</h3><p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{log.telefone ? formatPhoneDisplay(log.telefone) : "Telefone não informado"}</p><ResumoRemarcacao log={log} /><div className="mt-2 flex flex-wrap gap-1">{log.tipo_envio === "lembrete" && <Badge tone="info">Lembrete</Badge>}{log.tipo_envio === "reenvio" && <Badge tone="accent">Reenvio</Badge>}</div></div>}
+              secondary={<div className="space-y-2"><StatusBadge sendStatus={log.status} ack={log.ack} respostaStatus={log.resposta_status} /><div><AckIndicator ack={log.ack} sendStatus={log.status} respondido={log.resposta_status === "respondido"} /></div><p className="text-[11px] text-zinc-500 dark:text-zinc-400">{formatarData(log)}</p></div>}
+              actions={<><Button variant="outline" size="sm" aria-expanded={expandido === log.id} onClick={() => setExpandido(expandido === log.id ? null : log.id)}>{expandido === log.id ? "Recolher detalhes" : "Ver detalhes"}</Button>{log.status === "falha" && log.tipo_envio === "disparo" && <Button variant="outline" size="sm" onClick={() => reenviar(log)} loading={reenviando === log.id}><RotateCcw className="h-3.5 w-3.5" /> Reenviar</Button>}<Button variant="ghost" size="icon" aria-label={`Apagar registro de ${log.card_nome || "cliente"}`} onClick={() => setApagarAlvo(log)} disabled={apagando === log.id}><Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" /></Button></>}
+            >{expandido === log.id && <div className="space-y-4">{log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}<div className="grid min-w-0 gap-4 xl:grid-cols-2"><PainelAgendamento log={log} /><PainelComunicacao log={log} onReenviarInformacoes={setReenviarInformacoesAlvo} reenviando={reenviandoInformacoes === log.id} /></div></div>}</WorkspaceRow>)}
+          </WorkspacePanel>
           <Pagination page={pagina} totalItems={logsFiltrados.length} pageSize={ITENS_POR_PAGINA} onPageChange={setPagina} />
         </>
       )}
@@ -910,4 +729,3 @@ export function Historico() {
     </div>
   );
 }
-

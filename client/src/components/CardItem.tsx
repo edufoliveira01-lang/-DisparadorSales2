@@ -28,7 +28,7 @@ import { Select } from "@/components/ui/Select";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { classificarEvento, type CategoriaEvento } from "@/lib/eventVisual";
 
-interface CardItemProps {
+export interface CardItemProps {
   card: CardViewModel;
   selecionado: boolean;
   onToggleSelecionar: () => void;

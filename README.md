@@ -8,6 +8,21 @@ duas por card), cruza o nome do cliente com uma agenda de contatos local, monta 
 de um template personalizável e dispara pelo WhatsApp — com intervalo aleatório entre os envios e
 histórico completo de sucesso/falha.
 
+## Interface e serviços — v2.34.0
+
+A plataforma usa a identidade Sales & Associados. O serviço ativo é **Perícias e avisos**, com
+as integrações e os fluxos atuais do DisparaZap. O seletor identifica **Andamentos e prazos**
+como indisponível; esta versão não consulta DJEN, classifica sentenças ou controla prazos processuais.
+
+- Dashboard: resumo da operação, lembretes e cartões de avisos com prévia de envio e detalhes completos.
+- Agenda, Histórico e Pendentes: listas adaptadas a desktop e celular, com seleção e ações por cliente.
+- Calendário: visão semanal e mensal dos mesmos agendamentos, com busca global e edição manual.
+- Templates: categorias, modelos e edição com pré-visualização ao lado.
+- Configurações: acesso às ferramentas por cartões; voltar à lista preserva os campos ainda não salvos.
+
+Os botões de envio e confirmação continuam ligados às APIs existentes. Não há migração de banco
+ou mudança de dependências nesta atualização.
+
 ## Stack
 
 - **Backend:** Node.js + Express + WebSocket (Socket.io), SQLite (`better-sqlite3`), integração

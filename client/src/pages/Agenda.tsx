@@ -30,7 +30,7 @@ import { SelectableCard } from "@/components/ui/SelectableCard";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { StatCard } from "@/components/ui/StatCard";
+import { WorkspacePanel, WorkspaceRow } from "@/components/ui/Workspace";
 
 const ITENS_POR_PAGINA = 20;
 const LETRAS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
@@ -263,235 +263,35 @@ export function Agenda() {
         </div>}
       />
 
-      <div className="grid grid-cols-3 gap-2 md:gap-3">
-        <StatCard icon={<Users />} label="Contatos" value={resumo.total} tone="info" />
-        <StatCard icon={<ShieldCheck />} label="Com processo" value={resumo.comProcesso} tone="accent" />
-        <StatCard icon={<CircleAlert />} label="Sem processo" value={resumo.semProcesso} tone="warning" />
-      </div>
-
-      <section className="surface-panel p-3 md:p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative min-w-0 flex-1 sm:max-w-xl">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-            <Input
-              placeholder="Buscar nome, telefone ou processo…"
-              className="pl-9"
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-            />
+      <WorkspacePanel title="Contatos de perícias" description="Dados usados na identificação e nos avisos aos clientes."
+        aside={<span className="text-xs text-zinc-500 dark:text-zinc-400">{resumo.total} contatos · {resumo.comProcesso} com processo · {resumo.semProcesso} sem processo</span>}
+        toolbar={<div className="space-y-4">
+          <div className="relative max-w-xl"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" /><Input aria-label="Buscar contatos" placeholder="Buscar nome, telefone ou processo…" className="pl-9" value={busca} onChange={e => setBusca(e.target.value)} /></div>
+          <nav aria-label="Filtrar contatos pela inicial" className="scrollbar-thin flex gap-1 overflow-x-auto pb-1">
+            <button type="button" onClick={() => setLetra(null)} className={cn("shrink-0 rounded-md px-3 py-1.5 text-xs", letra === null ? "bg-accent-50 font-semibold text-accent-700 dark:bg-accent-900/30 dark:text-accent-300" : "text-zinc-500 dark:text-zinc-400")}>Todos</button>
+            {LETRAS.map(item => <button key={item} type="button" onClick={() => setLetra(letra === item ? null : item)} className={cn("h-7 w-7 shrink-0 rounded-md text-xs", letra === item ? "bg-accent-50 font-semibold text-accent-700 dark:bg-accent-900/30 dark:text-accent-300" : "text-zinc-500 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800")}>{item}</button>)}
+          </nav>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+            <label className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400"><Checkbox checked={contatosPaginados.length > 0 && contatosPaginados.every(c => selecionados.has(c.id))} onChange={alternarSelecionarTodos} />Selecionar esta página · {filtrados.length} resultados</label>
+            {selecionados.size > 0 && <div className="flex flex-wrap gap-2"><Button variant="ghost" size="sm" onClick={() => setSelecionados(new Set())}>Limpar seleção</Button><Button variant="outline" className="danger-action" size="sm" onClick={() => setConfirmMassaAberto(true)} loading={apagandoSelecionados}><Trash2 className="h-3.5 w-3.5" /> Apagar selecionados ({selecionados.size})</Button></div>}
           </div>
-          <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-            <ShieldCheck className="h-4 w-4 text-accent-600 dark:text-accent-400" />
-            <span>{filtrados.length} de {contacts?.length ?? 0} contato(s)</span>
-          </div>
-        </div>
-        <p className="mt-2 text-xs text-zinc-400">
-          A importação aceita CSV do Google/Android e arquivos vCard (.vcf).
-        </p>
-      </section>
-
-      <nav
-        aria-label="Filtrar contatos pela inicial"
-        className="scrollbar-thin flex items-center gap-1 overflow-x-auto rounded-xl border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-900"
+        </div>}
+        footer="Importação disponível em CSV do Google/Android ou vCard (.vcf)."
       >
-        <button
-          type="button"
-          onClick={() => setLetra(null)}
-          className={cn(
-            "shrink-0 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-            letra === null
-              ? "bg-accent-500 text-white"
-              : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-          )}
-        >
-          Todos
-        </button>
-        {LETRAS.map((item) => (
-          <button
-            key={item}
-            type="button"
-            onClick={() => setLetra(letra === item ? null : item)}
-            className={cn(
-              "h-7 w-7 shrink-0 rounded-md text-xs font-medium transition-colors",
-              letra === item
-                ? "bg-accent-500 text-white"
-                : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-            )}
-          >
-            {item}
-          </button>
-        ))}
-      </nav>
-
-      {selecionados.size > 0 && (
-        <div className="flex flex-col gap-3 rounded-xl border border-accent-200 bg-accent-50 px-4 py-3 dark:border-accent-900 dark:bg-accent-900/20 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm font-medium text-accent-800 dark:text-accent-300">
-            {selecionados.size} contato(s) selecionado(s)
-          </p>
-          <div className="grid grid-cols-2 gap-2 sm:flex">
-            <Button variant="ghost" size="sm" onClick={() => setSelecionados(new Set())}>
-              Limpar seleção
-            </Button>
-            <Button variant="outline" className="danger-action" size="sm" onClick={() => setConfirmMassaAberto(true)} loading={apagandoSelecionados}>
-              <Trash2 className="h-3.5 w-3.5 text-red-500 dark:text-red-400" /> Apagar selecionados
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {contacts === null ? (
-        <div className="space-y-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-14 w-full" />
-          ))}
-        </div>
-      ) : filtrados.length === 0 ? (
-        <EmptyState
-          icon={Users}
-          title={busca || letra ? "Nenhum contato encontrado" : "Nenhum contato cadastrado ainda"}
-          description={busca || letra ? "Tente ajustar a busca ou escolher outra inicial." : "Adicione contatos para o sistema localizar cada cliente automaticamente."}
-          action={!busca && !letra && <Button onClick={abrirNovo}><Plus className="h-4 w-4" /> Novo contato</Button>}
-        />
-      ) : (
-        <>
-          <div className="space-y-3 md:hidden">
-            <div className="flex items-center gap-2 px-1 text-sm text-zinc-500 dark:text-zinc-400">
-              <Checkbox
-                checked={contatosPaginados.length > 0 && contatosPaginados.every((c) => selecionados.has(c.id))}
-                onChange={alternarSelecionarTodos}
-              />
-              <span>Selecionar todos nesta página</span>
-            </div>
-            {contatosPaginados.map((c) => {
-              const aberto = expandido === c.id;
-              return (
-                <SelectableCard key={c.id} checked={selecionados.has(c.id)} onToggle={() => alternarSelecionado(c.id)}>
-                  <button
-                    className="flex w-full items-center justify-between gap-2 text-left"
-                    onClick={() => setExpandido(aberto ? null : c.id)}
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="block break-words font-semibold leading-snug text-zinc-900 dark:text-zinc-100">{c.nome}</span>
-                      <span className="mt-1 flex items-center gap-1.5 text-sm text-zinc-500 dark:text-zinc-400">
-                        <Phone className="h-3.5 w-3.5" /> {formatPhoneDisplay(c.telefone)}
-                      </span>
-                    </span>
-                    {aberto ? (
-                      <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" />
-                    ) : (
-                      <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
-                    )}
-                  </button>
-
-                  {aberto && (
-                    <div className="space-y-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
-                      <div className="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-800/50">
-                        <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Número do processo</p>
-                        <p className="mt-1 flex items-start gap-1.5 break-all text-sm text-zinc-700 dark:text-zinc-300">
-                          <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                          {c.processo || "Não informado"}
-                        </p>
-                      </div>
-                      {c.observacoes && (
-                        <div>
-                          <p className="mb-1 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
-                            <StickyNote className="h-3.5 w-3.5 text-amber-500" /> Observações
-                          </p>
-                          <p className="whitespace-pre-wrap text-sm text-zinc-600 dark:text-zinc-300">{c.observacoes}</p>
-                        </div>
-                      )}
-                      <div className="grid grid-cols-2 gap-2">
-                        <Button variant="outline" size="sm" onClick={() => abrirEdicao(c)}>
-                          <Pencil className="h-3.5 w-3.5" /> Editar
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => setExcluirAlvo(c)} loading={excluindo === c.id}>
-                          <Trash2 className="h-3.5 w-3.5 text-red-500 dark:text-red-400" /> Apagar
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </SelectableCard>
-              );
-            })}
-          </div>
-
-          <div className="hidden overflow-hidden rounded-2xl border border-zinc-200 shadow-soft dark:border-zinc-800 md:block">
-            <table className="w-full text-sm">
-              <thead className="bg-zinc-50 text-center text-xs font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
-                <tr>
-                  <th className="w-10 px-5 py-3">
-                    <Checkbox
-                      checked={contatosPaginados.length > 0 && contatosPaginados.every((c) => selecionados.has(c.id))}
-                      onChange={alternarSelecionarTodos}
-                    />
-                  </th>
-                  <th className="px-5 py-3">Nome</th>
-                  <th className="px-5 py-3">Telefone</th>
-                  <th className="px-5 py-3">Processo</th>
-                  <th className="w-16 px-5 py-3">Obs.</th>
-                  <th className="px-5 py-3">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {contatosPaginados.map((c) => {
-                  const aberto = expandido === c.id;
-                  return (
-                    <Fragment key={c.id}>
-                      <tr
-                        className={cn(
-                          "bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800/50",
-                          c.observacoes && "cursor-pointer"
-                        )}
-                        onClick={c.observacoes ? () => setExpandido(aberto ? null : c.id) : undefined}
-                      >
-                        <td className="px-5 py-3 text-center" onClick={(e) => e.stopPropagation()}>
-                          <Checkbox checked={selecionados.has(c.id)} onChange={() => alternarSelecionado(c.id)} />
-                        </td>
-                        <td className="max-w-[280px] break-words px-5 py-3 text-left font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</td>
-                        <td className="whitespace-nowrap px-5 py-3 text-center text-zinc-600 dark:text-zinc-400">{formatPhoneDisplay(c.telefone)}</td>
-                        <td className="max-w-[230px] px-5 py-3 text-center text-zinc-600 dark:text-zinc-400">
-                          <span className="break-all">{c.processo || "Não informado"}</span>
-                        </td>
-                        <td className="px-5 py-3 text-center">
-                          {c.observacoes && (
-                            <span title="Tem observação">
-                              <StickyNote className="h-4 w-4 text-amber-500" />
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex justify-center gap-1">
-                            {c.observacoes && (
-                              <Button variant="ghost" size="icon" title="Ver observação" onClick={() => setExpandido(aberto ? null : c.id)}>
-                                {aberto ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                              </Button>
-                            )}
-                            <Button variant="ghost" size="icon" onClick={() => abrirEdicao(c)}>
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="icon" onClick={() => setExcluirAlvo(c)} loading={excluindo === c.id}>
-                              <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                      {aberto && c.observacoes && (
-                        <tr className="bg-zinc-50 dark:bg-zinc-800/30">
-                          <td colSpan={6} className="px-5 py-4">
-                            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-400">Observações</p>
-                            <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{c.observacoes}</p>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <Pagination page={pagina} totalItems={filtrados.length} pageSize={ITENS_POR_PAGINA} onPageChange={setPagina} />
-        </>
-      )}
+        {contacts === null ? <div className="p-5"><Skeleton className="h-40" /></div> : filtrados.length === 0 ? <EmptyState icon={Users} title={busca || letra ? "Nenhum contato encontrado" : "Nenhum contato cadastrado ainda"} description="Adicione um contato ou ajuste os filtros da busca." action={!busca && !letra && <Button onClick={abrirNovo}>Novo contato</Button>} /> : <>
+          {contatosPaginados.map(c => <WorkspaceRow key={c.id} selected={selecionados.has(c.id)}
+            selection={<Checkbox aria-label={`Selecionar ${c.nome}`} checked={selecionados.has(c.id)} onChange={() => alternarSelecionado(c.id)} />}
+            primary={<div><h3 className="break-words text-sm font-semibold text-zinc-900 dark:text-zinc-100">{c.nome}</h3><p className="mt-1 break-all text-xs text-zinc-500 dark:text-zinc-400">{c.processo || "Processo não informado"}</p></div>}
+            secondary={<span className="inline-flex items-center gap-2 text-sm"><Phone className="h-3.5 w-3.5 text-zinc-400" />{formatPhoneDisplay(c.telefone)}</span>}
+            actions={<>
+              {c.observacoes && <Button size="sm" variant="ghost" aria-expanded={expandido === c.id} onClick={() => setExpandido(expandido === c.id ? null : c.id)}><StickyNote className="h-3.5 w-3.5" /> Observações</Button>}
+              <Button size="sm" variant="outline" aria-label={`Editar ${c.nome}`} onClick={() => abrirEdicao(c)}><Pencil className="h-3.5 w-3.5" /> Editar</Button>
+              <Button size="sm" variant="ghost" className="text-red-600 dark:text-red-400" aria-label={`Apagar ${c.nome}`} onClick={() => setExcluirAlvo(c)} loading={excluindo === c.id}><Trash2 className="h-3.5 w-3.5" /> Apagar</Button>
+            </>}
+          >{expandido === c.id && c.observacoes && <div><p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Observações</p><p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">{c.observacoes}</p></div>}</WorkspaceRow>)}
+          <div className="border-t border-zinc-200 px-5 py-4 dark:border-zinc-800"><Pagination page={pagina} totalItems={filtrados.length} pageSize={ITENS_POR_PAGINA} onPageChange={setPagina} /></div>
+        </>}
+      </WorkspacePanel>
 
       <Modal
         open={modalAberto}

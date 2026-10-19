@@ -1,3 +1,4 @@
+import { WorkspacePanel, WorkspaceRow } from "@/components/ui/Workspace";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
@@ -296,8 +297,8 @@ export function PendentesResposta() {
       </div>
 
       <section className="surface-panel p-3 md:p-4">
-        <div className="grid grid-cols-2 gap-2 lg:grid-cols-[minmax(280px,1fr)_190px_190px_auto]">
-          <div className="relative col-span-2 lg:col-span-1">
+        <div className="grid grid-cols-2 gap-2 xl:grid-cols-[minmax(0,1fr)_190px_190px_auto]">
+          <div className="relative col-span-2 xl:col-span-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
             <Input placeholder="Buscar nome ou telefone…" className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
           </div>
@@ -309,7 +310,7 @@ export function PendentesResposta() {
           </Select>
           <Button
             variant={periodoAtivo ? "secondary" : "outline"}
-            className="col-span-2 lg:col-span-1"
+            className="col-span-2 xl:col-span-1"
             onClick={() => setMostrarPeriodo((valor) => !valor)}
           >
             <SlidersHorizontal className="h-4 w-4" /> {periodoAtivo ? "Período aplicado" : "Filtrar período"}
@@ -366,100 +367,22 @@ export function PendentesResposta() {
           description="Tente ajustar a busca, o status de entrega ou o período selecionado."
         />
       ) : (
-        <section className="space-y-3">
-          <div>
-            <h2 className="font-semibold text-zinc-900 dark:text-zinc-100">Clientes aguardando retorno</h2>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Abra um contato para ver as ações disponíveis.</p>
-          </div>
-
-          <div className="flex items-center gap-2 px-1 text-sm text-zinc-500 dark:text-zinc-400">
-            <Checkbox
-              checked={aguardandoPaginado.length > 0 && aguardandoPaginado.every((item) => selecionados.has(item.id))}
-              onChange={() => alternarSelecionarTodos(aguardandoPaginado)}
-            />
-            <span>Selecionar todos nesta página</span>
-          </div>
-
-          <div className="space-y-3 md:hidden">
-            {aguardandoPaginado.map((item) => {
-              const aberto = expandido === item.id;
-              return (
-                <SelectableCard key={item.id} checked={selecionados.has(item.id)} onToggle={() => alternarSelecionado(item.id)}>
-                  <button className="flex w-full items-center justify-between gap-3 text-left" onClick={() => setExpandido(aberto ? null : item.id)}>
-                    <span className="min-w-0 flex-1">
-                      <span className="block break-words font-semibold leading-snug text-zinc-900 dark:text-zinc-100">{item.card_nome || "Sem nome"}</span>
-                      <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400">
-                        <span className="inline-flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" /> {formatPhoneDisplay(item.telefone)}</span>
-                        <AckIndicator ack={item.ack} />
-                      </span>
-                    </span>
-                    {aberto ? <ChevronUp className="h-4 w-4 shrink-0 text-zinc-400" /> : <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />}
-                  </button>
-
-                  {aberto && (
-                    <div className="space-y-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <StatusBadge ack={item.ack} respostaStatus={item.status} />
-                        <span className="text-xs text-zinc-400">Enviado em {formatarData(item)}</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <Button className="col-span-2" size="sm" onClick={() => confirmar(item)} loading={processando === item.id && cobrando !== item.id} disabled={processando !== null}>
-                          <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar recebimento
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => cobrar(item)} loading={cobrando === item.id} disabled={processando !== null}>
-                          <MessageCircleQuestion className="h-3.5 w-3.5" /> {cobrando === item.id ? "Confirmando envio…" : "Cobrar resposta"}
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => abrirFinalizacao(item)} disabled={processando !== null}>
-                          <NotebookPen className="h-3.5 w-3.5" /> Finalizar espera
-                        </Button>
-                        <Button variant="ghost" size="sm" className="col-span-2 text-red-600 dark:text-red-400" onClick={() => setApagarAlvo(item)} disabled={processando === item.id}>
-                          <Trash2 className="h-3.5 w-3.5 text-red-500 dark:text-red-400" /> Apagar registro
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </SelectableCard>
-              );
-            })}
-          </div>
-
-          <div className="hidden gap-3 md:grid xl:grid-cols-2">
-            {aguardandoPaginado.map((item) => (
-              <article key={item.id} className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-soft dark:border-zinc-800 dark:bg-zinc-900">
-                <div className="flex items-start gap-3">
-                  <Checkbox checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <h3 className="break-words font-semibold leading-snug text-zinc-900 dark:text-zinc-100">{item.card_nome || "Sem nome"}</h3>
-                      <StatusBadge ack={item.ack} respostaStatus={item.status} />
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400">
-                      <span className="inline-flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" /> {formatPhoneDisplay(item.telefone)}</span>
-                      <AckIndicator ack={item.ack} />
-                    </div>
-                    <p className="mt-2 text-xs text-zinc-400">Enviado em {formatarData(item)}</p>
-                  </div>
-                </div>
-                <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
-                  <Button size="sm" onClick={() => confirmar(item)} loading={processando === item.id && cobrando !== item.id} disabled={processando !== null}>
-                    <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => cobrar(item)} loading={cobrando === item.id} disabled={processando !== null}>
-                    <MessageCircleQuestion className="h-3.5 w-3.5" /> {cobrando === item.id ? "Confirmando envio…" : "Cobrar resposta"}
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => abrirFinalizacao(item)} disabled={processando !== null}>
-                    <NotebookPen className="h-3.5 w-3.5" /> Finalizar espera
-                  </Button>
-                  <Button variant="ghost" size="icon" className="ml-auto" title="Apagar registro" onClick={() => setApagarAlvo(item)} disabled={processando === item.id}>
-                    <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
-                  </Button>
-                </div>
-              </article>
-            ))}
-          </div>
-
-          <Pagination page={paginaAguardando} totalItems={aguardando.length} pageSize={ITENS_POR_PAGINA} onPageChange={setPaginaAguardando} />
-        </section>
+        <WorkspacePanel title="Clientes aguardando retorno" description="Confirme o recebimento, cobre uma resposta ou finalize a espera."
+          aside={<label className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400"><Checkbox checked={aguardandoPaginado.length > 0 && aguardandoPaginado.every(item => selecionados.has(item.id))} onChange={() => alternarSelecionarTodos(aguardandoPaginado)} />Selecionar esta página</label>}
+          footer={<Pagination page={paginaAguardando} totalItems={aguardando.length} pageSize={ITENS_POR_PAGINA} onPageChange={setPaginaAguardando} />}
+        >
+          {aguardandoPaginado.map(item => <WorkspaceRow key={item.id} selected={selecionados.has(item.id)}
+            selection={<Checkbox aria-label={`Selecionar ${item.card_nome || "cliente"}`} checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />}
+            primary={<div><h3 className="break-words text-sm font-semibold text-zinc-900 dark:text-zinc-100">{item.card_nome || "Sem nome"}</h3><p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{formatPhoneDisplay(item.telefone)}</p></div>}
+            secondary={<div className="space-y-2"><StatusBadge ack={item.ack} respostaStatus={item.status} /><div><AckIndicator ack={item.ack} /></div><p className="text-[11px] text-zinc-500 dark:text-zinc-400">Enviado em {formatarData(item)}</p></div>}
+            actions={<>
+              <Button size="sm" onClick={() => confirmar(item)} loading={processando === item.id && cobrando !== item.id} disabled={processando !== null}><CheckCircle2 className="h-3.5 w-3.5" /> Confirmar recebimento</Button>
+              <Button variant="outline" size="sm" onClick={() => cobrar(item)} loading={cobrando === item.id} disabled={processando !== null}><MessageCircleQuestion className="h-3.5 w-3.5" /> {cobrando === item.id ? "Confirmando envio…" : "Cobrar resposta"}</Button>
+              <Button variant="ghost" size="sm" onClick={() => abrirFinalizacao(item)} disabled={processando !== null}><NotebookPen className="h-3.5 w-3.5" /> Finalizar espera</Button>
+              <Button variant="ghost" size="icon" aria-label={`Apagar registro de ${item.card_nome || "cliente"}`} onClick={() => setApagarAlvo(item)} disabled={processando === item.id}><Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" /></Button>
+            </>}
+          />)}
+        </WorkspacePanel>
       )}
 
       <ConfirmDialog

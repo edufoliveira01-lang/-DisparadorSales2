@@ -48,7 +48,9 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
 import { Badge } from "@/components/ui/Badge";
-import { CardItem } from "@/components/CardItem";
+import { DispatchCard } from "@/components/DispatchCard";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { WorkspacePanel } from "@/components/ui/Workspace";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatCard } from "@/components/ui/StatCard";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -759,7 +761,7 @@ export function Dashboard() {
         title="Dashboard"
         description="Acompanhe os compromissos e pendências do dia, revise os dados do Trello e envie mensagens com segurança."
         actions={<>
-          <Badge tone={whatsapp.status === "conectado" ? "success" : "warning"}>
+          <Badge tone={whatsapp.status === "conectado" ? "success" : "warning"} className="sm:hidden">
             {whatsapp.status === "conectado" ? (
               <><span className="h-2 w-2 rounded-full bg-accent-500" /> WhatsApp conectado</>
             ) : (
@@ -779,23 +781,6 @@ export function Dashboard() {
         </>}
       />
 
-      <section className="surface-panel p-4">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="font-semibold text-zinc-950 dark:text-white">Panorama geral</h2>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Situação atual das comunicações e dos últimos sete dias.</p>
-          </div>
-          <Button variant="ghost" size="sm" className="self-start" onClick={() => navigate("/pendentes")}>
-            Ver pendências <ArrowRight className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-        <div className="mt-4 grid grid-cols-2 gap-2 xl:grid-cols-4">
-          <PanoramaItem icon={<MessageSquareReply />} label="Aguardando resposta" value={visaoGeral.aguardandoResposta} tone="accent" />
-          <PanoramaItem icon={<CheckCheck />} label="Entregues, sem retorno" value={visaoGeral.entreguesAguardando} tone="warning" />
-          <PanoramaItem icon={<Send />} label="Envios em 7 dias" value={visaoGeral.enviosRecentes} tone="info" />
-          <PanoramaItem icon={<AlertTriangle />} label="Falhas em 7 dias" value={visaoGeral.falhasRecentes} tone="danger" />
-        </div>
-      </section>
 
       <div className="grid grid-cols-3 gap-2 md:gap-3">
         <StatCard layout="inline" icon={<Clock3 />} label="Pendentes" value={resumo.pendentes} tone="warning" helper="Ainda não enviados" />
@@ -803,7 +788,7 @@ export function Dashboard() {
         <StatCard layout="inline" icon={<CheckCheck />} label="Enviados" value={resumo.enviados} tone="info" helper="Envios concluídos" />
       </div>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <section className="grid gap-4 min-[1100px]:grid-cols-3" aria-label="Compromissos e lembretes">
         <PainelEventosDashboard
           titulo="Agenda de hoje"
           descricao={`${visaoGeral.hoje.length} ${visaoGeral.hoje.length === 1 ? "compromisso" : "compromissos"} para hoje`}
@@ -847,126 +832,49 @@ export function Dashboard() {
         />
       </section>
 
-      {erro ? (
-        <EmptyState
-          icon={Inbox}
-          title="Não foi possível carregar os cards"
-          description={erro}
-          action={
-            <Button variant="outline" onClick={() => navigate("/configuracoes")}>
-              Ir para Configurações
-            </Button>
-          }
-        />
-      ) : (
-        <>
-          <div className="surface-panel p-3 md:p-4">
-            <div className="grid grid-cols-2 gap-2 md:hidden">
-              <div className="relative col-span-2">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-                <Input
-                  placeholder="Buscar cliente, processo ou perito…"
-                  className="pl-9"
-                  value={busca}
-                  onChange={(e) => setBusca(e.target.value)}
-                />
-              </div>
-              <Select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value as FiltroStatus)} className="w-full">
-                <option value="todos">Todos os status</option>
-                <option value="nao_enviado">Pendentes</option>
-                <option value="enviado">Enviados</option>
-                <option value="falhou">Falhas</option>
-              </Select>
-              <Select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value as FiltroTipo)} className="w-full">
-                <option value="todos">Todos os tipos</option>
-                <option value="medica">Perícia médica</option>
-                <option value="social">Perícia social</option>
-                <option value="audiencia">Audiência</option>
-              </Select>
-              <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="col-span-2 w-full">
-                {templates.map((t) => <option key={t.id} value={t.id}>{t.nome}</option>)}
-              </Select>
-            </div>
-
-            <div className="hidden md:block">
-              <div className="grid gap-4 lg:grid-cols-[minmax(320px,1fr)_280px]">
-                <div>
-                  <p className="mb-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">Buscar cartões</p>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-                    <Input
-                      placeholder="Nome, processo ou profissional/perito…"
-                      className="pl-9"
-                      value={busca}
-                      onChange={(e) => setBusca(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <p className="mb-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">Template de envio</p>
-                  <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="w-full">
-                    {templates.map((t) => <option key={t.id} value={t.id}>{t.nome}</option>)}
-                  </Select>
-                </div>
-              </div>
-
-              <div className="mt-4 flex flex-col gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800 xl:flex-row xl:items-center">
-                <FiltroRapido
-                  label="Situação"
-                  options={STATUS_OPTIONS}
-                  value={filtroStatus}
-                  onChange={(value) => setFiltroStatus(value as FiltroStatus)}
-                />
-                <div className="hidden h-7 w-px bg-zinc-200 dark:bg-zinc-700 xl:block" />
-                <FiltroRapido
-                  label="Tipo"
-                  options={TIPO_OPTIONS}
-                  value={filtroTipo}
-                  onChange={(value) => setFiltroTipo(value as FiltroTipo)}
-                />
-              </div>
-            </div>
-            <div className="mt-3 flex flex-col gap-3 border-t border-zinc-100 pt-3 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                {cardsFiltrados.length} de {cards?.length ?? 0} card(s) exibido(s) · {selecionados.size} selecionado(s)
-              </p>
-              <div className="grid grid-cols-2 gap-2 sm:flex">
-              <Button
-                variant="outline"
-                onClick={toggleSelecionarTodos}
-                disabled={cardsFiltrados.length === 0 || Boolean(batchProgress)}
-              >
-                {cardsFiltrados.length > 0 && cardsFiltrados.every((c) => selecionados.has(c.cardId))
-                  ? "Desmarcar todos"
-                  : "Selecionar todos"}
-              </Button>
-              <Button className="min-w-0" onClick={abrirConfirmBatch} disabled={selecionados.size === 0 || Boolean(batchProgress)}>
-                <Send className="h-4 w-4" /> <span className="truncate">Enviar selecionados ({selecionados.size})</span>
-              </Button>
-              </div>
-            </div>
+      <details className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+        <summary className="cursor-pointer px-5 py-3 text-xs text-zinc-600 dark:text-zinc-300">Comunicações: {visaoGeral.aguardandoResposta} aguardando resposta · {visaoGeral.entreguesAguardando} entregues sem retorno · {visaoGeral.falhasRecentes} falhas em 7 dias</summary>
+      <section className="surface-panel p-4">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="font-semibold text-zinc-950 dark:text-white">Panorama geral</h2>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">Situação atual das comunicações e dos últimos sete dias.</p>
           </div>
+          <Button variant="ghost" size="sm" className="self-start" onClick={() => navigate("/pendentes")}>
+            Ver pendências <ArrowRight className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-2 xl:grid-cols-4">
+          <PanoramaItem icon={<MessageSquareReply />} label="Aguardando resposta" value={visaoGeral.aguardandoResposta} tone="accent" />
+          <PanoramaItem icon={<CheckCheck />} label="Entregues, sem retorno" value={visaoGeral.entreguesAguardando} tone="warning" />
+          <PanoramaItem icon={<Send />} label="Envios em 7 dias" value={visaoGeral.enviosRecentes} tone="info" />
+          <PanoramaItem icon={<AlertTriangle />} label="Falhas em 7 dias" value={visaoGeral.falhasRecentes} tone="danger" />
+        </div>
+      </section>
 
-          {cards === null ? (
-            <div className="space-y-3">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-40 w-full" />
-              ))}
+      </details>
+
+      {erro ? <EmptyState icon={Inbox} title="Não foi possível carregar os cards" description={erro} action={<Button variant="outline" onClick={() => navigate("/configuracoes")}>Ir para Configurações</Button>} /> : (
+        <WorkspacePanel title="Avisos aos clientes" description="Revise os compromissos e prepare a mensagem de cada cliente."
+          aside={<span className="text-xs text-zinc-500 dark:text-zinc-400">{cardsFiltrados.length} de {cards?.length ?? 0} cards</span>}
+          toolbar={<div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_190px_230px]">
+              <div className="relative sm:col-span-2 xl:col-span-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" /><Input aria-label="Buscar avisos" placeholder="Buscar cliente, processo ou perito…" className="pl-9" value={busca} onChange={e => setBusca(e.target.value)} /></div>
+              <Select aria-label="Tipo de compromisso" value={filtroTipo} onChange={e => setFiltroTipo(e.target.value as FiltroTipo)}><option value="todos">Todos os tipos</option><option value="medica">Perícia médica</option><option value="social">Perícia social</option><option value="audiencia">Audiência</option></Select>
+              <Select aria-label="Template de envio" value={templateId ?? ""} onChange={e => setTemplateId(Number(e.target.value))}>{templates.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}</Select>
             </div>
-          ) : cardsFiltrados.length === 0 ? (
-            <EmptyState
-              icon={Inbox}
-              title={cards.length === 0 ? "Nenhum card encontrado na lista" : "Nenhum card corresponde aos filtros"}
-              description={
-                cards.length === 0
-                  ? "Verifique se a lista configurada tem cards ou ajuste a lista em Configurações."
-                  : "Tente ajustar a busca ou os filtros aplicados."
-              }
-            />
-          ) : (
-            <div className="space-y-3">
+            <FiltroRapido label="Situação" options={STATUS_OPTIONS} value={filtroStatus} onChange={value => setFiltroStatus(value as FiltroStatus)} />
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+              <label className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300"><Checkbox checked={cardsFiltrados.length > 0 && cardsFiltrados.every(c => selecionados.has(c.cardId))} onChange={toggleSelecionarTodos} disabled={cardsFiltrados.length === 0 || Boolean(batchProgress)} />Selecionar todos <span className="text-zinc-400">· {selecionados.size} selecionados</span></label>
+              <Button size="sm" onClick={abrirConfirmBatch} disabled={selecionados.size === 0 || Boolean(batchProgress)}><Send className="h-3.5 w-3.5" /> Enviar selecionados ({selecionados.size})</Button>
+            </div>
+          </div>}
+          footer="Os avisos usam os dados do Trello e os contatos deste serviço. Confira as informações antes de confirmar o envio."
+        >
+          {cards === null ? <div className="grid gap-4 p-4 lg:grid-cols-2">{Array.from({length: 4}).map((_, index) => <Skeleton key={index} className="h-64" />)}</div> : cardsFiltrados.length === 0 ? <EmptyState icon={Inbox} title={cards.length === 0 ? "Nenhum card encontrado na lista" : "Nenhum card corresponde aos filtros"} description={cards.length === 0 ? "Confira a lista do Trello em Configurações." : "Tente ajustar a busca ou os filtros."} /> : (
+            <div className="grid items-stretch gap-4 p-4 min-[1100px]:grid-cols-2 sm:p-5">
               {cardsFiltrados.map((card) => (
-                <CardItem
+                <DispatchCard
                   key={card.cardId}
                   card={cardEfetivo(card)}
                   selecionado={selecionados.has(card.cardId)}
@@ -987,7 +895,7 @@ export function Dashboard() {
               ))}
             </div>
           )}
-        </>
+        </WorkspacePanel>
       )}
 
       <Modal

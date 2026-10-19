@@ -1,3 +1,4 @@
+import { WorkspacePanel, WorkspaceRow } from "@/components/ui/Workspace";
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -322,51 +323,20 @@ export function Logs() {
       ) : filtrados.length === 0 ? (
         <EmptyState icon={ScrollText} title={logs.length ? "Nenhum log encontrado" : "Nenhum evento registrado ainda"} description={logs.length ? "Tente alterar os filtros ou a busca." : "Os próximos alertas automáticos e erros aparecerão aqui com todos os detalhes."} />
       ) : (
-        <div className="space-y-3">
-          {logsPaginados.map((log) => {
+        <WorkspacePanel title="Ocorrências da operação" description="Eventos, alertas e resultados das integrações." aside={<span className="text-xs text-zinc-500 dark:text-zinc-400">{filtrados.length} registros</span>}
+          footer={<Pagination page={paginaAtual} totalItems={filtrados.length} pageSize={ITENS_POR_PAGINA} onPageChange={proximaPagina => { setPagina(proximaPagina); setAbertos(new Set()); window.scrollTo({top:0,behavior:"smooth"}); }} />}
+        >
+          {logsPaginados.map(log => {
             const detalhes = lerDetalhes(log);
             const nivelVisual = badgeNivel(log.nivel);
             const aberto = abertos.has(log.id);
-            const Icone = log.nivel === "erro" ? CircleX : log.nivel === "aviso" ? AlertTriangle : Info;
-            return (
-              <Card key={log.id} className={cn("overflow-hidden border-l-4", log.nivel === "erro" ? "border-l-red-500" : log.nivel === "aviso" ? "border-l-amber-500" : "border-l-blue-500")}>
-                <button type="button" onClick={() => alternar(log.id)} className="w-full p-4 text-left md:p-5" aria-expanded={aberto}>
-                  <div className="flex items-start gap-3">
-                    <span className={cn("mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl", log.nivel === "erro" ? "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400" : log.nivel === "aviso" ? "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400" : "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400")}>
-                      <Icone className="h-4 w-4" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge tone={nivelVisual.tone}>{nivelVisual.label}</Badge>
-                        <Badge>{log.categoria}</Badge>
-                        <span className="text-xs text-zinc-400">Registro #{log.id}</span>
-                      </div>
-                      <h2 className="mt-2 font-semibold text-zinc-900 dark:text-zinc-100">{log.titulo}</h2>
-                      {log.mensagem && <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{log.mensagem}</p>}
-                      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
-                        <span className="flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" /> {formatarDataHora(log.created_at)}</span>
-                        <span className="flex items-center gap-1.5">{log.origem === "usuario" ? <UserRound className="h-3.5 w-3.5" /> : log.origem === "automatico" ? <Bot className="h-3.5 w-3.5" /> : <Smartphone className="h-3.5 w-3.5" />} {rotuloOrigem(log, detalhes)}</span>
-                        {log.categoria === "notificacao" && <span className="flex items-center gap-1.5"><BellRing className="h-3.5 w-3.5" /> Notificação administrativa</span>}
-                      </div>
-                    </div>
-                    {aberto ? <ChevronUp className="h-5 w-5 shrink-0 text-zinc-400" /> : <ChevronDown className="h-5 w-5 shrink-0 text-zinc-400" />}
-                  </div>
-                </button>
-                {aberto && detalhes && <div className="px-4 pb-4 md:px-5 md:pb-5"><DetalhesNotificacao detalhes={detalhes} /></div>}
-              </Card>
-            );
+            return <WorkspaceRow key={log.id}
+              primary={<div><h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{log.titulo}</h3><p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">{formatarDataHora(log.created_at)} · {rotuloOrigem(log, detalhes)} · #{log.id}</p></div>}
+              secondary={<div><div className="mb-2 flex flex-wrap gap-1.5"><Badge tone={nivelVisual.tone}>{nivelVisual.label}</Badge><Badge>{log.categoria}</Badge></div>{log.mensagem && <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{log.mensagem}</p>}</div>}
+              actions={<Button variant="outline" size="sm" aria-expanded={aberto} onClick={() => alternar(log.id)}>{aberto ? "Recolher" : "Ver ocorrência"}</Button>}
+            >{aberto && <div className="space-y-3"><p className="text-xs text-zinc-500 dark:text-zinc-400">Evento: {log.evento} · Origem: {rotuloOrigem(log, detalhes)}</p>{detalhes && <DetalhesNotificacao detalhes={detalhes} />}</div>}</WorkspaceRow>;
           })}
-          <Pagination
-            page={paginaAtual}
-            totalItems={filtrados.length}
-            pageSize={ITENS_POR_PAGINA}
-            onPageChange={(proximaPagina) => {
-              setPagina(proximaPagina);
-              setAbertos(new Set());
-              window.scrollTo({ top: 0, behavior: "smooth" });
-            }}
-          />
-        </div>
+        </WorkspacePanel>
       )}
     </div>
   );
