@@ -375,11 +375,14 @@ export function PendentesResposta() {
             selection={<Checkbox aria-label={`Selecionar ${item.card_nome || "cliente"}`} checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />}
             primary={<div><h3 className="break-words text-[13px] font-medium text-zinc-900 dark:text-zinc-100">{item.card_nome || "Sem nome"}</h3><p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{formatPhoneDisplay(item.telefone)}</p></div>}
             secondary={<div className="space-y-2"><StatusBadge ack={item.ack} respostaStatus={item.status} /><div><AckIndicator ack={item.ack} /></div><p className="text-[11px] text-zinc-500 dark:text-zinc-400">Enviado em {formatarData(item)}</p></div>}
+            actionsClassName="whitespace-nowrap xl:max-w-none xl:flex-nowrap"
             actions={<>
               <Button size="sm" onClick={() => confirmar(item)} loading={processando === item.id && cobrando !== item.id} disabled={processando !== null}><CheckCircle2 className="h-3.5 w-3.5" /> Confirmar recebimento</Button>
               <Button variant="outline" size="sm" onClick={() => cobrar(item)} loading={cobrando === item.id} disabled={processando !== null}><MessageCircleQuestion className="h-3.5 w-3.5" /> {cobrando === item.id ? "Confirmando envio…" : "Cobrar resposta"}</Button>
-              <Button variant="ghost" size="sm" onClick={() => abrirFinalizacao(item)} disabled={processando !== null}><NotebookPen className="h-3.5 w-3.5" /> Finalizar espera</Button>
-              <Button variant="ghost" size="icon" aria-label={`Apagar registro de ${item.card_nome || "cliente"}`} onClick={() => setApagarAlvo(item)} disabled={processando === item.id}><Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" /></Button>
+              <div className="flex items-center gap-1">
+                <Button variant="ghost" size="sm" onClick={() => abrirFinalizacao(item)} disabled={processando !== null}><NotebookPen className="h-3.5 w-3.5" /> Finalizar espera</Button>
+                <Button variant="ghost" size="icon" className="h-[33px] w-[33px]" title="Apagar registro" aria-label={`Apagar registro de ${item.card_nome || "cliente"}`} onClick={() => setApagarAlvo(item)} disabled={processando === item.id}><Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" /></Button>
+              </div>
             </>}
           />)}
         </WorkspacePanel>

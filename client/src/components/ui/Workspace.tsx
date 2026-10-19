@@ -55,6 +55,7 @@ export function WorkspaceRow({
   primary,
   secondary,
   actions,
+  actionsClassName,
   children,
   selected,
 }: {
@@ -62,6 +63,7 @@ export function WorkspaceRow({
   primary: ReactNode;
   secondary?: ReactNode;
   actions?: ReactNode;
+  actionsClassName?: string;
   children?: ReactNode;
   selected?: boolean;
 }) {
@@ -79,7 +81,12 @@ export function WorkspaceRow({
           <div className="min-w-0 text-sm text-zinc-600 dark:text-zinc-300">
             {secondary}
           </div>
-          <div className="flex max-w-sm flex-wrap items-center gap-2">
+          <div
+            className={cn(
+              "flex max-w-sm flex-wrap items-center gap-2",
+              actionsClassName,
+            )}
+          >
             {actions}
           </div>
         </div>
