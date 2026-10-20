@@ -1,6 +1,10 @@
-import { NavLink } from "react-router-dom";
+import { useActiveService } from "@/context/ActiveServiceContext";
+import { NavLink, useNavigate } from "react-router-dom";
 import {
   CalendarDays,
+  Scale,
+  Search,
+  BriefcaseBusiness,
   LayoutDashboard,
   Users,
   MessageSquareText,
@@ -41,6 +45,8 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
   );
 
 export function Sidebar({ open, onNavigate }: SidebarProps) {
+  const active=useActiveService();
+  const navigate=useNavigate();
 
   return (
     <aside
@@ -57,13 +63,19 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
       </div>
       <div className="border-b border-zinc-200 px-4 py-5 dark:border-zinc-800">
         <label htmlFor="active-service" className="mb-2 block text-[9px] font-semibold uppercase tracking-[0.15em] text-zinc-500 dark:text-zinc-400">Serviço ativo</label>
-        <Select id="active-service" defaultValue="pericias" className="text-xs font-medium">
+        <Select id="active-service" value={active} onChange={e=>{navigate(e.target.value==="processos"?"/processos":"/");onNavigate();}} className="text-xs font-medium">
           <option value="pericias">Perícias e avisos</option>
-          <option value="processos" disabled>Andamentos e prazos · em breve</option>
+          <option value="processos">Processos e DJEN</option>
         </Select>
       </div>
 
       <nav aria-label="Menu principal" className="scrollbar-thin flex-1 space-y-1 overflow-y-auto px-3 py-5">
+        {active === "processos" ? <>
+          <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Acompanhamento processual</p>
+          {[{to:"/processos",label:"Publicações",icon:Scale,end:true},{to:"/processos/advogados",label:"Advogados",icon:BriefcaseBusiness},{to:"/processos/monitoramento",label:"Monitoramento DJEN",icon:Search}].map(({to,label,icon:Icon,end})=><NavLink key={to} to={to} end={end} onClick={onNavigate} className={linkClass}><Icon className="h-5 w-5" />{label}</NavLink>)}
+          <p className="px-3 pb-1 pt-5 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Compartilhado</p>
+          <NavLink to="/agenda" onClick={onNavigate} className={linkClass}><Users className="h-5 w-5" />Agenda de contatos</NavLink>
+        </> : <>
         <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Perícias e avisos</p>
         {itemsAntesTemplates.map(({ to, label, icon: Icon, end }) => (
           <NavLink key={to} to={to} end={end} onClick={onNavigate} className={linkClass}>
@@ -84,8 +96,9 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
           </NavLink>
         ))}
 
+        </>}
         <p className="px-3 pb-1 pt-5 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Sistema</p>
-        {itemsDepoisTemplates.slice(2).map(({ to, label, icon: Icon }) => (
+        {itemsDepoisTemplates.slice(active === "processos" ? 3 : 2).map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} onClick={onNavigate} className={linkClass}>
             <Icon className="h-5 w-5" />
             {label}
@@ -94,7 +107,7 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
       </nav>
 
       <div className="border-t border-zinc-200 px-5 py-4 text-xs text-zinc-400 dark:border-zinc-800">
-        <p className="mb-1 leading-relaxed text-zinc-500 dark:text-zinc-400">Controle de perícias e avisos</p>
+        <p className="mb-1 leading-relaxed text-zinc-500 dark:text-zinc-400">{active === "processos" ? "Publicações e acompanhamento DJEN" : "Controle de perícias e avisos"}</p>
         <p className="text-[10px]">DisparaZap · v{APP_VERSION}</p>
       </div>
     </aside>

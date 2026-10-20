@@ -1,3 +1,5 @@
+import { ActiveServiceProvider } from "@/context/ActiveServiceContext";
+import { Acompanhamento } from "@/pages/Acompanhamento";
 import { Route, Routes, useLocation } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { WhatsappProvider } from "@/context/WhatsappContext";
@@ -25,10 +27,12 @@ export default function App() {
   }
 
   return (
+    <ActiveServiceProvider>
     <WhatsappProvider>
       <BatchProgressProvider>
         <Layout>
           <Routes>
+            <Route path="/processos/*" element={<Acompanhamento />} />
             <Route path="/" element={<Dashboard />} />
             <Route path="/agenda" element={<Agenda />} />
             <Route path="/calendario" element={<Calendario />} />
@@ -46,6 +50,6 @@ export default function App() {
         </Layout>
       </BatchProgressProvider>
     </WhatsappProvider>
+    </ActiveServiceProvider>
   );
 }
-

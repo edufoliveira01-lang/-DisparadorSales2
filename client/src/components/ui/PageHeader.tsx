@@ -1,3 +1,4 @@
+import { useActiveService } from "@/context/ActiveServiceContext";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +17,7 @@ export function PageHeader({
   className,
   compact = false,
 }: PageHeaderProps) {
+  const active=useActiveService();
   const Heading = compact ? "h2" : "h1";
   return (
     <header
@@ -27,7 +29,7 @@ export function PageHeader({
       <div className="min-w-0">
         {!compact && (
           <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.14em] text-accent-600 dark:text-accent-300">
-            Perícias e avisos
+            {active === "processos" ? "Acompanhamento processual" : "Perícias e avisos"}
           </p>
         )}
         <Heading

@@ -3,6 +3,8 @@ import cors from "cors";
 import express from "express";
 import cookieParser from "cookie-parser";
 import http from "node:http";
+import { djenRouter } from "./routes/djen";
+import { iniciarMonitorDjen, pararMonitorDjen } from "./services/djen/sync";
 import { cardsRouter } from "./routes/cards";
 import { authRouter } from "./routes/auth";
 import { backupRouter } from "./routes/backup";
@@ -54,6 +56,7 @@ app.use("/api", (req, res, next) => {
 });
 
 app.use("/api", notifyDashboardChanges);
+app.use("/api/djen", djenRouter);
 app.use("/api/settings", settingsRouter);
 app.use("/api/backup", backupRouter);
 app.use("/api/trello", trelloRouter);
@@ -101,6 +104,7 @@ httpServer.listen(port, () => {
   } catch (error) {
     console.error("[Calendário] Falha ao reconciliar remarcações antigas:", error);
   }
+  iniciarMonitorDjen();
   if (whatsappManager.restoreSavedSession()) {
     console.log("[WhatsApp] Restaurando sessão salva automaticamente...");
   }
@@ -158,10 +162,10 @@ setInterval(podarPericiasAgendadas, INTERVALO_PODA_PERICIAS_MS);
 
 async function shutdown() {
   console.log("Encerrando servidor...");
+  pararMonitorDjen();
   await whatsappManager.shutdown().catch(() => {});
   process.exit(0);
 }
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
-

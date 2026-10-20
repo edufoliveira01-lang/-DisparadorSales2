@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
+import { runDjenMigrations } from "./djenMigrations";
 import { runMigrations } from "./migrations";
 
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.resolve(__dirname, "../../data");
@@ -13,5 +14,6 @@ const dbPath = path.join(dataDir, "disparador.sqlite3");
 export const db = new Database(dbPath);
 
 runMigrations(db);
+runDjenMigrations(db);
 
 export { dataDir };
