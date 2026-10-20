@@ -14,6 +14,8 @@ import {
   BriefcaseBusiness,
   Settings2,
   AlertCircle,
+  FolderOpen,
+  Sparkles,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay } from "@/lib/phone";
@@ -34,9 +36,10 @@ import { Pagination } from "@/components/ui/Pagination";
 const TIPOS = {
   sentenca: "Sentença",
   acordao: "Acórdão",
-  pericia: "Publicação de perícia",
+  pericia: "Perícia agendada",
   laudo_juntado: "Laudo pericial juntado",
 };
+const FILTROS = { ...TIPOS, outros: "Outros" };
 type Categoria = keyof typeof TIPOS;
 const RESULTADOS = {
   nao_identificado: "Resultado não identificado",
@@ -67,6 +70,20 @@ interface Publicacao {
   tipo_comunicacao: string;
   data_disponibilizacao: string;
   resumo: string;
+  ia_status: string;
+  ia_erro: string | null;
+  ia_em: string | null;
+  analise: {
+    categorias: Categoria[];
+    resumo: string;
+    justificativa: string;
+    alertas: string[];
+    agendamento: {
+      data: string | null;
+      horario: string | null;
+      local: string | null;
+    };
+  } | null;
   texto?: string;
   categorias: Categoria[];
   resultado: Resultado;
@@ -88,6 +105,7 @@ interface Publicacao {
     data_disponibilizacao: string;
     categorias_json: string;
     resultado: string;
+    resumo: string | null;
   }[];
   mensagens?: {
     id: number;
@@ -113,6 +131,12 @@ interface Busca {
   finished_at: string | null;
 }
 interface Status {
+  codex: {
+    executando: number | null;
+    pendentes: number;
+    falhas: number;
+    pausa: string | null;
+  };
   executando: number | null;
   proxima_execucao: string | null;
   ultimas: Busca[];
@@ -122,6 +146,7 @@ interface Status {
     automatico: number;
     intervalo_minutos: number;
     janela_inicial_dias: number;
+    ia_ativa: number;
   };
 }
 const hoje = () =>
@@ -190,7 +215,13 @@ export function Acompanhamento() {
     automatico: false,
     intervalo_minutos: 60,
     janela_inicial_dias: 7,
+    ia_ativa: false,
   });
+  const [conexaoCodex, setConexaoCodex] = useState<{
+    conectado: boolean;
+    mensagem: string;
+  } | null>(null);
+  const [revisaoAlterada, setRevisaoAlterada] = useState(false);
   const [detalhe, setDetalhe] = useState<Publicacao | null>(null),
     [contatos, setContatos] = useState<Contact[]>([]),
     [categorias, setCategorias] = useState<Categoria[]>([]),
@@ -237,7 +268,11 @@ export function Acompanhamento() {
   useEffect(() => {
     void carregarStatus()
       .then((s) =>
-        setConfig({ ...s.config, automatico: Boolean(s.config.automatico) }),
+        setConfig({
+          ...s.config,
+          automatico: Boolean(s.config.automatico),
+          ia_ativa: Boolean(s.config.ia_ativa),
+        }),
       )
       .catch((e) => setFalha(erro(e)));
   }, [carregarStatus]);
@@ -252,7 +287,15 @@ export function Acompanhamento() {
     return () => clearTimeout(timer);
   }, [buscaTexto]);
   useEffect(() => {
-    if (!status?.executando) return;
+    if (
+      !status?.executando &&
+      !(
+        status?.config.ia_ativa &&
+        (status.codex.executando || status.codex.pendentes) &&
+        !status.codex.pausa
+      )
+    )
+      return;
     const timer = setInterval(() => {
       void carregarStatus()
         .then(() => {
@@ -261,7 +304,34 @@ export function Acompanhamento() {
         .catch((e) => setFalha(erro(e)));
     }, 2500);
     return () => clearInterval(timer);
-  }, [status?.executando, carregarStatus, carregarLista, secao]);
+  }, [status, carregarStatus, carregarLista, secao]);
+  useEffect(() => {
+    if (
+      !detalhe ||
+      !["pendente", "analisando"].includes(detalhe.ia_status) ||
+      !status?.config.ia_ativa ||
+      status.codex.pausa
+    )
+      return;
+    let active = true;
+    const timer = setInterval(() => {
+      void api
+        .get<Publicacao>(`/djen/publicacoes/${detalhe.id}`)
+        .then((p) => {
+          if (!active) return;
+          setDetalhe(p);
+          if (!revisaoAlterada && p.ia_status === "concluida") {
+            setCategorias(p.categorias);
+            setResultado(p.resultado);
+          }
+        })
+        .catch(() => {});
+    }, 3000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [detalhe, status?.config.ia_ativa, status?.codex.pausa, revisaoAlterada]);
   const atualizarEmTempoReal = useCallback(() => {
     void carregarStatus().catch((e) => setFalha(erro(e)));
     if (secao === "publicacoes") void carregarLista();
@@ -315,6 +385,7 @@ export function Acompanhamento() {
       if (current !== detailSeq.current) return;
       setDetalhe(p);
       setContatos(c);
+      setRevisaoAlterada(false);
       setCategorias(p.categorias);
       setResultado(p.resultado);
       setProcesso({
@@ -443,13 +514,14 @@ export function Acompanhamento() {
       )}
       {secao === "publicacoes" && (
         <>
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
             {(
               [
                 { tipo: "sentenca", Icon: Scale },
                 { tipo: "acordao", Icon: Gavel },
                 { tipo: "pericia", Icon: Stethoscope },
                 { tipo: "laudo_juntado", Icon: FileCheck2 },
+                { tipo: "outros", Icon: FolderOpen },
               ] as const
             ).map(({ tipo, Icon }) => (
               <button
@@ -461,7 +533,7 @@ export function Acompanhamento() {
                 className={`rounded-xl border bg-white p-4 text-left dark:bg-zinc-900 ${filtro.categoria === tipo ? "border-accent-400" : "border-zinc-200 dark:border-zinc-800"}`}
               >
                 <span className="flex items-center justify-between gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-                  {TIPOS[tipo]}
+                  {FILTROS[tipo]}
                   <Icon className="h-4 w-4 text-accent-500" />
                 </span>
                 <strong className="mt-2 block text-[26px] font-semibold text-[#496a54] dark:text-zinc-100">
@@ -470,6 +542,15 @@ export function Acompanhamento() {
               </button>
             ))}
           </div>
+          <p className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+            <Sparkles className="h-3.5 w-3.5" />
+            {status?.codex.pausa
+              ? `Análise pausada: ${status.codex.pausa}`
+              : status?.config.ia_ativa
+                ? `Codex: ${status.codex.pendentes} na fila${status.codex.executando ? " · analisando publicação" : ""}.`
+                : "Análise pelo Codex desativada. Conecte e ative em Monitoramento DJEN."}{" "}
+            Publicações sem classificação ficam em Outros.
+          </p>
           <section className="surface-panel p-4">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <Input
@@ -489,7 +570,7 @@ export function Acompanhamento() {
                     {label}
                   </option>
                 ))}
-                <option value="outras">Outras · conferir inteiro teor</option>
+                <option value="outros">Outros</option>
               </Select>
               <Select
                 aria-label="Resultado da sentença"
@@ -583,7 +664,7 @@ export function Acompanhamento() {
                             </Badge>
                           ))
                         ) : (
-                          <Badge>Outra publicação</Badge>
+                          <Badge>Outros</Badge>
                         )}
                         {p.categorias.includes("sentenca") && (
                           <Badge
@@ -598,6 +679,15 @@ export function Acompanhamento() {
                         )}
                         {!p.lida && <Badge tone="accent">Não lida</Badge>}
                         {!p.revisada && <Badge tone="warning">A revisar</Badge>}
+                        {p.ia_status === "pendente" && (
+                          <Badge>Aguardando Codex</Badge>
+                        )}
+                        {p.ia_status === "analisando" && (
+                          <Badge tone="info">Codex analisando</Badge>
+                        )}
+                        {p.ia_status === "erro" && (
+                          <Badge tone="danger">Falha na análise</Badge>
+                        )}
                         {Boolean(p.cancelada) && (
                           <Badge tone="danger">Cancelada na origem</Badge>
                         )}
@@ -836,6 +926,121 @@ export function Acompanhamento() {
               As buscas automáticas revisitam os últimos dias para captar
               publicações disponibilizadas com atraso. Não há envio automático
               de mensagens nem criação de eventos no calendário de perícias.
+            </p>
+          </section>
+          <section className="surface-panel space-y-4 p-5">
+            <h2 className="flex items-center gap-2 text-sm font-semibold">
+              <Sparkles className="h-4 w-4" /> Classificação e resumos com Codex
+            </h2>
+            <p className="text-xs leading-relaxed text-zinc-500">
+              Use sua conta ChatGPT no Codex instalado no servidor. A análise lê
+              o inteiro teor capturado e não altera o controle de perícias.
+              Publicações inconclusivas ficam em Outros para conferência.
+            </p>
+            <p className="text-xs text-zinc-500">
+              Primeira conexão: execute{" "}
+              <code className="break-all">
+                npm run codex:login --prefix server
+              </code>{" "}
+              no servidor, com o mesmo usuário do PM2, e conclua o login no link
+              informado pelo Codex.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                size="sm"
+                variant="outline"
+                loading={salvando}
+                onClick={() =>
+                  void acao(async () => {
+                    setConexaoCodex(await api.get("/djen/codex/conexao"));
+                  })
+                }
+              >
+                Verificar conexão
+              </Button>
+              {conexaoCodex && (
+                <span className="text-xs text-zinc-500">
+                  {conexaoCodex.mensagem}
+                </span>
+              )}
+            </div>
+            <label className="flex items-center gap-2 text-xs">
+              <Checkbox
+                checked={config.ia_ativa}
+                onChange={(e) =>
+                  setConfig({ ...config, ia_ativa: e.target.checked })
+                }
+              />{" "}
+              Analisar automaticamente as publicações capturadas
+            </label>
+            <p className="text-xs text-zinc-500">
+              A primeira ativação analisa as publicações pendentes, incluindo as
+              antigas sem revisão. As revisões salvas são preservadas. O uso
+              está sujeito aos limites da conta Codex.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <Button
+                size="sm"
+                loading={salvando}
+                onClick={() =>
+                  void acao(async () => {
+                    await api.put("/djen/config", config);
+                    await carregarStatus();
+                    show("Configuração do Codex salva.", "success");
+                  })
+                }
+              >
+                Salvar configuração do Codex
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                loading={salvando}
+                disabled={
+                  !status?.config.ia_ativa || Boolean(status?.codex.executando)
+                }
+                onClick={() =>
+                  void acao(async () => {
+                    await api.post("/djen/codex/reanalisar", {});
+                    await carregarStatus();
+                    show(
+                      "Publicações sem revisão adicionadas à fila.",
+                      "success",
+                    );
+                  })
+                }
+              >
+                Reanalisar publicações sem revisão
+              </Button>
+              {status?.codex.pausa && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  loading={salvando}
+                  disabled={!status.config.ia_ativa}
+                  onClick={() =>
+                    void acao(async () => {
+                      await api.post("/djen/codex/retomar", {});
+                      await carregarStatus();
+                    })
+                  }
+                >
+                  Retomar análises
+                </Button>
+              )}
+            </div>
+            {status?.codex.pausa && (
+              <p
+                role="alert"
+                className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+              >
+                {status.codex.pausa}
+              </p>
+            )}
+            <p className="text-xs text-zinc-500">
+              {status?.codex.pendentes ?? 0} na fila ·{" "}
+              {status?.codex.falhas ?? 0} com falha
+              {status?.codex.executando ? " · análise em andamento" : ""}
             </p>
           </section>
           <section className="surface-panel p-5">
@@ -1107,6 +1312,103 @@ export function Acompanhamento() {
                 </p>
               </div>
             </section>
+            <section className="rounded-xl border border-accent-200 bg-accent-50/40 p-4 dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h3 className="flex items-center gap-2 text-sm font-semibold">
+                  <Sparkles className="h-4 w-4" /> Análise pelo Codex
+                </h3>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  loading={salvando}
+                  disabled={
+                    !status?.config.ia_ativa ||
+                    detalhe.ia_status === "analisando" ||
+                    (detalhe.ia_status === "pendente" && !status?.codex.pausa)
+                  }
+                  onClick={() =>
+                    void acao(async () => {
+                      await api.post(
+                        `/djen/publicacoes/${detalhe.id}/analise`,
+                        {},
+                      );
+                      const p = await api.get<Publicacao>(
+                        `/djen/publicacoes/${detalhe.id}`,
+                      );
+                      setDetalhe(p);
+                      if (!revisaoAlterada) {
+                        setCategorias(p.categorias);
+                        setResultado(p.resultado);
+                      }
+                      await carregarStatus();
+                      show("Publicação adicionada à fila do Codex.", "success");
+                    })
+                  }
+                >
+                  {detalhe.analise
+                    ? "Reanalisar com Codex"
+                    : "Analisar com Codex"}
+                </Button>
+              </div>
+              <p className="mt-2 text-xs text-zinc-500">
+                {detalhe.ia_status === "analisando"
+                  ? "Analisando publicação…"
+                  : detalhe.ia_status === "pendente"
+                    ? "Aguardando análise na fila."
+                    : detalhe.ia_status === "erro"
+                      ? detalhe.ia_erro
+                      : detalhe.analise
+                        ? "Análise concluída. Confira os fatos antes de avisar o cliente."
+                        : "Análise ainda não solicitada."}
+              </p>
+              {detalhe.analise && (
+                <div className="mt-3 space-y-3 text-xs leading-relaxed [overflow-wrap:anywhere]">
+                  <p className="font-medium">
+                    Sugestão do Codex:{" "}
+                    {detalhe.analise.categorias
+                      .map((c) => TIPOS[c])
+                      .join(" · ") || "Outros"}
+                  </p>
+                  <p className="whitespace-pre-wrap">
+                    {detalhe.analise.resumo}
+                  </p>
+                  <p className="text-zinc-500">
+                    {detalhe.analise.justificativa}
+                  </p>
+                  {Object.values(detalhe.analise.agendamento).some(Boolean) && (
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      {Object.entries({
+                        Data: detalhe.analise.agendamento.data,
+                        Horário: detalhe.analise.agendamento.horario,
+                        Local: detalhe.analise.agendamento.local,
+                      }).map(([label, value]) => (
+                        <p key={label}>
+                          <strong>{label}:</strong> {value || "Não informado"}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                  {detalhe.analise.alertas.map((a, i) => (
+                    <p
+                      key={i}
+                      className="rounded-lg bg-amber-50 p-2 text-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+                    >
+                      {a}
+                    </p>
+                  ))}
+                  {Boolean(detalhe.revisada) && (
+                    <p className="text-zinc-500">
+                      Sua revisão salva foi preservada. Para adotar outra
+                      classificação, ajuste e salve abaixo.
+                    </p>
+                  )}
+                  <p className="text-[11px] text-zinc-500">
+                    Resumo limitado a esta publicação; o histórico abaixo contém
+                    somente o que foi capturado pelo sistema.
+                  </p>
+                </div>
+              )}
+            </section>
             <details open>
               <summary className="cursor-pointer text-sm font-semibold">
                 Inteiro teor da publicação
@@ -1121,26 +1423,37 @@ export function Acompanhamento() {
                 Conferir classificação
               </h3>
               <p className="mt-1 text-xs text-zinc-500">
-                A triagem usa sinais explícitos do documento. Confira o inteiro
-                teor e confirme ou ajuste os tipos identificados.
+                Confira a sugestão do Codex e o inteiro teor antes de salvar a
+                revisão. Sem categoria aplicável, selecione Outros.
               </p>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 {Object.entries(TIPOS).map(([key, label]) => (
                   <label key={key} className="flex items-center gap-2 text-xs">
                     <Checkbox
                       checked={categorias.includes(key as Categoria)}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        setRevisaoAlterada(true);
                         setCategorias((c) =>
                           e.target.checked
                             ? [...c, key as Categoria]
                             : c.filter((v) => v !== key),
-                        )
-                      }
+                        );
+                      }}
                     />
                     {label}
                   </label>
                 ))}
               </div>
+              <label className="mt-3 flex items-center gap-2 text-xs">
+                <Checkbox
+                  checked={categorias.length === 0}
+                  onChange={() => {
+                    setCategorias([]);
+                    setRevisaoAlterada(true);
+                  }}
+                />
+                Outros
+              </label>
               {categorias.includes("sentenca") && (
                 <div className="mt-4">
                   <Label htmlFor="resultado-revisao">
@@ -1149,7 +1462,10 @@ export function Acompanhamento() {
                   <Select
                     id="resultado-revisao"
                     value={resultado}
-                    onChange={(e) => setResultado(e.target.value as Resultado)}
+                    onChange={(e) => {
+                      setRevisaoAlterada(true);
+                      setResultado(e.target.value as Resultado);
+                    }}
                   >
                     {Object.entries(RESULTADOS).map(([key, label]) => (
                       <option key={key} value={key}>
@@ -1186,6 +1502,7 @@ export function Acompanhamento() {
                         { categorias, resultado },
                       );
                       setDetalhe(p);
+                      setRevisaoAlterada(false);
                       void carregarLista();
                       show("Revisão salva.", "success");
                     })
@@ -1273,7 +1590,7 @@ export function Acompanhamento() {
             </section>
             <section>
               <h3 className="text-sm font-semibold">
-                Outras publicações capturadas deste processo
+                Histórico capturado deste processo
               </h3>
               <div className="mt-2 space-y-2">
                 {detalhe.relacionadas
@@ -1287,7 +1604,12 @@ export function Acompanhamento() {
                       {dia(p.data_disponibilizacao)} ·{" "}
                       {(JSON.parse(p.categorias_json) as Categoria[])
                         .map((c) => TIPOS[c])
-                        .join(", ") || "Outra publicação"}
+                        .join(", ") || "Outros"}
+                      {p.resumo && (
+                        <span className="mt-1 block text-zinc-500">
+                          {p.resumo}
+                        </span>
+                      )}
                     </button>
                   ))}
                 {(detalhe.relacionadas?.length || 0) <= 1 && (

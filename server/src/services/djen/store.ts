@@ -2,7 +2,6 @@ import { db } from "../../db";
 import { getContact } from "../contactsService";
 import { normalizeProcesso } from "../../utils/processo";
 import {
-  classificarPublicacao,
   CATEGORIAS_DJEN,
   RESULTADOS_DJEN,
   type CategoriaDjen,
@@ -88,6 +87,8 @@ export function configuracaoDjen() {
     automatico: number;
     intervalo_minutos: number;
     janela_inicial_dias: number;
+    ia_ativa: number;
+    ia_pausa: string | null;
   };
 }
 export function salvarConfiguracaoDjen(data: Record<string, unknown>) {
@@ -107,6 +108,10 @@ export function salvarConfiguracaoDjen(data: Record<string, unknown>) {
   db.prepare(
     "UPDATE djen_config SET automatico=?, intervalo_minutos=?, janela_inicial_dias=? WHERE id=1",
   ).run(data.automatico === true ? 1 : 0, intervalo, janela);
+  if (typeof data.ia_ativa === "boolean")
+    db.prepare("UPDATE djen_config SET ia_ativa=? WHERE id=1").run(
+      data.ia_ativa ? 1 : 0,
+    );
   return configuracaoDjen();
 }
 export function importarPublicacoes(
@@ -124,13 +129,23 @@ export function importarPublicacoes(
       db.prepare(
         "INSERT OR IGNORE INTO djen_processos(chave,numero) VALUES (?,?)",
       ).run(chave, p.processo);
-      const classificacao = classificarPublicacao(p.texto, p.tipo_documento);
+      // Até a análise do Codex, permanece em Outros; não há inferência por palavras-chave.
+      const classificacao = {
+        categorias: [],
+        evidencias: [],
+        resultado: "nao_identificado",
+      };
       const atual = db
         .prepare(
-          "SELECT id,texto,revisada FROM djen_publicacoes WHERE comunicacao_id=?",
+          "SELECT id,texto,tipo_documento,revisada FROM djen_publicacoes WHERE comunicacao_id=?",
         )
         .get(p.comunicacao_id) as
-        | { id: number; texto: string; revisada: number }
+        | {
+            id: number;
+            texto: string;
+            tipo_documento: string;
+            revisada: number;
+          }
         | undefined;
       const valores = [
         p.hash || null,
@@ -152,15 +167,17 @@ export function importarPublicacoes(
       ];
       let id = atual?.id;
       if (atual) {
-        const preservar = atual.revisada && atual.texto === p.texto;
+        const preservar =
+          atual.texto === p.texto && atual.tipo_documento === p.tipo_documento;
         db.prepare(
           `UPDATE djen_publicacoes SET hash=?,processo_chave=?,tribunal=?,orgao=?,classe=?,tipo_documento=?,tipo_comunicacao=?,data_disponibilizacao=?,texto=?,link=?,destinatarios_json=?,advogados_json=?,
-          categorias_json=CASE WHEN ? THEN categorias_json ELSE ? END, evidencias_json=?, resultado=CASE WHEN ? THEN resultado ELSE ? END,
+          categorias_json=CASE WHEN ? THEN categorias_json ELSE ? END, evidencias_json=CASE WHEN ? THEN evidencias_json ELSE ? END, resultado=CASE WHEN ? THEN resultado ELSE ? END,
           cancelada=?, revisada=CASE WHEN ? THEN revisada ELSE 0 END, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
         ).run(
           ...valores.slice(0, 12),
           preservar ? 1 : 0,
           valores[12],
+          preservar ? 1 : 0,
           valores[13],
           preservar ? 1 : 0,
           valores[14],
@@ -168,6 +185,10 @@ export function importarPublicacoes(
           preservar ? 1 : 0,
           id,
         );
+        if (!preservar)
+          db.prepare(
+            "UPDATE djen_publicacoes SET ia_status='pendente',ia_json=NULL,ia_erro=NULL,ia_em=NULL WHERE id=?",
+          ).run(id);
       } else {
         id = Number(
           db
@@ -226,12 +247,15 @@ export function apresentarPublicacao(p: PublicacaoRow, integral = false) {
     evidencias_json,
     destinatarios_json,
     advogados_json,
+    ia_json,
     ...dados
   } = p;
+  const analise = ia_json ? JSON.parse(String(ia_json)) : null;
   return {
     ...dados,
+    analise,
     texto: integral ? texto : undefined,
-    resumo: texto.slice(0, 320),
+    resumo: analise?.resumo || texto.slice(0, 320),
     categorias: JSON.parse(categorias_json),
     evidencias: JSON.parse(evidencias_json),
     advogados,
@@ -258,7 +282,8 @@ export function listarPublicacoes(filtro: Record<string, string>) {
     );
     values.push(filtro.categoria);
   }
-  if (filtro.categoria === "outras") where.push("p.categorias_json='[]'");
+  if (["outras", "outros"].includes(filtro.categoria))
+    where.push("p.categorias_json='[]'");
   if (
     filtro.resultado &&
     RESULTADOS_DJEN.includes(
@@ -326,7 +351,7 @@ export function detalhesPublicacao(id: number) {
   if (!p) throw new DjenInputError("Publicação não encontrada.");
   const relacionadas = db
     .prepare(
-      "SELECT id,data_disponibilizacao,categorias_json,resultado FROM djen_publicacoes WHERE processo_chave=? ORDER BY data_disponibilizacao DESC,id DESC LIMIT 50",
+      "SELECT id,data_disponibilizacao,categorias_json,resultado,json_extract(ia_json,'$.resumo') AS resumo FROM djen_publicacoes WHERE processo_chave=? ORDER BY data_disponibilizacao DESC,id DESC LIMIT 50",
     )
     .all(p.processo_chave);
   const mensagens = db
@@ -349,7 +374,7 @@ export function revisarPublicacao(id: number, data: Record<string, unknown>) {
   )
     throw new DjenInputError("Classificação inválida.");
   db.prepare(
-    "UPDATE djen_publicacoes SET categorias_json=?,resultado=?,revisada=1,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+    "UPDATE djen_publicacoes SET categorias_json=?,resultado=?,revisada=1,ia_status=CASE WHEN ia_status='pendente' THEN 'nao_solicitada' ELSE ia_status END,updated_at=CURRENT_TIMESTAMP WHERE id=?",
   ).run(
     JSON.stringify([...new Set(categorias)]),
     categorias.includes("sentenca") ? data.resultado : "nao_identificado",
@@ -391,6 +416,13 @@ export function resumoDjen() {
   );
   return {
     ...categorias,
+    outros: (
+      db
+        .prepare(
+          "SELECT count(*) AS total FROM djen_publicacoes WHERE cancelada=0 AND categorias_json='[]'",
+        )
+        .get() as { total: number }
+    ).total,
     total: (
       db.prepare("SELECT count(*) AS total FROM djen_publicacoes").get() as {
         total: number;

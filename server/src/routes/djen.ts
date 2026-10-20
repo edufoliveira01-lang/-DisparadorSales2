@@ -15,6 +15,12 @@ import {
 import { iniciarBusca, statusBuscas } from "../services/djen/sync";
 import { enviarMensagemDjen } from "../services/djen/messages";
 import { emitEvent } from "../websocket";
+import { verificarConexaoCodex } from "../services/djen/codexRunner";
+import {
+  statusAnalisesCodex,
+  enfileirarAnaliseCodex,
+  processarFilaCodex,
+} from "../services/djen/codexAnalysis";
 export const djenRouter = Router();
 const wrap =
   (
@@ -47,6 +53,7 @@ djenRouter.get(
       resumo: resumoDjen(),
       config: configuracaoDjen(),
       advogados: listarAdvogados(),
+      codex: statusAnalisesCodex(),
     }),
   ),
 );
@@ -56,7 +63,34 @@ djenRouter.put(
     const config = salvarConfiguracaoDjen(req.body);
     changed();
     res.json(config);
+    void processarFilaCodex();
   }),
+);
+djenRouter.get(
+  "/codex/conexao",
+  wrap(async (_req, res) => res.json(await verificarConexaoCodex())),
+);
+djenRouter.post(
+  "/codex/reanalisar",
+  wrap((_req, res) => res.status(202).json(enfileirarAnaliseCodex())),
+);
+djenRouter.post(
+  "/codex/retomar",
+  wrap((_req, res) => {
+    db.prepare("UPDATE djen_config SET ia_pausa=NULL WHERE id=1").run();
+    db.prepare(
+      "UPDATE djen_publicacoes SET ia_status='pendente',ia_erro=NULL WHERE ia_status='erro' AND cancelada=0 AND revisada=0",
+    ).run();
+    void processarFilaCodex();
+    changed();
+    res.status(202).json({ ok: true });
+  }),
+);
+djenRouter.post(
+  "/publicacoes/:id/analise",
+  wrap((req, res) =>
+    res.status(202).json(enfileirarAnaliseCodex(id(req.params.id))),
+  ),
 );
 djenRouter.get(
   "/advogados",

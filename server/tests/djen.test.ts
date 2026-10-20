@@ -7,10 +7,7 @@ const wa = vi.hoisted(() => ({
 vi.mock("../src/services/whatsappService", () => ({ whatsappManager: wa }));
 import { db } from "../src/db";
 import { runDjenMigrations } from "../src/db/djenMigrations";
-import {
-  classificarPublicacao,
-  textoDaPublicacao,
-} from "../src/services/djen/classifier";
+import { textoDaPublicacao } from "../src/services/djen/classifier";
 import {
   consultarDjen,
   normalizarPublicacao,
@@ -81,7 +78,7 @@ const legadas = () =>
   );
 beforeEach(() => {
   db.exec(
-    "DELETE FROM djen_mensagens;DELETE FROM djen_publicacao_advogados;DELETE FROM djen_publicacoes;DELETE FROM djen_processos;DELETE FROM djen_advogados;DELETE FROM djen_buscas;UPDATE djen_config SET automatico=0;",
+    "DELETE FROM djen_mensagens;DELETE FROM djen_publicacao_advogados;DELETE FROM djen_publicacoes;DELETE FROM djen_processos;DELETE FROM djen_advogados;DELETE FROM djen_buscas;UPDATE djen_config SET automatico=0,ia_ativa=0,ia_pausa=NULL;",
   );
   vi.clearAllMocks();
   wa.isReady.mockReturnValue(true);
@@ -96,59 +93,7 @@ afterEach(() => {
   }
   pararMonitorDjen();
 });
-describe("triagem DJEN", () => {
-  it.each([
-    ["SENTENÇA\nJulgo procedente o pedido.", "sentenca", "procedente"],
-    ["Julgo improcedentes os pedidos.", "sentenca", "improcedente"],
-    ["Julgo parcialmente procedente a ação.", "sentenca", "parcial"],
-    ["Julgo procedentes em parte os pedidos.", "sentenca", "parcial"],
-    ["Julgo totalmente procedente o pedido.", "sentenca", "procedente"],
-    ["ACÓRDÃO\nAcordam os desembargadores.", "acordao", "nao_identificado"],
-    [
-      "Fica designada perícia médica para o dia 25/10/2026.",
-      "pericia",
-      "nao_identificado",
-    ],
-    [
-      "O laudo pericial foi juntado aos autos.",
-      "laudo_juntado",
-      "nao_identificado",
-    ],
-    [
-      "Laudo da perícia juntado no evento 42.",
-      "laudo_juntado",
-      "nao_identificado",
-    ],
-  ])("identifica %s", (texto, tipo, resultado) => {
-    const c = classificarPublicacao(texto);
-    expect(c.categorias).toContain(tipo);
-    expect(c.resultado).toBe(resultado);
-    expect(c.evidencias.length).toBeGreaterThan(0);
-  });
-  it.each([
-    "Após a juntada do laudo pericial, dê-se vista.",
-    "Aguarde-se a juntada do laudo pericial.",
-    "Não houve juntada de laudo pericial.",
-    "O perito deverá apresentar laudo pericial em 30 dias.",
-  ])("não confunde previsão futura ou negativa: %s", (texto) => {
-    expect(classificarPublicacao(texto).categorias).not.toContain(
-      "laudo_juntado",
-    );
-  });
-  it("não transforma citação de sentença anterior em novo julgamento", () => {
-    expect(
-      classificarPublicacao(
-        "A parte recorreu da sentença anterior e citou acórdão do STJ.",
-      ).categorias,
-    ).toEqual([]);
-  });
-  it("não escolhe resultado favorável entre dispositivos conflitantes", () => {
-    expect(
-      classificarPublicacao(
-        "SENTENÇA\nJulgo procedente o pedido A. Julgo improcedente o pedido B.",
-      ).resultado,
-    ).toBe("nao_identificado");
-  });
+describe("texto DJEN", () => {
   it("extrai apenas texto seguro", () => {
     expect(
       textoDaPublicacao(
@@ -335,7 +280,8 @@ describe("dados independentes", () => {
       "oab",
     );
     expect(publicacaoPorId(id)?.revisada).toBe(0);
-    expect(publicacaoPorId(id)?.resultado).toBe("improcedente");
+    expect(publicacaoPorId(id)?.resultado).toBe("nao_identificado");
+    expect(publicacaoPorId(id)?.ia_status).toBe("pendente");
   });
   it("perícia e laudo no DJEN não criam compromissos ou avisos", () => {
     const before = legadas();
@@ -352,8 +298,9 @@ describe("dados independentes", () => {
       "oab",
     );
     expect(legadas()).toEqual(before);
-    expect(listarPublicacoes({ categoria: "pericia" }).total).toBe(1);
-    expect(listarPublicacoes({ categoria: "laudo_juntado" }).total).toBe(1);
+    expect(listarPublicacoes({ categoria: "pericia" }).total).toBe(0);
+    expect(listarPublicacoes({ categoria: "laudo_juntado" }).total).toBe(0);
+    expect(listarPublicacoes({ categoria: "outros" }).total).toBe(1);
   });
   it("migrações são repetíveis e não ativam captura", () => {
     const a = advogado();

@@ -58,4 +58,21 @@ export function runDjenMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_djen_mensagens_publicacao ON djen_mensagens(publicacao_id, id DESC);
   `);
+  const columns = db.prepare("PRAGMA table_info(djen_publicacoes)").all() as {
+    name: string;
+  }[];
+  if (!columns.some((c) => c.name === "ia_status")) {
+    db.transaction(() => {
+      db.exec(`
+        ALTER TABLE djen_publicacoes ADD COLUMN ia_status TEXT NOT NULL DEFAULT 'pendente';
+        ALTER TABLE djen_publicacoes ADD COLUMN ia_json TEXT;
+        ALTER TABLE djen_publicacoes ADD COLUMN ia_erro TEXT;
+        ALTER TABLE djen_publicacoes ADD COLUMN ia_em TEXT;
+        ALTER TABLE djen_config ADD COLUMN ia_ativa INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE djen_config ADD COLUMN ia_pausa TEXT;
+        UPDATE djen_publicacoes SET categorias_json='[]', evidencias_json='[]', resultado='nao_identificado' WHERE revisada=0;
+        UPDATE djen_publicacoes SET ia_status='nao_solicitada' WHERE revisada=1;
+      `);
+    })();
+  }
 }

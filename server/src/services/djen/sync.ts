@@ -1,6 +1,11 @@
 import { db } from "../../db";
 import { emitEvent } from "../../websocket";
 import {
+  iniciarMonitorCodex,
+  pararMonitorCodex,
+  processarFilaCodex,
+} from "./codexAnalysis";
+import {
   consultarDjen,
   DjenApiError,
   dataValida,
@@ -78,6 +83,7 @@ export function iniciarBusca(
   ).finally(() => {
     if (atual?.id === id) atual = null;
     emitEvent("djen:changed", {});
+    void processarFilaCodex();
   });
   return id;
 }
@@ -191,6 +197,7 @@ async function executarBusca(
   }
 }
 export function iniciarMonitorDjen(): void {
+  iniciarMonitorCodex();
   db.prepare(
     "UPDATE djen_buscas SET status='interrompida',finished_at=CURRENT_TIMESTAMP,erros_json=? WHERE status='executando'",
   ).run(
@@ -232,6 +239,7 @@ export function iniciarMonitorDjen(): void {
   timer.unref();
 }
 export function pararMonitorDjen(): void {
+  pararMonitorCodex();
   if (timer) clearInterval(timer);
   timer = null;
   atual?.controller.abort();
