@@ -139,13 +139,22 @@ export async function verificarConexaoCodex() {
   try {
     await fs.mkdir(codexHome(), { recursive: true, mode: 0o700 });
     await fs.access(cli);
+    const version = await executarCliCodex(
+      ["--version"],
+      os.tmpdir(),
+      "",
+      undefined,
+      15000,
+    );
+    if (version.code !== 0 || !/codex-cli\s+\S+/.test(version.stdout))
+      return {
+        instalado: false,
+        conectado: false,
+        mensagem:
+          "Executável do Codex indisponível. Execute npm run codex:install --prefix server no servidor e depois conecte a conta.",
+      };
     const r = await executarCliCodex(
-      [
-        "-c",
-        'cli_auth_credentials_store="file"',
-        "login",
-        "status",
-      ],
+      ["-c", 'cli_auth_credentials_store="file"', "login", "status"],
       os.tmpdir(),
       "",
       undefined,

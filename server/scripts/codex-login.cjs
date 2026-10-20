@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const { spawn } = require("node:child_process");
+if (!require("./ensure-codex.cjs").ensureCodex()) process.exit(1);
 require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
 const authDir = path.resolve(
   process.env.DJEN_CODEX_HOME || path.join(os.homedir(), ".disparador-codex"),

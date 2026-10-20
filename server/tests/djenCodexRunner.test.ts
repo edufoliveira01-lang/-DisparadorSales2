@@ -133,7 +133,8 @@ describe("execução restrita do Codex CLI", () => {
         jobs.push({ args, cwd: options.cwd });
         c.stdin.on("finish", () => {
           void (async () => {
-            if (args.includes("status"))
+            if (args.includes("--version")) c.stdout.write("codex-cli 0.163.0");
+            else if (args.includes("status"))
               c.stderr.write("Logged in using ChatGPT");
             else {
               const output = args[args.indexOf("-o") + 1];
