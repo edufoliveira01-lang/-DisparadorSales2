@@ -1,3 +1,10 @@
+import {
+  WorkflowInputError,
+  salvarPrazo,
+  excluirPrazo,
+  adicionarDocumento,
+  excluirDocumento,
+} from "../services/djen/workflow";
 import { Router } from "express";
 import { db } from "../db";
 import {
@@ -11,6 +18,7 @@ import {
   salvarProcessoDaPublicacao,
   resumoDjen,
   DjenInputError,
+  listarAndamentosDoProcesso,
 } from "../services/djen/store";
 import { iniciarBusca, statusBuscas } from "../services/djen/sync";
 import { enviarMensagemDjen } from "../services/djen/messages";
@@ -33,7 +41,10 @@ const wrap =
     Promise.resolve()
       .then(() => fn(req, res))
       .catch((error) => {
-        if (error instanceof DjenInputError)
+        if (
+          error instanceof DjenInputError ||
+          error instanceof WorkflowInputError
+        )
           res.status(400).json({ error: error.message });
         else next(error);
       });
@@ -68,7 +79,7 @@ djenRouter.put(
 );
 djenRouter.get(
   "/codex/conexao",
-  wrap(async (_req, res) => res.json(await verificarConexaoCodex())),
+  wrap(async (_req, res) => res.json(await verificarConexaoCodex(true))),
 );
 djenRouter.post(
   "/codex/reanalisar",
@@ -146,6 +157,11 @@ djenRouter.get(
     ])
       if (typeof req.query[key] === "string")
         filtro[key] = req.query[key] as string;
+      else if (
+        Array.isArray(req.query[key]) &&
+        (req.query[key] as unknown[]).every((v) => typeof v === "string")
+      )
+        filtro[key] = (req.query[key] as string[]).join(",");
     res.json(listarPublicacoes(filtro));
   }),
 );
@@ -183,5 +199,90 @@ djenRouter.post(
     const mensagem = await enviarMensagemDjen(id(req.params.id), req.body);
     changed();
     res.json({ mensagem });
+  }),
+);
+
+djenRouter.get(
+  "/publicacoes/:id/andamentos",
+  wrap((req, res) =>
+    res.json(
+      listarAndamentosDoProcesso(
+        id(req.params.id),
+        Number(req.query.pagina || 1),
+      ),
+    ),
+  ),
+);
+djenRouter.post(
+  "/publicacoes/:id/prazos",
+  wrap((req, res) => {
+    const n = id(req.params.id);
+    salvarPrazo(n, req.body);
+    changed();
+    res.status(201).json(detalhesPublicacao(n));
+  }),
+);
+djenRouter.put(
+  "/publicacoes/:id/prazos/:prazoId",
+  wrap((req, res) => {
+    const n = id(req.params.id);
+    salvarPrazo(n, req.body, id(req.params.prazoId));
+    changed();
+    res.json(detalhesPublicacao(n));
+  }),
+);
+djenRouter.delete(
+  "/publicacoes/:id/prazos/:prazoId",
+  wrap((req, res) => {
+    const n = id(req.params.id);
+    excluirPrazo(n, id(req.params.prazoId));
+    changed();
+    res.json(detalhesPublicacao(n));
+  }),
+);
+djenRouter.post(
+  "/publicacoes/:id/documentos",
+  wrap((req, res) => {
+    const n = id(req.params.id);
+    adicionarDocumento(n, req.body);
+    changed();
+    res.status(201).json(detalhesPublicacao(n));
+  }),
+);
+djenRouter.delete(
+  "/publicacoes/:id/documentos/:documentoId",
+  wrap((req, res) => {
+    const n = id(req.params.id);
+    excluirDocumento(n, id(req.params.documentoId));
+    changed();
+    res.json(detalhesPublicacao(n));
+  }),
+);
+djenRouter.get(
+  "/publicacoes/:id/documento",
+  wrap((req, res) => {
+    const p = detalhesPublicacao(id(req.params.id));
+    const esc = (s: unknown) =>
+      String(s ?? "").replace(
+        /[&<>"']/g,
+        (c) =>
+          ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;",
+          })[c]!,
+      );
+    res
+      .type("html")
+      .set(
+        "Content-Security-Policy",
+        "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+      )
+      .set("X-Content-Type-Options", "nosniff")
+      .send(
+        `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Publicação DJEN — ${esc(p.processo)}</title><style>body{max-width:900px;margin:40px auto;padding:20px;font:16px/1.7 system-ui}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}</style><h1>Publicação DJEN</h1><p>Processo: ${esc(p.processo)} · ${esc(p.tribunal)} · ${esc(p.data_disponibilizacao)}</p><p>${esc(p.orgao)} · ${esc(p.tipo_documento)}</p><pre>${esc(p.texto)}</pre><p>Texto capturado da publicação. Documentos dos autos devem ser consultados no tribunal.</p></html>`,
+      );
   }),
 );

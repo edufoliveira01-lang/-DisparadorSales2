@@ -1,22 +1,39 @@
 import { db } from "../../db";
 import { emitEvent } from "../../websocket";
-import { analisarComCodex } from "./codexRunner";
+import { analisarComCodex, ErroPublicacaoCodex } from "./codexRunner";
 import { configuracaoDjen, DjenInputError, publicacaoPorId } from "./store";
-import type { AnaliseCodex } from "./classifier";
+import {
+  ErroAnaliseCodex,
+  VERSAO_CLASSIFICADOR,
+  type AnaliseCodex,
+} from "./classifier";
+import { registrarHistoricoDjen } from "./history";
 let timer: ReturnType<typeof setInterval> | null = null;
-let atual: { id: number; controller: AbortController } | null = null;
+const atuais = new Map<number, AbortController>();
 let encerrando = false;
 const changed = () => emitEvent("djen:changed", {});
 export function statusAnalisesCodex() {
+  const config = configuracaoDjen();
+  const pendentes = (
+    db
+      .prepare(
+        "SELECT count(*) AS n FROM djen_publicacoes WHERE ia_status='pendente' AND cancelada=0",
+      )
+      .get() as { n: number }
+  ).n;
+  const media = (
+    db
+      .prepare(
+        "SELECT AVG(ia_duracao_ms) AS media FROM (SELECT ia_duracao_ms FROM djen_publicacoes WHERE ia_status='concluida' AND ia_duracao_ms IS NOT NULL ORDER BY ia_em DESC,id DESC LIMIT 50)",
+      )
+      .get() as { media: number | null }
+  ).media;
+  const ids = [...atuais.keys()];
   return {
-    executando: atual?.id || null,
-    pendentes: (
-      db
-        .prepare(
-          "SELECT count(*) AS n FROM djen_publicacoes WHERE ia_status='pendente' AND cancelada=0",
-        )
-        .get() as { n: number }
-    ).n,
+    executando: ids[0] || null,
+    executando_ids: ids,
+    simultaneas: config.ia_paralelismo,
+    pendentes,
     falhas: (
       db
         .prepare(
@@ -24,10 +41,15 @@ export function statusAnalisesCodex() {
         )
         .get() as { n: number }
     ).n,
-    pausa: configuracaoDjen().ia_pausa,
+    pausa: config.ia_pausa,
+    media_segundos: media ? Math.round(media / 1000) : null,
+    estimativa_segundos:
+      media && config.ia_ativa && !config.ia_pausa
+        ? Math.ceil((pendentes + ids.length) / config.ia_paralelismo) *
+          Math.round(media / 1000)
+        : null,
   };
 }
-/** Compare-and-set evita sobrescrever captura nova ou revisão humana feita durante a análise. */
 export function salvarAnaliseCodex(
   id: number,
   texto: string,
@@ -42,23 +64,38 @@ export function salvarAnaliseCodex(
     p.cancelada
   )
     return false;
-  db.prepare(
-    `UPDATE djen_publicacoes SET ia_status='concluida',ia_json=?,ia_erro=NULL,ia_em=CURRENT_TIMESTAMP,
-    categorias_json=CASE WHEN revisada=0 THEN ? ELSE categorias_json END,
-    evidencias_json=CASE WHEN revisada=0 THEN ? ELSE evidencias_json END,
-    resultado=CASE WHEN revisada=0 THEN ? ELSE resultado END, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
-  ).run(
-    JSON.stringify(analise),
-    JSON.stringify(analise.categorias),
-    JSON.stringify(analise.evidencias),
-    analise.resultado,
-    id,
-  );
+  db.transaction(() => {
+    db.prepare(
+      `UPDATE djen_publicacoes SET ia_status='concluida',ia_json=?,ia_erro=NULL,ia_em=CURRENT_TIMESTAMP,ia_versao=?,
+      categorias_json=CASE WHEN revisada=0 THEN ? ELSE categorias_json END,
+      evidencias_json=CASE WHEN revisada=0 THEN ? ELSE evidencias_json END,
+      situacao=CASE WHEN revisada=0 THEN ? ELSE situacao END,
+      resultado=CASE WHEN revisada=0 THEN ? ELSE resultado END,updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+    ).run(
+      JSON.stringify(analise),
+      VERSAO_CLASSIFICADOR,
+      JSON.stringify(analise.categorias),
+      JSON.stringify(analise.evidencias),
+      analise.situacao || "",
+      analise.resultado,
+      id,
+    );
+    registrarHistoricoDjen(
+      id,
+      "analise",
+      "Análise do Codex concluída. Revisões humanas são preservadas.",
+      {
+        categorias: analise.categorias,
+        resultado: analise.resultado,
+        situacao: analise.situacao || "",
+      },
+    );
+  })();
   return true;
 }
 export function enfileirarAnaliseCodex(id?: number) {
-  if (atual && (id === atual.id || id === undefined))
-    throw new DjenInputError("Aguarde a análise atual antes de reanalisar.");
+  if (id !== undefined && atuais.has(id))
+    throw new DjenInputError("Esta publicação já está em análise.");
   if (id !== undefined) {
     const p = publicacaoPorId(id);
     if (!p || p.cancelada)
@@ -66,56 +103,86 @@ export function enfileirarAnaliseCodex(id?: number) {
     db.prepare(
       "UPDATE djen_publicacoes SET ia_status='pendente',ia_erro=NULL WHERE id=?",
     ).run(id);
-  } else {
+  } else
     db.prepare(
-      "UPDATE djen_publicacoes SET ia_status='pendente',ia_erro=NULL WHERE revisada=0 AND cancelada=0",
+      "UPDATE djen_publicacoes SET ia_status='pendente',ia_erro=NULL WHERE revisada=0 AND cancelada=0 AND ia_status<>'analisando'",
     ).run();
-  }
   db.prepare("UPDATE djen_config SET ia_pausa=NULL WHERE id=1").run();
   changed();
   void processarFilaCodex();
   return { ok: true };
 }
-export async function processarFilaCodex() {
-  const config = configuracaoDjen();
-  if (encerrando || atual || !config.ia_ativa || config.ia_pausa) return;
-  // Revisadas entram somente por solicitação explícita; o histórico da sugestão é preservado.
-  const p = db
-    .prepare(
-      "SELECT id,texto,tipo_documento FROM djen_publicacoes WHERE ia_status='pendente' AND cancelada=0 ORDER BY revisada ASC,id ASC LIMIT 1",
-    )
-    .get() as { id: number; texto: string; tipo_documento: string } | undefined;
-  if (!p) return;
-  const controller = new AbortController();
-  atual = { id: p.id, controller };
-  db.prepare(
-    "UPDATE djen_publicacoes SET ia_status='analisando',ia_erro=NULL WHERE id=?",
-  ).run(p.id);
-  changed();
+interface Tarefa {
+  id: number;
+  texto: string;
+  tipo_documento: string;
+  classe: string;
+  processo: string;
+  tribunal: string;
+}
+async function executar(p: Tarefa, controller: AbortController) {
+  const inicio = Date.now();
   try {
     const analise = await analisarComCodex(
       p.texto,
       p.tipo_documento,
       controller.signal,
+      { classe: p.classe, processo: p.processo, tribunal: p.tribunal },
     );
-    salvarAnaliseCodex(p.id, p.texto, p.tipo_documento, analise);
+    if (salvarAnaliseCodex(p.id, p.texto, p.tipo_documento, analise))
+      db.prepare("UPDATE djen_publicacoes SET ia_duracao_ms=? WHERE id=?").run(
+        Date.now() - inicio,
+        p.id,
+      );
   } catch (error) {
     const erro =
       error instanceof Error ? error.message : "Falha na análise do Codex.";
     db.prepare(
       "UPDATE djen_publicacoes SET ia_status='erro',ia_erro=? WHERE id=? AND texto=? AND tipo_documento=? AND ia_status='analisando'",
     ).run(erro, p.id, p.texto, p.tipo_documento);
-    // Pausa visível, sem repetição de chamadas a uma conta desconectada ou sem saldo de uso.
-    if (!encerrando)
+    if (
+      !encerrando &&
+      !(error instanceof ErroPublicacaoCodex) &&
+      !(error instanceof ErroAnaliseCodex)
+    )
       db.prepare("UPDATE djen_config SET ia_pausa=? WHERE id=1").run(erro);
   } finally {
-    atual = null;
+    atuais.delete(p.id);
     changed();
     if (!encerrando && !configuracaoDjen().ia_pausa)
       setImmediate(() => {
         void processarFilaCodex();
       });
   }
+}
+export async function processarFilaCodex() {
+  const tarefas: Promise<void>[] = [];
+  while (!encerrando) {
+    const config = configuracaoDjen();
+    if (
+      !config.ia_ativa ||
+      config.ia_pausa ||
+      atuais.size >= config.ia_paralelismo
+    )
+      break;
+    const p = db
+      .prepare(
+        "SELECT p.id,p.texto,p.tipo_documento,p.classe,p.tribunal,pr.numero AS processo FROM djen_publicacoes p JOIN djen_processos pr ON pr.chave=p.processo_chave WHERE p.ia_status='pendente' AND p.cancelada=0 ORDER BY p.revisada ASC,p.id ASC LIMIT 1",
+      )
+      .get() as Tarefa | undefined;
+    if (!p) break;
+    const claim = db
+      .prepare(
+        "UPDATE djen_publicacoes SET ia_status='analisando',ia_erro=NULL,ia_iniciada_em=? WHERE id=? AND ia_status='pendente'",
+      )
+      .run(new Date().toISOString(), p.id);
+    if (!claim.changes) continue;
+    const controller = new AbortController();
+    atuais.set(p.id, controller);
+    changed();
+    tarefas.push(executar(p, controller));
+  }
+  await Promise.all(tarefas);
 }
 export function iniciarMonitorCodex() {
   if (timer) return;
@@ -133,5 +200,5 @@ export function pararMonitorCodex() {
   encerrando = true;
   if (timer) clearInterval(timer);
   timer = null;
-  atual?.controller.abort();
+  for (const c of atuais.values()) c.abort();
 }

@@ -75,4 +75,35 @@ export function runDjenMigrations(db: Database.Database): void {
       `);
     })();
   }
+  const atuais = db.prepare("PRAGMA table_info(djen_publicacoes)").all() as {
+    name: string;
+  }[];
+  if (!atuais.some((c) => c.name === "ia_versao"))
+    db.transaction(() => {
+      db.exec(`
+      ALTER TABLE djen_publicacoes ADD COLUMN ia_versao TEXT NOT NULL DEFAULT '';
+      ALTER TABLE djen_publicacoes ADD COLUMN ia_duracao_ms INTEGER;
+      ALTER TABLE djen_publicacoes ADD COLUMN ia_iniciada_em TEXT;
+      ALTER TABLE djen_publicacoes ADD COLUMN situacao TEXT NOT NULL DEFAULT '';
+      ALTER TABLE djen_config ADD COLUMN ia_paralelismo INTEGER NOT NULL DEFAULT 2;
+      UPDATE djen_publicacoes SET ia_status='pendente',ia_json=NULL,ia_em=NULL,categorias_json='[]',evidencias_json='[]',resultado='nao_identificado' WHERE revisada=0 AND cancelada=0;
+    `);
+    })();
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS djen_prazos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, publicacao_id INTEGER NOT NULL REFERENCES djen_publicacoes(id) ON DELETE CASCADE,
+      descricao TEXT NOT NULL, inicio TEXT, termino TEXT, status TEXT NOT NULL DEFAULT 'aberto', observacoes TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_djen_prazos_publicacao ON djen_prazos(publicacao_id,termino);
+    CREATE TABLE IF NOT EXISTS djen_documentos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, publicacao_id INTEGER NOT NULL REFERENCES djen_publicacoes(id) ON DELETE CASCADE,
+      nome TEXT NOT NULL, url TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS djen_historico (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, publicacao_id INTEGER NOT NULL REFERENCES djen_publicacoes(id) ON DELETE CASCADE,
+      tipo TEXT NOT NULL, descricao TEXT NOT NULL, dados_json TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_djen_historico_publicacao ON djen_historico(publicacao_id,id DESC);
+  `);
 }

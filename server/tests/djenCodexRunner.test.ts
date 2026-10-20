@@ -12,6 +12,7 @@ import {
   executarCliCodex,
   analisarComCodex,
   verificarConexaoCodex,
+  invalidarConexaoCodex,
 } from "../src/services/djen/codexRunner";
 const laudo = "O laudo pericial foi juntado aos autos.";
 function child() {
@@ -35,6 +36,36 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe("execução restrita do Codex CLI", () => {
+  it("compartilha a checagem de login e reaproveita conexão válida entre análises", async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), "djen-cache-test-"));
+    vi.stubEnv("DJEN_CODEX_HOME", home);
+    invalidarConexaoCodex();
+    mocked.spawn.mockImplementation((_node: string, args: string[]) => {
+      const c = child();
+      c.stdin.on("finish", () => {
+        if (args.includes("--version")) c.stdout.write("codex-cli 0.163.0");
+        else c.stderr.write("Logged in using ChatGPT");
+        c.emit("close", 0);
+      });
+      return c;
+    });
+    try {
+      const r = await Promise.all([
+        verificarConexaoCodex(),
+        verificarConexaoCodex(),
+      ]);
+      expect(r.every((c) => c.conectado)).toBe(true);
+      expect(mocked.spawn).toHaveBeenCalledTimes(2);
+      await verificarConexaoCodex();
+      expect(mocked.spawn).toHaveBeenCalledTimes(2);
+      await verificarConexaoCodex(true);
+      expect(mocked.spawn).toHaveBeenCalledTimes(4);
+    } finally {
+      invalidarConexaoCodex();
+      await fs.rm(home, { recursive: true, force: true });
+    }
+  });
+
   it("é compatível com o binário instalado, sem autenticação nem chamada de IA", async () => {
     const real =
       await vi.importActual<typeof import("node:child_process")>(

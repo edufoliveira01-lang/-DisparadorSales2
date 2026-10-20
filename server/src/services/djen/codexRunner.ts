@@ -6,6 +6,7 @@ import {
   ESQUEMA_ANALISE_CODEX,
   promptAnaliseCodex,
   validarAnaliseCodex,
+  type ContextoPublicacao,
 } from "./classifier";
 
 export const codexHome = () =>
@@ -135,7 +136,39 @@ export async function executarCliCodex(
     child.stdin.end(input);
   });
 }
-export async function verificarConexaoCodex() {
+export class ErroPublicacaoCodex extends Error {}
+type ConexaoCodex = {
+  instalado: boolean;
+  conectado: boolean;
+  mensagem: string;
+};
+let cache: { home: string; ate: number; valor: ConexaoCodex } | null = null;
+let checagem: { home: string; promise: Promise<ConexaoCodex> } | null = null;
+export function invalidarConexaoCodex() {
+  cache = null;
+}
+export async function verificarConexaoCodex(
+  forcar = false,
+): Promise<ConexaoCodex> {
+  const home = codexHome();
+  if (!forcar && cache?.home === home && cache.ate > Date.now())
+    return cache.valor;
+  if (checagem?.home === home) return checagem.promise;
+  const promise = consultarConexaoCodex();
+  checagem = { home, promise };
+  try {
+    const valor = await promise;
+    cache = {
+      home,
+      ate: Date.now() + (valor.conectado ? 300000 : 15000),
+      valor,
+    };
+    return valor;
+  } finally {
+    if (checagem?.promise === promise) checagem = null;
+  }
+}
+async function consultarConexaoCodex(): Promise<ConexaoCodex> {
   try {
     await fs.mkdir(codexHome(), { recursive: true, mode: 0o700 });
     await fs.access(cli);
@@ -181,9 +214,10 @@ export async function analisarComCodex(
   texto: string,
   tipoDocumento: string,
   signal?: AbortSignal,
+  contexto: ContextoPublicacao = {},
 ) {
   if (texto.length > 120000)
-    throw new Error(
+    throw new ErroPublicacaoCodex(
       "Publicação muito extensa para esta análise (limite de 120 mil caracteres). Confira o inteiro teor; o texto não foi truncado.",
     );
   if (!(await verificarConexaoCodex()).conectado)
@@ -215,10 +249,11 @@ export async function analisarComCodex(
         "-",
       ],
       workdir,
-      promptAnaliseCodex(texto, tipoDocumento),
+      promptAnaliseCodex(texto, tipoDocumento, contexto),
       signal,
     );
     if (r.code !== 0) {
+      invalidarConexaoCodex();
       // Nunca retornar stderr bruto: pode conter o texto do processo e detalhes da sessão.
       if (
         /rate.limit|usage.limit|quota|limit.*reached|try again at/i.test(
@@ -238,11 +273,11 @@ export async function analisarComCodex(
       if (stat.size > 100000) throw new Error("Saída excessiva.");
       parsed = JSON.parse(await fs.readFile(output, "utf8"));
     } catch {
-      throw new Error(
+      throw new ErroPublicacaoCodex(
         "O Codex não retornou uma análise JSON válida. Tente novamente.",
       );
     }
-    return validarAnaliseCodex(parsed, texto);
+    return validarAnaliseCodex(parsed, texto, contexto);
   } finally {
     await fs.rm(workdir, { recursive: true, force: true });
   }

@@ -1,3 +1,12 @@
+import { MultiSelect } from "@/components/ui/MultiSelect";
+import {
+  DjenDocumentos,
+  DjenPrazos,
+  DjenHistorico,
+  type Prazo,
+  type Documento,
+  type Evento,
+} from "@/components/djen/Workflow";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -16,6 +25,8 @@ import {
   AlertCircle,
   FolderOpen,
   Sparkles,
+  Banknote,
+  Handshake,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay } from "@/lib/phone";
@@ -34,10 +45,20 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Pagination } from "@/components/ui/Pagination";
 
 const TIPOS = {
-  sentenca: "Sentença",
+  sentenca: "Sentença de mérito",
   acordao: "Acórdão",
   pericia: "Perícia agendada",
   laudo_juntado: "Laudo pericial juntado",
+  rpv: "RPV",
+  precatorio: "Precatório",
+  homologacao_acordo: "Homologação de acordo",
+  extincao_execucao: "Extinção da execução",
+  extincao_processo: "Extinção sem mérito",
+  cumprimento_sentenca: "Cumprimento de sentença",
+  levantamento_valores: "Levantamento de valores",
+  decisao_interlocutoria: "Decisão interlocutória",
+  despacho: "Despacho",
+  intimacao: "Intimação",
 };
 const FILTROS = { ...TIPOS, outros: "Outros" };
 type Categoria = keyof typeof TIPOS;
@@ -70,10 +91,18 @@ interface Publicacao {
   tipo_comunicacao: string;
   data_disponibilizacao: string;
   resumo: string;
+  situacao: string;
+  proximo_prazo: string | null;
+  prazos_abertos: number;
+  prazos?: Prazo[];
+  documentos?: Documento[];
+  historico?: Evento[];
+  relacionadas_total?: number;
   ia_status: string;
   ia_erro: string | null;
   ia_em: string | null;
   analise: {
+    situacao?: string;
     categorias: Categoria[];
     resumo: string;
     justificativa: string;
@@ -106,6 +135,9 @@ interface Publicacao {
     categorias_json: string;
     resultado: string;
     resumo: string | null;
+    situacao?: string;
+    orgao?: string;
+    tipo_documento?: string;
   }[];
   mensagens?: {
     id: number;
@@ -133,6 +165,10 @@ interface Busca {
 interface Status {
   codex: {
     executando: number | null;
+    executando_ids: number[];
+    simultaneas: number;
+    media_segundos: number | null;
+    estimativa_segundos: number | null;
     pendentes: number;
     falhas: number;
     pausa: string | null;
@@ -147,6 +183,7 @@ interface Status {
     intervalo_minutos: number;
     janela_inicial_dias: number;
     ia_ativa: number;
+    ia_paralelismo: number;
   };
 }
 const hoje = () =>
@@ -165,6 +202,16 @@ const tons = {
   acordao: "info",
   pericia: "violet",
   laudo_juntado: "warning",
+  rpv: "info",
+  precatorio: "info",
+  homologacao_acordo: "success",
+  extincao_execucao: "neutral",
+  extincao_processo: "neutral",
+  cumprimento_sentenca: "accent",
+  levantamento_valores: "success",
+  decisao_interlocutoria: "violet",
+  despacho: "neutral",
+  intimacao: "warning",
 } as const;
 const UFS =
   "AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO".split(
@@ -216,12 +263,14 @@ export function Acompanhamento() {
     intervalo_minutos: 60,
     janela_inicial_dias: 7,
     ia_ativa: false,
+    ia_paralelismo: 2,
   });
   const [conexaoCodex, setConexaoCodex] = useState<{
     conectado: boolean;
     mensagem: string;
   } | null>(null);
   const [revisaoAlterada, setRevisaoAlterada] = useState(false);
+  const [situacao, setSituacao] = useState("");
   const [detalhe, setDetalhe] = useState<Publicacao | null>(null),
     [contatos, setContatos] = useState<Contact[]>([]),
     [categorias, setCategorias] = useState<Categoria[]>([]),
@@ -322,6 +371,7 @@ export function Acompanhamento() {
           setDetalhe(p);
           if (!revisaoAlterada && p.ia_status === "concluida") {
             setCategorias(p.categorias);
+            setSituacao(p.situacao || "");
             setResultado(p.resultado);
           }
         })
@@ -387,6 +437,7 @@ export function Acompanhamento() {
       setContatos(c);
       setRevisaoAlterada(false);
       setCategorias(p.categorias);
+      setSituacao(p.situacao || "");
       setResultado(p.resultado);
       setProcesso({
         cliente_id: p.cliente_id ? String(p.cliente_id) : "",
@@ -461,7 +512,7 @@ export function Acompanhamento() {
         title={titulo}
         description={
           secao === "publicacoes"
-            ? "Sentenças, acórdãos, publicações de perícia e juntadas de laudo em um acompanhamento próprio."
+            ? "Decisões, acordos, pagamentos, perícias e demais andamentos dos processos."
             : secao === "advogados"
               ? "Cadastre um ou mais advogados pelo nome completo, número da OAB e UF."
               : "Consulte o DJEN por período e acompanhe a execução de cada busca."
@@ -514,23 +565,36 @@ export function Acompanhamento() {
       )}
       {secao === "publicacoes" && (
         <>
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">
             {(
               [
                 { tipo: "sentenca", Icon: Scale },
                 { tipo: "acordao", Icon: Gavel },
                 { tipo: "pericia", Icon: Stethoscope },
                 { tipo: "laudo_juntado", Icon: FileCheck2 },
+                { tipo: "rpv", Icon: Banknote },
+                { tipo: "homologacao_acordo", Icon: Handshake },
                 { tipo: "outros", Icon: FolderOpen },
               ] as const
             ).map(({ tipo, Icon }) => (
               <button
                 key={tipo}
                 onClick={() =>
-                  filtrar("categoria", filtro.categoria === tipo ? "" : tipo)
+                  filtrar(
+                    "categoria",
+                    filtro.categoria.split(",").includes(tipo)
+                      ? filtro.categoria
+                          .split(",")
+                          .filter((v) => v !== tipo)
+                          .join(",")
+                      : [
+                          ...filtro.categoria.split(",").filter(Boolean),
+                          tipo,
+                        ].join(","),
+                  )
                 }
-                aria-pressed={filtro.categoria === tipo}
-                className={`rounded-xl border bg-white p-4 text-left dark:bg-zinc-900 ${filtro.categoria === tipo ? "border-accent-400" : "border-zinc-200 dark:border-zinc-800"}`}
+                aria-pressed={filtro.categoria.split(",").includes(tipo)}
+                className={`flex min-h-[104px] flex-col justify-between rounded-xl border bg-white p-4 text-left dark:bg-zinc-900 ${filtro.categoria.split(",").includes(tipo) ? "border-accent-400" : "border-zinc-200 dark:border-zinc-800"}`}
               >
                 <span className="flex items-center justify-between gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
                   {FILTROS[tipo]}
@@ -547,9 +611,23 @@ export function Acompanhamento() {
             {status?.codex.pausa
               ? `Análise pausada: ${status.codex.pausa}`
               : status?.config.ia_ativa
-                ? `Codex: ${status.codex.pendentes} na fila${status.codex.executando ? " · analisando publicação" : ""}.`
+                ? `Codex: ${status.codex.pendentes} na fila${status.codex.executando_ids.length ? ` · ${status.codex.executando_ids.length} em análise` : ""}.`
                 : "Análise pelo Codex desativada. Conecte e ative em Monitoramento DJEN."}{" "}
             Publicações sem classificação ficam em Outros.
+            {status?.config.ia_ativa && (
+              <span>
+                Tempo médio:{" "}
+                {status.codex.media_segundos === null
+                  ? "medindo…"
+                  : `${status.codex.media_segundos}s`}{" "}
+                · Previsão da fila:{" "}
+                {status.codex.pausa
+                  ? "pausada"
+                  : status.codex.estimativa_segundos === null
+                    ? "medindo…"
+                    : `${Math.ceil(status.codex.estimativa_segundos / 60)} min (estimativa)`}
+              </span>
+            )}
           </p>
           <section className="surface-panel p-4">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -559,59 +637,53 @@ export function Acompanhamento() {
                 value={buscaTexto}
                 onChange={(e) => setBuscaTexto(e.target.value)}
               />
-              <Select
-                aria-label="Categoria da publicação"
-                value={filtro.categoria}
-                onChange={(e) => filtrar("categoria", e.target.value)}
-              >
-                <option value="">Todas as publicações</option>
-                {Object.entries(TIPOS).map(([key, label]) => (
-                  <option key={key} value={key}>
-                    {label}
-                  </option>
-                ))}
-                <option value="outros">Outros</option>
-              </Select>
-              <Select
-                aria-label="Resultado da sentença"
-                value={filtro.resultado}
-                onChange={(e) => filtrar("resultado", e.target.value)}
-              >
-                <option value="">Todos os resultados</option>
-                {Object.entries(RESULTADOS).map(([key, label]) => (
-                  <option key={key} value={key}>
-                    {label}
-                  </option>
-                ))}
-              </Select>
-              <Select
-                aria-label="Advogado das publicações"
-                value={filtro.advogado_id}
-                onChange={(e) => filtrar("advogado_id", e.target.value)}
-              >
-                <option value="">Todos os advogados</option>
-                {status?.advogados.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.nome} · {a.uf_oab} {a.numero_oab}
-                  </option>
-                ))}
-              </Select>
+              <MultiSelect
+                label="Categoria da publicação"
+                placeholder="Todas as categorias"
+                value={filtro.categoria.split(",").filter(Boolean)}
+                options={Object.entries(FILTROS).map(([value, label]) => ({
+                  value,
+                  label,
+                }))}
+                onChange={(v) => filtrar("categoria", v.join(","))}
+              />
+              <MultiSelect
+                label="Resultado da sentença"
+                placeholder="Todos os resultados"
+                value={filtro.resultado.split(",").filter(Boolean)}
+                options={Object.entries(RESULTADOS).map(([value, label]) => ({
+                  value,
+                  label,
+                }))}
+                onChange={(v) => filtrar("resultado", v.join(","))}
+              />
+              <MultiSelect
+                label="Advogado das publicações"
+                placeholder="Todos os advogados"
+                value={filtro.advogado_id.split(",").filter(Boolean)}
+                options={(status?.advogados || []).map((a) => ({
+                  value: String(a.id),
+                  label: `${a.nome} · ${a.uf_oab} ${a.numero_oab}`,
+                }))}
+                onChange={(v) => filtrar("advogado_id", v.join(","))}
+              />
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-zinc-500">
                 {total} publicação(ões) · {status?.resumo.nao_lidas ?? 0} não
                 lidas
               </p>
-              <Select
-                className="max-w-[190px]"
-                aria-label="Situação das publicações"
-                value={filtro.situacao}
-                onChange={(e) => filtrar("situacao", e.target.value)}
-              >
-                <option value="">Todas as situações</option>
-                <option value="nao_lidas">Não lidas</option>
-                <option value="revisar">A revisar</option>
-              </Select>
+              <MultiSelect
+                label="Situação das publicações"
+                placeholder="Todas as situações"
+                value={filtro.situacao.split(",").filter(Boolean)}
+                options={[
+                  { value: "nao_lidas", label: "Não lidas" },
+                  { value: "revisar", label: "A revisar" },
+                  { value: "com_prazo", label: "Com prazo em aberto" },
+                ]}
+                onChange={(v) => filtrar("situacao", v.join(","))}
+              />
             </div>
           </section>
           {status?.executando && (
@@ -699,6 +771,17 @@ export function Acompanhamento() {
                         {p.tribunal} · {p.orgao} · Disponibilizada em{" "}
                         {dia(p.data_disponibilizacao)}
                       </p>
+                      {p.situacao && (
+                        <p className="mt-2 text-xs font-medium text-zinc-700 dark:text-zinc-200">
+                          {p.situacao}
+                        </p>
+                      )}
+                      {p.proximo_prazo && (
+                        <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                          Término do próximo prazo: {dia(p.proximo_prazo)} ·{" "}
+                          {p.prazos_abertos} em aberto
+                        </p>
+                      )}
                       <p className="mt-3 line-clamp-3 whitespace-pre-line break-words text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
                         {p.resumo}
                       </p>
@@ -978,6 +1061,23 @@ export function Acompanhamento() {
               antigas sem revisão. As revisões salvas são preservadas. O uso
               está sujeito aos limites da conta Codex.
             </p>
+            <div className="max-w-xs">
+              <Label htmlFor="codex-paralelismo">Análises simultâneas</Label>
+              <Select
+                id="codex-paralelismo"
+                value={config.ia_paralelismo}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    ia_paralelismo: Number(e.target.value),
+                  })
+                }
+              >
+                <option value={1}>1 por vez</option>
+                <option value={2}>2 simultâneas (recomendado)</option>
+                <option value={3}>3 simultâneas</option>
+              </Select>
+            </div>
             <div className="flex flex-wrap gap-3">
               <Button
                 size="sm"
@@ -1338,6 +1438,7 @@ export function Acompanhamento() {
                       setDetalhe(p);
                       if (!revisaoAlterada) {
                         setCategorias(p.categorias);
+                        setSituacao(p.situacao || "");
                         setResultado(p.resultado);
                       }
                       await carregarStatus();
@@ -1354,7 +1455,11 @@ export function Acompanhamento() {
                 {detalhe.ia_status === "analisando"
                   ? "Analisando publicação…"
                   : detalhe.ia_status === "pendente"
-                    ? "Aguardando análise na fila."
+                    ? !status?.config.ia_ativa
+                      ? "Análise automática desativada. Ative em Monitoramento DJEN."
+                      : status.codex.pausa
+                        ? `Fila pausada: ${status.codex.pausa}`
+                        : "Aguardando análise na fila."
                     : detalhe.ia_status === "erro"
                       ? detalhe.ia_erro
                       : detalhe.analise
@@ -1369,6 +1474,9 @@ export function Acompanhamento() {
                       .map((c) => TIPOS[c])
                       .join(" · ") || "Outros"}
                   </p>
+                  {detalhe.analise.situacao && (
+                    <p className="font-medium">{detalhe.analise.situacao}</p>
+                  )}
                   <p className="whitespace-pre-wrap">
                     {detalhe.analise.resumo}
                   </p>
@@ -1409,6 +1517,18 @@ export function Acompanhamento() {
                 </div>
               )}
             </section>
+            <DjenDocumentos
+              key={`docs-${detalhe.id}`}
+              id={detalhe.id}
+              certidao={detalhe.certidao_url}
+              tribunal={detalhe.link}
+              documentos={detalhe.documentos}
+              refresh={async () => {
+                setDetalhe(
+                  await api.get<Publicacao>(`/djen/publicacoes/${detalhe.id}`),
+                );
+              }}
+            />
             <details open>
               <summary className="cursor-pointer text-sm font-semibold">
                 Inteiro teor da publicação
@@ -1426,6 +1546,21 @@ export function Acompanhamento() {
                 Confira a sugestão do Codex e o inteiro teor antes de salvar a
                 revisão. Sem categoria aplicável, selecione Outros.
               </p>
+              <div className="mt-3">
+                <Label htmlFor="situacao-andamento">
+                  Situação / assunto do andamento
+                </Label>
+                <Input
+                  id="situacao-andamento"
+                  maxLength={250}
+                  value={situacao}
+                  placeholder="Ex.: RPV paga · execução extinta"
+                  onChange={(e) => {
+                    setSituacao(e.target.value);
+                    setRevisaoAlterada(true);
+                  }}
+                />
+              </div>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 {Object.entries(TIPOS).map(([key, label]) => (
                   <label key={key} className="flex items-center gap-2 text-xs">
@@ -1499,7 +1634,7 @@ export function Acompanhamento() {
                     void acao(async () => {
                       const p = await api.put<Publicacao>(
                         `/djen/publicacoes/${detalhe.id}/revisao`,
-                        { categorias, resultado },
+                        { categorias, resultado, situacao },
                       );
                       setDetalhe(p);
                       setRevisaoAlterada(false);
@@ -1517,6 +1652,17 @@ export function Acompanhamento() {
                 </Badge>
               </div>
             </section>
+            <DjenPrazos
+              key={`prazos-${detalhe.id}`}
+              id={detalhe.id}
+              prazos={detalhe.prazos}
+              refresh={async () => {
+                setDetalhe(
+                  await api.get<Publicacao>(`/djen/publicacoes/${detalhe.id}`),
+                );
+                void carregarLista();
+              }}
+            />
             <section className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
               <h3 className="text-sm font-semibold">
                 Cliente e anotações do processo
@@ -1588,37 +1734,15 @@ export function Acompanhamento() {
                 conecte o WhatsApp nas configurações compartilhadas.
               </p>
             </section>
-            <section>
-              <h3 className="text-sm font-semibold">
-                Histórico capturado deste processo
-              </h3>
-              <div className="mt-2 space-y-2">
-                {detalhe.relacionadas
-                  ?.filter((p) => p.id !== detalhe.id)
-                  .map((p) => (
-                    <button
-                      key={p.id}
-                      className="block text-left text-xs text-accent-600"
-                      onClick={() => void abrir(p.id)}
-                    >
-                      {dia(p.data_disponibilizacao)} ·{" "}
-                      {(JSON.parse(p.categorias_json) as Categoria[])
-                        .map((c) => TIPOS[c])
-                        .join(", ") || "Outros"}
-                      {p.resumo && (
-                        <span className="mt-1 block text-zinc-500">
-                          {p.resumo}
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                {(detalhe.relacionadas?.length || 0) <= 1 && (
-                  <p className="text-xs text-zinc-500">
-                    Nenhuma outra publicação capturada para este processo.
-                  </p>
-                )}
-              </div>
-            </section>
+            <DjenHistorico
+              key={`hist-${detalhe.id}`}
+              id={detalhe.id}
+              andamentos={detalhe.relacionadas}
+              total={detalhe.relacionadas_total}
+              eventos={detalhe.historico}
+              tipos={TIPOS}
+              abrir={(id) => void abrir(id)}
+            />
             <section>
               <h3 className="text-sm font-semibold">
                 Mensagens desta publicação

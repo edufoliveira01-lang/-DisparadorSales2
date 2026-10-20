@@ -2,7 +2,10 @@ import Database from "better-sqlite3";
 import { runDjenMigrations } from "../src/db/djenMigrations";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const runner = vi.hoisted(() => ({ analisarComCodex: vi.fn() }));
-vi.mock("../src/services/djen/codexRunner", () => runner);
+vi.mock("../src/services/djen/codexRunner", () => ({
+  ...runner,
+  ErroPublicacaoCodex: class extends Error {},
+}));
 import { db } from "../src/db";
 import {
   validarAnaliseCodex,
@@ -251,7 +254,7 @@ describe("fila Codex e preservação de dados", () => {
     });
     expect(publicacaoPorId(id)?.ia_status).toBe("erro");
   });
-  it("analisa serialmente sem duplicação e não escreve no sistema de perícias", async () => {
+  it("analisa sem duplicação e não escreve no sistema de perícias", async () => {
     const { id } = importar();
     const tables = [
       "pericias_agendadas",

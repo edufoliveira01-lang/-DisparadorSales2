@@ -1,3 +1,5 @@
+import { registrarHistoricoDjen } from "./history";
+import { dadosAcompanhamento } from "./workflow";
 import { db } from "../../db";
 import { getContact } from "../contactsService";
 import { normalizeProcesso } from "../../utils/processo";
@@ -89,9 +91,17 @@ export function configuracaoDjen() {
     janela_inicial_dias: number;
     ia_ativa: number;
     ia_pausa: string | null;
+    ia_paralelismo: number;
   };
 }
 export function salvarConfiguracaoDjen(data: Record<string, unknown>) {
+  if (
+    data.ia_paralelismo !== undefined &&
+    (!Number.isInteger(data.ia_paralelismo) ||
+      Number(data.ia_paralelismo) < 1 ||
+      Number(data.ia_paralelismo) > 3)
+  )
+    throw new DjenInputError("Use de 1 a 3 análises simultâneas.");
   const intervalo = Number(data.intervalo_minutos),
     janela = Number(data.janela_inicial_dias);
   if (
@@ -111,6 +121,10 @@ export function salvarConfiguracaoDjen(data: Record<string, unknown>) {
   if (typeof data.ia_ativa === "boolean")
     db.prepare("UPDATE djen_config SET ia_ativa=? WHERE id=1").run(
       data.ia_ativa ? 1 : 0,
+    );
+  if (data.ia_paralelismo !== undefined)
+    db.prepare("UPDATE djen_config SET ia_paralelismo=? WHERE id=1").run(
+      data.ia_paralelismo,
     );
   return configuracaoDjen();
 }
@@ -187,8 +201,14 @@ export function importarPublicacoes(
         );
         if (!preservar)
           db.prepare(
-            "UPDATE djen_publicacoes SET ia_status='pendente',ia_json=NULL,ia_erro=NULL,ia_em=NULL WHERE id=?",
+            "UPDATE djen_publicacoes SET ia_status='pendente',ia_json=NULL,ia_erro=NULL,ia_em=NULL,ia_versao='',ia_duracao_ms=NULL,situacao='' WHERE id=?",
           ).run(id);
+        if (!preservar)
+          registrarHistoricoDjen(
+            id!,
+            "captura",
+            "Inteiro teor ou tipo documental atualizado pela fonte; análise e revisão pendentes.",
+          );
       } else {
         id = Number(
           db
@@ -198,6 +218,7 @@ export function importarPublicacoes(
             )
             .run(p.comunicacao_id, ...valores).lastInsertRowid,
         );
+        registrarHistoricoDjen(id!, "captura", "Publicação capturada do DJEN.");
         novas++;
       }
       db.prepare(
@@ -210,9 +231,14 @@ export function importarPublicacoes(
     return novas;
   })();
 }
-const SELECT_PUB = `SELECT p.*,pr.numero AS processo,pr.cliente_id,pr.observacoes,c.nome AS cliente_nome,c.telefone AS cliente_telefone
+const SELECT_PUB = `SELECT p.*,(SELECT MIN(termino) FROM djen_prazos dp WHERE dp.publicacao_id=p.id AND dp.status='aberto') AS proximo_prazo,(SELECT count(*) FROM djen_prazos dp WHERE dp.publicacao_id=p.id AND dp.status='aberto') AS prazos_abertos,pr.numero AS processo,pr.cliente_id,pr.observacoes,c.nome AS cliente_nome,c.telefone AS cliente_telefone
   FROM djen_publicacoes p JOIN djen_processos pr ON pr.chave=p.processo_chave LEFT JOIN contacts c ON c.id=pr.cliente_id`;
 export interface PublicacaoRow {
+  tribunal: string;
+  orgao: string;
+  classe: string;
+  tipo_documento: string;
+  situacao: string;
   id: number;
   processo_chave: string;
   processo: string;
@@ -273,37 +299,72 @@ export function apresentarPublicacao(p: PublicacaoRow, integral = false) {
 export function listarPublicacoes(filtro: Record<string, string>) {
   const where: string[] = [],
     values: (string | number)[] = [];
-  if (
-    filtro.categoria &&
-    CATEGORIAS_DJEN.includes(filtro.categoria as CategoriaDjen)
-  ) {
-    where.push(
-      "EXISTS(SELECT 1 FROM json_each(p.categorias_json) WHERE value=?)",
-    );
-    values.push(filtro.categoria);
-  }
-  if (["outras", "outros"].includes(filtro.categoria))
-    where.push("p.categorias_json='[]'");
-  if (
-    filtro.resultado &&
-    RESULTADOS_DJEN.includes(
-      filtro.resultado as (typeof RESULTADOS_DJEN)[number],
+  const csv = (v: string | undefined) => [
+    ...new Set(
+      (v || "")
+        .split(",")
+        .map((v) => v.trim())
+        .filter(Boolean),
+    ),
+  ];
+  const categorias = csv(filtro.categoria).map((c) =>
+    c === "outras" ? "outros" : c,
+  );
+  if (categorias.length) {
+    if (
+      categorias.some(
+        (c) => c !== "outros" && !CATEGORIAS_DJEN.includes(c as CategoriaDjen),
+      )
     )
-  ) {
-    where.push("p.resultado=?");
-    values.push(filtro.resultado);
+      throw new DjenInputError("Categoria de filtro inválida.");
+    const especificas = categorias.filter((c) => c !== "outros");
+    const opcoes: string[] = [];
+    if (especificas.length) {
+      opcoes.push(
+        `EXISTS(SELECT 1 FROM json_each(p.categorias_json) WHERE value IN (${especificas.map(() => "?").join(",")}))`,
+      );
+      values.push(...especificas);
+    }
+    if (categorias.includes("outros")) opcoes.push("p.categorias_json='[]'");
+    where.push("(" + opcoes.join(" OR ") + ")");
   }
-  if (filtro.advogado_id && /^\d+$/.test(filtro.advogado_id)) {
+  const resultados = csv(filtro.resultado);
+  if (resultados.length) {
+    if (
+      resultados.some(
+        (r) => !RESULTADOS_DJEN.includes(r as (typeof RESULTADOS_DJEN)[number]),
+      )
+    )
+      throw new DjenInputError("Resultado de filtro inválido.");
+    where.push(`p.resultado IN (${resultados.map(() => "?").join(",")})`);
+    values.push(...resultados);
+  }
+  const advogados = csv(filtro.advogado_id);
+  if (advogados.length) {
+    if (
+      advogados.length > 50 ||
+      advogados.some((a) => !/^\d+$/.test(a) || Number(a) <= 0)
+    )
+      throw new DjenInputError("Advogado de filtro inválido.");
     where.push(
-      "EXISTS(SELECT 1 FROM djen_publicacao_advogados pa WHERE pa.publicacao_id=p.id AND pa.advogado_id=?)",
+      `EXISTS(SELECT 1 FROM djen_publicacao_advogados pa WHERE pa.publicacao_id=p.id AND pa.advogado_id IN (${advogados.map(() => "?").join(",")}))`,
     );
-    values.push(Number(filtro.advogado_id));
+    values.push(...advogados.map(Number));
   }
-  if (filtro.situacao === "nao_lidas") where.push("p.lida=0");
-  if (filtro.situacao === "revisar") where.push("p.revisada=0");
+  const situacoes = csv(filtro.situacao);
+  const condicoes: Record<string, string> = {
+    nao_lidas: "p.lida=0",
+    revisar: "p.revisada=0",
+    com_prazo:
+      "EXISTS(SELECT 1 FROM djen_prazos dp WHERE dp.publicacao_id=p.id AND dp.status='aberto')",
+  };
+  if (situacoes.some((s) => !Object.hasOwn(condicoes, s)))
+    throw new DjenInputError("Situação de filtro inválida.");
+  if (situacoes.length)
+    where.push("(" + situacoes.map((s) => condicoes[s]).join(" OR ") + ")");
   if (filtro.busca?.trim()) {
     where.push(
-      "(p.texto LIKE ? ESCAPE '\\' OR pr.numero LIKE ? ESCAPE '\\' OR c.nome LIKE ? ESCAPE '\\')",
+      "(p.situacao LIKE ? ESCAPE '\\' OR p.texto LIKE ? ESCAPE '\\' OR pr.numero LIKE ? ESCAPE '\\' OR c.nome LIKE ? ESCAPE '\\')",
     );
     const text =
       "%" +
@@ -312,7 +373,7 @@ export function listarPublicacoes(filtro: Record<string, string>) {
         .slice(0, 200)
         .replace(/[\\%_]/g, "\\$&") +
       "%";
-    values.push(text, text, text);
+    values.push(text, text, text, text);
   }
   if (filtro.inicio) {
     where.push("p.data_disponibilizacao>=?");
@@ -349,17 +410,19 @@ export function listarPublicacoes(filtro: Record<string, string>) {
 export function detalhesPublicacao(id: number) {
   const p = publicacaoPorId(id);
   if (!p) throw new DjenInputError("Publicação não encontrada.");
-  const relacionadas = db
-    .prepare(
-      "SELECT id,data_disponibilizacao,categorias_json,resultado,json_extract(ia_json,'$.resumo') AS resumo FROM djen_publicacoes WHERE processo_chave=? ORDER BY data_disponibilizacao DESC,id DESC LIMIT 50",
-    )
-    .all(p.processo_chave);
+  const andamentos = listarAndamentosDoProcesso(id);
   const mensagens = db
     .prepare(
       "SELECT * FROM djen_mensagens WHERE publicacao_id=? ORDER BY id DESC LIMIT 30",
     )
     .all(id);
-  return { ...apresentarPublicacao(p, true), relacionadas, mensagens };
+  return {
+    ...apresentarPublicacao(p, true),
+    relacionadas: andamentos.items,
+    relacionadas_total: andamentos.total,
+    ...dadosAcompanhamento(id, p.processo_chave),
+    mensagens,
+  };
 }
 export function revisarPublicacao(id: number, data: Record<string, unknown>) {
   const p = publicacaoPorId(id);
@@ -373,12 +436,39 @@ export function revisarPublicacao(id: number, data: Record<string, unknown>) {
     )
   )
     throw new DjenInputError("Classificação inválida.");
+  if (
+    data.situacao !== undefined &&
+    (typeof data.situacao !== "string" || data.situacao.length > 250)
+  )
+    throw new DjenInputError("Use até 250 caracteres para a situação.");
   db.prepare(
     "UPDATE djen_publicacoes SET categorias_json=?,resultado=?,revisada=1,ia_status=CASE WHEN ia_status='pendente' THEN 'nao_solicitada' ELSE ia_status END,updated_at=CURRENT_TIMESTAMP WHERE id=?",
   ).run(
     JSON.stringify([...new Set(categorias)]),
     categorias.includes("sentenca") ? data.resultado : "nao_identificado",
     id,
+  );
+  if (typeof data.situacao === "string")
+    db.prepare("UPDATE djen_publicacoes SET situacao=? WHERE id=?").run(
+      data.situacao.trim(),
+      id,
+    );
+  registrarHistoricoDjen(
+    id,
+    "revisao",
+    "Classificação revisada pelo usuário.",
+    {
+      antes: {
+        categorias: JSON.parse(p.categorias_json),
+        resultado: p.resultado,
+        situacao: p.situacao,
+      },
+      depois: {
+        categorias,
+        resultado: data.resultado,
+        situacao: data.situacao,
+      },
+    },
   );
   return detalhesPublicacao(id);
 }
@@ -399,6 +489,11 @@ export function salvarProcessoDaPublicacao(
   db.prepare(
     "UPDATE djen_processos SET cliente_id=?,observacoes=? WHERE chave=?",
   ).run(cliente, data.observacoes.trim(), p.processo_chave);
+  registrarHistoricoDjen(
+    id,
+    "processo",
+    "Contato ou anotações do processo atualizados pelo usuário.",
+  );
   return detalhesPublicacao(id);
 }
 export function resumoDjen() {
@@ -434,4 +529,24 @@ export function resumoDjen() {
         .get() as { total: number }
     ).total,
   };
+}
+
+export function listarAndamentosDoProcesso(id: number, pagina = 1) {
+  const p = publicacaoPorId(id);
+  if (!p) throw new DjenInputError("Publicação não encontrada.");
+  if (!Number.isInteger(pagina) || pagina < 1)
+    throw new DjenInputError("Página inválida.");
+  const total = (
+    db
+      .prepare(
+        "SELECT count(*) AS n FROM djen_publicacoes WHERE processo_chave=?",
+      )
+      .get(p.processo_chave) as { n: number }
+  ).n;
+  const items = db
+    .prepare(
+      "SELECT id,data_disponibilizacao,categorias_json,resultado,situacao,orgao,tipo_documento,ia_status,json_extract(ia_json,'$.resumo') AS resumo FROM djen_publicacoes WHERE processo_chave=? ORDER BY data_disponibilizacao DESC,id DESC LIMIT 25 OFFSET ?",
+    )
+    .all(p.processo_chave, (pagina - 1) * 25);
+  return { items, total, pagina, por_pagina: 25 };
 }

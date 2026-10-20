@@ -1,4 +1,4 @@
-# Acompanhamento processual — versão 2.36.1
+# Acompanhamento processual — versão 2.37.0
 
 No seletor **Serviço ativo**, escolha **Processos e DJEN**. O controle anterior continua em **Perícias e avisos**.
 
@@ -7,7 +7,7 @@ No seletor **Serviço ativo**, escolha **Processos e DJEN**. O controle anterior
 1. Em **Advogados**, cadastre o nome completo, o número da OAB e a UF. Podem ser acompanhados vários advogados. Cada inscrição tem cadastro próprio; outra UF exige outro cadastro.
 2. O modo padrão faz duas consultas complementares: OAB/UF e nome. Inscrições com letra também são consultadas com as variações de separador. Correspondências só pelo nome precisam de conferência da OAB, devido a homônimos.
 3. Em **Monitoramento DJEN**, escolha um período de disponibilização de até 31 dias e consulte todos os advogados ativos ou apenas um.
-4. Em **Publicações**, filtre sentença, acórdão, perícia agendada ou laudo pericial juntado. As demais publicações continuam armazenadas em **Outros**; não são descartadas por falta de classificação.
+4. Em **Publicações**, selecione uma ou mais categorias, resultados, advogados e situações. Categorias da mesma lista são combinadas por OU; listas diferentes são combinadas por E. As demais publicações continuam armazenadas em **Outros**; não são descartadas por falta de classificação.
 5. Abra os detalhes para consultar o inteiro teor da publicação, partes, advogados, órgão julgador, classe, data, certidão oficial e outras publicações já capturadas do mesmo processo.
 6. Confira a classificação, vincule o contato correto da Agenda e, se desejar, revise a mensagem antes de confirmar o envio pelo WhatsApp.
 
@@ -32,7 +32,7 @@ A análise começa desativada. Na primeira ativação, as publicações antigas 
 
 ### Executável ausente após instalar as dependências
 
-Se aparecer `Missing optional dependency @openai/codex-linux-x64` (ou a variante da arquitetura), faltou o pacote nativo do CLI. A versão 2.36.1 inclui dependências opcionais na instalação do servidor e verifica `codex --version` ao final de `npm run install:all`. Se necessário, instala explicitamente o pacote da plataforma na mesma versão do CLI, sem instalação global e sem alterar package.json/package-lock.json. O comando de login também faz essa verificação antes de iniciar a autenticação.
+Se aparecer `Missing optional dependency @openai/codex-linux-x64` (ou a variante da arquitetura), faltou o pacote nativo do CLI. Desde a versão 2.36.1, o instalador inclui dependências opcionais na instalação do servidor e verifica `codex --version` ao final de `npm run install:all`. Se necessário, instala explicitamente o pacote da plataforma na mesma versão do CLI, sem instalação global e sem alterar package.json/package-lock.json. O comando de login também faz essa verificação antes de iniciar a autenticação.
 
 Para reparar uma instalação já existente:
 
@@ -43,11 +43,19 @@ npm run codex:login --prefix server
 
 A verificação de conexão na interface distingue executável ausente de conta ainda não conectada. O reparo usa apenas o registro npm; não muda as credenciais da conta nem faz chamada de análise de IA.
 
+### Classificação por situação (2.37.0)
+
+O filtro **Sentença de mérito** é reservado ao julgamento dos pedidos da ação de conhecimento. O tipo formal continua visível nos dados da fonte. Uma sentença que extingue RPV/execução é classificada na fase correspondente, e uma sentença homologatória de acordo recebe **Homologação de acordo**. Também estão disponíveis RPV, precatório, extinção da execução, extinção sem mérito, cumprimento de sentença, levantamento de valores, decisão interlocutória, despacho e intimação, além das categorias existentes. A situação descritiva pode ser ajustada na revisão para detalhar fatos fora da lista, que continuam em Outros.
+
+No resultado, o dispositivo global **JULGO PARCIALMENTE PROCEDENTES os pedidos** prevalece sobre a rejeição de um capítulo específico, como dano moral. Referências a julgamentos alheios continuam fora da classificação. As análises automáticas antigas sem revisão serão refeitas nesta atualização; revisões humanas são preservadas e podem receber nova sugestão pela reanálise individual.
+
+O histórico dos andamentos é paginado e inclui datas, órgão, tipo do documento, situação e resumo. O histórico de alterações registra captura, análise, revisão, alterações do processo, prazos e links de documentos a partir desta versão, sem inventar alterações anteriores. Prazos e documentos pertencem ao andamento; contato e anotações pertencem ao processo.
+
 ### Categorias
 
-- **Sentença:** sentença efetivamente comunicada; referência a sentença anterior, decisão de tutela, pedido de julgamento e cumprimento de sentença não bastam. O resultado é procedente, improcedente, parcial ou não identificado; exige dispositivo literal compatível, e não é deduzido da procedência de um recurso ou de tutela.
+- **Sentença de mérito:** julgamento efetivamente comunicado dos pedidos; referência a sentença anterior, decisão de tutela, pedido de julgamento e cumprimento de sentença não bastam. O resultado é procedente, improcedente, parcial ou não identificado; exige dispositivo literal compatível, e não é deduzido da procedência de um recurso ou de tutela.
 - **Acórdão:** julgamento colegiado efetivamente comunicado. Citação de precedente ou remessa para futuro julgamento não bastam.
-- **Perícia agendada:** exige data, horário e local explícitos do mesmo agendamento. Determinação de realização, nomeação do perito, solicitação de data/local e agendamento incompleto ficam em **Outros**, com os dados faltantes destacados.
+- **Perícia agendada:** exige data, horário e local explícitos do mesmo agendamento. Determinação de realização, nomeação do perito, solicitação de data/local e agendamento incompleto não entram nesta categoria. Uma decisão incidental pode receber **Decisão interlocutória**; sem evidência suficiente, fica em **Outros**, com os dados faltantes destacados.
 - **Laudo pericial juntado:** exige confirmação de apresentação/juntada já ocorrida. Ordem ou prazo de entrega, exames médicos e futura vista após juntada não comprovam esse fato.
 - **Outros:** tudo que não se enquadra, está incompleto ou é inconclusivo. Não se criam categorias de prazos nesta etapa.
 
@@ -55,13 +63,15 @@ Toda classificação automática fica **A revisar**. O servidor verifica o forma
 
 ### Execução e credenciais
 
-O Codex roda serialmente em diretório temporário, com saída JSON, sessão efêmera, sandbox somente leitura e ferramentas de shell, navegador, plugins, aplicativos e subagentes desativadas. O texto judicial é dado não confiável e não autoriza instruções ou ações. A execução não herda as chaves e tokens das outras integrações. API keys são removidas do ambiente e o modo de login é restrito a ChatGPT.
+O Codex roda com duas análises simultâneas por padrão (configurável de uma a três em Monitoramento DJEN) em diretório temporário, com saída JSON, sessão efêmera, sandbox somente leitura e ferramentas de shell, navegador, plugins, aplicativos e subagentes desativadas. O texto judicial é dado não confiável e não autoriza instruções ou ações. A execução não herda as chaves e tokens das outras integrações. API keys são removidas do ambiente e o modo de login é restrito a ChatGPT.
 
 A sessão fica em `~/.disparador-codex` do usuário do servidor, fora do banco/backup do aplicativo. Para um diretório persistente diferente, configure `DJEN_CODEX_HOME` no ambiente do PM2 e no ambiente usado pelo comando de login. Não é necessário informar chave de API. Em contêineres ou múltiplos usuários, mantenha esse diretório persistente, privado e idêntico nos dois comandos. O login não é compartilhado com os demais usuários da máquina.
 
+A conexão positiva é verificada uma vez e reaproveitada por cinco minutos, com nova checagem forçada ao clicar em Verificar conexão. Uma falha de execução invalida esse cache. A interface mostra quantas publicações estão em análise, tempo médio das últimas 50 conclusões e estimativa de término, sujeita à variação dos textos e limites da conta. Erro de validação isolado não interrompe outras publicações; falha de conexão ou limite pausa novas tarefas. O modelo e o esforço de raciocínio foram mantidos.
+
 Há tempo máximo de três minutos por execução e limite de 120 mil caracteres por publicação; textos maiores não são truncados e ficam com erro visível para conferência manual. Uma execução interrompida pelo reinício volta à fila. Credenciais e erros brutos do CLI não são devolvidos ao navegador.
 
-Esta etapa não calcula prazos, consulta autos integrais, acessa documentos sob sigilo ou cria eventos em calendários. A data da lista é a **disponibilização informada pelo DJEN**, não vencimento. A mensagem inicial ao cliente permanece neutra e editável; não afirma resultado favorável automaticamente.
+Esta etapa permite cadastrar vários prazos manuais por andamento, com descrição, início, término, status e observações. As datas são conferidas pela equipe; não há contagem automática de prazo legal. Há links de documentos HTTPS, abertura do texto integral em nova aba, certidão oficial e links do tribunal quando disponíveis. Não há download automático de arquivos dos autos nem criação de eventos em calendários. A data da lista é a **disponibilização informada pelo DJEN**, não vencimento. A mensagem inicial ao cliente permanece neutra e editável; não afirma resultado favorável automaticamente.
 
 Documentação oficial consultada: [execução não interativa](https://developers.openai.com/codex/noninteractive), [autenticação](https://developers.openai.com/codex/auth) e [configuração](https://developers.openai.com/codex/config-reference).
 
