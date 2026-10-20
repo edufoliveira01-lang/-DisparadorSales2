@@ -2,7 +2,7 @@ import { emitEvent } from "../websocket";
 import { startBatch, updateBatch, finishBatch } from "./batchProgressService";
 import { db } from "../db";
 import { createLog, type SendLog } from "./logsService";
-import { getContact, listContacts, updateContact, type Contact } from "./contactsService";
+import { createContact, getContact, listContacts, updateContact, type Contact } from "./contactsService";
 import { matchContactByNameAndProcess, normalizeName } from "./matcherService";
 import {
   getPericiaAgendada,
@@ -14,6 +14,9 @@ import type { Pericia } from "./parserService";
 import {
   agruparEventosParaLembrete,
   detectarPendenciasProcesso,
+  detectarPendenciasTelefone,
+  telefoneValidoParaLembrete,
+  type PendenciaTelefoneLembrete,
   periodoDoEvento,
   type PendenciaProcessoLembrete,
   type PeriodoLembrete,
@@ -38,6 +41,12 @@ export interface ResultadoEnvioLembrete {
 export class ProcessoLembretePendenteError extends Error {
   constructor(public readonly pendencia: PendenciaProcessoLembrete) {
     super("Informe o número do processo para confirmar o contato e continuar o envio.");
+  }
+}
+
+export class TelefoneLembretePendenteError extends Error {
+  constructor(public readonly pendencia: PendenciaTelefoneLembrete) {
+    super(`Informe o telefone de ${pendencia.nome} para continuar o lembrete.`);
   }
 }
 
@@ -86,6 +95,39 @@ export function listarPendenciasProcessoLembrete(ids: number[]): PendenciaProces
   return detectarPendenciasProcesso(eventos, listContacts());
 }
 
+export function validarDestinatariosLembrete(ids: number[]) {
+  const eventos = Array.from(new Set(ids)).map(id => getPericiaAgendada(id))
+    .filter((evento): evento is PericiaAgendada => Boolean(evento && evento.status === "ativa" && !evento.ultimo_lembrete_em));
+  const contatos = listContacts();
+  return {
+    pendencias: detectarPendenciasProcesso(eventos, contatos),
+    telefonesPendentes: detectarPendenciasTelefone(eventos, contatos),
+    eventos: eventos.map(evento => aplicarTelefoneDaAgenda(evento, contatos)),
+  };
+}
+
+export function completarTelefoneLembrete(ids: number[], telefone: string): void {
+  if (!telefoneValidoParaLembrete(telefone)) throw new Error("Informe um telefone válido com DDD.");
+  const idsUnicos = Array.from(new Set(ids));
+  db.transaction(() => {
+    const eventos = idsUnicos.map(id => getPericiaAgendada(id))
+      .filter((evento): evento is PericiaAgendada => Boolean(evento && evento.status === "ativa"));
+    if (!idsUnicos.length || eventos.length !== idsUnicos.length) throw new Error("Um dos compromissos não foi encontrado ou não está mais ativo.");
+    const contatos = listContacts();
+    const pendencia = detectarPendenciasTelefone(eventos, contatos).find(p =>
+      p.ids.length === idsUnicos.length && p.ids.every(id => idsUnicos.includes(id)));
+    if (!pendencia) throw new Error("O telefone deste compromisso já foi preenchido ou os clientes não correspondem. Atualize a página.");
+
+    const principal = eventos[0];
+    const contato = contatoSeguroDaAgenda(principal, contatos);
+    if (contato) updateContact(contato.id, contato.nome, telefone, contato.observacoes || undefined, contato.processo || undefined);
+    else if (normalizeProcesso(principal.processo)) createContact(principal.nome, telefone, undefined, principal.processo!);
+    // Atualiza só o telefone; preserva lembretes já enviados, datas e os demais dados do evento.
+    const atualizar = db.prepare("UPDATE pericias_agendadas SET telefone = ?, telefone_digits = ? WHERE id = ?");
+    for (const evento of eventos) atualizar.run(normalizePhone(telefone), normalizePhone(telefone), evento.id);
+  })();
+}
+
 export function completarProcessoLembrete(ids: number[], contactId: number, processo: string): void {
   const processoLimpo = processo.trim();
   if (!normalizeProcesso(processoLimpo)) throw new Error("Informe um número de processo válido.");
@@ -132,7 +174,7 @@ function aplicarTelefoneDaAgenda(pericia: PericiaAgendada, contatos: Contact[]):
   const contato = contatoSeguroDaAgenda(pericia, contatos);
   if (!contato) return pericia;
   const telefoneDigits = normalizePhone(contato.telefone);
-  if (!telefoneDigits) return pericia;
+  if (!telefoneValidoParaLembrete(contato.telefone)) return pericia;
   return { ...pericia, telefone: contato.telefone, telefone_digits: telefoneDigits };
 }
 
@@ -143,6 +185,9 @@ async function enviarGrupoLembrete(
 ): Promise<ResultadoEnvioLembrete> {
   const pendenciaProcesso = detectarPendenciasProcesso(eventos, contatosAgenda)[0];
   if (pendenciaProcesso) throw new ProcessoLembretePendenteError(pendenciaProcesso);
+
+  const pendenciaTelefone = detectarPendenciasTelefone(eventos, contatosAgenda)[0];
+  if (pendenciaTelefone) throw new TelefoneLembretePendenteError(pendenciaTelefone);
 
   const ativos = eventos
     .filter((evento) => evento.status === "ativa")
@@ -241,6 +286,10 @@ export async function enviarLembretesEmMassa(ids: number[], intervalMinSec: numb
     const ignorados = eventos.filter((evento) => Boolean(evento.ultimo_lembrete_em)).length;
     const pendentes = eventos.filter((evento) => !evento.ultimo_lembrete_em);
     const contatosAgenda = listContacts();
+    const processoPendente = detectarPendenciasProcesso(pendentes, contatosAgenda)[0];
+    if (processoPendente) throw new ProcessoLembretePendenteError(processoPendente);
+    const telefonePendente = detectarPendenciasTelefone(pendentes, contatosAgenda)[0];
+    if (telefonePendente) throw new TelefoneLembretePendenteError(telefonePendente);
     const pendentesComTelefoneDaAgenda = pendentes.map((evento) => aplicarTelefoneDaAgenda(evento, contatosAgenda));
     const grupos = agruparEventosParaLembrete(pendentesComTelefoneDaAgenda);
     let enviados = 0;

@@ -1,6 +1,7 @@
 import type { PericiaAgendada } from "./periciasAgendadasService";
 import type { Contact } from "./contactsService";
 import { matchContactByNameAndProcess, normalizeName } from "./matcherService";
+import { normalizePhone } from "../utils/phone";
 import { normalizeProcesso } from "../utils/processo";
 
 export type PeriodoLembrete = "hoje" | "amanha" | "futuro";
@@ -57,6 +58,33 @@ export function detectarPendenciasProcesso(
     });
   }
 
+  return Array.from(pendencias.values());
+}
+
+export interface PendenciaTelefoneLembrete {
+  ids: number[];
+  nome: string;
+  processo: string;
+}
+
+export function telefoneValidoParaLembrete(telefone: string): boolean {
+  return /^[1-9]\d{9,14}$/.test(normalizePhone(telefone));
+}
+
+export function detectarPendenciasTelefone(eventos: PericiaAgendada[], contatos: Contact[]): PendenciaTelefoneLembrete[] {
+  // Mantém o fluxo existente de confirmação de processo antes de pedir outro telefone.
+  const aguardandoProcesso = new Set(detectarPendenciasProcesso(eventos, contatos).flatMap(p => p.ids));
+  const pendencias = new Map<string, PendenciaTelefoneLembrete>();
+  for (const evento of eventos) {
+    if (evento.status !== "ativa" || aguardandoProcesso.has(evento.id)) continue;
+    const contato = matchContactByNameAndProcess(evento.nome, evento.processo, contatos);
+    if (telefoneValidoParaLembrete(contato?.telefone || "") || telefoneValidoParaLembrete(evento.telefone || "")) continue;
+    // Sem processo, cada compromisso é confirmado separadamente: homônimos não compartilham número.
+    const chave = `${normalizeName(evento.nome)}|${normalizeProcesso(evento.processo) || `evento:${evento.id}`}`;
+    const existente = pendencias.get(chave);
+    if (existente) existente.ids.push(evento.id);
+    else pendencias.set(chave, { ids: [evento.id], nome: evento.nome, processo: evento.processo || "" });
+  }
   return Array.from(pendencias.values());
 }
 

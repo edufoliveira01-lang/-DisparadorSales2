@@ -339,7 +339,7 @@ async function resolveWaVersionCache(): Promise<WaVersionCache> {
 // upstream) que costumam acontecer durante o carregamento inicial do WhatsApp Web,
 // antes mesmo do QR Code aparecer. Na prática, tentar de novo quase sempre resolve —
 // então fazemos isso automaticamente em vez de exigir que o usuário clique de novo.
-const ERRO_TRANSITORIO = /execution context was destroyed|protocol error/i;
+const ERRO_TRANSITORIO = /execution context was destroyed|protocol error|detached frame|frame was detached/i;
 
 /**
  * Diferencia uma navegação momentânea da página de um Chromium/CDP efetivamente travado.
@@ -348,7 +348,8 @@ const ERRO_TRANSITORIO = /execution context was destroyed|protocol error/i;
  * nosso watchdog usa o marcador abaixo para não deixar o usuário esperando cinco minutos.
  */
 const MARCADOR_TIMEOUT_OPERACAO = "WHATSAPP_BROWSER_OPERATION_TIMEOUT";
-const ERRO_BROWSER_TRAVADO = /Runtime\.callFunctionOn timed out|protocolTimeout|WHATSAPP_BROWSER_OPERATION_TIMEOUT/i;
+// Uma referência a Frame removido não volta a funcionar repetindo chamadas no mesmo Client.
+const ERRO_BROWSER_TRAVADO = /Runtime\.callFunctionOn timed out|protocolTimeout|WHATSAPP_BROWSER_OPERATION_TIMEOUT|attempted to use detached frame|frame was detached/i;
 
 export function isWhatsappBrowserStalledError(err: unknown): boolean {
   const mensagem = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
@@ -576,9 +577,10 @@ class WhatsappManager {
     }
   }
 
-  private async tratarTravamentoDeOperacao(err: unknown, resultadoIncerto: boolean): Promise<never> {
+  private async tratarTravamentoDeOperacao(err: unknown, resultadoIncerto: boolean, clientDaOperacao: Client): Promise<never> {
     const mensagem = err instanceof Error ? err.message : String(err);
-    await this.recuperarBrowserTravado(mensagem);
+    // Uma falha tardia de um Client antigo não deve reiniciar a conexão recém-recuperada.
+    if (this.client === clientDaOperacao) await this.recuperarBrowserTravado(mensagem);
     if (resultadoIncerto) {
       throw new Error(
         "O navegador do WhatsApp travou durante o envio e foi reiniciado automaticamente. " +
@@ -1181,7 +1183,7 @@ class WhatsappManager {
       ));
       return result ? result._serialized : null;
     } catch (err) {
-      if (isWhatsappBrowserStalledError(err)) return this.tratarTravamentoDeOperacao(err, false);
+      if (isWhatsappBrowserStalledError(err)) return this.tratarTravamentoDeOperacao(err, false, client);
       throw err;
     }
   }
@@ -1200,19 +1202,21 @@ class WhatsappManager {
         }),
       ]);
       aliases = contatos.flatMap((contato) => [contato.lid, contato.pn]).filter(Boolean);
-    } catch {
+    } catch (err) {
+      if (isWhatsappBrowserStalledError(err)) return this.tratarTravamentoDeOperacao(err, false, client);
       // ACK pelo ID direto continua funcionando mesmo sem o mapeamento PN/LID.
       console.warn("[WhatsApp] Não foi possível consultar aliases PN/LID da cobrança.");
     } finally {
       clearTimeout(aliasTimer);
     }
+    if (this.client !== client || this.status !== "conectado") throw new Error("A conexão do WhatsApp mudou. Aguarde reconectar e tente novamente.");
     console.log(`[WhatsApp] Enviando mensagem com confirmação para ${chatId}...`);
     try {
       const resultado = await sendConfirmedWhatsappMessage(client, chatId, mensagem, aliases);
       console.log(`[WhatsApp] Mensagem confirmada: ID=${resultado.messageId}, ACK=${resultado.ack}`);
       return resultado;
     } catch (err) {
-      if (isWhatsappBrowserStalledError(err)) return this.tratarTravamentoDeOperacao(err, true);
+      if (isWhatsappBrowserStalledError(err)) return this.tratarTravamentoDeOperacao(err, true, client);
       throw err;
     }
   }
@@ -1302,7 +1306,7 @@ class WhatsappManager {
       return null;
     } catch (err) {
       this.removerEnvioAguardando(chatId, mensagem);
-      if (isWhatsappBrowserStalledError(err)) return this.tratarTravamentoDeOperacao(err, true);
+      if (isWhatsappBrowserStalledError(err)) return this.tratarTravamentoDeOperacao(err, true, client);
       throw err;
     }
   }

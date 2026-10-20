@@ -92,7 +92,13 @@ interface PendenciaProcessoLembrete {
   contato: Pick<Contact, "id" | "nome" | "telefone">;
 }
 
-type RetomadaAposProcesso =
+interface PendenciaTelefoneLembrete {
+  ids: number[];
+  nome: string;
+  processo: string;
+}
+
+type RetomadaLembrete =
   | { tipo: "individual"; pericia: PericiaAgendada; forcar: boolean }
   | { tipo: "lote"; periodo: "hoje" | "proximaData"; eventos: PericiaAgendada[] };
 
@@ -100,7 +106,7 @@ interface FluxoProcessoLembrete {
   pendencias: PendenciaProcessoLembrete[];
   indice: number;
   valor: string;
-  retomada: RetomadaAposProcesso;
+  retomada: RetomadaLembrete;
 }
 
 function diaLocalYMD(dataHoraMs: number): string {
@@ -189,6 +195,13 @@ export function Dashboard() {
   const [lembreteBatchLoading, setLembreteBatchLoading] = useState(false);
   const [processoLembrete, setProcessoLembrete] = useState<FluxoProcessoLembrete | null>(null);
   const [salvandoProcessoLembrete, setSalvandoProcessoLembrete] = useState(false);
+  const [telefoneLembrete, setTelefoneLembrete] = useState<{
+    pendencia: PendenciaTelefoneLembrete;
+    retomada: RetomadaLembrete;
+    valor: string;
+  } | null>(null);
+  const [salvandoTelefoneLembrete, setSalvandoTelefoneLembrete] = useState(false);
+  const telefoneLembreteGuard = useRef(createInFlightGuard<number>()).current;
 
   const [cadastro, setCadastro] = useState<{
     card: CardViewModel;
@@ -408,7 +421,7 @@ export function Dashboard() {
     };
   }, [panorama]);
 
-  function iniciarFluxoProcesso(pendencias: PendenciaProcessoLembrete[], retomada: RetomadaAposProcesso) {
+  function iniciarFluxoProcesso(pendencias: PendenciaProcessoLembrete[], retomada: RetomadaLembrete) {
     if (pendencias.length === 0) return;
     setProcessoLembrete({
       pendencias,
@@ -423,6 +436,59 @@ export function Dashboard() {
     const pendencia = err.data.pendencia as PendenciaProcessoLembrete | undefined;
     if (!pendencia || !Array.isArray(pendencia.ids) || !pendencia.contato?.id) return null;
     return pendencia;
+  }
+
+  function abrirTelefoneDoErro(err: unknown, retomada: RetomadaLembrete): boolean {
+    if (!(err instanceof ApiError) || err.data?.code !== "TELEFONE_NAO_INFORMADO") return false;
+    const pendencia = err.data.pendencia as PendenciaTelefoneLembrete | undefined;
+    if (!pendencia || !Array.isArray(pendencia.ids) || !pendencia.nome) return false;
+    setLembreteReenvioConfirm(null);
+    setLembreteBatchConfirm(null);
+    setTelefoneLembrete({ pendencia, retomada, valor: "" });
+    return true;
+  }
+
+  async function validarEConfirmarLote(periodo: "hoje" | "proximaData", eventos: PericiaAgendada[]) {
+    const validacao = await api.post<{
+      pendencias: PendenciaProcessoLembrete[];
+      telefonesPendentes?: PendenciaTelefoneLembrete[];
+      eventos?: PericiaAgendada[];
+    }>("/pericias-agendadas/validar-lembretes", { ids: eventos.map(evento => evento.id) });
+    const retomada: RetomadaLembrete = { tipo: "lote", periodo, eventos };
+    if (validacao.pendencias.length) {
+      iniciarFluxoProcesso(validacao.pendencias, retomada);
+    } else if (validacao.telefonesPendentes?.length) {
+      setTelefoneLembrete({ pendencia: validacao.telefonesPendentes[0], retomada, valor: "" });
+    } else {
+      setLembreteBatchConfirm({ periodo, eventos: validacao.eventos || eventos });
+    }
+  }
+
+  async function continuarLembrete(retomada: RetomadaLembrete) {
+    if (retomada.tipo === "individual") await enviarLembreteIndividual(retomada.pericia, retomada.forcar);
+    else await validarEConfirmarLote(retomada.periodo, retomada.eventos);
+  }
+
+  async function confirmarTelefoneLembrete() {
+    if (!telefoneLembrete) return;
+    const id = telefoneLembrete.pendencia.ids[0];
+    if (!telefoneLembreteGuard.tryStart(id)) return;
+    setSalvandoTelefoneLembrete(true);
+    try {
+      await api.post("/pericias-agendadas/completar-telefone", {
+        ids: telefoneLembrete.pendencia.ids,
+        telefone: telefoneLembrete.valor.trim(),
+      });
+      const retomada = telefoneLembrete.retomada;
+      setTelefoneLembrete(null);
+      carregarPanorama();
+      await continuarLembrete(retomada);
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao salvar o telefone.", "error");
+    } finally {
+      telefoneLembreteGuard.finish(id);
+      setSalvandoTelefoneLembrete(false);
+    }
   }
 
   async function enviarLembreteIndividual(pericia: PericiaAgendada, forcar = false) {
@@ -441,6 +507,7 @@ export function Dashboard() {
       setLembreteReenvioConfirm(null);
       carregarPanorama();
     } catch (err) {
+      if (abrirTelefoneDoErro(err, { tipo: "individual", pericia, forcar })) return;
       const pendencia = pendenciaProcessoDoErro(err);
       if (pendencia) {
         setLembreteReenvioConfirm(null);
@@ -478,15 +545,7 @@ export function Dashboard() {
       return;
     }
     try {
-      const { pendencias } = await api.post<{ pendencias: PendenciaProcessoLembrete[] }>(
-        "/pericias-agendadas/validar-lembretes",
-        { ids: eventos.map((evento) => evento.id) }
-      );
-      if (pendencias.length > 0) {
-        iniciarFluxoProcesso(pendencias, { tipo: "lote", periodo, eventos });
-        return;
-      }
-      setLembreteBatchConfirm({ periodo, eventos });
+      await validarEConfirmarLote(periodo, eventos);
     } catch (err) {
       show(err instanceof ApiError ? err.message : "Erro ao validar os lembretes.", "error");
     }
@@ -517,11 +576,8 @@ export function Dashboard() {
       setProcessoLembrete(null);
       show("Número do processo salvo. O contato foi confirmado com segurança.", "success");
 
-      if (retomada.tipo === "individual") {
-        await enviarLembreteIndividual(retomada.pericia, retomada.forcar);
-      } else {
-        setLembreteBatchConfirm({ periodo: retomada.periodo, eventos: retomada.eventos });
-      }
+      carregarPanorama();
+      await continuarLembrete(retomada);
     } catch (err) {
       show(err instanceof ApiError ? err.message : "Erro ao salvar o número do processo.", "error");
     } finally {
@@ -537,6 +593,14 @@ export function Dashboard() {
       await api.post("/pericias-agendadas/lembrete-em-massa", { ids });
       setLembreteBatchConfirm(null);
     } catch (err) {
+      const retomada: RetomadaLembrete = { tipo: "lote", ...lembreteBatchConfirm };
+      if (abrirTelefoneDoErro(err, retomada)) return;
+      const pendencia = pendenciaProcessoDoErro(err);
+      if (pendencia) {
+        setLembreteBatchConfirm(null);
+        iniciarFluxoProcesso([pendencia], retomada);
+        return;
+      }
       show(err instanceof ApiError ? err.message : "Erro ao iniciar envio dos lembretes.", "error");
     } finally {
       setLembreteBatchLoading(false);
@@ -959,6 +1023,33 @@ export function Dashboard() {
             cadastrado ou perícia identificada.
           </p>
         )}
+      </Modal>
+
+      <Modal
+        open={Boolean(telefoneLembrete)}
+        onClose={() => { if (!salvandoTelefoneLembrete) setTelefoneLembrete(null); }}
+        title="Informe o telefone do cliente"
+        description="Este compromisso está sem telefone válido. Informe o número com DDD para continuar o lembrete."
+        footer={<>
+          <Button variant="outline" onClick={() => setTelefoneLembrete(null)} disabled={salvandoTelefoneLembrete}>Cancelar</Button>
+          <Button onClick={confirmarTelefoneLembrete} loading={salvandoTelefoneLembrete} disabled={!telefoneLembrete?.valor.trim()}>Salvar e continuar</Button>
+        </>}
+      >
+        {telefoneLembrete && <div className="space-y-4">
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-800/50">
+            <p className="font-medium text-zinc-950 dark:text-white">{telefoneLembrete.pendencia.nome}</p>
+            {telefoneLembrete.pendencia.processo && <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Processo: {telefoneLembrete.pendencia.processo}</p>}
+          </div>
+          <div>
+            <Label htmlFor="telefone-lembrete">Telefone com DDD</Label>
+            <Input id="telefone-lembrete" autoFocus type="tel" autoComplete="tel" placeholder="(11) 99999-9999"
+              value={telefoneLembrete.valor}
+              disabled={salvandoTelefoneLembrete}
+              onChange={e => setTelefoneLembrete({ ...telefoneLembrete, valor: e.target.value })}
+              onKeyDown={e => { if (e.key === "Enter" && telefoneLembrete.valor.trim()) confirmarTelefoneLembrete(); }} />
+            <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">O telefone será salvo no compromisso para os próximos lembretes.</p>
+          </div>
+        </div>}
       </Modal>
 
       <Modal

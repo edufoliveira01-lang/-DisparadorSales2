@@ -11,9 +11,11 @@ import {
 import { sincronizarPericiasDoTrello } from "../services/periciasTrelloSyncService";
 import {
   completarProcessoLembrete,
+  completarTelefoneLembrete,
+  validarDestinatariosLembrete,
+  TelefoneLembretePendenteError,
   enviarLembretePorId,
   enviarLembretesEmMassa,
-  listarPendenciasProcessoLembrete,
   loteLembretesEmAndamento,
   LembreteEmAndamentoError,
   ProcessoLembretePendenteError,
@@ -74,7 +76,7 @@ periciasAgendadasRouter.post("/validar-lembretes", (req, res) => {
   if (idsValidos.length !== ids.length) {
     return res.status(400).json({ error: "Há identificadores de evento inválidos." });
   }
-  res.json({ pendencias: listarPendenciasProcessoLembrete(idsValidos) });
+  res.json(validarDestinatariosLembrete(idsValidos));
 });
 
 periciasAgendadasRouter.post("/completar-processo", (req, res) => {
@@ -91,6 +93,20 @@ periciasAgendadasRouter.post("/completar-processo", (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(400).json({ error: (err as Error).message || "Não foi possível salvar o processo." });
+  }
+});
+
+periciasAgendadasRouter.post("/completar-telefone", (req, res) => {
+  const { ids, telefone } = req.body as { ids?: number[]; telefone?: string };
+  if (!Array.isArray(ids) || ids.length === 0 || ids.some(id => !Number.isInteger(id) || id <= 0)) {
+    return res.status(400).json({ error: "Nenhum evento válido foi informado." });
+  }
+  if (typeof telefone !== "string") return res.status(400).json({ error: "Informe um telefone válido com DDD." });
+  try {
+    completarTelefoneLembrete(ids, telefone);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message || "Não foi possível salvar o telefone." });
   }
 });
 
@@ -111,6 +127,9 @@ periciasAgendadasRouter.post("/:id/lembrete", async (req, res) => {
         error: err.message,
         code: "LEMBRETE_EM_ANDAMENTO",
       });
+    }
+    if (err instanceof TelefoneLembretePendenteError) {
+      return res.status(409).json({ error: err.message, code: "TELEFONE_NAO_INFORMADO", pendencia: err.pendencia });
     }
     if (err instanceof ProcessoLembretePendenteError) {
       return res.status(409).json({
@@ -135,6 +154,15 @@ periciasAgendadasRouter.post("/lembrete-em-massa", (req, res) => {
   if (idsValidos.length > 500) return res.status(400).json({ error: "Selecione no máximo 500 eventos por lote." });
   if (loteLembretesEmAndamento()) {
     return res.status(409).json({ error: "Já existe um lote de lembretes em andamento." });
+  }
+
+  // A validação é repetida no início do lote: dados podem mudar após abrir a confirmação.
+  const validacao = validarDestinatariosLembrete(idsValidos);
+  if (validacao.pendencias.length) {
+    return res.status(409).json({ code: "PROCESSO_NAO_IDENTIFICADO", error: "Confirme o processo antes de enviar.", pendencia: validacao.pendencias[0] });
+  }
+  if (validacao.telefonesPendentes.length) {
+    return res.status(409).json({ code: "TELEFONE_NAO_INFORMADO", error: "Informe o telefone antes de enviar.", pendencia: validacao.telefonesPendentes[0] });
   }
 
   const min = Number(getSetting("send_interval_min")) || 5;
