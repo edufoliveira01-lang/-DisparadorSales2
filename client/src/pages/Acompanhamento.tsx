@@ -175,8 +175,17 @@ interface Status {
     media_segundos: number | null;
     estimativa_segundos: number | null;
     pendentes: number;
+    reanalisaveis: number;
     falhas: number;
     pausa: string | null;
+    uso_30_dias: {
+      chamadas: number;
+      cache_hits: number;
+      agrupadas: number;
+      execucoes_evitadas: number;
+      caracteres: number;
+      falhas: number;
+    };
   };
   executando: number | null;
   proxima_execucao: string | null;
@@ -189,6 +198,7 @@ interface Status {
     janela_inicial_dias: number;
     ia_ativa: number;
     ia_paralelismo: number;
+    ia_modo: "economico" | "equilibrado" | "precisao";
   };
 }
 const hoje = () =>
@@ -271,6 +281,7 @@ export function Acompanhamento() {
     janela_inicial_dias: 7,
     ia_ativa: false,
     ia_paralelismo: 2,
+    ia_modo: "economico" as "economico" | "equilibrado" | "precisao",
   });
   const [conexaoCodex, setConexaoCodex] = useState<{
     conectado: boolean;
@@ -1225,6 +1236,35 @@ export function Acompanhamento() {
               antigas sem revisão. As revisões salvas são preservadas. O uso
               está sujeito aos limites da conta Codex.
             </p>
+            <div className="max-w-md">
+              <Label htmlFor="codex-modo">Modo de análise</Label>
+              <Select
+                id="codex-modo"
+                value={config.ia_modo}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    ia_modo: e.target.value as
+                      | "economico"
+                      | "equilibrado"
+                      | "precisao",
+                  })
+                }
+              >
+                <option value="economico">Econômico — lotes de até 8</option>
+                <option value="equilibrado">
+                  Equilibrado — modelo forte, lotes de até 4
+                </option>
+                <option value="precisao">
+                  Máxima precisão — análise individual
+                </option>
+              </Select>
+              <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">
+                No modo econômico, casos duvidosos são encaminhados
+                automaticamente ao modelo mais forte. Publicações extensas
+                continuam sendo analisadas individualmente e sem cortes.
+              </p>
+            </div>
             <div className="max-w-xs">
               <Label htmlFor="codex-paralelismo">Análises simultâneas</Label>
               <Select
@@ -1237,10 +1277,14 @@ export function Acompanhamento() {
                   })
                 }
               >
-                <option value={1}>1 por vez</option>
-                <option value={2}>2 simultâneas (recomendado)</option>
+                <option value={1}>1 por vez (menor pico de uso)</option>
+                <option value={2}>2 simultâneas</option>
                 <option value={3}>3 simultâneas</option>
               </Select>
+              <p className="mt-1 text-[11px] text-zinc-500">
+                Cada execução pode conter um lote. Esta opção muda a velocidade,
+                não a quantidade total de texto analisado.
+              </p>
             </div>
             <div className="flex flex-wrap gap-3">
               <Button
@@ -1263,16 +1307,26 @@ export function Acompanhamento() {
                 disabled={
                   !status?.config.ia_ativa || Boolean(status?.codex.executando)
                 }
-                onClick={() =>
+                onClick={() => {
+                  const quantidade = status?.codex.reanalisaveis ?? 0;
+                  if (
+                    !window.confirm(
+                      `Reanalisar ${quantidade} publicação(ões) sem revisão? Textos já analisados poderão usar o cache; os demais consumirão o limite do Codex.`,
+                    )
+                  )
+                    return;
                   void acao(async () => {
-                    await api.post("/djen/codex/reanalisar", {});
+                    const resposta = await api.post<{ enfileiradas: number }>(
+                      "/djen/codex/reanalisar",
+                      {},
+                    );
                     await carregarStatus();
                     show(
-                      "Publicações sem revisão adicionadas à fila.",
+                      `${resposta.enfileiradas} publicação(ões) adicionada(s) à fila.`,
                       "success",
                     );
-                  })
-                }
+                  });
+                }}
               >
                 Reanalisar publicações sem revisão
               </Button>
@@ -1306,6 +1360,34 @@ export function Acompanhamento() {
               {status?.codex.falhas ?? 0} com falha
               {status?.codex.executando ? " · análise em andamento" : ""}
             </p>
+            {status && (
+              <div className="grid gap-2 sm:grid-cols-3">
+                <div className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/60">
+                  <p className="text-[11px] text-zinc-500">
+                    Execuções em 30 dias
+                  </p>
+                  <p className="mt-1 text-lg font-semibold">
+                    {status.codex.uso_30_dias.chamadas}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-emerald-50 p-3 dark:bg-emerald-950/30">
+                  <p className="text-[11px] text-emerald-700 dark:text-emerald-300">
+                    Execuções evitadas
+                  </p>
+                  <p className="mt-1 text-lg font-semibold text-emerald-800 dark:text-emerald-200">
+                    {status.codex.uso_30_dias.execucoes_evitadas}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/60">
+                  <p className="text-[11px] text-zinc-500">
+                    Reaproveitadas do cache
+                  </p>
+                  <p className="mt-1 text-lg font-semibold">
+                    {status.codex.uso_30_dias.cache_hits}
+                  </p>
+                </div>
+              </div>
+            )}
           </section>
           <section className="surface-panel p-5">
             <h2 className="text-sm font-semibold">

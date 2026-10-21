@@ -28,6 +28,20 @@ O Codex fornece o endereço e o código de autenticação. Abra o endereço e en
 
 Em **Monitoramento DJEN → Classificação e resumos com Codex**, clique em **Verificar conexão**, marque a análise automática e salve a configuração do Codex. O uso consome os limites disponíveis para a conta Codex; não há promessa de uso ilimitado. Uma falha interrompe a fila com aviso visível; depois de resolver a conexão ou aguardar a liberação de uso, clique em **Retomar análises**.
 
+### Controle de consumo
+
+A partir da versão **2.40.0**, a configuração oferece três modos:
+
+- **Econômico (padrão):** agrupa até oito publicações curtas, limitadas a 60 mil caracteres por execução, e usa `gpt-6-luna` com raciocínio baixo. Cada resultado é validado separadamente contra o texto da própria publicação. Resposta inválida, sinal explícito de dúvida ou inconsistência é repetido isoladamente com `gpt-6.1-sol` e raciocínio baixo.
+- **Equilibrado:** usa `gpt-6.1-sol` com raciocínio baixo e lotes de até quatro publicações.
+- **Máxima precisão:** usa `gpt-6.1-sol` com raciocínio médio e uma publicação por execução.
+
+Publicações com mais de 20 mil caracteres nunca entram em lote. Elas continuam no fluxo integral de textos longos e, no modo econômico, usam o perfil equilibrado. A análise manual sempre usa o modo de máxima precisão. Nenhum modo trunca o inteiro teor.
+
+O cache considera versão do classificador, texto integral, tipo documental, classe, processo e tribunal. Uma publicação automática idêntica pode reaproveitar uma análise já validada sem nova execução do Codex. A reanálise manual individual ignora o cache. O painel mostra, para os últimos 30 dias, execuções realizadas, reaproveitamentos e execuções evitadas por lotes ou cache. Esses números são operacionais do sistema e não representam créditos exatos cobrados pela conta ChatGPT.
+
+O botão de reanálise em massa informa previamente quantas publicações serão recolocadas na fila e exige confirmação. Resultados idênticos podem ser atendidos pelo cache; use a análise manual individual quando quiser forçar uma nova resposta para uma publicação específica. Reduzir o paralelismo diminui o pico de uso, mas não reduz por si só a quantidade total de texto processada.
+
 A análise começa desativada. Na primeira ativação, as publicações antigas sem revisão entram na fila junto com as novas. Até receber uma classificação, ficam em **Outros**, com o estado da análise indicado. O Codex retorna resumo desta publicação, justificativa, citações literais, dados do agendamento presentes e alertas. O histórico do processo mostra os resumos das publicações capturadas; não representa consulta aos autos completos.
 
 ### Executável ausente após instalar as dependências

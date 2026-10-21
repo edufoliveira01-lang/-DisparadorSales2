@@ -92,6 +92,7 @@ export function configuracaoDjen() {
     ia_ativa: number;
     ia_pausa: string | null;
     ia_paralelismo: number;
+    ia_modo: "economico" | "equilibrado" | "precisao";
   };
 }
 export function salvarConfiguracaoDjen(data: Record<string, unknown>) {
@@ -102,6 +103,11 @@ export function salvarConfiguracaoDjen(data: Record<string, unknown>) {
       Number(data.ia_paralelismo) > 3)
   )
     throw new DjenInputError("Use de 1 a 3 análises simultâneas.");
+  if (
+    data.ia_modo !== undefined &&
+    !["economico", "equilibrado", "precisao"].includes(String(data.ia_modo))
+  )
+    throw new DjenInputError("Modo de análise do Codex inválido.");
   const intervalo = Number(data.intervalo_minutos),
     janela = Number(data.janela_inicial_dias);
   if (
@@ -126,6 +132,8 @@ export function salvarConfiguracaoDjen(data: Record<string, unknown>) {
     db.prepare("UPDATE djen_config SET ia_paralelismo=? WHERE id=1").run(
       data.ia_paralelismo,
     );
+  if (data.ia_modo !== undefined)
+    db.prepare("UPDATE djen_config SET ia_modo=? WHERE id=1").run(data.ia_modo);
   return configuracaoDjen();
 }
 export function importarPublicacoes(

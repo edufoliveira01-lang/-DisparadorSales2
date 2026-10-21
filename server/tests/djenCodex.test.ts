@@ -1,10 +1,19 @@
 import Database from "better-sqlite3";
 import { runDjenMigrations } from "../src/db/djenMigrations";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-const runner = vi.hoisted(() => ({ analisarComCodex: vi.fn() }));
+const runner = vi.hoisted(() => ({
+  analisarComCodex: vi.fn(),
+  analisarLoteComCodex: vi.fn(),
+}));
 vi.mock("../src/services/djen/codexRunner", () => ({
   ...runner,
   ErroPublicacaoCodex: class extends Error {},
+  ErroModeloCodex: class extends Error {},
+  PERFIS_CODEX: {
+    economico: { modo: "economico", modelo: "gpt-6-luna", esforco: "low" },
+    equilibrado: { modo: "equilibrado", modelo: "gpt-6.1-sol", esforco: "low" },
+    precisao: { modo: "precisao", modelo: "gpt-6.1-sol", esforco: "medium" },
+  },
 }));
 import { db } from "../src/db";
 import {
@@ -72,9 +81,10 @@ function importar(texto = laudo) {
 }
 beforeEach(() => {
   db.exec(
-    "DELETE FROM djen_mensagens;DELETE FROM djen_publicacao_advogados;DELETE FROM djen_publicacoes;DELETE FROM djen_processos;DELETE FROM djen_advogados;UPDATE djen_config SET ia_ativa=0,ia_pausa=NULL;",
+    "DELETE FROM djen_mensagens;DELETE FROM djen_publicacao_advogados;DELETE FROM djen_publicacoes;DELETE FROM djen_processos;DELETE FROM djen_advogados;DELETE FROM djen_analise_cache;DELETE FROM djen_codex_execucoes;UPDATE djen_config SET ia_ativa=0,ia_pausa=NULL,ia_modo='economico';",
   );
   runner.analisarComCodex.mockReset();
+  runner.analisarLoteComCodex.mockReset();
   iniciarMonitorCodex();
 });
 afterEach(() => {

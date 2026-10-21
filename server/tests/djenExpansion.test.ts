@@ -1,10 +1,19 @@
 import { beforeEach, afterEach, describe, it, expect, vi } from "vitest";
 import Database from "better-sqlite3";
 import { runDjenMigrations } from "../src/db/djenMigrations";
-const mocked = vi.hoisted(() => ({ analisarComCodex: vi.fn() }));
+const mocked = vi.hoisted(() => ({
+  analisarComCodex: vi.fn(),
+  analisarLoteComCodex: vi.fn(),
+}));
 vi.mock("../src/services/djen/codexRunner", () => ({
   ...mocked,
   ErroPublicacaoCodex: class extends Error {},
+  ErroModeloCodex: class extends Error {},
+  PERFIS_CODEX: {
+    economico: { modo: "economico", modelo: "gpt-6-luna", esforco: "low" },
+    equilibrado: { modo: "equilibrado", modelo: "gpt-6.1-sol", esforco: "low" },
+    precisao: { modo: "precisao", modelo: "gpt-6.1-sol", esforco: "medium" },
+  },
 }));
 import { db } from "../src/db";
 import {
@@ -86,9 +95,10 @@ function seed(n = 1) {
 }
 beforeEach(() => {
   db.exec(
-    "DELETE FROM djen_mensagens;DELETE FROM djen_publicacao_advogados;DELETE FROM djen_publicacoes;DELETE FROM djen_processos;DELETE FROM djen_advogados;UPDATE djen_config SET ia_ativa=0,ia_pausa=NULL,ia_paralelismo=2",
+    "DELETE FROM djen_mensagens;DELETE FROM djen_publicacao_advogados;DELETE FROM djen_publicacoes;DELETE FROM djen_processos;DELETE FROM djen_advogados;DELETE FROM djen_analise_cache;DELETE FROM djen_codex_execucoes;UPDATE djen_config SET ia_ativa=0,ia_pausa=NULL,ia_paralelismo=2,ia_modo='economico'",
   );
   mocked.analisarComCodex.mockReset();
+  mocked.analisarLoteComCodex.mockReset();
   iniciarMonitorCodex();
 });
 afterEach(() => pararMonitorCodex());
@@ -108,6 +118,7 @@ describe("atualização de banco existente", () => {
         ALTER TABLE djen_publicacoes DROP COLUMN ia_iniciada_em;
         ALTER TABLE djen_publicacoes DROP COLUMN situacao;
         ALTER TABLE djen_config DROP COLUMN ia_paralelismo;
+        ALTER TABLE djen_config DROP COLUMN ia_modo;
       `);
       runDjenMigrations(banco);
       const rows = () =>
@@ -141,8 +152,8 @@ describe("atualização de banco existente", () => {
       runDjenMigrations(banco);
       expect(rows()).toEqual(antes);
       expect(
-        banco.prepare("SELECT ia_paralelismo FROM djen_config").get(),
-      ).toEqual({ ia_paralelismo: 2 });
+        banco.prepare("SELECT ia_paralelismo,ia_modo FROM djen_config").get(),
+      ).toEqual({ ia_paralelismo: 2, ia_modo: "economico" });
     } finally {
       banco.close();
     }
@@ -317,19 +328,131 @@ describe("filtros e acompanhamento independente", () => {
       intervalo_minutos: 60,
       janela_inicial_dias: 7,
       ia_paralelismo: 2,
+      ia_modo: "equilibrado",
     });
     expect(configuracaoDjen().ia_paralelismo).toBe(2);
+    expect(configuracaoDjen().ia_modo).toBe("equilibrado");
     expect(() => salvarConfiguracaoDjen({ ia_paralelismo: 20 })).toThrow();
+    expect(() => salvarConfiguracaoDjen({ ia_modo: "inventado" })).toThrow();
   });
 });
 describe("fila paralela", () => {
+  it("agrupa publicações curtas no modo econômico e usa o perfil leve", async () => {
+    seed(5);
+    mocked.analisarLoteComCodex.mockImplementation(
+      async (itens: { id: number }[]) => ({
+        resultados: new Map(itens.map((item) => [item.id, analysis("", [])])),
+        invalidos: [],
+      }),
+    );
+    db.prepare(
+      "UPDATE djen_config SET ia_ativa=1,ia_modo='economico',ia_paralelismo=1",
+    ).run();
+    await processarFilaCodex();
+    expect(mocked.analisarLoteComCodex).toHaveBeenCalledTimes(1);
+    expect(mocked.analisarLoteComCodex.mock.calls[0][0]).toHaveLength(5);
+    expect(mocked.analisarLoteComCodex.mock.calls[0][2]).toMatchObject({
+      modelo: "gpt-6-luna",
+      esforco: "low",
+    });
+    expect(mocked.analisarComCodex).not.toHaveBeenCalled();
+    expect(statusAnalisesCodex()).toMatchObject({ pendentes: 0, falhas: 0 });
+  });
+
+  it("aprofunda somente o item duvidoso do lote com o modelo forte", async () => {
+    seed(3);
+    mocked.analisarLoteComCodex.mockImplementation(
+      async (itens: { id: number }[]) => ({
+        resultados: new Map(
+          itens.map((item, index) => {
+            const resposta = analysis("", []);
+            if (index === 1)
+              resposta.alertas = [
+                "Classificação duvidosa por falta de contexto.",
+              ];
+            return [item.id, resposta];
+          }),
+        ),
+        invalidos: [],
+      }),
+    );
+    mocked.analisarComCodex.mockResolvedValue(analysis("", []));
+    db.prepare(
+      "UPDATE djen_config SET ia_ativa=1,ia_modo='economico',ia_paralelismo=1",
+    ).run();
+    await processarFilaCodex();
+    expect(mocked.analisarLoteComCodex).toHaveBeenCalledTimes(1);
+    expect(mocked.analisarComCodex).toHaveBeenCalledTimes(1);
+    expect(mocked.analisarComCodex.mock.calls[0][4]).toMatchObject({
+      modelo: "gpt-6.1-sol",
+      esforco: "low",
+    });
+  });
+
+  it("repete isoladamente somente o resultado inválido de um lote", async () => {
+    seed(3);
+    mocked.analisarLoteComCodex.mockImplementation(
+      async (itens: { id: number }[]) => ({
+        resultados: new Map(
+          itens.slice(0, 2).map((item) => [item.id, analysis("", [])]),
+        ),
+        invalidos: [itens[2].id],
+      }),
+    );
+    mocked.analisarComCodex.mockResolvedValue(analysis("", []));
+    db.prepare(
+      "UPDATE djen_config SET ia_ativa=1,ia_modo='economico',ia_paralelismo=1",
+    ).run();
+    await processarFilaCodex();
+    expect(mocked.analisarLoteComCodex).toHaveBeenCalledTimes(1);
+    expect(mocked.analisarComCodex).toHaveBeenCalledTimes(1);
+    expect(mocked.analisarComCodex.mock.calls[0][4]).toMatchObject({
+      modelo: "gpt-6.1-sol",
+      esforco: "low",
+    });
+    expect(statusAnalisesCodex()).toMatchObject({ pendentes: 0, falhas: 0 });
+  });
+
+  it("reaproveita análise idêntica sem nova chamada ao Codex", async () => {
+    seed(1);
+    mocked.analisarComCodex.mockResolvedValue(analysis("", []));
+    db.prepare(
+      "UPDATE djen_config SET ia_ativa=1,ia_modo='economico',ia_paralelismo=1",
+    ).run();
+    await processarFilaCodex();
+    expect(mocked.analisarComCodex).toHaveBeenCalledTimes(1);
+    const advogado = db
+      .prepare("SELECT * FROM djen_advogados LIMIT 1")
+      .get() as ReturnType<typeof salvarAdvogado>;
+    const repetida = normalizarPublicacao({
+      id: 987654,
+      numero_processo: "50012341120268260001",
+      data_disponibilizacao: "2026-10-21",
+      siglaTribunal: "TJSP",
+      nomeClasse: "Procedimento Comum",
+      nomeOrgao: "Outra Vara",
+      tipoDocumento: "Intimação",
+      tipoComunicacao: "Intimação",
+      texto: "Publicação de teste número 0.",
+      destinatarios: [],
+      destinatarioadvogados: [{ advogado }],
+    });
+    importarPublicacoes([repetida], advogado, "oab");
+    await processarFilaCodex();
+    expect(mocked.analisarComCodex).toHaveBeenCalledTimes(1);
+    expect(statusAnalisesCodex().uso_30_dias.cache_hits).toBe(1);
+    expect(
+      listarPublicacoes({}).items.every((p) => p.ia_status === "concluida"),
+    ).toBe(true);
+  });
+
   it("inicia exatamente duas tarefas, sem duplicar nem antecipar a terceira", async () => {
     seed(3);
     const finish: ((a: AnaliseCodex) => void)[] = [];
     mocked.analisarComCodex.mockImplementation(
       () => new Promise<AnaliseCodex>((r) => finish.push(r)),
     );
-    db.prepare("UPDATE djen_config SET ia_ativa=1").run();
+    db.prepare("UPDATE djen_config SET ia_ativa=1,ia_modo='precisao'").run();
     const job = processarFilaCodex();
     await processarFilaCodex();
     expect(mocked.analisarComCodex).toHaveBeenCalledTimes(2);
@@ -353,7 +476,7 @@ describe("fila paralela", () => {
     mocked.analisarComCodex
       .mockRejectedValueOnce(new ErroAnaliseCodex("Evidência inválida"))
       .mockResolvedValueOnce(analysis("", []));
-    db.prepare("UPDATE djen_config SET ia_ativa=1").run();
+    db.prepare("UPDATE djen_config SET ia_ativa=1,ia_modo='precisao'").run();
     await processarFilaCodex();
     expect(statusAnalisesCodex().pausa).toBeNull();
     expect(statusAnalisesCodex().falhas).toBe(1);

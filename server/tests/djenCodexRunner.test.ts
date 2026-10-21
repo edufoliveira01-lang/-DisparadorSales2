@@ -11,10 +11,13 @@ import {
   CONFIG_CODEX,
   executarCliCodex,
   analisarComCodex,
+  analisarLoteComCodex,
   dividirPublicacao,
   verificarConexaoCodex,
   invalidarConexaoCodex,
+  PERFIS_CODEX,
 } from "../src/services/djen/codexRunner";
+import { db } from "../src/db";
 const laudo = "O laudo pericial foi juntado aos autos.";
 function child() {
   const c = new EventEmitter() as EventEmitter & {
@@ -93,7 +96,15 @@ describe("execução restrita do Codex CLI", () => {
       expect(diagnostic).toMatch(/Not logged in/);
       expect(diagnostic).not.toMatch(/unexpected argument/);
       const help = await executarCliCodex(
-        ["exec", ...CONFIG_CODEX, "--help"],
+        [
+          "exec",
+          ...CONFIG_CODEX,
+          "--model",
+          "gpt-6-luna",
+          "-c",
+          'model_reasoning_effort="low"',
+          "--help",
+        ],
         os.tmpdir(),
         "",
         undefined,
@@ -219,6 +230,121 @@ describe("execução restrita do Codex CLI", () => {
     expect(exec.args).toContain("read-only");
     expect(exec.cwd).not.toContain("DisparadorSales2");
     await expect(fs.access(exec.cwd)).rejects.toThrow();
+    await fs.rm(authHome, { recursive: true, force: true });
+  });
+
+  it("analisa um lote em uma execução, com modelo econômico e ids isolados", async () => {
+    const jobs: { args: string[]; input: string }[] = [];
+    mocked.spawn.mockImplementation((_node: string, args: string[]) => {
+      const c = child();
+      let input = "";
+      c.stdin.on("data", (data) => {
+        input += data.toString();
+      });
+      c.stdin.on("finish", () => {
+        void (async () => {
+          if (args.includes("--version")) c.stdout.write("codex-cli 0.163.0");
+          else if (args.includes("status"))
+            c.stderr.write("Logged in using ChatGPT");
+          else {
+            jobs.push({ args, input });
+            const output = args[args.indexOf("-o") + 1];
+            await fs.writeFile(
+              output,
+              JSON.stringify({
+                resultados: [
+                  {
+                    id: 101,
+                    analise: {
+                      categorias: ["laudo_juntado"],
+                      resultado: "nao_identificado",
+                      resumo: "Laudo juntado.",
+                      situacao: "Laudo pericial juntado",
+                      justificativa: "Juntada confirmada no texto.",
+                      evidencias: [
+                        { categoria: "laudo_juntado", trecho: laudo },
+                      ],
+                      agendamento: {
+                        data: null,
+                        horario: null,
+                        local: null,
+                      },
+                      alertas: [],
+                    },
+                  },
+                  {
+                    id: 102,
+                    analise: {
+                      categorias: [],
+                      resultado: "nao_identificado",
+                      resumo: "Movimentação sem categoria específica.",
+                      situacao: "Outros",
+                      justificativa: "Sem fato das categorias monitoradas.",
+                      evidencias: [],
+                      agendamento: {
+                        data: null,
+                        horario: null,
+                        local: null,
+                      },
+                      alertas: [],
+                    },
+                  },
+                ],
+              }),
+            );
+          }
+          c.emit("close", 0);
+        })();
+      });
+      return c;
+    });
+    const authHome = await fs.mkdtemp(
+      path.join(os.tmpdir(), "djen-lote-test-"),
+    );
+    vi.stubEnv("DJEN_CODEX_HOME", authHome);
+    invalidarConexaoCodex();
+    db.prepare("DELETE FROM djen_codex_execucoes").run();
+    const texto2 = "Intime-se a parte para ciência do expediente.";
+    const resultado = await analisarLoteComCodex(
+      [
+        {
+          id: 101,
+          texto: laudo,
+          tipoDocumento: "Intimação",
+          contexto: { processo: "1" },
+        },
+        {
+          id: 102,
+          texto: texto2,
+          tipoDocumento: "Intimação",
+          contexto: { processo: "2" },
+        },
+      ],
+      undefined,
+      PERFIS_CODEX.economico,
+    );
+    expect(resultado.resultados.get(101)?.categorias).toEqual([
+      "laudo_juntado",
+    ]);
+    expect(resultado.resultados.get(102)?.categorias).toEqual([]);
+    expect(resultado.invalidos).toEqual([]);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].args).toContain("gpt-6-luna");
+    expect(jobs[0].args).toContain('model_reasoning_effort="low"');
+    expect(jobs[0].input).toContain('"id":101');
+    expect(jobs[0].input).toContain('"id":102');
+    expect(
+      db
+        .prepare(
+          "SELECT modelo,esforco,itens,status FROM djen_codex_execucoes ORDER BY id DESC LIMIT 1",
+        )
+        .get(),
+    ).toEqual({
+      modelo: "gpt-6-luna",
+      esforco: "low",
+      itens: 2,
+      status: "concluida",
+    });
     await fs.rm(authHome, { recursive: true, force: true });
   });
 });

@@ -1,17 +1,46 @@
+import { createHash } from "node:crypto";
 import { db } from "../../db";
 import { emitEvent } from "../../websocket";
-import { analisarComCodex, ErroPublicacaoCodex } from "./codexRunner";
+import {
+  analisarComCodex,
+  analisarLoteComCodex,
+  ErroModeloCodex,
+  ErroPublicacaoCodex,
+  PERFIS_CODEX,
+  type ModoAnaliseCodex,
+} from "./codexRunner";
 import { configuracaoDjen, DjenInputError, publicacaoPorId } from "./store";
 import {
   ErroAnaliseCodex,
+  validarAnaliseCodex,
   VERSAO_CLASSIFICADOR,
   type AnaliseCodex,
+  type ContextoPublicacao,
 } from "./classifier";
 import { registrarHistoricoDjen } from "./history";
+
 let timer: ReturnType<typeof setInterval> | null = null;
 const atuais = new Map<number, AbortController>();
+const execucoesAtuais = new Set<AbortController>();
 let encerrando = false;
 const changed = () => emitEvent("djen:changed", {});
+
+interface Tarefa {
+  id: number;
+  texto: string;
+  tipo_documento: string;
+  classe: string;
+  processo: string;
+  tribunal: string;
+  ia_manual: number;
+}
+
+const contexto = (p: Tarefa): ContextoPublicacao => ({
+  classe: p.classe,
+  processo: p.processo,
+  tribunal: p.tribunal,
+});
+
 export function statusAnalisesCodex() {
   const config = configuracaoDjen();
   const pendentes = (
@@ -29,11 +58,43 @@ export function statusAnalisesCodex() {
       .get() as { media: number | null }
   ).media;
   const ids = [...atuais.keys()];
+  const uso = db
+    .prepare(
+      `SELECT
+        SUM(CASE WHEN status<>'cache' THEN 1 ELSE 0 END) AS chamadas,
+        SUM(CASE WHEN status='cache' THEN itens ELSE 0 END) AS cache_hits,
+        SUM(CASE WHEN status='concluida' AND itens>1 THEN itens-1 ELSE 0 END) AS agrupadas,
+        SUM(CASE WHEN status<>'cache' THEN caracteres ELSE 0 END) AS caracteres,
+        SUM(CASE WHEN status='falha' THEN 1 ELSE 0 END) AS chamadas_falhas
+       FROM djen_codex_execucoes WHERE created_at>=datetime('now','-30 days')`,
+    )
+    .get() as {
+    chamadas: number | null;
+    cache_hits: number | null;
+    agrupadas: number | null;
+    caracteres: number | null;
+    chamadas_falhas: number | null;
+  };
+  const reanalisaveis = (
+    db
+      .prepare(
+        "SELECT count(*) AS n FROM djen_publicacoes WHERE revisada=0 AND cancelada=0 AND ia_status<>'analisando'",
+      )
+      .get() as { n: number }
+  ).n;
+  const tamanhoLote =
+    config.ia_modo === "economico"
+      ? 8
+      : config.ia_modo === "equilibrado"
+        ? 4
+        : 1;
   return {
     executando: ids[0] || null,
     executando_ids: ids,
+    execucoes_simultaneas: execucoesAtuais.size,
     simultaneas: config.ia_paralelismo,
     pendentes,
+    reanalisaveis,
     falhas: (
       db
         .prepare(
@@ -45,11 +106,23 @@ export function statusAnalisesCodex() {
     media_segundos: media ? Math.round(media / 1000) : null,
     estimativa_segundos:
       media && config.ia_ativa && !config.ia_pausa
-        ? Math.ceil((pendentes + ids.length) / config.ia_paralelismo) *
+        ? Math.ceil(
+            (pendentes + ids.length) /
+              (config.ia_paralelismo * tamanhoLote),
+          ) *
           Math.round(media / 1000)
         : null,
+    uso_30_dias: {
+      chamadas: uso.chamadas || 0,
+      cache_hits: uso.cache_hits || 0,
+      agrupadas: uso.agrupadas || 0,
+      execucoes_evitadas: (uso.cache_hits || 0) + (uso.agrupadas || 0),
+      caracteres: uso.caracteres || 0,
+      falhas: uso.chamadas_falhas || 0,
+    },
   };
 }
+
 export function salvarAnaliseCodex(
   id: number,
   texto: string,
@@ -93,61 +166,289 @@ export function salvarAnaliseCodex(
   })();
   return true;
 }
+
 export function enfileirarAnaliseCodex(id?: number) {
   if (id !== undefined && atuais.has(id))
     throw new DjenInputError("Esta publicação já está em análise.");
+  let enfileiradas = 0;
   if (id !== undefined) {
     const p = publicacaoPorId(id);
     if (!p || p.cancelada)
       throw new DjenInputError("Publicação indisponível para análise.");
-    db.prepare(
-      "UPDATE djen_publicacoes SET ia_status='pendente',ia_erro=NULL,ia_manual=1 WHERE id=?",
-    ).run(id);
+    enfileiradas = db
+      .prepare(
+        "UPDATE djen_publicacoes SET ia_status='pendente',ia_erro=NULL,ia_manual=1 WHERE id=?",
+      )
+      .run(id).changes;
   } else
-    db.prepare(
-      "UPDATE djen_publicacoes SET ia_status='pendente',ia_erro=NULL WHERE revisada=0 AND cancelada=0 AND ia_status<>'analisando'",
-    ).run();
+    enfileiradas = db
+      .prepare(
+        "UPDATE djen_publicacoes SET ia_status='pendente',ia_erro=NULL WHERE revisada=0 AND cancelada=0 AND ia_status<>'analisando'",
+      )
+      .run().changes;
   db.prepare("UPDATE djen_config SET ia_pausa=NULL WHERE id=1").run();
   changed();
   void processarFilaCodex();
-  return { ok: true };
+  return { ok: true, enfileiradas };
 }
-interface Tarefa {
-  id: number;
-  texto: string;
-  tipo_documento: string;
-  classe: string;
-  processo: string;
-  tribunal: string;
+
+function chaveCache(p: Tarefa) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        VERSAO_CLASSIFICADOR,
+        p.tipo_documento,
+        p.classe,
+        p.processo,
+        p.tribunal,
+        p.texto,
+      ]),
+    )
+    .digest("hex");
 }
-async function executar(p: Tarefa, controller: AbortController) {
-  const inicio = Date.now();
+
+function lerCache(p: Tarefa): AnaliseCodex | null {
+  if (p.ia_manual) return null;
+  const chave = chaveCache(p);
+  const row = db
+    .prepare(
+      "SELECT analise_json FROM djen_analise_cache WHERE chave=? AND versao=?",
+    )
+    .get(chave, VERSAO_CLASSIFICADOR) as { analise_json: string } | undefined;
+  if (!row) return null;
   try {
-    const analise = await analisarComCodex(
+    return validarAnaliseCodex(
+      JSON.parse(row.analise_json),
       p.texto,
-      p.tipo_documento,
-      controller.signal,
-      { classe: p.classe, processo: p.processo, tribunal: p.tribunal },
+      contexto(p),
     );
-    if (salvarAnaliseCodex(p.id, p.texto, p.tipo_documento, analise))
-      db.prepare("UPDATE djen_publicacoes SET ia_duracao_ms=? WHERE id=?").run(
-        Date.now() - inicio,
+  } catch {
+    db.prepare("DELETE FROM djen_analise_cache WHERE chave=?").run(chave);
+    return null;
+  }
+}
+
+function gravarCache(p: Tarefa, analise: AnaliseCodex) {
+  db.prepare(
+    `INSERT INTO djen_analise_cache(chave,versao,analise_json) VALUES (?,?,?)
+     ON CONFLICT(chave) DO UPDATE SET versao=excluded.versao,analise_json=excluded.analise_json,updated_at=CURRENT_TIMESTAMP`,
+  ).run(chaveCache(p), VERSAO_CLASSIFICADOR, JSON.stringify(analise));
+}
+
+function registrarCache(p: Tarefa) {
+  db.prepare(
+    "INSERT INTO djen_codex_execucoes(modelo,esforco,modo,itens,caracteres,status,duracao_ms) VALUES ('cache','nenhum',?,1,?,'cache',0)",
+  ).run(configuracaoDjen().ia_modo, p.texto.length);
+}
+
+function buscarPendentes(config: ReturnType<typeof configuracaoDjen>) {
+  return db
+    .prepare(
+      `SELECT p.id,p.texto,p.tipo_documento,p.classe,p.tribunal,p.ia_manual,pr.numero AS processo
+       FROM djen_publicacoes p JOIN djen_processos pr ON pr.chave=p.processo_chave
+       WHERE p.ia_status='pendente' AND p.cancelada=0 AND (? OR p.ia_manual=1)
+       ORDER BY p.ia_manual DESC,p.revisada ASC,p.id ASC LIMIT 24`,
+    )
+    .all(config.ia_ativa && !config.ia_pausa ? 1 : 0) as Tarefa[];
+}
+
+function aplicarCache(config: ReturnType<typeof configuracaoDjen>): boolean {
+  for (const p of buscarPendentes(config)) {
+    const analise = lerCache(p);
+    if (!analise) continue;
+    const claim = db
+      .prepare(
+        "UPDATE djen_publicacoes SET ia_status='analisando',ia_erro=NULL,ia_iniciada_em=? WHERE id=? AND ia_status='pendente'",
+      )
+      .run(new Date().toISOString(), p.id);
+    if (!claim.changes) continue;
+    if (salvarAnaliseCodex(p.id, p.texto, p.tipo_documento, analise)) {
+      db.prepare("UPDATE djen_publicacoes SET ia_duracao_ms=0 WHERE id=?").run(
         p.id,
       );
-  } catch (error) {
-    const erro =
-      error instanceof Error ? error.message : "Falha na análise do Codex.";
-    db.prepare(
-      "UPDATE djen_publicacoes SET ia_status='erro',ia_manual=0,ia_erro=? WHERE id=? AND texto=? AND tipo_documento=? AND ia_status='analisando'",
-    ).run(erro, p.id, p.texto, p.tipo_documento);
+      registrarCache(p);
+    }
+    changed();
+    return true;
+  }
+  return false;
+}
+
+function selecionarGrupo(
+  config: ReturnType<typeof configuracaoDjen>,
+): Tarefa[] {
+  const candidatos = buscarPendentes(config);
+  if (!candidatos.length) return [];
+  const primeiro = candidatos[0];
+  const limites: Record<ModoAnaliseCodex, number> = {
+    economico: 8,
+    equilibrado: 4,
+    precisao: 1,
+  };
+  const maximo = primeiro.ia_manual ? 1 : limites[config.ia_modo];
+  const escolhidos: Tarefa[] = [];
+  let caracteres = 0;
+  for (const p of candidatos) {
+    if (escolhidos.length >= maximo) break;
+    if (p.ia_manual !== primeiro.ia_manual) break;
     if (
-      !encerrando &&
-      !(error instanceof ErroPublicacaoCodex) &&
-      !(error instanceof ErroAnaliseCodex)
+      escolhidos.length &&
+      (p.texto.length > 20000 || caracteres + p.texto.length > 60000)
     )
-      db.prepare("UPDATE djen_config SET ia_pausa=? WHERE id=1").run(erro);
+      break;
+    escolhidos.push(p);
+    caracteres += p.texto.length;
+    if (p.texto.length > 20000) break;
+  }
+  return db.transaction(() =>
+    escolhidos.filter((p) => {
+      const claim = db
+        .prepare(
+          "UPDATE djen_publicacoes SET ia_status='analisando',ia_erro=NULL,ia_iniciada_em=? WHERE id=? AND ia_status='pendente'",
+        )
+        .run(new Date().toISOString(), p.id);
+      return Boolean(claim.changes);
+    }),
+  )();
+}
+
+function precisaAprofundar(analise: AnaliseCodex) {
+  return /\b(?:duvid|incert|inconclus|conflit|ileg[ií]vel|texto incompleto|falta de contexto|n[aã]o foi poss[ií]vel)\b/i.test(
+    analise.alertas.join(" "),
+  );
+}
+
+function marcarErro(p: Tarefa, error: unknown) {
+  const erro =
+    error instanceof Error ? error.message : "Falha na análise do Codex.";
+  db.prepare(
+    "UPDATE djen_publicacoes SET ia_status='erro',ia_manual=0,ia_erro=? WHERE id=? AND texto=? AND tipo_documento=? AND ia_status='analisando'",
+  ).run(erro, p.id, p.texto, p.tipo_documento);
+  return erro;
+}
+
+function erroDaPublicacao(error: unknown) {
+  return (
+    error instanceof ErroPublicacaoCodex || error instanceof ErroAnaliseCodex
+  );
+}
+
+async function executarGrupo(
+  grupo: Tarefa[],
+  controller: AbortController,
+  modo: ModoAnaliseCodex,
+) {
+  const inicio = Date.now();
+  const resultados = new Map<number, AnaliseCodex>();
+  const pendentes = new Set(grupo.map((p) => p.id));
+  let loteInvalido = false;
+  try {
+    const manual = Boolean(grupo[0]?.ia_manual);
+    const extenso = grupo.length === 1 && grupo[0].texto.length > 20000;
+    const perfilInicial = manual
+      ? PERFIS_CODEX.precisao
+      : extenso && modo === "economico"
+        ? PERFIS_CODEX.equilibrado
+        : PERFIS_CODEX[modo];
+    if (grupo.length > 1) {
+      try {
+        const itens = grupo.map((p) => ({
+          id: p.id,
+          texto: p.texto,
+          tipoDocumento: p.tipo_documento,
+          contexto: contexto(p),
+        }));
+        let lote;
+        try {
+          lote = await analisarLoteComCodex(
+            itens,
+            controller.signal,
+            perfilInicial,
+          );
+        } catch (error) {
+          if (
+            !(error instanceof ErroModeloCodex) ||
+            perfilInicial.modelo !== "gpt-6-luna"
+          )
+            throw error;
+          lote = await analisarLoteComCodex(
+            itens,
+            controller.signal,
+            PERFIS_CODEX.equilibrado,
+          );
+        }
+        for (const [id, analise] of lote.resultados)
+          resultados.set(id, analise);
+        loteInvalido = lote.invalidos.length > 0;
+      } catch (error) {
+        if (!erroDaPublicacao(error)) throw error;
+        // Resposta de lote inválida: repete somente estes itens, isoladamente e com o modelo forte.
+        loteInvalido = true;
+      }
+    }
+    for (const p of grupo) {
+      let analise = resultados.get(p.id);
+      try {
+        if (!analise) {
+          const perfilIndividual =
+            loteInvalido && perfilInicial.modelo === "gpt-6-luna"
+              ? PERFIS_CODEX.equilibrado
+              : perfilInicial;
+          try {
+            analise = await analisarComCodex(
+              p.texto,
+              p.tipo_documento,
+              controller.signal,
+              contexto(p),
+              perfilIndividual,
+            );
+          } catch (error) {
+            if (
+              perfilIndividual.modelo !== "gpt-6-luna" ||
+              (!erroDaPublicacao(error) && !(error instanceof ErroModeloCodex))
+            )
+              throw error;
+            analise = await analisarComCodex(
+              p.texto,
+              p.tipo_documento,
+              controller.signal,
+              contexto(p),
+              PERFIS_CODEX.equilibrado,
+            );
+          }
+        } else if (
+          perfilInicial.modelo === "gpt-6-luna" &&
+          precisaAprofundar(analise)
+        )
+          analise = await analisarComCodex(
+            p.texto,
+            p.tipo_documento,
+            controller.signal,
+            contexto(p),
+            PERFIS_CODEX.equilibrado,
+          );
+        if (salvarAnaliseCodex(p.id, p.texto, p.tipo_documento, analise)) {
+          gravarCache(p, analise);
+          db.prepare(
+            "UPDATE djen_publicacoes SET ia_duracao_ms=? WHERE id=?",
+          ).run(Date.now() - inicio, p.id);
+        }
+        pendentes.delete(p.id);
+      } catch (error) {
+        if (!erroDaPublicacao(error)) throw error;
+        marcarErro(p, error);
+        pendentes.delete(p.id);
+      }
+    }
+  } catch (error) {
+    let mensagem = "Falha na análise do Codex.";
+    for (const p of grupo)
+      if (pendentes.has(p.id)) mensagem = marcarErro(p, error);
+    if (!encerrando && !erroDaPublicacao(error))
+      db.prepare("UPDATE djen_config SET ia_pausa=? WHERE id=1").run(mensagem);
   } finally {
-    atuais.delete(p.id);
+    for (const p of grupo) atuais.delete(p.id);
+    execucoesAtuais.delete(controller);
     changed();
     if (!encerrando && !configuracaoDjen().ia_pausa)
       setImmediate(() => {
@@ -155,30 +456,24 @@ async function executar(p: Tarefa, controller: AbortController) {
       });
   }
 }
+
 export async function processarFilaCodex() {
   const tarefas: Promise<void>[] = [];
   while (!encerrando) {
     const config = configuracaoDjen();
-    if (atuais.size >= config.ia_paralelismo) break;
-    const p = db
-      .prepare(
-        "SELECT p.id,p.texto,p.tipo_documento,p.classe,p.tribunal,pr.numero AS processo FROM djen_publicacoes p JOIN djen_processos pr ON pr.chave=p.processo_chave WHERE p.ia_status='pendente' AND p.cancelada=0 AND (? OR p.ia_manual=1) ORDER BY p.ia_manual DESC,p.revisada ASC,p.id ASC LIMIT 1",
-      )
-      .get(config.ia_ativa && !config.ia_pausa ? 1 : 0) as Tarefa | undefined;
-    if (!p) break;
-    const claim = db
-      .prepare(
-        "UPDATE djen_publicacoes SET ia_status='analisando',ia_erro=NULL,ia_iniciada_em=? WHERE id=? AND ia_status='pendente'",
-      )
-      .run(new Date().toISOString(), p.id);
-    if (!claim.changes) continue;
+    if (execucoesAtuais.size >= config.ia_paralelismo) break;
+    if (aplicarCache(config)) continue;
+    const grupo = selecionarGrupo(config);
+    if (!grupo.length) break;
     const controller = new AbortController();
-    atuais.set(p.id, controller);
+    execucoesAtuais.add(controller);
+    for (const p of grupo) atuais.set(p.id, controller);
     changed();
-    tarefas.push(executar(p, controller));
+    tarefas.push(executarGrupo(grupo, controller, config.ia_modo));
   }
   await Promise.all(tarefas);
 }
+
 export function iniciarMonitorCodex() {
   if (timer) return;
   encerrando = false;
@@ -191,9 +486,12 @@ export function iniciarMonitorCodex() {
   timer.unref();
   void processarFilaCodex();
 }
+
 export function pararMonitorCodex() {
   encerrando = true;
   if (timer) clearInterval(timer);
   timer = null;
-  for (const c of atuais.values()) c.abort();
+  for (const controller of execucoesAtuais) controller.abort();
+  execucoesAtuais.clear();
+  atuais.clear();
 }

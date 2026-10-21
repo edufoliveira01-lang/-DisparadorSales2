@@ -117,7 +117,25 @@ export function runDjenMigrations(db: Database.Database): void {
       UPDATE djen_publicacoes SET ia_status='pendente',ia_erro=NULL WHERE revisada=0 AND cancelada=0;
       CREATE TABLE IF NOT EXISTS djen_agenda_links(prazo_id INTEGER NOT NULL REFERENCES djen_prazos(id) ON DELETE CASCADE, calendar_id TEXT NOT NULL, event_id TEXT NOT NULL, url TEXT, updated_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(prazo_id,calendar_id));`);
     })();
+  const configCampos = db.prepare("PRAGMA table_info(djen_config)").all() as {
+    name: string;
+  }[];
+  if (!configCampos.some((c) => c.name === "ia_modo"))
+    db.exec(
+      "ALTER TABLE djen_config ADD COLUMN ia_modo TEXT NOT NULL DEFAULT 'economico' CHECK(ia_modo IN ('economico','equilibrado','precisao'))",
+    );
   db.exec(`
+    CREATE TABLE IF NOT EXISTS djen_analise_cache (
+      chave TEXT PRIMARY KEY, versao TEXT NOT NULL, analise_json TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS djen_codex_execucoes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, modelo TEXT NOT NULL, esforco TEXT NOT NULL,
+      modo TEXT NOT NULL, itens INTEGER NOT NULL, caracteres INTEGER NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('concluida','falha','cache')),
+      duracao_ms INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_djen_codex_execucoes_data ON djen_codex_execucoes(created_at DESC);
     CREATE TABLE IF NOT EXISTS djen_calendarios_oficiais (
       chave TEXT PRIMARY KEY, tribunal TEXT NOT NULL, orgao TEXT NOT NULL, ano INTEGER NOT NULL,
       status TEXT NOT NULL DEFAULT 'pendente', municipio TEXT, uf TEXT,
