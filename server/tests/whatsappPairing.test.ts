@@ -16,7 +16,13 @@ vi.mock("whatsapp-web.js", async () => {
     Client: class extends EventEmitter {
       pupPage = { url: () => "https://web.whatsapp.com/" };
       pupBrowser = { process: () => ({ kill: vi.fn() }) };
-      initialize = vi.fn(async () => {});
+      private rejeitarInicializacao!: (err: unknown) => void;
+      initialize = vi.fn(() => new Promise<void>((_resolve, reject) => {
+        this.rejeitarInicializacao = reject;
+      }));
+      rejectInitialize(err: unknown) {
+        this.rejeitarInicializacao(err);
+      }
       destroy = vi.fn(async () => {});
       logout = vi.fn(async () => {});
       getState = vi.fn(async () => "UNPAIRED");
@@ -33,6 +39,7 @@ interface FakeClient extends EventEmitter {
   getState: ReturnType<typeof vi.fn>;
   destroy: ReturnType<typeof vi.fn>;
   logout: ReturnType<typeof vi.fn>;
+  rejectInitialize: (err: unknown) => void;
 }
 const manager = whatsappManager as unknown as {
   client: FakeClient | null;
@@ -239,5 +246,43 @@ describe("pareamento por QR e sincronização do WhatsApp", () => {
     await vi.advanceTimersByTimeAsync(6001);
     expect(whatsappManager.getState().status).toBe("autenticado");
     expect(client.destroy).not.toHaveBeenCalled();
+  });
+  it("não destrói a sessão quando initialize perde o contexto durante a sincronização", async () => {
+    client.emit("qr", "primeiro");
+    await vi.advanceTimersByTimeAsync(1);
+    client.emit("loading_screen", 35);
+    client.rejectInitialize(new Error("Execution context was destroyed, most likely because of a navigation."));
+    await vi.advanceTimersByTimeAsync(1);
+    expect(client.destroy).not.toHaveBeenCalled();
+    expect(whatsappManager.getState()).toMatchObject({
+      status: "aguardando_qr",
+      syncProgress: 35,
+    });
+    client.emit("authenticated");
+    client.emit("ready");
+    expect(whatsappManager.getState().status).toBe("conectado");
+    expect(client.destroy).not.toHaveBeenCalled();
+  });
+  it("navegações repetidas durante a sincronização não contam como browser travado", async () => {
+    client.emit("qr", "primeiro");
+    await vi.advanceTimersByTimeAsync(1);
+    client.emit("loading_screen", 20);
+    client.getState.mockRejectedValue(new Error("Execution context was destroyed"));
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(client.destroy).not.toHaveBeenCalled();
+    client.getState.mockResolvedValue("CONNECTED");
+    await vi.advanceTimersByTimeAsync(2001);
+    expect(whatsappManager.getState().status).toBe("autenticado");
+  });
+  it("a sincronização observada continua limitada mesmo durante navegações", async () => {
+    client.emit("qr", "primeiro");
+    await vi.advanceTimersByTimeAsync(1);
+    client.emit("loading_screen", 20);
+    client.getState.mockRejectedValue(new Error("Execution context was destroyed"));
+    manager.tentativa = 6;
+    await vi.advanceTimersByTimeAsync(180001);
+    expect(client.destroy).toHaveBeenCalledOnce();
+    expect(client.logout).not.toHaveBeenCalled();
+    expect(whatsappManager.getState().lastError).toMatch(/iniciou a sincronização/);
   });
 });

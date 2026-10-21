@@ -803,6 +803,7 @@ class WhatsappManager {
     let sequenciaQr = 0;
     let sondagemEmAndamento = false;
     let falhasDeSondagem = 0;
+    let sincronizacaoObservada = false;
     let monitorPareamento: ReturnType<typeof setInterval> | null = null;
     const tentativaAtiva = () => minhaGeracao === this.geracao && this.client === client && !encerrandoTentativa;
     let readyWatchdog: ReturnType<typeof setTimeout> | null = null;
@@ -906,11 +907,29 @@ class WhatsappManager {
     const aguardarValidacaoPareamento = () => {
       if (!tentativaAtiva() || pronto || this.status !== "aguardando_qr") return;
       sequenciaQr++;
+      limparReadyWatchdog();
       this.setState({ status: "pareando", qrDataUrl: null, syncProgress: null });
       readyWatchdog = setTimeout(() => {
         void failAndCleanUp("falha", "O WhatsApp não concluiu a validação do vínculo com o celular em 3 minutos. A sessão foi preservada para retomar a conexão.");
       }, TEMPO_LIMITE_APOS_AUTENTICAR_MS);
       readyWatchdog.unref();
+    };
+
+    const observarSincronizacao = () => {
+      if (!tentativaAtiva() || pronto) return;
+      sincronizacaoObservada = true;
+      // loading_screen é emitido somente depois que o WhatsApp começa a carregar a conta.
+      // Mesmo que getState() seja interrompido por uma navegação, esta fase precisa continuar
+      // limitada: se o evento ready nunca vier, recuperamos o browser preservando a sessão.
+      if (!readyWatchdog) {
+        readyWatchdog = setTimeout(() => {
+          void failAndCleanUp(
+            "falha",
+            "O WhatsApp iniciou a sincronização, mas não ficou pronto em 3 minutos. A sessão foi preservada para retomar a conexão."
+          );
+        }, TEMPO_LIMITE_APOS_AUTENTICAR_MS);
+        readyWatchdog.unref();
+      }
     };
 
     const verificarPareamento = async () => {
@@ -922,8 +941,14 @@ class WhatsappManager {
         falhasDeSondagem = 0;
         if (estado === "CONNECTED") reconhecerPareamento();
         else if (estado === "PAIRING") aguardarValidacaoPareamento();
-      } catch {
+      } catch (err) {
         if (!tentativaAtiva() || pronto || this.status === "inicializando") return;
+        const mensagem = err instanceof Error ? err.message : String(err);
+        // O WhatsApp troca o documento principal durante o pareamento e a sincronização. Nesse
+        // instante o Puppeteer invalida o ExecutionContext antigo, mas o novo contexto continua
+        // carregando normalmente. Não some essas navegações às falhas de browser; o watchdog
+        // acima ainda recupera a tentativa caso o evento ready realmente não aconteça.
+        if (ERRO_TRANSITORIO.test(mensagem) && !isWhatsappBrowserStalledError(err)) return;
         // Navegações isoladas não reiniciam o pareamento. Uma página que não responde
         // repetidamente é recuperada pelo mesmo fluxo limitado de reconexão, sem logout.
         if (++falhasDeSondagem >= 3) {
@@ -954,6 +979,7 @@ class WhatsappManager {
 
     client.on("loading_screen", (percent) => {
       if (!tentativaAtiva() || pronto) return;
+      observarSincronizacao();
       const valor = Number(percent);
       this.setState({ syncProgress: Number.isFinite(valor) ? Math.max(0, Math.min(100, valor)) : null });
       // Progresso sozinho não comprova autenticação; consulta o estado do socket.
@@ -1129,7 +1155,22 @@ class WhatsappManager {
       if (minhaGeracao !== this.geracao || this.client !== client) void encerrarWhatsappClient(client);
       else void verificarPareamento();
     }).catch((err) => {
-      failAndCleanUp("falha", err?.message ?? String(err));
+      const mensagem = err?.message ?? String(err);
+      // A própria biblioteca reinstala suas funções quando o documento principal navega. A
+      // promessa original de initialize(), porém, pode rejeitar com o ExecutionContext antigo
+      // mesmo enquanto loading_screen/authenticated continuam avançando no novo documento.
+      // Destruir o Client aqui interromperia uma sincronização válida logo após o QR.
+      if (
+        tentativaAtiva() &&
+        ERRO_TRANSITORIO.test(mensagem) &&
+        !isWhatsappBrowserStalledError(err) &&
+        (sincronizacaoObservada || this.status === "pareando" || this.status === "autenticado")
+      ) {
+        observarSincronizacao();
+        void verificarPareamento();
+        return;
+      }
+      void failAndCleanUp("falha", mensagem);
     });
   }
 
