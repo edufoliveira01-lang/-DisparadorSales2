@@ -1,9 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
-import { Checkbox } from "@/components/ui/Checkbox";
 import { Select } from "@/components/ui/Select";
 type Candidato = {
   dias: number;
@@ -29,17 +28,18 @@ type Sugestao = {
 export function DeadlineSuggestion({
   id,
   data,
-  onUse,
+  onSave,
 }: {
   id: number;
   data: string;
-  onUse: (s: {
+  onSave: (s: {
     descricao: string;
     inicio: string;
     termino: string;
     observacoes: string;
-  }) => void;
+  }) => Promise<void>;
 }) {
+  const sequenciaCalculo = useRef(0);
   const [calendario, setCalendario] = useState<CalendarioAutomatico | null>(
     null,
   );
@@ -49,12 +49,21 @@ export function DeadlineSuggestion({
     [base, setBase] = useState(data),
     [marco, setMarco] = useState("disponibilizacao"),
     [unidade, setUnidade] = useState("uteis"),
-    [confirmado, setConfirmado] = useState(false),
+    [prontoParaCalcular, setProntoParaCalcular] = useState(false),
     [resultado, setResultado] = useState<Sugestao | null>(null),
     [erro, setErro] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [salvando, setSalvando] = useState(false),
+    [salvo, setSalvo] = useState(false);
   useEffect(() => {
     let ativo = true;
+    sequenciaCalculo.current++;
+    setProntoParaCalcular(false);
+    setResultado(null);
+    setErro("");
+    setBusy(false);
+    setSalvo(false);
+    setBase(data);
     void api
       .get<{
         candidatos: Candidato[];
@@ -64,6 +73,13 @@ export function DeadlineSuggestion({
         if (ativo) {
           setCandidatos(r.candidatos);
           setCalendario(r.calendario_automatico);
+          const principal = r.candidatos[0];
+          if (principal) {
+            setDias(principal.dias);
+            setDescricao(principal.descricao);
+            setUnidade(principal.unidade);
+          }
+          setProntoParaCalcular(true);
         }
       })
       .catch((e) => {
@@ -77,15 +93,52 @@ export function DeadlineSuggestion({
     return () => {
       ativo = false;
     };
-  }, [id]);
+  }, [data, id]);
   const invalidar = () => {
+    sequenciaCalculo.current++;
     setResultado(null);
-    setConfirmado(false);
+    setSalvo(false);
   };
+  useEffect(() => {
+    if (!prontoParaCalcular) return;
+    const sequencia = ++sequenciaCalculo.current;
+    setResultado(null);
+    setErro("");
+    setBusy(true);
+    const timer = window.setTimeout(() => {
+      void api
+        .post<Sugestao>(`/djen/publicacoes/${id}/prazos/calcular`, {
+          dias,
+          base,
+          marco,
+          unidade,
+          regime: "cpc",
+          confirmado: true,
+        })
+        .then((r) => {
+          if (sequencia === sequenciaCalculo.current) setResultado(r);
+        })
+        .catch((e) => {
+          if (sequencia === sequenciaCalculo.current)
+            setErro(
+              e instanceof ApiError
+                ? e.message
+                : "Não foi possível calcular o prazo.",
+            );
+        })
+        .finally(() => {
+          if (sequencia === sequenciaCalculo.current) setBusy(false);
+        });
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [base, dias, id, marco, prontoParaCalcular, unidade]);
   return (
-    <details className="mt-3 rounded-lg border border-accent-200 bg-accent-50/30 p-3 dark:border-zinc-700">
+    <details
+      open
+      className="mt-3 rounded-lg border border-accent-200 bg-accent-50/30 p-3 dark:border-zinc-700"
+    >
       <summary className="cursor-pointer text-xs font-semibold">
-        Identificar e calcular prazo pelo calendário do tribunal
+        Prazo sugerido automaticamente
       </summary>
       <div className="mt-3 space-y-3">
         <p className="text-xs text-zinc-500">
@@ -107,144 +160,125 @@ export function DeadlineSuggestion({
             </Link>
           </p>
         )}
-        {candidatos.map((c, i) => (
-          <div key={i} className="rounded-lg border p-3 text-xs">
-            <p className="font-semibold">
-              {c.descricao} · {c.dias} dias{" "}
-              {c.unidade === "uteis" ? "úteis" : "corridos"}
-            </p>
-            <p className="mt-2 whitespace-pre-wrap text-zinc-600 dark:text-zinc-300">
-              “{c.trecho}”
-            </p>
-            <p className="mt-2 text-amber-700">{c.alerta}</p>
-            <Button
-              size="sm"
-              variant="outline"
-              className="mt-2"
-              onClick={() => {
-                setDias(c.dias);
-                setDescricao(c.descricao);
-                setUnidade(c.unidade);
-                invalidar();
-              }}
-            >
-              Usar este prazo
-            </Button>
+        <details className="rounded-lg border border-zinc-200 bg-white/70 p-3 dark:border-zinc-700 dark:bg-zinc-900/30">
+          <summary className="cursor-pointer text-xs font-semibold">
+            Ajustar dados do cálculo
+          </summary>
+          <div className="mt-3 space-y-3">
+            {candidatos.map((c, i) => (
+              <div key={i} className="rounded-lg border p-3 text-xs">
+                <p className="font-semibold">
+                  {c.descricao} · {c.dias} dias{" "}
+                  {c.unidade === "uteis" ? "úteis" : "corridos"}
+                </p>
+                <p className="mt-2 whitespace-pre-wrap text-zinc-600 dark:text-zinc-300">
+                  “{c.trecho}”
+                </p>
+                <p className="mt-2 text-amber-700">{c.alerta}</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-2"
+                  onClick={() => {
+                    const mudou =
+                      dias !== c.dias ||
+                      descricao !== c.descricao ||
+                      unidade !== c.unidade;
+                    setDias(c.dias);
+                    setDescricao(c.descricao);
+                    setUnidade(c.unidade);
+                    if (mudou) invalidar();
+                  }}
+                >
+                  Usar este prazo
+                </Button>
+              </div>
+            ))}
+            {!candidatos.length && (
+              <p className="text-xs text-zinc-500">
+                Nenhuma ordem com prazo explícito foi identificada. Informe os
+                dias após conferir a publicação e o regime aplicável.
+              </p>
+            )}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="calc-dias">Quantidade de dias</Label>
+                <Input
+                  id="calc-dias"
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={dias}
+                  onChange={(e) => {
+                    setDias(Number(e.target.value));
+                    invalidar();
+                  }}
+                />
+              </div>
+              <div>
+                <Label htmlFor="calc-unidade">Contagem</Label>
+                <Select
+                  id="calc-unidade"
+                  value={unidade}
+                  onChange={(e) => {
+                    setUnidade(e.target.value);
+                    invalidar();
+                  }}
+                >
+                  <option value="uteis">Dias úteis</option>
+                  <option value="corridos">
+                    Dias corridos expressamente determinados
+                  </option>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="calc-base">Data-base</Label>
+                <Input
+                  id="calc-base"
+                  type="date"
+                  value={base}
+                  onChange={(e) => {
+                    setBase(e.target.value);
+                    invalidar();
+                  }}
+                />
+              </div>
+              <div>
+                <Label htmlFor="calc-marco">
+                  O que representa a data-base?
+                </Label>
+                <Select
+                  id="calc-marco"
+                  value={marco}
+                  onChange={(e) => {
+                    setMarco(e.target.value);
+                    invalidar();
+                  }}
+                >
+                  <option value="disponibilizacao">
+                    Disponibilização no DJEN
+                  </option>
+                  <option value="publicacao">
+                    Publicação oficial já conferida
+                  </option>
+                  <option value="ciencia">
+                    Ciência válida já conferida
+                  </option>
+                </Select>
+              </div>
+            </div>
           </div>
-        ))}
-        {!candidatos.length && (
-          <p className="text-xs text-zinc-500">
-            Nenhuma ordem com prazo explícito foi identificada. Informe os dias
-            após conferir a publicação e o regime aplicável.
-          </p>
-        )}
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div>
-            <Label htmlFor="calc-dias">Quantidade de dias</Label>
-            <Input
-              id="calc-dias"
-              type="number"
-              min={1}
-              max={365}
-              value={dias}
-              onChange={(e) => {
-                setDias(Number(e.target.value));
-                invalidar();
-              }}
-            />
-          </div>
-          <div>
-            <Label htmlFor="calc-unidade">Contagem</Label>
-            <Select
-              id="calc-unidade"
-              value={unidade}
-              onChange={(e) => {
-                setUnidade(e.target.value);
-                invalidar();
-              }}
-            >
-              <option value="uteis">Dias úteis</option>
-              <option value="corridos">
-                Dias corridos expressamente determinados
-              </option>
-            </Select>
-          </div>
-          <div>
-            <Label htmlFor="calc-base">Data-base</Label>
-            <Input
-              id="calc-base"
-              type="date"
-              value={base}
-              onChange={(e) => {
-                setBase(e.target.value);
-                invalidar();
-              }}
-            />
-          </div>
-          <div>
-            <Label htmlFor="calc-marco">O que representa a data-base?</Label>
-            <Select
-              id="calc-marco"
-              value={marco}
-              onChange={(e) => {
-                setMarco(e.target.value);
-                invalidar();
-              }}
-            >
-              <option value="disponibilizacao">Disponibilização no DJEN</option>
-              <option value="publicacao">
-                Publicação oficial já conferida
-              </option>
-              <option value="ciencia">Ciência válida já conferida</option>
-            </Select>
-          </div>
-        </div>
-        <label className="flex items-start gap-2 text-xs">
-          <Checkbox
-            checked={confirmado}
-            onChange={(e) => {
-              setConfirmado(e.target.checked);
-              setResultado(null);
-            }}
-          />
-          Conferi o regime CPC, o destinatário e a data-base.
-        </label>
+        </details>
         <p className="text-xs">
           <Link to="/configuracoes?prazos=1" className="text-accent-600">
             Ver calendário automático, ajustes manuais e agenda de prazos
           </Link>
         </p>
-        <Button
-          size="sm"
-          variant="outline"
-          loading={busy}
-          disabled={!confirmado}
-          onClick={() => {
-            setBusy(true);
-            setErro("");
-            setResultado(null);
-            void api
-              .post<Sugestao>(`/djen/publicacoes/${id}/prazos/calcular`, {
-                dias,
-                base,
-                marco,
-                unidade,
-                regime: "cpc",
-                confirmado,
-              })
-              .then(setResultado)
-              .catch((e) =>
-                setErro(
-                  e instanceof ApiError
-                    ? e.message
-                    : "Não foi possível calcular.",
-                ),
-              )
-              .finally(() => setBusy(false));
-          }}
-        >
-          Calcular sugestão
-        </Button>
+        {busy && (
+          <p className="text-xs font-medium text-accent-600">
+            Calculando automaticamente…
+          </p>
+        )}
         {erro && (
           <p role="alert" className="text-xs text-red-600">
             {erro}
@@ -281,16 +315,29 @@ export function DeadlineSuggestion({
             <Button
               size="sm"
               className="mt-3"
-              onClick={() =>
-                onUse({
+              loading={salvando}
+              disabled={salvo}
+              onClick={() => {
+                setSalvando(true);
+                setErro("");
+                void onSave({
                   descricao,
                   inicio: resultado.inicio,
                   termino: resultado.termino,
                   observacoes: `${dias} dias ${unidade}. Data-base: ${base} (${marco}). ${resultado.observacoes}\nFontes: ${resultado.fontes.join(", ")}`,
                 })
-              }
+                  .then(() => setSalvo(true))
+                  .catch((e) =>
+                    setErro(
+                      e instanceof ApiError
+                        ? e.message
+                        : "Não foi possível salvar o prazo.",
+                    ),
+                  )
+                  .finally(() => setSalvando(false));
+              }}
             >
-              Preencher novo prazo com esta sugestão
+              {salvo ? "Prazo salvo" : "Confirmar e salvar prazo"}
             </Button>
           </div>
         )}

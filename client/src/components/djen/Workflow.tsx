@@ -164,6 +164,7 @@ export function DjenPrazos({
   refresh: () => Promise<void>;
 }) {
   const { busy, executar } = useAcao(refresh);
+  const { show } = useToast();
   const vazio = {
     descricao: "",
     inicio: "",
@@ -201,7 +202,14 @@ export function DjenPrazos({
       <DeadlineSuggestion
         id={id}
         data={data}
-        onUse={(s) => setForm({ ...vazio, ...s })}
+        onSave={async (s) => {
+          await api.post(`/djen/publicacoes/${id}/prazos`, {
+            ...s,
+            status: "aberto",
+          });
+          await refresh();
+          show("Prazo calculado e salvo.", "success");
+        }}
       />
       {!prazos.length && (
         <p className="mt-3 text-xs text-zinc-500">
