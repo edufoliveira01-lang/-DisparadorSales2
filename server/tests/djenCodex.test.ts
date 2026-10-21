@@ -281,7 +281,7 @@ describe("fila Codex e preservação de dados", () => {
     expect(publicacaoPorId(id)?.ia_status).toBe("concluida");
     expect(counts()).toEqual(before);
   });
-  it("reanálise em lote não substitui revisão humana", () => {
+  it("reanálise em lote preserva revisão humana; análise manual funciona com automático desligado", async () => {
     const { id } = importar();
     revisarPublicacao(id, {
       categorias: ["acordao"],
@@ -293,8 +293,15 @@ describe("fila Codex e preservação de dados", () => {
       revisada: 1,
       categorias_json: '["acordao"]',
     });
+    runner.analisarComCodex.mockResolvedValue(
+      analise(laudo, ["laudo_juntado"]),
+    );
     enfileirarAnaliseCodex(id);
-    expect(publicacaoPorId(id)?.ia_status).toBe("pendente");
+    expect(publicacaoPorId(id)?.ia_status).toBe("analisando");
+    await vi.waitFor(() =>
+      expect(publicacaoPorId(id)?.ia_status).toBe("concluida"),
+    );
+    expect(publicacaoPorId(id)?.categorias_json).toBe('["acordao"]');
   });
 });
 

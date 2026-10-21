@@ -106,4 +106,15 @@ export function runDjenMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_djen_historico_publicacao ON djen_historico(publicacao_id,id DESC);
   `);
+  const campos = db.prepare("PRAGMA table_info(djen_publicacoes)").all() as {
+    name: string;
+  }[];
+  if (!campos.some((c) => c.name === "concluida"))
+    db.transaction(() => {
+      db.exec(`ALTER TABLE djen_publicacoes ADD COLUMN concluida INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE djen_publicacoes ADD COLUMN concluida_em TEXT;
+      ALTER TABLE djen_publicacoes ADD COLUMN ia_manual INTEGER NOT NULL DEFAULT 0;
+      UPDATE djen_publicacoes SET ia_status='pendente',ia_erro=NULL WHERE revisada=0 AND cancelada=0;
+      CREATE TABLE IF NOT EXISTS djen_agenda_links(prazo_id INTEGER NOT NULL REFERENCES djen_prazos(id) ON DELETE CASCADE, calendar_id TEXT NOT NULL, event_id TEXT NOT NULL, url TEXT, updated_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(prazo_id,calendar_id));`);
+    })();
 }

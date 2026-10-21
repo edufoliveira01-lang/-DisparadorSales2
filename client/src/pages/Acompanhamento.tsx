@@ -1,3 +1,4 @@
+import { ContactPicker } from "@/components/djen/ContactPicker";
 import { MultiSelect } from "@/components/ui/MultiSelect";
 import {
   DjenDocumentos,
@@ -27,6 +28,7 @@ import {
   Sparkles,
   Banknote,
   Handshake,
+  Trash2,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay } from "@/lib/phone";
@@ -52,6 +54,7 @@ const TIPOS = {
   rpv: "RPV",
   precatorio: "Precatório",
   homologacao_acordo: "Homologação de acordo",
+  proposta_acordo: "Proposta de acordo",
   extincao_execucao: "Extinção da execução",
   extincao_processo: "Extinção sem mérito",
   cumprimento_sentenca: "Cumprimento de sentença",
@@ -118,6 +121,8 @@ interface Publicacao {
   resultado: Resultado;
   revisada: number;
   lida: number;
+  concluida: number;
+  ia_manual: number;
   cancelada: number;
   advogados: Advogado[];
   cliente_id: number | null;
@@ -205,6 +210,7 @@ const tons = {
   rpv: "info",
   precatorio: "info",
   homologacao_acordo: "success",
+  proposta_acordo: "warning",
   extincao_execucao: "neutral",
   extincao_processo: "neutral",
   cumprimento_sentenca: "accent",
@@ -238,6 +244,7 @@ export function Acompanhamento() {
       resultado: "",
       advogado_id: "",
       situacao: "",
+      arquivo: "ativos",
       busca: "",
       pagina: 1,
     }),
@@ -276,6 +283,7 @@ export function Acompanhamento() {
     [categorias, setCategorias] = useState<Categoria[]>([]),
     [resultado, setResultado] = useState<Resultado>("nao_identificado"),
     [processo, setProcesso] = useState({ cliente_id: "", observacoes: "" });
+  const [confirmacaoEnvio, setConfirmacaoEnvio] = useState(false);
   const [mensagem, setMensagem] = useState<{
       texto: string;
       request_id: string;
@@ -304,6 +312,11 @@ export function Acompanhamento() {
         "/djen/publicacoes?" + q,
       );
       if (current === seq.current) {
+        const ultimaPagina = Math.max(1, Math.ceil(r.total / 25));
+        if (filtro.pagina > ultimaPagina) {
+          setFiltro((f) => ({ ...f, pagina: ultimaPagina }));
+          return;
+        }
         setItems(r.items);
         setTotal(r.total);
         setFalha("");
@@ -338,6 +351,7 @@ export function Acompanhamento() {
   useEffect(() => {
     if (
       !status?.executando &&
+      !status?.codex.executando &&
       !(
         status?.config.ia_ativa &&
         (status.codex.executando || status.codex.pendentes) &&
@@ -358,8 +372,7 @@ export function Acompanhamento() {
     if (
       !detalhe ||
       !["pendente", "analisando"].includes(detalhe.ia_status) ||
-      !status?.config.ia_ativa ||
-      status.codex.pausa
+      (!detalhe.ia_manual && (!status?.config.ia_ativa || status.codex.pausa))
     )
       return;
     let active = true;
@@ -450,26 +463,51 @@ export function Acompanhamento() {
       show(erro(e), "error");
     }
   }
-  function compor() {
-    if (
-      !detalhe?.cliente_id ||
-      !detalhe.cliente_nome ||
-      !detalhe.cliente_telefone
-    )
+  async function compor() {
+    if (!detalhe) return;
+    const contato = contatos.find((c) => String(c.id) === processo.cliente_id);
+    if (!contato) {
+      show(
+        "Busque ou cadastre o cliente abaixo e selecione seu telefone.",
+        "error",
+      );
+      document
+        .getElementById("cliente-processo-area")
+        ?.scrollIntoView({ block: "center", behavior: "smooth" });
+      document.getElementById("buscar-cliente-processo")?.focus();
       return;
+    }
+    const atualizado = await api.put<Publicacao>(
+      `/djen/publicacoes/${detalhe.id}/processo`,
+      { ...processo, cliente_id: contato.id },
+    );
+    setDetalhe(atualizado);
+    setConfirmacaoEnvio(false);
     setMensagem({
-      cliente_id: detalhe.cliente_id,
-      cliente_nome: detalhe.cliente_nome,
-      telefone: detalhe.cliente_telefone,
-      request_id: crypto.randomUUID(),
-      texto: `Olá, ${detalhe.cliente_nome}. Houve uma nova publicação no processo ${detalhe.processo || "acompanhado pelo escritório"}, disponibilizada em ${dia(detalhe.data_disponibilizacao)}: ${detalhe.categorias.map((c) => TIPOS[c]).join(", ") || "andamento processual"}.\n\nNossa equipe vai analisar o conteúdo e orientar você.\n\nSales & Associados.`,
+      cliente_id: contato.id,
+      cliente_nome: contato.nome,
+      telefone: contato.telefone,
+      request_id:
+        globalThis.crypto?.randomUUID?.() ||
+        `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`,
+      texto: `Olá, ${contato.nome}. Houve uma nova publicação no processo ${detalhe.processo || "acompanhado pelo escritório"}: ${situacao || categorias.map((c) => TIPOS[c]).join(", ") || "andamento processual"}.\n\nNossa equipe está analisando o conteúdo para orientar você.\n\nSales & Associados.`,
     });
   }
   async function enviar() {
-    if (!mensagem || !detalhe || lock.current) return;
+    if (!mensagem || !detalhe || lock.current || !confirmacaoEnvio) return;
     lock.current = true;
     setEnviando(true);
     try {
+      if (!detalhe.revisada || revisaoAlterada) {
+        setDetalhe(
+          await api.put<Publicacao>(`/djen/publicacoes/${detalhe.id}/revisao`, {
+            categorias,
+            resultado,
+            situacao,
+          }),
+        );
+        setRevisaoAlterada(false);
+      }
       const r = await api.post<{ mensagem: { status: string } }>(
         `/djen/publicacoes/${detalhe.id}/mensagem`,
         {
@@ -565,7 +603,7 @@ export function Acompanhamento() {
       )}
       {secao === "publicacoes" && (
         <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-4">
             {(
               [
                 { tipo: "sentenca", Icon: Scale },
@@ -574,6 +612,7 @@ export function Acompanhamento() {
                 { tipo: "laudo_juntado", Icon: FileCheck2 },
                 { tipo: "rpv", Icon: Banknote },
                 { tipo: "homologacao_acordo", Icon: Handshake },
+                { tipo: "proposta_acordo", Icon: Handshake },
                 { tipo: "outros", Icon: FolderOpen },
               ] as const
             ).map(({ tipo, Icon }) => (
@@ -612,7 +651,7 @@ export function Acompanhamento() {
               ? `Análise pausada: ${status.codex.pausa}`
               : status?.config.ia_ativa
                 ? `Codex: ${status.codex.pendentes} na fila${status.codex.executando_ids.length ? ` · ${status.codex.executando_ids.length} em análise` : ""}.`
-                : "Análise pelo Codex desativada. Conecte e ative em Monitoramento DJEN."}{" "}
+                : "Análise automática desativada. Use Analisar com Codex nos detalhes ou configure a análise automática em Monitoramento DJEN."}{" "}
             Publicações sem classificação ficam em Outros.
             {status?.config.ia_ativa && (
               <span>
@@ -679,6 +718,7 @@ export function Acompanhamento() {
                 value={filtro.situacao.split(",").filter(Boolean)}
                 options={[
                   { value: "nao_lidas", label: "Não lidas" },
+                  { value: "lidas", label: "Lidas" },
                   { value: "revisar", label: "A revisar" },
                   { value: "com_prazo", label: "Com prazo em aberto" },
                 ]}
@@ -686,6 +726,55 @@ export function Acompanhamento() {
               />
             </div>
           </section>
+          <div
+            id="navegacao-publicacoes"
+            className="sticky top-20 z-20 scroll-mt-24 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900"
+          >
+            <div className="flex flex-wrap items-center gap-3">
+              <Label htmlFor="arquivo-publicacoes">Exibir</Label>
+              <Select
+                id="arquivo-publicacoes"
+                className="max-w-xs"
+                value={filtro.arquivo}
+                onChange={(e) => filtrar("arquivo", e.target.value)}
+              >
+                <option value="ativos">Pendentes de conclusão</option>
+                <option value="concluidos">Concluídas</option>
+                <option value="todos">Todas</option>
+              </Select>
+              {total > 25 && (
+                <>
+                  <Label htmlFor="ir-pagina-publicacoes">Página</Label>
+                  <Select
+                    id="ir-pagina-publicacoes"
+                    className="max-w-[100px]"
+                    value={filtro.pagina}
+                    onChange={(e) =>
+                      setFiltro((f) => ({
+                        ...f,
+                        pagina: Number(e.target.value),
+                      }))
+                    }
+                  >
+                    {Array.from(
+                      { length: Math.max(1, Math.ceil(total / 25)) },
+                      (_, i) => (
+                        <option key={i} value={i + 1}>
+                          {i + 1}
+                        </option>
+                      ),
+                    )}
+                  </Select>
+                </>
+              )}
+            </div>
+            <Pagination
+              page={filtro.pagina - 1}
+              totalItems={total}
+              pageSize={25}
+              onPageChange={(p) => setFiltro((f) => ({ ...f, pagina: p + 1 }))}
+            />
+          </div>
           {status?.executando && (
             <p className="flex items-center gap-2 text-xs text-accent-600">
               <RefreshCw className="h-3.5 w-3.5 animate-spin" />
@@ -725,7 +814,28 @@ export function Acompanhamento() {
           ) : (
             <div className="space-y-3">
               {items.map((p) => (
-                <article key={p.id} className="surface-panel p-5">
+                <article
+                  key={p.id}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Abrir processo ${p.processo}`}
+                  onClick={(e) => {
+                    if (
+                      !(e.target as HTMLElement).closest("button,a,input,label")
+                    )
+                      void abrir(p.id);
+                  }}
+                  onKeyDown={(e) => {
+                    if (
+                      e.target === e.currentTarget &&
+                      (e.key === "Enter" || e.key === " ")
+                    ) {
+                      e.preventDefault();
+                      void abrir(p.id);
+                    }
+                  }}
+                  className={`surface-panel cursor-pointer p-5 transition-colors hover:border-accent-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 ${!p.lida ? "border-l-4 border-l-accent-600 bg-accent-50/40 shadow-sm dark:bg-accent-950/20" : "opacity-85"}`}
+                >
                   <div className="flex flex-col gap-4 sm:flex-row sm:justify-between">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap gap-2">
@@ -749,7 +859,14 @@ export function Acompanhamento() {
                             {RESULTADOS[p.resultado]}
                           </Badge>
                         )}
-                        {!p.lida && <Badge tone="accent">Não lida</Badge>}
+                        {!p.lida ? (
+                          <Badge tone="accent">● Não lida</Badge>
+                        ) : (
+                          <Badge>Lida</Badge>
+                        )}
+                        {Boolean(p.concluida) && (
+                          <Badge tone="success">Concluída</Badge>
+                        )}
                         {!p.revisada && <Badge tone="warning">A revisar</Badge>}
                         {p.ia_status === "pendente" && (
                           <Badge>Aguardando Codex</Badge>
@@ -800,24 +917,71 @@ export function Acompanhamento() {
                         </p>
                       )}
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="self-start"
-                      onClick={() => void abrir(p.id)}
-                    >
-                      Ver detalhes
-                    </Button>
+                    <div className="flex shrink-0 flex-wrap gap-2 sm:max-w-[180px]">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={salvando}
+                        onClick={() =>
+                          void acao(async () => {
+                            await api.post(
+                              `/djen/publicacoes/${p.id}/conclusao`,
+                              { concluida: !p.concluida },
+                            );
+                            await carregarLista();
+                            await carregarStatus();
+                            show(
+                              p.concluida
+                                ? "Publicação reaberta."
+                                : "Publicação concluída. Consulte-a no filtro Concluídas.",
+                              "success",
+                            );
+                          })
+                        }
+                      >
+                        {p.concluida ? "Reabrir" : "Concluir"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={salvando}
+                        onClick={() =>
+                          void acao(async () => {
+                            await api.post(
+                              `/djen/publicacoes/${p.id}/leitura`,
+                              { lida: !p.lida },
+                            );
+                            await carregarLista();
+                            await carregarStatus();
+                          })
+                        }
+                      >
+                        {p.lida ? "Marcar não lida" : "Marcar lida"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="self-start"
+                        onClick={() => void abrir(p.id)}
+                      >
+                        Ver detalhes
+                      </Button>
+                    </div>
                   </div>
                 </article>
               ))}
             </div>
           )}
           <Pagination
-            page={filtro.pagina}
+            page={filtro.pagina - 1}
             totalItems={total}
             pageSize={25}
-            onPageChange={(pagina) => setFiltro((f) => ({ ...f, pagina }))}
+            onPageChange={(pagina) => {
+              setFiltro((f) => ({ ...f, pagina: pagina + 1 }));
+              document
+                .getElementById("navegacao-publicacoes")
+                ?.scrollIntoView({ block: "start", behavior: "smooth" });
+            }}
           />
         </>
       )}
@@ -1144,7 +1308,9 @@ export function Acompanhamento() {
             </p>
           </section>
           <section className="surface-panel p-5">
-            <h2 className="text-sm font-semibold">Últimas consultas</h2>
+            <h2 className="text-sm font-semibold">
+              Últimas consultas (5 mais recentes)
+            </h2>
             {!status?.ultimas.length ? (
               <p className="mt-3 text-xs text-zinc-500">
                 Nenhuma consulta executada.
@@ -1160,25 +1326,45 @@ export function Acompanhamento() {
                       {dia(b.inicio)} a {dia(b.fim)} · {b.novas} novas
                       publicações · {b.consultas} consultas à API
                     </p>
-                    <Badge
-                      tone={
-                        b.status === "concluida"
-                          ? "success"
-                          : b.status === "executando"
-                            ? "info"
-                            : "warning"
-                      }
-                    >
-                      {(
-                        {
-                          concluida: "Concluída",
-                          executando: "Em andamento",
-                          falha: "Falha",
-                          parcial: "Parcial · precisa completar",
-                          interrompida: "Interrompida",
-                        } as Record<string, string>
-                      )[b.status] || b.status}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={salvando || b.status === "executando"}
+                        aria-label={`Excluir registro da consulta ${b.id}`}
+                        onClick={() =>
+                          void acao(async () => {
+                            await api.delete(`/djen/buscas/${b.id}`);
+                            await carregarStatus();
+                            show(
+                              "Registro da consulta excluído. As publicações foram preservadas.",
+                              "success",
+                            );
+                          })
+                        }
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                      <Badge
+                        tone={
+                          b.status === "concluida"
+                            ? "success"
+                            : b.status === "executando"
+                              ? "info"
+                              : "warning"
+                        }
+                      >
+                        {(
+                          {
+                            concluida: "Concluída",
+                            executando: "Em andamento",
+                            falha: "Falha",
+                            parcial: "Parcial · precisa completar",
+                            interrompida: "Interrompida",
+                          } as Record<string, string>
+                        )[b.status] || b.status}
+                      </Badge>
+                    </div>
                   </div>
                   {(
                     JSON.parse(b.erros_json || "[]") as {
@@ -1326,13 +1512,8 @@ export function Acompanhamento() {
               Fechar
             </Button>
             <Button
-              onClick={compor}
-              disabled={
-                !detalhe?.revisada ||
-                !detalhe.cliente_id ||
-                Boolean(detalhe.cancelada) ||
-                whatsapp.status !== "conectado"
-              }
+              onClick={() => void acao(compor)}
+              disabled={salvando || Boolean(detalhe?.cancelada)}
             >
               <Send className="h-3.5 w-3.5" />
               Avisar cliente pelo WhatsApp
@@ -1422,9 +1603,8 @@ export function Acompanhamento() {
                   variant="outline"
                   loading={salvando}
                   disabled={
-                    !status?.config.ia_ativa ||
                     detalhe.ia_status === "analisando" ||
-                    (detalhe.ia_status === "pendente" && !status?.codex.pausa)
+                    Boolean(detalhe.ia_manual)
                   }
                   onClick={() =>
                     void acao(async () => {
@@ -1455,11 +1635,13 @@ export function Acompanhamento() {
                 {detalhe.ia_status === "analisando"
                   ? "Analisando publicação…"
                   : detalhe.ia_status === "pendente"
-                    ? !status?.config.ia_ativa
-                      ? "Análise automática desativada. Ative em Monitoramento DJEN."
-                      : status.codex.pausa
-                        ? `Fila pausada: ${status.codex.pausa}`
-                        : "Aguardando análise na fila."
+                    ? detalhe.ia_manual
+                      ? "Análise manual na fila; não depende da análise automática."
+                      : !status?.config.ia_ativa
+                        ? "Análise automática desativada. O botão Analisar com Codex funciona manualmente."
+                        : status.codex.pausa
+                          ? `Fila pausada: ${status.codex.pausa}`
+                          : "Aguardando análise na fila."
                     : detalhe.ia_status === "erro"
                       ? detalhe.ia_erro
                       : detalhe.analise
@@ -1655,6 +1837,7 @@ export function Acompanhamento() {
             <DjenPrazos
               key={`prazos-${detalhe.id}`}
               id={detalhe.id}
+              data={detalhe.data_disponibilizacao}
               prazos={detalhe.prazos}
               refresh={async () => {
                 setDetalhe(
@@ -1664,34 +1847,19 @@ export function Acompanhamento() {
               }}
             />
             <section className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-              <h3 className="text-sm font-semibold">
+              <h3 id="cliente-processo-area" className="text-sm font-semibold">
                 Cliente e anotações do processo
               </h3>
               <div className="mt-3">
-                <Label htmlFor="cliente-processo">
-                  Contato da Agenda compartilhada
-                </Label>
-                <Select
-                  id="cliente-processo"
+                <ContactPicker
+                  contatos={contatos}
                   value={processo.cliente_id}
-                  onChange={(e) =>
-                    setProcesso({ ...processo, cliente_id: e.target.value })
+                  onChange={(cliente_id) =>
+                    setProcesso({ ...processo, cliente_id })
                   }
-                >
-                  <option value="">Selecione o cliente com segurança</option>
-                  {contatos.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.nome} · {formatPhoneDisplay(c.telefone)}
-                      {c.processo ? ` · ${c.processo}` : ""}
-                    </option>
-                  ))}
-                </Select>
-                <Link
-                  to="/agenda"
-                  className="mt-2 inline-block text-xs text-accent-600"
-                >
-                  Abrir Agenda de contatos
-                </Link>
+                  processo={detalhe.processo}
+                  onCreated={(c) => setContatos((list) => [...list, c])}
+                />
               </div>
               <div className="mt-3">
                 <Label htmlFor="obs-processo">Anotações internas</Label>
@@ -1730,8 +1898,9 @@ export function Acompanhamento() {
                 Salvar dados do processo
               </Button>
               <p className="mt-3 text-[11px] text-zinc-500">
-                Para avisar o cliente, salve a revisão, vincule o contato e
-                conecte o WhatsApp nas configurações compartilhadas.
+                Selecione o cliente e use Avisar cliente pelo WhatsApp para
+                preparar a mensagem. A revisão e o destinatário serão conferidos
+                antes do envio.
               </p>
             </section>
             <DjenHistorico
@@ -1804,7 +1973,11 @@ export function Acompanhamento() {
             </Button>
             <Button
               loading={enviando}
-              disabled={!mensagem?.texto.trim()}
+              disabled={
+                !mensagem?.texto.trim() ||
+                !confirmacaoEnvio ||
+                whatsapp.status !== "conectado"
+              }
               onClick={() => void enviar()}
             >
               <Send className="h-3.5 w-3.5" />
@@ -1815,6 +1988,24 @@ export function Acompanhamento() {
       >
         {mensagem && (
           <div className="space-y-4">
+            {whatsapp.status !== "conectado" && (
+              <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
+                O WhatsApp está desconectado.{" "}
+                <Link to="/configuracoes?whatsapp=1" className="underline">
+                  Conectar nas configurações
+                </Link>{" "}
+                para concluir o envio.
+              </p>
+            )}
+            <label className="flex items-start gap-2 text-xs">
+              <Checkbox
+                checked={confirmacaoEnvio}
+                onChange={(e) => setConfirmacaoEnvio(e.target.checked)}
+              />
+              Conferi o inteiro teor, a classificação, o destinatário e a
+              mensagem. Ao confirmar o envio, a revisão da classificação será
+              salva.
+            </label>
             <div className="rounded-lg bg-zinc-50 p-3 text-xs dark:bg-zinc-800">
               <p className="font-semibold">{mensagem.cliente_nome}</p>
               <p className="mt-1 text-zinc-500">

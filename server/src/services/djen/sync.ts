@@ -31,7 +31,7 @@ export function statusBuscas() {
       ? new Date(proximaExecucao).toISOString()
       : null,
     ultimas: db
-      .prepare("SELECT * FROM djen_buscas ORDER BY id DESC LIMIT 8")
+      .prepare("SELECT * FROM djen_buscas ORDER BY id DESC LIMIT 5")
       .all(),
   };
 }
@@ -243,4 +243,11 @@ export function pararMonitorDjen(): void {
   if (timer) clearInterval(timer);
   timer = null;
   atual?.controller.abort();
+}
+
+export function excluirConsulta(id: number) {
+  const busca = db.prepare("SELECT status FROM djen_buscas WHERE id=?").get(id) as {status:string}|undefined;
+  if (!busca) throw new DjenInputError("Consulta não encontrada.");
+  if (busca.status === "executando" || atual?.id === id) throw new DjenInputError("Aguarde a consulta terminar antes de excluir seu registro.");
+  db.prepare("DELETE FROM djen_buscas WHERE id=?").run(id);
 }

@@ -450,7 +450,7 @@ async function getAccessToken(): Promise<string> {
   return token.access_token;
 }
 
-async function googleRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function googleRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = await getAccessToken();
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${token}`);

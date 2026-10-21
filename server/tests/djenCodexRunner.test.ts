@@ -11,6 +11,7 @@ import {
   CONFIG_CODEX,
   executarCliCodex,
   analisarComCodex,
+  dividirPublicacao,
   verificarConexaoCodex,
   invalidarConexaoCodex,
 } from "../src/services/djen/codexRunner";
@@ -23,6 +24,7 @@ function child() {
     kill: ReturnType<typeof vi.fn>;
   };
   c.stdin = new PassThrough();
+  c.stdin.resume();
   c.stdout = new PassThrough();
   c.stderr = new PassThrough();
   c.kill = vi.fn(() => {
@@ -156,6 +158,19 @@ describe("execução restrita do Codex CLI", () => {
     await expect(job).rejects.toThrow(/interrompida/);
     expect(c.kill).toHaveBeenCalled();
   });
+  it("divide publicação extensa sem perder o começo, meio ou final", () => {
+    const texto =
+      "INÍCIO\n" +
+      "Publicação judicial extensa.\n".repeat(8000) +
+      "FINAL DA PUBLICAÇÃO";
+    const partes = dividirPublicacao(texto);
+    expect(partes.length).toBeGreaterThan(3);
+    expect(partes.every((p) => p.length <= 60000)).toBe(true);
+    let reconstruido = partes[0];
+    for (const p of partes.slice(1)) reconstruido += p.slice(1500);
+    expect(reconstruido).toBe(texto);
+    expect(partes.at(-1)).toContain("FINAL DA PUBLICAÇÃO");
+  });
   it("executa o contrato CLI completo e limpa arquivos temporários", async () => {
     const jobs: { args: string[]; cwd: string }[] = [];
     mocked.spawn.mockImplementation(
@@ -192,7 +207,12 @@ describe("execução restrita do Codex CLI", () => {
       path.join(os.tmpdir(), "djen-codex-test-"),
     );
     vi.stubEnv("DJEN_CODEX_HOME", authHome);
-    const r = await analisarComCodex(laudo, "Intimação");
+    const textoLongo = (laudo + "\n").repeat(4000);
+    const r = await analisarComCodex(textoLongo, "Intimação");
+    expect(jobs.filter((j) => j.args.includes("exec")).length).toBeGreaterThan(
+      3,
+    );
+    expect(r.alertas.join(" ")).toContain("trechos");
     expect(r.categorias).toEqual(["laudo_juntado"]);
     const exec = jobs.find((j) => j.args.includes("exec"))!;
     expect(exec.args).toContain("--output-schema");

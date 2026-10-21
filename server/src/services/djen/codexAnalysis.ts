@@ -66,7 +66,7 @@ export function salvarAnaliseCodex(
     return false;
   db.transaction(() => {
     db.prepare(
-      `UPDATE djen_publicacoes SET ia_status='concluida',ia_json=?,ia_erro=NULL,ia_em=CURRENT_TIMESTAMP,ia_versao=?,
+      `UPDATE djen_publicacoes SET ia_status='concluida',ia_manual=0,ia_json=?,ia_erro=NULL,ia_em=CURRENT_TIMESTAMP,ia_versao=?,
       categorias_json=CASE WHEN revisada=0 THEN ? ELSE categorias_json END,
       evidencias_json=CASE WHEN revisada=0 THEN ? ELSE evidencias_json END,
       situacao=CASE WHEN revisada=0 THEN ? ELSE situacao END,
@@ -101,7 +101,7 @@ export function enfileirarAnaliseCodex(id?: number) {
     if (!p || p.cancelada)
       throw new DjenInputError("Publicação indisponível para análise.");
     db.prepare(
-      "UPDATE djen_publicacoes SET ia_status='pendente',ia_erro=NULL WHERE id=?",
+      "UPDATE djen_publicacoes SET ia_status='pendente',ia_erro=NULL,ia_manual=1 WHERE id=?",
     ).run(id);
   } else
     db.prepare(
@@ -138,7 +138,7 @@ async function executar(p: Tarefa, controller: AbortController) {
     const erro =
       error instanceof Error ? error.message : "Falha na análise do Codex.";
     db.prepare(
-      "UPDATE djen_publicacoes SET ia_status='erro',ia_erro=? WHERE id=? AND texto=? AND tipo_documento=? AND ia_status='analisando'",
+      "UPDATE djen_publicacoes SET ia_status='erro',ia_manual=0,ia_erro=? WHERE id=? AND texto=? AND tipo_documento=? AND ia_status='analisando'",
     ).run(erro, p.id, p.texto, p.tipo_documento);
     if (
       !encerrando &&
@@ -159,17 +159,12 @@ export async function processarFilaCodex() {
   const tarefas: Promise<void>[] = [];
   while (!encerrando) {
     const config = configuracaoDjen();
-    if (
-      !config.ia_ativa ||
-      config.ia_pausa ||
-      atuais.size >= config.ia_paralelismo
-    )
-      break;
+    if (atuais.size >= config.ia_paralelismo) break;
     const p = db
       .prepare(
-        "SELECT p.id,p.texto,p.tipo_documento,p.classe,p.tribunal,pr.numero AS processo FROM djen_publicacoes p JOIN djen_processos pr ON pr.chave=p.processo_chave WHERE p.ia_status='pendente' AND p.cancelada=0 ORDER BY p.revisada ASC,p.id ASC LIMIT 1",
+        "SELECT p.id,p.texto,p.tipo_documento,p.classe,p.tribunal,pr.numero AS processo FROM djen_publicacoes p JOIN djen_processos pr ON pr.chave=p.processo_chave WHERE p.ia_status='pendente' AND p.cancelada=0 AND (? OR p.ia_manual=1) ORDER BY p.ia_manual DESC,p.revisada ASC,p.id ASC LIMIT 1",
       )
-      .get() as Tarefa | undefined;
+      .get(config.ia_ativa && !config.ia_pausa ? 1 : 0) as Tarefa | undefined;
     if (!p) break;
     const claim = db
       .prepare(

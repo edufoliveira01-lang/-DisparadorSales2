@@ -6,6 +6,7 @@ export const CATEGORIAS_DJEN = [
   "rpv",
   "precatorio",
   "homologacao_acordo",
+  "proposta_acordo",
   "extincao_execucao",
   "extincao_processo",
   "cumprimento_sentenca",
@@ -51,7 +52,7 @@ export function normalizarTexto(value: string): string {
     .toLowerCase();
 }
 
-export const VERSAO_CLASSIFICADOR = "2.37.0";
+export const VERSAO_CLASSIFICADOR = "2.38.0";
 export class ErroAnaliseCodex extends Error {}
 export interface ContextoPublicacao {
   classe?: string;
@@ -129,6 +130,7 @@ CATEGORIAS (podem coexistir apenas se houver fatos efetivos distintos):
 - laudo_juntado: comunica que o laudo pericial deste processo FOI efetivamente juntado ou apresentado. Menção a exames, laudo particular, futuros quesitos, prazo para entrega, ordem para juntada, futura vista às partes após o laudo ou instruções condicionais NÃO comprovam juntada. Exija frase explícita de fato já ocorrido.
 - rpv: andamento na fase/incidente de requisição de pequeno valor: requisição, depósito, pagamento, satisfação/extinção ou providências desse incidente. Não basta futura previsão de RPV ao final de sentença de mérito ou citação de outro processo. Use a classe processual como contexto. Exemplo: classe Requisição de Pequeno Valor, depósito do INSS e JULGO EXTINTA a execução => rpv + extincao_execucao, e levantamento_valores se expedido alvará; NÃO sentenca.
 - precatorio: andamento efetivo na fase/incidente de precatório, não menção hipotética futura.
+- proposta_acordo: proposta de acordo efetivamente apresentada, inclusive pelo INSS, ou intimação da parte autora para se manifestar sobre proposta existente. NÃO confunda proposta pendente de aceitação com homologação. Diga em situacao e resumo quem propôs, o que é oferecido e a manifestação necessária. Pedido genérico para o INSS propor acordo não comprova proposta apresentada.
 - homologacao_acordo: homologação efetiva de acordo/transação, mesmo formalizada por sentença. Não classifique como sentenca de mérito nem invente procedência; acordo pago/parcelas pendentes devem constar em situacao e resumo.
 - extincao_execucao: extinção/satisfação de execução ou cumprimento, inclusive RPV, efetivamente declarada. Não confundir com julgamento de mérito. Não marcar quando a extinção só ocorrerá após evento futuro.
 - extincao_processo: extinção do processo sem resolução do mérito efetivamente declarada. Não marcar quando futura/condicional; não é sentença de mérito para estes filtros.
@@ -148,6 +150,20 @@ const canon = (s: string) => normalizarTexto(s).replace(/\s+/g, " ").trim();
 const future =
   /\b(?:apos|quando|caso|se houver|devera|deverao|aguarde|aguardar|aguarde-se|futura|nao houve|nao foi|nao ha|nao consta|ainda nao|nao se encontra|determino|determine-se|requisite-se|solicite-se|junte-se|intime-se o perito|para ser|a ser)\b/;
 /** Verifica estrutura, citações literais e fatos mínimos antes de aceitar a classificação. */
+function homologacaoEfetiva(s: string): boolean {
+  for (const m of s.matchAll(
+    /\b(?:homologo|homologad[oa])\b[^.;]{0,120}\b(?:acordo|transacao)\b/g,
+  )) {
+    const antes = s.slice(Math.max(0, m.index! - 90), m.index);
+    if (
+      !/\b(?:nao|requer|requerimento|pedido de|apos|quando|se houver|devera|sera)\b[^.;]*$/.test(
+        antes,
+      )
+    )
+      return true;
+  }
+  return false;
+}
 export function validarAnaliseCodex(
   value: unknown,
   texto: string,
@@ -255,7 +271,22 @@ export function validarAnaliseCodex(
           )
         )
           return false;
+        if (c === "homologacao_acordo") return homologacaoEfetiva(s);
+        if (
+          c === "proposta_acordo" &&
+          (/\bnao\s+(?:foi\s+)?(?:apresentou|apresentad[ao]|ofereceu|oferecid[ao]|formulou|formulad[ao])\b[^.;]{0,60}proposta/.test(
+            s,
+          ) ||
+            (/\b(?:apresente|apresentar|formule|formular|ofereca|oferecer|elabore)\s+(?:uma\s+)?proposta\s+(?:de\s+)?acordo/.test(
+              s,
+            ) &&
+              !/\b(?:apresentad[ao]|oferecid[ao]|formulad[ao])\b|sobre\s+a\s+proposta/.test(
+                s,
+              )))
+        )
+          return false;
         const regras: Record<string, RegExp> = {
+          proposta_acordo: /proposta[^.;]{0,80}acordo|acordo[^.;]{0,80}propost/,
           rpv: /\brpv\b|requisicao de pequeno valor/,
           precatorio: /precatorio/,
           homologacao_acordo: /homolog[oa][^.;]{0,100}\b(?:acordo|transacao)\b/,
@@ -292,13 +323,7 @@ export function validarAnaliseCodex(
     });
   });
   const evidenceText = canon(a.evidencias.map((e) => e.trecho).join(" "));
-  const homologacao =
-    /\bhomologo\b[^.;]{0,120}\b(?:acordo|transacao)\b|\bhomologa(?:cao)?\b[^.;]{0,60}\b(?:acordo|transacao)\b/.test(
-      evidenceText,
-    ) &&
-    !/\b(?:requer|requerimento|pedido de homologacao|apos|quando|futur[ao])\b/.test(
-      evidenceText,
-    );
+  const homologacao = homologacaoEfetiva(evidenceText);
   if (homologacao && !categorias.includes("homologacao_acordo")) {
     categorias.push("homologacao_acordo");
     const e = a.evidencias.find((e) => /homolog/.test(canon(e.trecho)));

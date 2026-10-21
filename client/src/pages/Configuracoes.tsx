@@ -1,3 +1,4 @@
+import { DeadlineSettings } from "@/components/djen/DeadlineSettings";
 import { SettingsOverview, type SettingsSectionKey } from "@/components/SettingsOverview";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -80,7 +81,7 @@ const STATUS_LABEL: Record<WhatsappState["status"], string> = {
 export function Configuracoes() {
   const { show } = useToast();
   const { theme, setTheme } = useTheme();
-  const [configSection, setConfigSection] = useState<SettingsSectionKey | null>(null);
+  const [configSection, setConfigSection] = useState<SettingsSectionKey | null>(()=>new URLSearchParams(window.location.search).has("prazos")?"prazos":new URLSearchParams(window.location.search).has("whatsapp")?"whatsapp":null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [trelloKey, setTrelloKey] = useState("");
   const [trelloToken, setTrelloToken] = useState("");
@@ -781,7 +782,7 @@ export function Configuracoes() {
                   Conectar WhatsApp
                 </Button>
 
-                {whatsapp.status === "aguardando_qr" && (
+                {["inicializando", "aguardando_qr", "autenticado"].includes(whatsapp.status) && (
                   <Button variant="outline" onClick={handlePararWhatsapp}>
                     <Square className="h-4 w-4" /> Parar
                   </Button>
@@ -887,6 +888,7 @@ export function Configuracoes() {
           </div>
       </CollapsibleCard></section>
 
+      {configSection === "prazos" && <DeadlineSettings/>}
       <section hidden={configSection !== "google"}><GoogleCalendarSettings alwaysOpen /></section>
 
       <section hidden={configSection !== "notificacoes"}><CollapsibleCard alwaysOpen

@@ -351,9 +351,13 @@ export function listarPublicacoes(filtro: Record<string, string>) {
     );
     values.push(...advogados.map(Number));
   }
+  const arquivo = filtro.arquivo || "ativos";
+  if (!["ativos", "concluidos", "todos"].includes(arquivo)) throw new DjenInputError("Filtro de conclusão inválido.");
+  if (arquivo !== "todos") where.push(arquivo === "concluidos" ? "p.concluida=1" : "p.concluida=0");
   const situacoes = csv(filtro.situacao);
   const condicoes: Record<string, string> = {
     nao_lidas: "p.lida=0",
+    lidas: "p.lida=1",
     revisar: "p.revisada=0",
     com_prazo:
       "EXISTS(SELECT 1 FROM djen_prazos dp WHERE dp.publicacao_id=p.id AND dp.status='aberto')",
@@ -503,7 +507,7 @@ export function resumoDjen() {
       (
         db
           .prepare(
-            "SELECT count(*) AS total FROM djen_publicacoes p WHERE p.cancelada=0 AND EXISTS(SELECT 1 FROM json_each(p.categorias_json) WHERE value=?)",
+            "SELECT count(*) AS total FROM djen_publicacoes p WHERE p.cancelada=0 AND p.concluida=0 AND EXISTS(SELECT 1 FROM json_each(p.categorias_json) WHERE value=?)",
           )
           .get(c) as { total: number }
       ).total,
@@ -514,7 +518,7 @@ export function resumoDjen() {
     outros: (
       db
         .prepare(
-          "SELECT count(*) AS total FROM djen_publicacoes WHERE cancelada=0 AND categorias_json='[]'",
+          "SELECT count(*) AS total FROM djen_publicacoes WHERE cancelada=0 AND concluida=0 AND categorias_json='[]'",
         )
         .get() as { total: number }
     ).total,
@@ -525,7 +529,7 @@ export function resumoDjen() {
     ).total,
     nao_lidas: (
       db
-        .prepare("SELECT count(*) AS total FROM djen_publicacoes WHERE lida=0")
+        .prepare("SELECT count(*) AS total FROM djen_publicacoes WHERE lida=0 AND concluida=0")
         .get() as { total: number }
     ).total,
   };

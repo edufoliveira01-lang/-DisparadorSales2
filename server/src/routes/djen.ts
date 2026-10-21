@@ -1,4 +1,14 @@
 import {
+  configPrazos,
+  salvarConfigPrazos,
+  sugestoesPrazos,
+  calcularPrazo,
+  concluirPublicacao,
+} from "../services/djen/deadlines";
+import { enviarPrazoAgenda } from "../services/djen/calendar";
+import { registrarHistoricoDjen } from "../services/djen/history";
+import { GoogleCalendarError } from "../services/googleCalendarService";
+import {
   WorkflowInputError,
   salvarPrazo,
   excluirPrazo,
@@ -20,7 +30,11 @@ import {
   DjenInputError,
   listarAndamentosDoProcesso,
 } from "../services/djen/store";
-import { iniciarBusca, statusBuscas } from "../services/djen/sync";
+import {
+  iniciarBusca,
+  statusBuscas,
+  excluirConsulta,
+} from "../services/djen/sync";
 import { enviarMensagemDjen } from "../services/djen/messages";
 import { emitEvent } from "../websocket";
 import { verificarConexaoCodex } from "../services/djen/codexRunner";
@@ -43,7 +57,8 @@ const wrap =
       .catch((error) => {
         if (
           error instanceof DjenInputError ||
-          error instanceof WorkflowInputError
+          error instanceof WorkflowInputError ||
+          error instanceof GoogleCalendarError
         )
           res.status(400).json({ error: error.message });
         else next(error);
@@ -146,6 +161,7 @@ djenRouter.get(
   wrap((req, res) => {
     const filtro: Record<string, string> = {};
     for (const key of [
+      "arquivo",
       "categoria",
       "resultado",
       "advogado_id",
@@ -284,5 +300,83 @@ djenRouter.get(
       .send(
         `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Publicação DJEN — ${esc(p.processo)}</title><style>body{max-width:900px;margin:40px auto;padding:20px;font:16px/1.7 system-ui}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}</style><h1>Publicação DJEN</h1><p>Processo: ${esc(p.processo)} · ${esc(p.tribunal)} · ${esc(p.data_disponibilizacao)}</p><p>${esc(p.orgao)} · ${esc(p.tipo_documento)}</p><pre>${esc(p.texto)}</pre><p>Texto capturado da publicação. Documentos dos autos devem ser consultados no tribunal.</p></html>`,
       );
+  }),
+);
+
+djenRouter.get(
+  "/prazos/config",
+  wrap((_req, res) => res.json(configPrazos())),
+);
+djenRouter.put(
+  "/prazos/config",
+  wrap((req, res) => {
+    res.json(salvarConfigPrazos(req.body));
+    changed();
+  }),
+);
+djenRouter.delete(
+  "/buscas/:id",
+  wrap((req, res) => {
+    excluirConsulta(id(req.params.id));
+    changed();
+    res.json({ ok: true });
+  }),
+);
+djenRouter.post(
+  "/publicacoes/:id/conclusao",
+  wrap((req, res) => {
+    if (typeof req.body.concluida !== "boolean")
+      throw new DjenInputError("Informe a conclusão.");
+    const n = id(req.params.id);
+    concluirPublicacao(n, req.body.concluida);
+    registrarHistoricoDjen(
+      n,
+      "conclusao",
+      req.body.concluida
+        ? "Publicação concluída pelo usuário."
+        : "Publicação reaberta pelo usuário.",
+    );
+    changed();
+    res.json(detalhesPublicacao(n));
+  }),
+);
+djenRouter.post(
+  "/publicacoes/:id/leitura",
+  wrap((req, res) => {
+    if (typeof req.body.lida !== "boolean")
+      throw new DjenInputError("Informe a leitura.");
+    db.prepare("UPDATE djen_publicacoes SET lida=? WHERE id=?").run(
+      req.body.lida ? 1 : 0,
+      id(req.params.id),
+    );
+    changed();
+    res.json({ ok: true });
+  }),
+);
+djenRouter.get(
+  "/publicacoes/:id/prazos/sugestoes",
+  wrap((req, res) =>
+    res.json(
+      (() => {
+        const p = detalhesPublicacao(id(req.params.id));
+        return sugestoesPrazos({ ...p, texto: p.texto || "" });
+      })(),
+    ),
+  ),
+);
+djenRouter.post(
+  "/publicacoes/:id/prazos/calcular",
+  wrap((req, res) => {
+    const p = detalhesPublicacao(id(req.params.id));
+    res.json(calcularPrazo(p.tribunal, p.orgao, req.body));
+  }),
+);
+djenRouter.post(
+  "/publicacoes/:id/prazos/:prazoId/agenda",
+  wrap(async (req, res) => {
+    res.json(
+      await enviarPrazoAgenda(id(req.params.id), id(req.params.prazoId)),
+    );
+    changed();
   }),
 );

@@ -447,6 +447,39 @@ interface EnvioAguardandoId {
   resolve: (id: string) => void;
 }
 
+export async function encerrarWhatsappClient(
+  client: Client,
+  logout = false,
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let terminou = false;
+  try {
+    await Promise.race([
+      (async () => {
+        if (logout) {
+          try {
+            await client.logout();
+          } catch {}
+        }
+        await client.destroy();
+        terminou = true;
+      })(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, 5000);
+      }),
+    ]);
+  } catch {
+    /* encerra somente o browser desta instância abaixo */
+  } finally {
+    if (timer) clearTimeout(timer);
+    if (!terminou) {
+      try {
+        client.pupBrowser?.process()?.kill("SIGKILL");
+      } catch {}
+    }
+  }
+}
+
 class WhatsappManager {
   private client: Client | null = null;
   private status: WhatsappStatus = "desconectado";
@@ -454,6 +487,8 @@ class WhatsappManager {
   private lastError: string | null = null;
   private syncProgress: number | null = null;
   private tentativa = 0;
+  private inicioTimer: ReturnType<typeof setTimeout> | null = null;
+  private encerramento: Promise<void> | null = null;
   private estabilidadeTimer: ReturnType<typeof setTimeout> | null = null;
   /** Incrementado a cada connect()/disconnect()/shutdown() para invalidar retries pendentes de uma tentativa anterior. */
   private geracao = 0;
@@ -493,13 +528,39 @@ class WhatsappManager {
     return this.status === "conectado" && this.client !== null;
   }
 
-  private setState(partial: Partial<{
-    status: WhatsappStatus;
-    qrDataUrl: string | null;
-    lastError: string | null;
-    syncProgress: number | null;
-  }>) {
+  private setState(
+    partial: Partial<{
+      status: WhatsappStatus;
+      qrDataUrl: string | null;
+      lastError: string | null;
+      syncProgress: number | null;
+    }>,
+  ) {
     Object.assign(this, partial);
+    if (
+      partial.status &&
+      partial.status !== "inicializando" &&
+      this.inicioTimer
+    ) {
+      clearTimeout(this.inicioTimer);
+      this.inicioTimer = null;
+    }
+    if (partial.status === "inicializando" && !this.inicioTimer) {
+      const geracao = this.geracao;
+      this.inicioTimer = setTimeout(() => {
+        this.inicioTimer = null;
+        if (geracao !== this.geracao || this.status !== "inicializando") return;
+        void this.stop().then(() => {
+          if (this.geracao === geracao + 1)
+            this.setState({
+              status: "falha",
+              lastError:
+                "O WhatsApp excedeu 2 minutos ao iniciar. A tentativa foi encerrada. Clique em Conectar para tentar novamente; a sessão foi preservada.",
+            });
+        });
+      }, 120000);
+      this.inicioTimer.unref();
+    }
     emitEvent("whatsapp:status", this.getState());
     this.emit();
   }
@@ -516,7 +577,8 @@ class WhatsappManager {
    * sem exigir um novo QR Code. Chamadas concorrentes compartilham a mesma recuperação.
    */
   private async recuperarBrowserTravado(motivo: string): Promise<void> {
-    if (this.recuperacaoBrowserEmAndamento) return this.recuperacaoBrowserEmAndamento;
+    if (this.recuperacaoBrowserEmAndamento)
+      return this.recuperacaoBrowserEmAndamento;
 
     const recuperacao = (async () => {
       const clientTravado = this.client;
@@ -528,7 +590,8 @@ class WhatsappManager {
       this.limparEstabilidadeTimer();
       this.setState({
         status: "inicializando",
-        lastError: "A conexão interna do WhatsApp travou e está sendo reiniciada automaticamente.",
+        lastError:
+          "A conexão interna do WhatsApp travou e está sendo reiniciada automaticamente.",
         qrDataUrl: null,
         syncProgress: null,
       });
@@ -538,7 +601,8 @@ class WhatsappManager {
         categoria: "whatsapp",
         evento: "recuperacao_automatica_browser",
         titulo: "Navegador do WhatsApp reiniciado automaticamente",
-        mensagem: "O canal interno com o Chromium parou de responder; a sessão autenticada foi preservada.",
+        mensagem:
+          "O canal interno com o Chromium parou de responder; a sessão autenticada foi preservada.",
         origem: "sistema",
         detalhes: { motivo, instancia: `${os.hostname()}:${process.pid}` },
       });
@@ -547,8 +611,12 @@ class WhatsappManager {
         let encerrou = false;
         try {
           await Promise.race([
-            clientTravado.destroy().then(() => { encerrou = true; }),
-            new Promise<void>((resolve) => setTimeout(resolve, TEMPO_LIMITE_ENCERRAR_BROWSER_MS)),
+            clientTravado.destroy().then(() => {
+              encerrou = true;
+            }),
+            new Promise<void>((resolve) =>
+              setTimeout(resolve, TEMPO_LIMITE_ENCERRAR_BROWSER_MS),
+            ),
           ]);
         } catch {
           // O processo filho será encerrado abaixo se destroy() também estiver travado.
@@ -573,7 +641,8 @@ class WhatsappManager {
     try {
       await recuperacao;
     } finally {
-      if (this.recuperacaoBrowserEmAndamento === recuperacao) this.recuperacaoBrowserEmAndamento = null;
+      if (this.recuperacaoBrowserEmAndamento === recuperacao)
+        this.recuperacaoBrowserEmAndamento = null;
     }
   }
 
@@ -600,24 +669,32 @@ class WhatsappManager {
       this.client = null;
       if (client) {
         try {
-          await client.destroy();
+          await encerrarWhatsappClient(client);
         } catch {
           // limpeza best-effort
         }
       }
+      if (minhaGeracao !== this.geracao) return;
       liberarLockDaInstancia();
       const mensagem = (err as Error)?.message || String(err);
       console.error("[WhatsApp] Falha ao iniciar a instância:", err);
-      this.setState({ status: "falha", lastError: mensagem, qrDataUrl: null, syncProgress: null });
+      this.setState({
+        status: "falha",
+        lastError: mensagem,
+        qrDataUrl: null,
+        syncProgress: null,
+      });
     });
   }
 
   connect(): boolean {
-    if (this.client) return true;
+    if (this.encerramento) return false;
+    if (this.client || this.status === "inicializando") return true;
     if (!adquirirLockDaInstancia()) {
       this.setState({
         status: "falha",
-        lastError: "Outra instância do servidor já está controlando esta sessão do WhatsApp.",
+        lastError:
+          "Outra instância do servidor já está controlando esta sessão do WhatsApp.",
         qrDataUrl: null,
         syncProgress: null,
       });
@@ -725,6 +802,7 @@ class WhatsappManager {
       invalidarSessao = false,
       diagnostico?: DiagnosticoWhatsapp
     ) => {
+      if (minhaGeracao !== this.geracao || this.client !== client) return;
       limparReadyWatchdog();
       this.limparEstabilidadeTimer();
 
@@ -745,12 +823,8 @@ class WhatsappManager {
 
       if (motivoNormalizado === "DEPRECATED_VERSION") invalidarWaVersionCache();
 
-      try {
-        await client.destroy();
-      } catch {
-        // best-effort — já estamos tratando uma falha
-      }
-      if (this.client !== client) return; // uma tentativa mais nova já assumiu
+      await encerrarWhatsappClient(client);
+      if (this.client !== client || minhaGeracao !== this.geracao) return; // tentativa antiga
       this.client = null;
       if (invalidarSessao) removerSessaoPersistida();
 
@@ -787,19 +861,23 @@ class WhatsappManager {
     };
 
     client.on("qr", async (qr) => {
+      if (minhaGeracao !== this.geracao || this.client !== client) return;
       // Se uma sessão marcada como válida voltou a pedir QR, ela não é mais restaurável. Remove
       // apenas o marcador; o profile atual permanece aberto para concluir este pareamento.
       removerMarcadorDeSessao();
       const qrDataUrl = await QRCode.toDataURL(qr);
+      if (minhaGeracao !== this.geracao || this.client !== client) return;
       this.setState({ status: "aguardando_qr", qrDataUrl, syncProgress: null });
     });
 
     client.on("loading_screen", (percent) => {
+      if (minhaGeracao !== this.geracao || this.client !== client) return;
       const valor = Number(percent);
       this.setState({ syncProgress: Number.isFinite(valor) ? Math.max(0, Math.min(100, valor)) : null });
     });
 
     client.on("authenticated", () => {
+      if (minhaGeracao !== this.geracao || this.client !== client) return;
       this.setState({ status: "autenticado", qrDataUrl: null, syncProgress: 0 });
 
       // Depois de autenticar, o whatsapp-web.js às vezes trava sem nunca emitir "ready" nem
@@ -820,6 +898,7 @@ class WhatsappManager {
     });
 
     client.on("ready", () => {
+      if (minhaGeracao !== this.geracao || this.client !== client) return;
       limparReadyWatchdog();
       marcarSessaoPersistida();
       this.setState({ status: "conectado", qrDataUrl: null, syncProgress: 100 });
@@ -848,6 +927,7 @@ class WhatsappManager {
     });
 
     client.on("disconnected", async (reason) => {
+      if (minhaGeracao !== this.geracao || this.client !== client) return;
       const motivo = String(reason);
       const diagnostico = await coletarDiagnosticoWhatsapp(client).catch(() => undefined);
       console.error(
@@ -975,72 +1055,50 @@ class WhatsappManager {
       }
     });
 
-    client.initialize().catch((err) => {
+    client.initialize().then(() => {
+      if (minhaGeracao !== this.geracao || this.client !== client) void encerrarWhatsappClient(client);
+    }).catch((err) => {
       failAndCleanUp("falha", err?.message ?? String(err));
     });
   }
 
+  private async encerrar(logout = false): Promise<void> {
+    if (this.encerramento) {
+      await this.encerramento;
+      if (logout) removerSessaoPersistida();
+      return;
+    }
+    this.geracao++;
+    this.desconexaoManual = true;
+    this.limparEstabilidadeTimer();
+    const client = this.client;
+    this.client = null;
+    this.setState({
+      status: "desconectado",
+      qrDataUrl: null,
+      lastError: null,
+      syncProgress: null,
+    });
+    const fechamento = (async () => {
+      if (client) await encerrarWhatsappClient(client, logout);
+      if (logout) removerSessaoPersistida();
+      liberarLockDaInstancia();
+    })();
+    this.encerramento = fechamento;
+    try {
+      await fechamento;
+    } finally {
+      if (this.encerramento === fechamento) this.encerramento = null;
+    }
+  }
   async stop(): Promise<void> {
-    this.geracao++; // cancela qualquer retry automático pendente
-    this.desconexaoManual = true;
-    this.limparEstabilidadeTimer();
-    if (this.client) {
-      try {
-        await this.client.destroy();
-      } catch {
-        // best-effort
-      }
-      this.client = null;
-    }
-    liberarLockDaInstancia();
-    this.setState({ status: "desconectado", qrDataUrl: null, lastError: null, syncProgress: null });
+    await this.encerrar();
   }
-
   async disconnect(): Promise<void> {
-    this.geracao++; // cancela qualquer retry automático pendente
-    this.desconexaoManual = true;
-    this.limparEstabilidadeTimer();
-    if (!this.client) {
-      removerSessaoPersistida();
-      liberarLockDaInstancia();
-      this.setState({ status: "desconectado", qrDataUrl: null, lastError: null, syncProgress: null });
-      return;
-    }
-    try {
-      await this.client.logout();
-    } catch {
-      try {
-        await this.client.destroy();
-      } catch {
-        // best-effort
-      }
-    }
-    this.client = null;
-    removerSessaoPersistida();
-    liberarLockDaInstancia();
-    this.setState({ status: "desconectado", qrDataUrl: null, lastError: null, syncProgress: null });
+    await this.encerrar(true);
   }
-
-  /**
-   * Fecha o browser sem invalidar a sessão (diferente de disconnect(), que faz logout()),
-   * para que o próximo connect() não precise de um novo QR Code. Chamar no shutdown do
-   * processo para não deixar um Chromium travando o profile na próxima inicialização.
-   */
   async shutdown(): Promise<void> {
-    this.geracao++; // cancela qualquer retry automático pendente
-    this.desconexaoManual = true;
-    this.limparEstabilidadeTimer();
-    if (!this.client) {
-      liberarLockDaInstancia();
-      return;
-    }
-    try {
-      await this.client.destroy();
-    } catch {
-      // best-effort — estamos encerrando de qualquer forma
-    }
-    this.client = null;
-    liberarLockDaInstancia();
+    await this.encerrar();
   }
 
   /**
@@ -1048,14 +1106,20 @@ class WhatsappManager {
    * mais é enviado até alguém notar e reconectar manualmente pela tela, e não tem outro jeito de
    * saber disso a distância. Silencioso se a integração não estiver configurada.
    */
-  private async notificarDesconexaoInesperada(motivo: string, diagnostico?: DiagnosticoWhatsapp) {
+  private async notificarDesconexaoInesperada(
+    motivo: string,
+    diagnostico?: DiagnosticoWhatsapp,
+  ) {
     const token = getSetting("telegram_bot_token");
     const chatId = getSetting("telegram_chat_id");
     const motivoNormalizado = normalizarMotivoDesconexao(motivo);
-    const orientacao = motivoNormalizado === "LOGOUT"
-      ? "\n\nO próprio WhatsApp Web encerrou e invalidou o vínculo. O diagnóstico abaixo permite distinguir incompatibilidade da interface web de falta de recursos no servidor."
+    const orientacao =
+      motivoNormalizado === "LOGOUT"
+        ? "\n\nO próprio WhatsApp Web encerrou e invalidou o vínculo. O diagnóstico abaixo permite distinguir incompatibilidade da interface web de falta de recursos no servidor."
+        : "";
+    const detalhes = diagnostico
+      ? `\n\nDiagnóstico:\n${formatarDiagnosticoWhatsapp(diagnostico)}`
       : "";
-    const detalhes = diagnostico ? `\n\nDiagnóstico:\n${formatarDiagnosticoWhatsapp(diagnostico)}` : "";
     const dadosLog = {
       motivo,
       motivo_normalizado: motivoNormalizado,
@@ -1070,7 +1134,8 @@ class WhatsappManager {
         categoria: "whatsapp",
         evento: "desconexao_inesperada",
         titulo: "WhatsApp desconectado inesperadamente",
-        mensagem: "A desconexão foi detectada, mas o Telegram não está configurado para receber o alerta.",
+        mensagem:
+          "A desconexão foi detectada, mas o Telegram não está configurado para receber o alerta.",
         origem: "sistema",
         detalhes: dadosLog,
       });
@@ -1081,16 +1146,20 @@ class WhatsappManager {
       await enviarMensagemTelegram(
         token,
         chatId,
-        `🔌 O WhatsApp do DisparaZap desconectou inesperadamente.\n\nMotivo: ${motivo}\nInstância: ${os.hostname()}:${process.pid}${orientacao}${detalhes}\n\nNenhuma mensagem será enviada até reconectar. Acesse Configurações → Conexão com o WhatsApp para reconectar.`
+        `🔌 O WhatsApp do DisparaZap desconectou inesperadamente.\n\nMotivo: ${motivo}\nInstância: ${os.hostname()}:${process.pid}${orientacao}${detalhes}\n\nNenhuma mensagem será enviada até reconectar. Acesse Configurações → Conexão com o WhatsApp para reconectar.`,
       );
       recordSystemLog({
         nivel: "erro",
         categoria: "whatsapp",
         evento: "desconexao_inesperada",
         titulo: "WhatsApp desconectado inesperadamente",
-        mensagem: "A desconexão foi detectada e o alerta foi enviado pelo Telegram.",
+        mensagem:
+          "A desconexão foi detectada e o alerta foi enviado pelo Telegram.",
         origem: "sistema",
-        detalhes: { ...dadosLog, notificacao: { canal: "Telegram", sucesso: true } },
+        detalhes: {
+          ...dadosLog,
+          notificacao: { canal: "Telegram", sucesso: true },
+        },
       });
     } catch (err) {
       recordSystemLog({
@@ -1098,11 +1167,16 @@ class WhatsappManager {
         categoria: "whatsapp",
         evento: "desconexao_inesperada",
         titulo: "WhatsApp desconectado inesperadamente",
-        mensagem: "A desconexão foi detectada, mas o alerta pelo Telegram falhou.",
+        mensagem:
+          "A desconexão foi detectada, mas o alerta pelo Telegram falhou.",
         origem: "sistema",
         detalhes: {
           ...dadosLog,
-          notificacao: { canal: "Telegram", sucesso: false, erro: (err as Error).message },
+          notificacao: {
+            canal: "Telegram",
+            sucesso: false,
+            erro: (err as Error).message,
+          },
         },
       });
       throw err;
@@ -1189,8 +1263,12 @@ class WhatsappManager {
   }
 
   /** Envio sensível exige ACK real, sem reutilizar a captura permissiva de IDs do fluxo legado. */
-  async sendMessageConfirmed(chatId: string, mensagem: string): Promise<ConfirmedWhatsappSend> {
-    if (!this.client || this.status !== "conectado") throw new Error("WhatsApp não está conectado.");
+  async sendMessageConfirmed(
+    chatId: string,
+    mensagem: string,
+  ): Promise<ConfirmedWhatsappSend> {
+    if (!this.client || this.status !== "conectado")
+      throw new Error("WhatsApp não está conectado.");
     const client = this.client;
     let aliases: string[] = [];
     let aliasTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1198,25 +1276,46 @@ class WhatsappManager {
       const contatos = await Promise.race([
         client.getContactLidAndPhone([chatId]),
         new Promise<never>((_resolve, reject) => {
-          aliasTimer = setTimeout(() => reject(new Error("Timeout PN/LID")), 5000);
+          aliasTimer = setTimeout(
+            () => reject(new Error("Timeout PN/LID")),
+            5000,
+          );
         }),
       ]);
-      aliases = contatos.flatMap((contato) => [contato.lid, contato.pn]).filter(Boolean);
+      aliases = contatos
+        .flatMap((contato) => [contato.lid, contato.pn])
+        .filter(Boolean);
     } catch (err) {
-      if (isWhatsappBrowserStalledError(err)) return this.tratarTravamentoDeOperacao(err, false, client);
+      if (isWhatsappBrowserStalledError(err))
+        return this.tratarTravamentoDeOperacao(err, false, client);
       // ACK pelo ID direto continua funcionando mesmo sem o mapeamento PN/LID.
-      console.warn("[WhatsApp] Não foi possível consultar aliases PN/LID da cobrança.");
+      console.warn(
+        "[WhatsApp] Não foi possível consultar aliases PN/LID da cobrança.",
+      );
     } finally {
       clearTimeout(aliasTimer);
     }
-    if (this.client !== client || this.status !== "conectado") throw new Error("A conexão do WhatsApp mudou. Aguarde reconectar e tente novamente.");
-    console.log(`[WhatsApp] Enviando mensagem com confirmação para ${chatId}...`);
+    if (this.client !== client || this.status !== "conectado")
+      throw new Error(
+        "A conexão do WhatsApp mudou. Aguarde reconectar e tente novamente.",
+      );
+    console.log(
+      `[WhatsApp] Enviando mensagem com confirmação para ${chatId}...`,
+    );
     try {
-      const resultado = await sendConfirmedWhatsappMessage(client, chatId, mensagem, aliases);
-      console.log(`[WhatsApp] Mensagem confirmada: ID=${resultado.messageId}, ACK=${resultado.ack}`);
+      const resultado = await sendConfirmedWhatsappMessage(
+        client,
+        chatId,
+        mensagem,
+        aliases,
+      );
+      console.log(
+        `[WhatsApp] Mensagem confirmada: ID=${resultado.messageId}, ACK=${resultado.ack}`,
+      );
       return resultado;
     } catch (err) {
-      if (isWhatsappBrowserStalledError(err)) return this.tratarTravamentoDeOperacao(err, true, client);
+      if (isWhatsappBrowserStalledError(err))
+        return this.tratarTravamentoDeOperacao(err, true, client);
       throw err;
     }
   }
@@ -1235,7 +1334,10 @@ class WhatsappManager {
     const client = this.client;
 
     // Registramos a intenção de capturar o ID via message_create ANTES de enviar.
-    const promessaIdFallback = this.aguardarIdViaMessageCreate(chatId, mensagem);
+    const promessaIdFallback = this.aguardarIdViaMessageCreate(
+      chatId,
+      mensagem,
+    );
 
     try {
       console.log(`[WhatsApp] Enviando mensagem para ${chatId}...`);
@@ -1246,9 +1348,9 @@ class WhatsappManager {
         TEMPO_LIMITE_ENVIAR_MENSAGEM_MS,
         "enviar a mensagem",
       );
-      
+
       // Pequena pausa para o WhatsApp Web processar o ID interno
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 500));
 
       // Prioridade 1: ID retornado diretamente pelo sendMessage. Aceita tanto o formato
       // completo quanto o stanza ID reduzido, pois ambos aparecem em versões reais da lib.
@@ -1258,11 +1360,13 @@ class WhatsappManager {
         this.removerEnvioAguardando(chatId, mensagem);
         return directId;
       }
-      
+
       // Prioridade 2: Fallback via message_create (evento disparado pela lib)
       const idFallback = await promessaIdFallback;
       if (idFallback) {
-        console.log(`[WhatsApp] ID obtido via fallback de evento: ${idFallback}`);
+        console.log(
+          `[WhatsApp] ID obtido via fallback de evento: ${idFallback}`,
+        );
         return idFallback;
       }
 
@@ -1272,41 +1376,59 @@ class WhatsappManager {
         if (chat.lastMessage && chat.lastMessage.fromMe) {
           const bodyStart = chat.lastMessage.body.slice(0, 20);
           if (mensagem.includes(bodyStart)) {
-            const lastMessageId = whatsappMessageIdCandidates(chat.lastMessage.id)[0];
+            const lastMessageId = whatsappMessageIdCandidates(
+              chat.lastMessage.id,
+            )[0];
             if (lastMessageId) {
-              console.log(`[WhatsApp] ID capturado via lastMessage: ${lastMessageId}`);
+              console.log(
+                `[WhatsApp] ID capturado via lastMessage: ${lastMessageId}`,
+              );
               return lastMessageId;
             }
           }
         }
       } catch (e) {
-        console.warn(`[WhatsApp] Falha ao verificar lastMessage para ${chatId}`);
+        console.warn(
+          `[WhatsApp] Falha ao verificar lastMessage para ${chatId}`,
+        );
       }
 
       // Prioridade 4: Busca Persistente (Polling Fetch-back)
       try {
         console.log(`[WhatsApp] Iniciando busca persistente para ${chatId}...`);
         for (let i = 0; i < 4; i++) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          await new Promise((resolve) => setTimeout(resolve, 2000));
           const chat = await client.getChatById(chatId);
           const messages = await chat.fetchMessages({ limit: 5 });
-          const lastSent = messages.reverse().find(m => m.fromMe && mensagem.includes(m.body.slice(0, 20)));
-          
-          const fetchedId = lastSent ? whatsappMessageIdCandidates(lastSent.id)[0] : null;
+          const lastSent = messages
+            .reverse()
+            .find((m) => m.fromMe && mensagem.includes(m.body.slice(0, 20)));
+
+          const fetchedId = lastSent
+            ? whatsappMessageIdCandidates(lastSent.id)[0]
+            : null;
           if (fetchedId) {
-            console.log(`[WhatsApp] ID capturado na busca persistente (T${i+1}): ${fetchedId}`);
+            console.log(
+              `[WhatsApp] ID capturado na busca persistente (T${i + 1}): ${fetchedId}`,
+            );
             return fetchedId;
           }
         }
       } catch (fetchErr) {
-        console.error(`[WhatsApp] Erro na busca persistente para ${chatId}:`, fetchErr);
+        console.error(
+          `[WhatsApp] Erro na busca persistente para ${chatId}:`,
+          fetchErr,
+        );
       }
 
-      console.error(`[WhatsApp] FALHA TOTAL ao capturar ID para ${chatId}. Status permanecerá como "Enviado".`);
+      console.error(
+        `[WhatsApp] FALHA TOTAL ao capturar ID para ${chatId}. Status permanecerá como "Enviado".`,
+      );
       return null;
     } catch (err) {
       this.removerEnvioAguardando(chatId, mensagem);
-      if (isWhatsappBrowserStalledError(err)) return this.tratarTravamentoDeOperacao(err, true, client);
+      if (isWhatsappBrowserStalledError(err))
+        return this.tratarTravamentoDeOperacao(err, true, client);
       throw err;
     }
   }
@@ -1347,27 +1469,39 @@ class WhatsappManager {
     const client = this.client;
     if (!client) return;
 
-    const pendentes = listPendingReplies().filter((p) => p.status === "aguardando");
+    const pendentes = listPendingReplies().filter(
+      (p) => p.status === "aguardando",
+    );
     for (const pendente of pendentes) {
       try {
         await this.verificarMensagemPerdida(client, pendente);
       } catch (err) {
-        console.error(`Erro ao verificar mensagens perdidas do pendente ${pendente.id}:`, err);
+        console.error(
+          `Erro ao verificar mensagens perdidas do pendente ${pendente.id}:`,
+          err,
+        );
       }
     }
   }
 
-  private async verificarMensagemPerdida(client: Client, pendente: PendingReply): Promise<void> {
+  private async verificarMensagemPerdida(
+    client: Client,
+    pendente: PendingReply,
+  ): Promise<void> {
     // created_at do SQLite vem como "YYYY-MM-DD HH:MM:SS" em UTC, sem indicação de fuso —
     // sem o "Z", o Date trataria como horário local e compararia timestamps errado.
-    const criadoEmMs = new Date(`${pendente.created_at.replace(" ", "T")}Z`).getTime();
+    const criadoEmMs = new Date(
+      `${pendente.created_at.replace(" ", "T")}Z`,
+    ).getTime();
     const chatIds = new Set<string>();
     if (pendente.whatsapp_chat_id) chatIds.add(pendente.whatsapp_chat_id);
 
     // Resolve novamente o telefone porque o WhatsApp pode ter migrado a conversa de @c.us para
     // @lid depois do envio original. Mantemos os dois candidatos para recuperar a resposta em
     // instalações que atravessaram essa migração.
-    const numberId = await this.comRetryTransitorio(() => client.getNumberId(pendente.telefone_digits)).catch(() => null);
+    const numberId = await this.comRetryTransitorio(() =>
+      client.getNumberId(pendente.telefone_digits),
+    ).catch(() => null);
     if (numberId) chatIds.add(numberId._serialized);
 
     for (const chatId of chatIds) {
@@ -1378,25 +1512,47 @@ class WhatsappManager {
         // Recupera confirmações perdidas durante reinícios/desconexões. A comparação usa o
         // stanza ID estável, funcionando com o ID completo ou reduzido salvo no banco.
         if (pendente.whatsapp_message_id) {
-          const pendingKey = whatsappMessageStableKey(pendente.whatsapp_message_id);
-          const enviada = mensagens.find((m) =>
-            m.fromMe && whatsappMessageIdCandidates(m.id).some(
-              (candidate) => whatsappMessageStableKey(candidate) === pendingKey
-            )
+          const pendingKey = whatsappMessageStableKey(
+            pendente.whatsapp_message_id,
+          );
+          const enviada = mensagens.find(
+            (m) =>
+              m.fromMe &&
+              whatsappMessageIdCandidates(m.id).some(
+                (candidate) =>
+                  whatsappMessageStableKey(candidate) === pendingKey,
+              ),
           );
           const recoveredAck = Number(enviada?.ack);
-          if (Number.isInteger(recoveredAck) && recoveredAck >= -1 && recoveredAck <= 4) {
-            const log = updateLogAckByMessageId(pendente.whatsapp_message_id, recoveredAck);
-            const updatedPending = updatePendingReplyAckByMessageId(pendente.whatsapp_message_id, recoveredAck);
+          if (
+            Number.isInteger(recoveredAck) &&
+            recoveredAck >= -1 &&
+            recoveredAck <= 4
+          ) {
+            const log = updateLogAckByMessageId(
+              pendente.whatsapp_message_id,
+              recoveredAck,
+            );
+            const updatedPending = updatePendingReplyAckByMessageId(
+              pendente.whatsapp_message_id,
+              recoveredAck,
+            );
             if (log) emitEvent("send:ack-update", log);
-            if (updatedPending) emitEvent("pendingReply:ack-update", updatedPending);
+            if (updatedPending)
+              emitEvent("pendingReply:ack-update", updatedPending);
           }
         }
 
-        const resposta = mensagens.find((m) => !m.fromMe && m.timestamp * 1000 >= criadoEmMs);
+        const resposta = mensagens.find(
+          (m) => !m.fromMe && m.timestamp * 1000 >= criadoEmMs,
+        );
         if (!resposta) continue;
 
-        await this.finalizarPendingReply(pendente, "mensagem", resposta.body ? resposta.body.slice(0, 300) : null);
+        await this.finalizarPendingReply(
+          pendente,
+          "mensagem",
+          resposta.body ? resposta.body.slice(0, 300) : null,
+        );
         return;
       } catch {
         // Um dos aliases pode não existir mais; tentamos o próximo antes de desistir.
@@ -1448,7 +1604,11 @@ class WhatsappManager {
     return findAwaitingByChatIdentifier(chatId);
   }
 
-  private async finalizarPendingReply(pending: PendingReply, tipo: TipoResposta, preview: string | null): Promise<void> {
+  private async finalizarPendingReply(
+    pending: PendingReply,
+    tipo: TipoResposta,
+    preview: string | null,
+  ): Promise<void> {
     const resolved = resolvePendingReplyIfAwaiting(pending.id, tipo, preview);
     if (!resolved) return;
     emitEvent("pendingReply:resolved", resolved);
@@ -1460,7 +1620,10 @@ class WhatsappManager {
       try {
         await moveCard(trelloKey, trelloToken, pending.card_id, confirmListId);
       } catch (err) {
-        console.error(`Erro ao mover cartão ${pending.card_id} no Trello após resposta do cliente:`, err);
+        console.error(
+          `Erro ao mover cartão ${pending.card_id} no Trello após resposta do cliente:`,
+          err,
+        );
       }
     }
   }

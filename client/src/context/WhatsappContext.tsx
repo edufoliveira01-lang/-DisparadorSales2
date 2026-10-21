@@ -1,4 +1,11 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useRef,
+  type ReactNode,
+} from "react";
 import { api } from "@/lib/api";
 import type { WhatsappState } from "@/lib/types";
 
@@ -42,30 +49,68 @@ export function WhatsappProvider({ children }: { children: ReactNode }) {
     return () => eventSource.close();
   }, []);
 
+  const operacao = useRef(0);
   async function conectar() {
+    const atual = ++operacao.current;
     setConectando(true);
     try {
       const novoEstado = await api.post<WhatsappState>("/whatsapp/connect");
-      setState(novoEstado);
+      if (atual === operacao.current) setState(novoEstado);
     } finally {
       setConectando(false);
     }
   }
 
   async function parar() {
-    setState((prev) => ({ ...prev, status: "desconectado", qrDataUrl: null, lastError: null }));
+    ++operacao.current;
+    setConectando(false);
+    setState((prev) => ({
+      ...prev,
+      status: "desconectado",
+      qrDataUrl: null,
+      lastError: null,
+    }));
     const novoEstado = await api.post<WhatsappState>("/whatsapp/stop");
     setState(novoEstado);
   }
 
   async function desconectar() {
-    setState((prev) => ({ ...prev, status: "desconectado", qrDataUrl: null, lastError: null }));
+    ++operacao.current;
+    setConectando(false);
+    setState((prev) => ({
+      ...prev,
+      status: "desconectado",
+      qrDataUrl: null,
+      lastError: null,
+    }));
     const novoEstado = await api.post<WhatsappState>("/whatsapp/disconnect");
     setState(novoEstado);
   }
 
+  useEffect(() => {
+    if (
+      !["inicializando", "autenticado", "aguardando_qr"].includes(state.status)
+    )
+      return;
+    let ativo = true;
+    const timer = setInterval(() => {
+      const seq = operacao.current;
+      void api
+        .get<WhatsappState>("/whatsapp/status")
+        .then((r) => {
+          if (ativo && seq === operacao.current) setState(r);
+        })
+        .catch(() => {});
+    }, 5000);
+    return () => {
+      ativo = false;
+      clearInterval(timer);
+    };
+  }, [state.status]);
   return (
-    <WhatsappContext.Provider value={{ ...state, conectando, conectar, parar, desconectar }}>
+    <WhatsappContext.Provider
+      value={{ ...state, conectando, conectar, parar, desconectar }}
+    >
       {children}
     </WhatsappContext.Provider>
   );
@@ -73,6 +118,9 @@ export function WhatsappProvider({ children }: { children: ReactNode }) {
 
 export function useWhatsapp(): WhatsappContextValue {
   const ctx = useContext(WhatsappContext);
-  if (!ctx) throw new Error("useWhatsapp precisa ser usado dentro de um WhatsappProvider");
+  if (!ctx)
+    throw new Error(
+      "useWhatsapp precisa ser usado dentro de um WhatsappProvider",
+    );
   return ctx;
 }

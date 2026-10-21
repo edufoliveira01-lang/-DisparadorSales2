@@ -12,6 +12,7 @@ import {
 import { Badge } from "./ui/Badge";
 
 const sections = [
+  {key:"prazos",title:"Prazos e calendários",description:"Agenda processual, feriados, suspensões e calendários de cada tribunal.",icon:CalendarDays},
   {
     key: "whatsapp",
     title: "WhatsApp",

@@ -1,4 +1,4 @@
-# Acompanhamento processual — versão 2.37.0
+# Acompanhamento processual — versão 2.38.0
 
 No seletor **Serviço ativo**, escolha **Processos e DJEN**. O controle anterior continua em **Perícias e avisos**.
 
@@ -69,11 +69,33 @@ A sessão fica em `~/.disparador-codex` do usuário do servidor, fora do banco/b
 
 A conexão positiva é verificada uma vez e reaproveitada por cinco minutos, com nova checagem forçada ao clicar em Verificar conexão. Uma falha de execução invalida esse cache. A interface mostra quantas publicações estão em análise, tempo médio das últimas 50 conclusões e estimativa de término, sujeita à variação dos textos e limites da conta. Erro de validação isolado não interrompe outras publicações; falha de conexão ou limite pausa novas tarefas. O modelo e o esforço de raciocínio foram mantidos.
 
-Há tempo máximo de três minutos por execução e limite de 120 mil caracteres por publicação; textos maiores não são truncados e ficam com erro visível para conferência manual. Uma execução interrompida pelo reinício volta à fila. Credenciais e erros brutos do CLI não são devolvidos ao navegador.
+Há tempo máximo de três minutos por chamada do CLI. Publicações com mais de 60 mil caracteres são divididas em trechos com sobreposição; todas as partes são analisadas, com consolidação progressiva de fatos e evidências e validação das citações contra o texto original. Não há mais rejeição automática aos 120 mil caracteres. A análise de um texto longo pode usar várias chamadas e consumir mais tempo/limite da conta. Uma falha em qualquer parte impede que uma análise incompleta seja salva como conclusão. Uma execução interrompida pelo reinício volta à fila. Credenciais e erros brutos do CLI não são devolvidos ao navegador.
 
-Esta etapa permite cadastrar vários prazos manuais por andamento, com descrição, início, término, status e observações. As datas são conferidas pela equipe; não há contagem automática de prazo legal. Há links de documentos HTTPS, abertura do texto integral em nova aba, certidão oficial e links do tribunal quando disponíveis. Não há download automático de arquivos dos autos nem criação de eventos em calendários. A data da lista é a **disponibilização informada pelo DJEN**, não vencimento. A mensagem inicial ao cliente permanece neutra e editável; não afirma resultado favorável automaticamente.
+Os prazos têm descrição, início, término, status e observações. A seção de identificação encontra ordens de manifestação com quantidade de dias expressa no texto. O usuário confere o destinatário, regime e marco inicial; não se inventa um prazo recursal apenas pelo rótulo Sentença/Acórdão. A calculadora CPC usa a data-base escolhida (disponibilização DJEN, publicação ou ciência conferida), dias úteis/corridos expressamente determinados, feriados e suspensões configurados, com memória da contagem. Não calcula automaticamente regras especiais, prazo em dobro ou ciência pessoal. O PDF oficial DJEN é aberto diretamente; documentos dos autos continuam dependendo dos links e do acesso do tribunal. A data da lista é a disponibilização, não o vencimento.
 
 Documentação oficial consultada: [execução não interativa](https://developers.openai.com/codex/noninteractive), [autenticação](https://developers.openai.com/codex/auth) e [configuração](https://developers.openai.com/codex/config-reference).
+
+
+## Novidades e operação na versão 2.38.0
+
+- **WhatsApp:** Parar aparece durante inicialização, QR e autenticação. O estado sai de Iniciando imediatamente ao interromper; fechamento/logout têm limite de cinco segundos com encerramento do Chromium desta instância quando necessário. A inicialização sem avanço tem limite de dois minutos. Eventos e respostas de tentativas antigas não podem reativar a conexão cancelada. Parar preserva a sessão; Desconectar/trocar sessão continua invalidando o login local. O navegador não tem nova versão imposta nesta alteração. A conexão real deve ser conferida na hospedagem após atualizar.
+- **Proposta de acordo:** categoria própria para proposta efetivamente apresentada, inclusive pelo INSS, e manifestação sobre proposta existente. Não equivale a acordo homologado. Homologação atual não é descartada por uma extinção futura condicionada ao pagamento. A atualização recoloca análises sem revisão na fila, preservando revisões humanas e os textos capturados.
+- **Leitura e conclusão:** todo cartão abre os detalhes, por clique ou teclado. Não lidas têm destaque de cor e lateral, e há ações de marcar lida/não lida. Concluir oculta da lista de pendentes sem apagar dados. O filtro Concluídas permite consultar e reabrir. Concluir a publicação não conclui seus prazos e não apaga eventos no Google.
+- **Navegação:** controles no topo permanecem visíveis durante a rolagem; controles no final continuam disponíveis. A numeração foi corrigida entre a API e o componente de paginação.
+- **Cliente:** pesquisa por nome, telefone ou processo, sugestões do mesmo processo com seleção explícita e cadastro de contato no próprio detalhe. Nunca há vínculo por nome presumido. Ao preparar a mensagem, o contato escolhido é vinculado ao processo.
+- **Avisar cliente:** abre o editor mesmo antes de salvar a revisão. A confirmação exige conferência do inteiro teor, classificação, destinatário e mensagem; a revisão é salva antes do envio. O envio continua exigindo conexão e confirmação ACK, com idempotência e bloqueio de repetição recente. Também funciona em HTTP sem depender de crypto.randomUUID disponível.
+- **Codex manual:** funciona com análise automática desligada e tem prioridade na fila. Falha/limite de conexão permanece visível; o botão pode ser usado para tentar novamente. A análise automática continua configurada separadamente.
+- **Consultas:** somente cinco registros recentes são mostrados. Excluir remove apenas o histórico daquela consulta concluída, sem apagar publicações, advogados ou cursor; uma consulta em execução não pode ser excluída.
+
+### Configurar os prazos e a agenda processual
+
+Em **Configurações → Prazos e calendários**, carregue as agendas da conta Google compartilhada e selecione uma agenda exclusiva para prazos. A aplicação rejeita o uso de agendas já configuradas para perícias ao enviar o prazo. Não é criada uma agenda Google por conta própria. O botão **Adicionar à agenda de prazos** cria ou atualiza um evento de dia inteiro no término do prazo, com o início e as observações na descrição. O identificador determinístico evita duplicação após repetição/resultado incerto. Editar o prazo local exige usar novamente o botão para atualizar o Google; excluir/cancelar localmente não remove o evento remoto automaticamente.
+
+Cadastre um ou mais calendários com sigla do tribunal, órgão/unidade opcional, intervalo de cobertura, fonte oficial HTTPS (.jus.br), feriados sem expediente e suspensões. Calendários gerais e da unidade são combinados. Confirme a cobertura após conferir a fonte e atos locais/extraordinários. Não há importação automática universal de feriados dos tribunais; o sistema não afirma que um calendário está completo apenas pelo endereço da fonte. Sem cobertura conferida, ou diante de períodos sobrepostos ambíguos, o cálculo é bloqueado. A interface permite deixar o calendário a conferir. Amplie a cobertura quando o cálculo atravessar o ano.
+
+A calculadora separa o dia da disponibilização, a publicação oficial e o primeiro dia contado, e separa feriado de expediente da suspensão do curso do prazo. A suspensão anual do CPC é aplicada à contagem; feriados de expediente no recesso devem constar do calendário. As datas são sugestões para conferência, não protocolo nem garantia de tempestividade. Nenhuma sugestão grava prazo ou envia ao Google sem a ação correspondente.
+
+Fontes utilizadas para a regra CPC: [arts. 219, 220 e 224](https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2015/lei/l13105.htm). Exemplo de consulta oficial de feriados, suspensões e diferenças locais: [TJSP](https://www.tjsp.jus.br/CanaisComunicacao/Feriados/ExpedienteForense). A configuração precisa corresponder ao tribunal e à unidade reais do processo.
 
 ## Independência dos serviços
 

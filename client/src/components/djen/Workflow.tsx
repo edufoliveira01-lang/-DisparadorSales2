@@ -1,3 +1,4 @@
+import { DeadlineSuggestion } from "./DeadlineSuggestion";
 import { useState } from "react";
 import {
   ExternalLink,
@@ -88,9 +89,7 @@ export function DjenDocumentos({
   documentos?: Documento[];
   refresh: () => Promise<void>;
 }) {
-  const { busy, executar } = useAcao(refresh);
-  const [novo, setNovo] = useState(false),
-    [form, setForm] = useState({ nome: "", url: "" });
+  void refresh;
   return (
     <section className={panel}>
       <h3 className="flex items-center gap-2 text-sm font-semibold">
@@ -98,128 +97,70 @@ export function DjenDocumentos({
         Documentos do andamento
       </h3>
       <div className="mt-3 flex flex-wrap gap-3 text-xs text-accent-600">
+        {certidao ? (
+          <a
+            href={certidao}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-lg border border-accent-200 px-3 py-2 font-semibold"
+          >
+            <ExternalLink className="h-4 w-4" />
+            Abrir PDF oficial da publicação (DJEN)
+          </a>
+        ) : (
+          <p className="text-amber-700">
+            O DJEN não forneceu o identificador do PDF para esta publicação.
+            Consulte novamente a origem.
+          </p>
+        )}
+        {tribunal && (
+          <a
+            href={tribunal}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Abrir documento original no tribunal
+          </a>
+        )}
         <a
           href={`/api/djen/publicacoes/${id}/documento`}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1"
         >
-          <ExternalLink className="h-3.5 w-3.5" />
-          Abrir publicação completa
+          Ler texto capturado
         </a>
-        {certidao && (
-          <a href={certidao} target="_blank" rel="noopener noreferrer">
-            Certidão oficial DJEN
-          </a>
-        )}
-        {tribunal && (
-          <a href={tribunal} target="_blank" rel="noopener noreferrer">
-            Abrir documento/link do tribunal
-          </a>
-        )}
       </div>
       <p className="mt-2 text-[11px] text-zinc-500">
-        A publicação completa contém o texto capturado. O acesso a arquivos dos
-        autos depende do link e da autenticação do tribunal.
+        O PDF do DJEN é a certidão oficial com o teor da publicação. A íntegra
+        de uma peça dos autos depende do documento disponibilizado pelo tribunal
+        e pode exigir autenticação.
       </p>
-      <div className="mt-3 space-y-2">
-        {documentos.map((d) => (
-          <div
-            key={d.id}
-            className="flex items-center justify-between gap-3 rounded-lg bg-zinc-50 px-3 py-2 text-xs dark:bg-zinc-800/40"
-          >
-            <a
-              href={d.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="break-words text-accent-600"
-            >
-              {d.nome}
-            </a>
-            <button
-              aria-label={`Remover documento ${d.nome}`}
-              disabled={busy}
-              onClick={() =>
-                void executar(
-                  () =>
-                    api.delete(`/djen/publicacoes/${id}/documentos/${d.id}`),
-                  "Link removido.",
-                )
-              }
-              className="shrink-0 p-1 text-zinc-500"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ))}
-      </div>
-      {!novo ? (
-        <Button
-          className="mt-3"
-          size="sm"
-          variant="outline"
-          onClick={() => setNovo(true)}
+      {documentos.map((d) => (
+        <a
+          key={d.id}
+          href={d.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 block text-xs text-accent-600"
         >
-          <Plus className="h-3.5 w-3.5" />
-          Adicionar link de documento
-        </Button>
-      ) : (
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <div>
-            <Label htmlFor="doc-nome">Nome do documento</Label>
-            <Input
-              id="doc-nome"
-              value={form.nome}
-              maxLength={200}
-              onChange={(e) => setForm({ ...form, nome: e.target.value })}
-            />
-          </div>
-          <div>
-            <Label htmlFor="doc-url">Link do documento</Label>
-            <Input
-              id="doc-url"
-              type="url"
-              placeholder="https://…"
-              value={form.url}
-              maxLength={3000}
-              onChange={(e) => setForm({ ...form, url: e.target.value })}
-            />
-          </div>
-          <div className="flex gap-2 sm:col-span-2">
-            <Button
-              size="sm"
-              loading={busy}
-              onClick={() =>
-                void executar(async () => {
-                  await api.post(`/djen/publicacoes/${id}/documentos`, form);
-                  setForm({ nome: "", url: "" });
-                  setNovo(false);
-                }, "Documento vinculado.")
-              }
-            >
-              Salvar documento
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              onClick={() => setNovo(false)}
-            >
-              Cancelar
-            </Button>
-          </div>
-        </div>
-      )}
+          {d.nome}
+        </a>
+      ))}
     </section>
   );
 }
+
 export function DjenPrazos({
   id,
+  data,
   prazos = [],
   refresh,
 }: {
   id: number;
   prazos?: Prazo[];
+  data: string;
   refresh: () => Promise<void>;
 }) {
   const { busy, executar } = useAcao(refresh);
@@ -253,9 +194,15 @@ export function DjenPrazos({
         </Button>
       </div>
       <p className="mt-2 text-xs text-zinc-500">
-        Registre as datas conferidas pela equipe. Não há cálculo automático nem
-        envio ao calendário de perícias.
+        Identifique e calcule a sugestão usando o calendário forense
+        configurado. Confira as datas antes de salvar. A agenda processual é
+        independente das perícias.
       </p>
+      <DeadlineSuggestion
+        id={id}
+        data={data}
+        onUse={(s) => setForm({ ...vazio, ...s })}
+      />
       {!prazos.length && (
         <p className="mt-3 text-xs text-zinc-500">
           Nenhum prazo cadastrado para este andamento.
@@ -300,7 +247,22 @@ export function DjenPrazos({
             {p.observacoes && (
               <p className="mt-2 whitespace-pre-wrap">{p.observacoes}</p>
             )}
-            <div className="mt-3 flex gap-2">
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy || p.status !== "aberto" || !p.termino}
+                onClick={() =>
+                  void executar(
+                    () =>
+                      api.post(`/djen/publicacoes/${id}/prazos/${p.id}/agenda`),
+                    "Prazo adicionado/atualizado na agenda processual.",
+                  )
+                }
+              >
+                <CalendarDays className="h-3 w-3" />
+                Adicionar à agenda de prazos
+              </Button>
               <Button
                 size="sm"
                 variant="outline"
