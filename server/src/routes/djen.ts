@@ -1,8 +1,18 @@
 import {
+  statusCalendarios,
+  enfileirarCalendarios,
+  solicitarCalendario,
+  calcularComCalendarioOficial,
+} from "../services/djen/officialCalendars/service";
+import {
+  salvarConfigImportacao,
+  salvarAjustes,
+  lerCalendario,
+} from "../services/djen/officialCalendars/store";
+import {
   configPrazos,
   salvarConfigPrazos,
   sugestoesPrazos,
-  calcularPrazo,
   concluirPublicacao,
 } from "../services/djen/deadlines";
 import { enviarPrazoAgenda } from "../services/djen/calendar";
@@ -304,6 +314,55 @@ djenRouter.get(
 );
 
 djenRouter.get(
+  "/calendarios",
+  wrap((_req, res) => res.json(statusCalendarios())),
+);
+djenRouter.put(
+  "/calendarios/config",
+  wrap((req, res) => {
+    const config = salvarConfigImportacao(req.body);
+    enfileirarCalendarios();
+    changed();
+    res.json(config);
+  }),
+);
+djenRouter.post(
+  "/calendarios/sincronizar",
+  wrap((req, res) => {
+    const escopos = req.body?.tribunal
+      ? [
+          {
+            tribunal: req.body.tribunal,
+            orgao: req.body.orgao,
+            ano: req.body.ano,
+          },
+        ]
+      : undefined;
+    res.status(202).json(enfileirarCalendarios(escopos, true));
+  }),
+);
+djenRouter.put(
+  "/calendarios/:chave/ajustes",
+  wrap((req, res) => {
+    res.json(salvarAjustes(req.params.chave, req.body));
+    changed();
+  }),
+);
+djenRouter.get(
+  "/calendarios/:chave/historico",
+  wrap((req, res) => {
+    if (!lerCalendario(req.params.chave))
+      throw new WorkflowInputError("Calendário não encontrado.");
+    res.json(
+      db
+        .prepare(
+          "SELECT id,tipo,descricao,created_at FROM djen_calendario_historico WHERE chave=? ORDER BY id DESC LIMIT 20",
+        )
+        .all(req.params.chave),
+    );
+  }),
+);
+djenRouter.get(
   "/prazos/config",
   wrap((_req, res) => res.json(configPrazos())),
 );
@@ -359,16 +418,23 @@ djenRouter.get(
     res.json(
       (() => {
         const p = detalhesPublicacao(id(req.params.id));
-        return sugestoesPrazos({ ...p, texto: p.texto || "" });
+        return {
+          ...sugestoesPrazos({ ...p, texto: p.texto || "" }),
+          calendario_automatico: solicitarCalendario(
+            p.tribunal,
+            p.orgao,
+            Number(p.data_disponibilizacao.slice(0, 4)),
+          ),
+        };
       })(),
     ),
   ),
 );
 djenRouter.post(
   "/publicacoes/:id/prazos/calcular",
-  wrap((req, res) => {
+  wrap(async (req, res) => {
     const p = detalhesPublicacao(id(req.params.id));
-    res.json(calcularPrazo(p.tribunal, p.orgao, req.body));
+    res.json(await calcularComCalendarioOficial(p.tribunal, p.orgao, req.body));
   }),
 );
 djenRouter.post(

@@ -1,4 +1,4 @@
-# Acompanhamento processual — versão 2.38.0
+# Acompanhamento processual — versão 2.39.0
 
 No seletor **Serviço ativo**, escolha **Processos e DJEN**. O controle anterior continua em **Perícias e avisos**.
 
@@ -71,7 +71,7 @@ A conexão positiva é verificada uma vez e reaproveitada por cinco minutos, com
 
 Há tempo máximo de três minutos por chamada do CLI. Publicações com mais de 60 mil caracteres são divididas em trechos com sobreposição; todas as partes são analisadas, com consolidação progressiva de fatos e evidências e validação das citações contra o texto original. Não há mais rejeição automática aos 120 mil caracteres. A análise de um texto longo pode usar várias chamadas e consumir mais tempo/limite da conta. Uma falha em qualquer parte impede que uma análise incompleta seja salva como conclusão. Uma execução interrompida pelo reinício volta à fila. Credenciais e erros brutos do CLI não são devolvidos ao navegador.
 
-Os prazos têm descrição, início, término, status e observações. A seção de identificação encontra ordens de manifestação com quantidade de dias expressa no texto. O usuário confere o destinatário, regime e marco inicial; não se inventa um prazo recursal apenas pelo rótulo Sentença/Acórdão. A calculadora CPC usa a data-base escolhida (disponibilização DJEN, publicação ou ciência conferida), dias úteis/corridos expressamente determinados, feriados e suspensões configurados, com memória da contagem. Não calcula automaticamente regras especiais, prazo em dobro ou ciência pessoal. O PDF oficial DJEN é aberto diretamente; documentos dos autos continuam dependendo dos links e do acesso do tribunal. A data da lista é a disponibilização, não o vencimento.
+Os prazos têm descrição, início, término, status e observações. A seção de identificação encontra ordens de manifestação com quantidade de dias expressa no texto. O usuário confere o destinatário, regime e marco inicial; não se inventa um prazo recursal apenas pelo rótulo Sentença/Acórdão. A calculadora CPC usa a data-base escolhida (disponibilização DJEN, publicação ou ciência conferida), dias úteis/corridos expressamente determinados, feriados e suspensões importados ou preenchidos manualmente, com memória da contagem. Não calcula automaticamente regras especiais, prazo em dobro ou ciência pessoal. O PDF oficial DJEN é aberto diretamente; documentos dos autos continuam dependendo dos links e do acesso do tribunal. A data da lista é a disponibilização, não o vencimento.
 
 Documentação oficial consultada: [execução não interativa](https://developers.openai.com/codex/noninteractive), [autenticação](https://developers.openai.com/codex/auth) e [configuração](https://developers.openai.com/codex/config-reference).
 
@@ -91,7 +91,25 @@ Documentação oficial consultada: [execução não interativa](https://develope
 
 Em **Configurações → Prazos e calendários**, carregue as agendas da conta Google compartilhada e selecione uma agenda exclusiva para prazos. A aplicação rejeita o uso de agendas já configuradas para perícias ao enviar o prazo. Não é criada uma agenda Google por conta própria. O botão **Adicionar à agenda de prazos** cria ou atualiza um evento de dia inteiro no término do prazo, com o início e as observações na descrição. O identificador determinístico evita duplicação após repetição/resultado incerto. Editar o prazo local exige usar novamente o botão para atualizar o Google; excluir/cancelar localmente não remove o evento remoto automaticamente.
 
-Cadastre um ou mais calendários com sigla do tribunal, órgão/unidade opcional, intervalo de cobertura, fonte oficial HTTPS (.jus.br), feriados sem expediente e suspensões. Calendários gerais e da unidade são combinados. Confirme a cobertura após conferir a fonte e atos locais/extraordinários. Não há importação automática universal de feriados dos tribunais; o sistema não afirma que um calendário está completo apenas pelo endereço da fonte. Sem cobertura conferida, ou diante de períodos sobrepostos ambíguos, o cálculo é bloqueado. A interface permite deixar o calendário a conferir. Amplie a cobertura quando o cálculo atravessar o ano.
+A partir da versão **2.39.0**, **Calendários automáticos** vem ativado. O sistema identifica os órgãos/anos das publicações capturadas, importa os dados oficiais e renova cada calendário após seis horas. O monitor verifica pendências a cada minuto, começando trinta segundos após iniciar o servidor; a captura de novas publicações e a abertura das sugestões também alimentam a fila. A calculadora consulta a fonte quando não há dados válidos e importa o ano seguinte se a contagem atravessar a cobertura anual. Consultas simultâneas do mesmo calendário são compartilhadas, e fontes comuns são reaproveitadas por dez minutos. O botão **Atualizar agora** ignora esse cache e permite uma consulta pontual mesmo com o automático desativado.
+
+Fontes implementadas:
+
+| Tribunal / seção | Importação automática |
+| --- | --- |
+| TJSP | Feriados e suspensões oficiais por município e ano; município identificado pelo órgão ou associado uma vez nas configurações. |
+| TRF3, segundo grau | Ato anual consolidado e portarias complementares da página oficial. Separa a sede de SP da Turma Regional de MS. Atos com restrição de dependência ficam para conferência. |
+| JFSP, primeiro grau do TRF3 | Ato anual e tabela municipal consolidada da Diretoria do Foro. Datas revogadas/riscadas não entram na contagem. |
+| TRF4, JFRS, JFSC e JFPR | Calendário anual oficial, combinando os dias comuns com os da subseção identificada. Cidade ambígua exige informar cidade/UF uma vez. |
+| TJDFT | Tabela oficial anual de feriados e expedientes suspensos. |
+
+A primeira instância de MS e os demais tribunais ainda usam a alternativa manual quando não há fonte automática validada. Não se substitui uma fonte indisponível por uma lista de feriados nacionais presumidamente completa. Os calendários importados mostram localidade, fonte, última importação, falhas e histórico. Um ano não publicado, resposta vazia ou formato não reconhecido bloqueia o uso automático desse calendário; conserva-se o conteúdo anterior para consulta e os ajustes manuais, sem apresentá-lo como atualizado.
+
+Se a cidade não puder ser identificada com segurança, abra **Informar ou corrigir localidade**, preencha cidade/UF/instância e salve. As próximas atualizações passam a ser automáticas para esse órgão. Alterar a localidade invalida o calendário anterior até concluir a nova consulta, inclusive se uma consulta estava em andamento.
+
+Em **Ver datas e corrigir manualmente**, é possível adicionar feriado, suspensão ou expediente parcial, desconsiderar/restaurar um evento importado e resolver atos cuja abrangência está pendente. As correções são gravadas separadamente e **sobrevivem a novas importações**. Uma suspensão restrita a outra vara não é aplicada à comarca inteira. Quando não é possível afirmar a abrangência, o ato fica pendente e só bloqueia uma contagem que atravesse o período. Consulte o ato antes de escolher **Confirmar suspensão neste órgão** ou **Não se aplica a este órgão**; para uma exceção diferente, desconsidere o evento e adicione o ajuste apropriado. Datas de expediente parcial são contadas no meio do prazo, com prorrogação do início/vencimento conforme a regra CPC adotada.
+
+**Preencher calendário manual completo (alternativa)** continua disponível, inclusive sem conexão à fonte: cadastre sigla, órgão/unidade opcional, cobertura, fonte oficial HTTPS (.jus.br), feriados e suspensões. Calendários manuais gerais e da unidade são combinados. Um cadastro manual **conferido tem prioridade** sobre a importação para o mesmo órgão/período; cadastros não conferidos não entram no cálculo. Não é necessário cadastrar um calendário manual para usar uma fonte automática atendida. Atos extraordinários ausentes das páginas consultadas podem ser complementados pelos ajustes. Fontes e alterações usadas ficam na memória da contagem. A consulta não modifica prazos já salvos nem eventos no Google.
 
 A calculadora separa o dia da disponibilização, a publicação oficial e o primeiro dia contado, e separa feriado de expediente da suspensão do curso do prazo. A suspensão anual do CPC é aplicada à contagem; feriados de expediente no recesso devem constar do calendário. As datas são sugestões para conferência, não protocolo nem garantia de tempestividade. Nenhuma sugestão grava prazo ou envia ao Google sem a ação correspondente.
 
@@ -120,3 +138,7 @@ O acesso direto à API retornou HTTP 403 no ambiente de desenvolvimento. Portant
 Testes automatizados cobrem validação e persistência da análise (resposta do Codex simulada), paginação, falhas, deduplicação, revisão, cursor, destinatário e isolamento. A interface foi exercitada com API e SQLite locais reais, simulando a fonte DJEN, o retorno do Codex e o envio pelo WhatsApp. O backup existente, por copiar o SQLite, também inclui as novas tabelas.
 
 Não foi usado login ChatGPT de produção no desenvolvimento. A análise real depende da autenticação na hospedagem; os testes locais do contrato CLI e da fila não comprovam a precisão de um modelo em todos os textos judiciais.
+
+## Validação da importação automática (2.39.0)
+
+Em 21/10/2026, consultas reais às fontes oficiais retornaram calendários do TJSP/São Paulo, JFSP/Catanduva, TRF3/8ª Turma, TRF4/JFSC/Florianópolis e TJDFT. Os testes usam recortes dessas respostas para conferir formato, ano, feriados locais/transferidos, textos consolidados, suspensões restritas, falhas, atualização periódica, concorrência, virada do ano, prioridade manual e preservação dos ajustes. Não há uso de Codex ou API de IA na importação de calendários. A rotina não muda configurações do WhatsApp, não recria agendas e não reclassifica publicações.

@@ -117,4 +117,21 @@ export function runDjenMigrations(db: Database.Database): void {
       UPDATE djen_publicacoes SET ia_status='pendente',ia_erro=NULL WHERE revisada=0 AND cancelada=0;
       CREATE TABLE IF NOT EXISTS djen_agenda_links(prazo_id INTEGER NOT NULL REFERENCES djen_prazos(id) ON DELETE CASCADE, calendar_id TEXT NOT NULL, event_id TEXT NOT NULL, url TEXT, updated_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(prazo_id,calendar_id));`);
     })();
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS djen_calendarios_oficiais (
+      chave TEXT PRIMARY KEY, tribunal TEXT NOT NULL, orgao TEXT NOT NULL, ano INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pendente', municipio TEXT, uf TEXT,
+      eventos_json TEXT NOT NULL DEFAULT '[]', fontes_json TEXT NOT NULL DEFAULT '[]', avisos_json TEXT NOT NULL DEFAULT '[]',
+      erro TEXT, consultado_em TEXT, atualizado_em TEXT, proxima_tentativa INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_djen_calendarios_escopo ON djen_calendarios_oficiais(tribunal,orgao,ano);
+    CREATE TABLE IF NOT EXISTS djen_calendario_ajustes (
+      chave TEXT PRIMARY KEY REFERENCES djen_calendarios_oficiais(chave) ON DELETE CASCADE,
+      ajustes_json TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS djen_calendario_historico (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, chave TEXT NOT NULL REFERENCES djen_calendarios_oficiais(chave) ON DELETE CASCADE,
+      tipo TEXT NOT NULL, descricao TEXT NOT NULL, dados_json TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
 }

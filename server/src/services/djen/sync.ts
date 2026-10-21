@@ -1,3 +1,4 @@
+import { iniciarMonitorCalendarios, pararMonitorCalendarios, enfileirarCalendarios } from "./officialCalendars/service";
 import { db } from "../../db";
 import { emitEvent } from "../../websocket";
 import {
@@ -84,6 +85,7 @@ export function iniciarBusca(
     if (atual?.id === id) atual = null;
     emitEvent("djen:changed", {});
     void processarFilaCodex();
+    enfileirarCalendarios();
   });
   return id;
 }
@@ -198,6 +200,7 @@ async function executarBusca(
 }
 export function iniciarMonitorDjen(): void {
   iniciarMonitorCodex();
+  iniciarMonitorCalendarios();
   db.prepare(
     "UPDATE djen_buscas SET status='interrompida',finished_at=CURRENT_TIMESTAMP,erros_json=? WHERE status='executando'",
   ).run(
@@ -240,6 +243,7 @@ export function iniciarMonitorDjen(): void {
 }
 export function pararMonitorDjen(): void {
   pararMonitorCodex();
+  pararMonitorCalendarios();
   if (timer) clearInterval(timer);
   timer = null;
   atual?.controller.abort();

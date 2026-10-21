@@ -3,6 +3,16 @@ import { getSetting, setSetting } from "../settingsService";
 import { dataValida, somarDias } from "./api";
 import { WorkflowInputError } from "./workflow";
 
+export class ErroCoberturaCalendario extends WorkflowInputError {
+  constructor(
+    public data: string,
+    tribunal: string,
+  ) {
+    super(
+      `Calendário do ${tribunal} sem cobertura para ${data}. Atualize a importação ou preencha o calendário manual nas configurações de prazos.`,
+    );
+  }
+}
 export interface CalendarioForense {
   tribunal: string;
   orgao: string;
@@ -10,6 +20,11 @@ export interface CalendarioForense {
   fim: string;
   fonte: string;
   conferido: boolean;
+  origem?: "automatico" | "manual";
+  atualizado_em?: string;
+  fontes?: string[];
+  expediente_parcial?: { data: string; motivo: string }[];
+  pendencias?: { inicio: string; fim: string; motivo: string }[];
   feriados: string[];
   suspensoes: { inicio: string; fim: string; motivo: string }[];
 }
@@ -79,8 +94,35 @@ export function salvarConfigPrazos(data: ConfigPrazos) {
     if (chaves.has(chave)) throw new WorkflowInputError("Calendário repetido.");
     chaves.add(chave);
   }
-  setSetting("djen_prazos_config", JSON.stringify(data));
-  return data;
+  // Metadados de importação são internos; o cadastro manual aceita somente os
+  // campos conferidos acima, sem transformar entrada do navegador em fonte automática.
+  const config: ConfigPrazos = {
+    calendarId: data.calendarId,
+    calendarName: data.calendarName,
+    calendarios: data.calendarios.map(
+      ({
+        tribunal,
+        orgao,
+        inicio,
+        fim,
+        fonte,
+        conferido,
+        feriados,
+        suspensoes,
+      }) => ({
+        tribunal,
+        orgao,
+        inicio,
+        fim,
+        fonte,
+        conferido,
+        feriados,
+        suspensoes,
+      }),
+    ),
+  };
+  setSetting("djen_prazos_config", JSON.stringify(config));
+  return config;
 }
 const canon = (s: string) =>
   s
@@ -197,6 +239,7 @@ export function calcularPrazo(
   tribunal: string,
   orgao: string,
   input: Record<string, unknown>,
+  automaticos: CalendarioForense[] = [],
 ) {
   const dias = Number(input.dias),
     base = String(input.base || ""),
@@ -214,27 +257,49 @@ export function calcularPrazo(
     throw new WorkflowInputError(
       "Confirme o regime CPC, o prazo, a unidade e a data-base antes de calcular.",
     );
-  const cals = configPrazos().calendarios.filter(
+  const manuais = configPrazos().calendarios.filter(
     (c) =>
       c.tribunal === tribunal &&
       c.conferido &&
       (!c.orgao || canon(c.orgao) === canon(orgao)),
   );
+  const usados = new Set<CalendarioForense>();
   const eventos: { data: string; motivo: string }[] = [];
   const vigente = (d: string) => {
-    const locais = cals.filter((c) => c.orgao && c.inicio <= d && c.fim >= d),
-      gerais = cals.filter((c) => !c.orgao && c.inicio <= d && c.fim >= d);
+    // Um calendário manual conferido tem prioridade, inclusive como alternativa sem rede.
+    const manual = manuais.filter((c) => c.inicio <= d && c.fim >= d);
+    const cals = manual.length
+      ? manual
+      : automaticos.filter(
+          (c) =>
+            c.conferido &&
+            c.tribunal === tribunal &&
+            canon(c.orgao) === canon(orgao) &&
+            c.inicio <= d &&
+            c.fim >= d,
+        );
+    const locais = cals.filter((c) => c.orgao),
+      gerais = cals.filter((c) => !c.orgao);
     if (locais.length > 1 || gerais.length > 1)
       throw new WorkflowInputError(
         "Há calendários sobrepostos. Corrija a configuração.",
       );
-    const c = locais[0] || gerais[0];
-    if (!c)
-      throw new WorkflowInputError(
-        `Calendário do ${tribunal} sem cobertura conferida para ${d}. Configure os feriados e suspensões nas configurações de prazos.`,
-      );
-    return [...gerais, ...locais];
+    if (!cals.length) throw new ErroCoberturaCalendario(d, tribunal);
+    for (const c of cals) {
+      const pendencia = c.pendencias?.find((p) => p.inicio <= d && p.fim >= d);
+      if (pendencia)
+        throw new WorkflowInputError(
+          `Há um ato com abrangência pendente em ${d}: ${pendencia.motivo}. Confira e resolva em Configurações → Prazos → Calendários automáticos.`,
+        );
+      usados.add(c);
+    }
+    return cals;
   };
+  const parcial = (d: string) =>
+    vigente(d)
+      .flatMap((c) => c.expediente_parcial || [])
+      .find((p) => p.data === d)?.motivo || null;
+
   const expediente = (d: string) => {
     const c = vigente(d),
       dia = new Date(d + "T12:00:00Z").getUTCDay();
@@ -258,7 +323,8 @@ export function calcularPrazo(
   const proximo = (d: string, contar: boolean) => {
     for (let i = 0; i < 1100; i++) {
       d = somarDias(d, 1);
-      const motivo = expediente(d) || (contar ? suspenso(d) : null);
+      const motivo =
+        expediente(d) || (contar ? suspenso(d) || parcial(d) : null);
       if (!motivo) return d;
       eventos.push({ data: d, motivo });
     }
@@ -279,7 +345,7 @@ export function calcularPrazo(
     if (motivo) eventos.push({ data: termino, motivo });
     else contados++;
   }
-  if (expediente(termino) || suspenso(termino))
+  if (expediente(termino) || suspenso(termino) || parcial(termino))
     termino = proximo(termino, true);
   return {
     inicio,
@@ -288,9 +354,15 @@ export function calcularPrazo(
     dias,
     unidade: input.unidade,
     exclusoes: eventos,
-    fontes: [...new Set(cals.map((c) => c.fonte))],
+    fontes: [...new Set([...usados].flatMap((c) => c.fontes || [c.fonte]))],
+    calendarios: [...usados].map((c) => ({
+      tribunal: c.tribunal,
+      orgao: c.orgao,
+      origem: c.origem || "manual",
+      atualizado_em: c.atualizado_em || null,
+    })),
     observacoes:
-      "Sugestão CPC conforme calendário cadastrado. Conferir marco, destinatário, regras especiais e indisponibilidades supervenientes antes de salvar.",
+      "Sugestão CPC conforme calendário oficial importado ou alternativa manual conferida. Conferir marco, destinatário, regras especiais e indisponibilidades supervenientes antes de salvar.",
   };
 }
 

@@ -12,6 +12,12 @@ type Candidato = {
   unidade: string;
   alerta: string;
 };
+type CalendarioAutomatico = {
+  status: string;
+  municipio: string | null;
+  atualizado_em: string | null;
+  erro: string | null;
+};
 type Sugestao = {
   inicio: string;
   termino: string;
@@ -34,6 +40,9 @@ export function DeadlineSuggestion({
     observacoes: string;
   }) => void;
 }) {
+  const [calendario, setCalendario] = useState<CalendarioAutomatico | null>(
+    null,
+  );
   const [candidatos, setCandidatos] = useState<Candidato[]>([]),
     [descricao, setDescricao] = useState("Manifestação processual"),
     [dias, setDias] = useState(15),
@@ -47,11 +56,15 @@ export function DeadlineSuggestion({
   useEffect(() => {
     let ativo = true;
     void api
-      .get<{ candidatos: Candidato[] }>(
-        `/djen/publicacoes/${id}/prazos/sugestoes`,
-      )
+      .get<{
+        candidatos: Candidato[];
+        calendario_automatico: CalendarioAutomatico | null;
+      }>(`/djen/publicacoes/${id}/prazos/sugestoes`)
       .then((r) => {
-        if (ativo) setCandidatos(r.candidatos);
+        if (ativo) {
+          setCandidatos(r.candidatos);
+          setCalendario(r.calendario_automatico);
+        }
       })
       .catch((e) => {
         if (ativo)
@@ -75,6 +88,25 @@ export function DeadlineSuggestion({
         Identificar e calcular prazo pelo calendário do tribunal
       </summary>
       <div className="mt-3 space-y-3">
+        <p className="text-xs text-zinc-500">
+          Os feriados e suspensões são consultados automaticamente conforme o
+          tribunal e a localidade. Se necessário, o sistema indicará o dado que
+          falta; ajustes manuais ficam nas configurações.
+        </p>
+        {calendario && (
+          <p className="text-xs text-zinc-500">
+            Calendário: {calendario.municipio || "localidade em identificação"}{" "}
+            ·{" "}
+            {calendario.erro ||
+              (calendario.atualizado_em
+                ? `última importação em ${new Date(calendario.atualizado_em).toLocaleString("pt-BR")}`
+                : "a importação será concluída antes do cálculo")}
+            .{" "}
+            <Link to="/configuracoes?prazos=1" className="text-accent-600">
+              Ver detalhes
+            </Link>
+          </p>
+        )}
         {candidatos.map((c, i) => (
           <div key={i} className="rounded-lg border p-3 text-xs">
             <p className="font-semibold">
@@ -175,12 +207,11 @@ export function DeadlineSuggestion({
               setResultado(null);
             }}
           />
-          Conferi que este prazo segue o CPC, o destinatário, a data-base e o
-          calendário da unidade/comarca.
+          Conferi o regime CPC, o destinatário e a data-base.
         </label>
         <p className="text-xs">
           <Link to="/configuracoes?prazos=1" className="text-accent-600">
-            Configurar calendários forenses e agenda de prazos
+            Ver calendário automático, ajustes manuais e agenda de prazos
           </Link>
         </p>
         <Button
