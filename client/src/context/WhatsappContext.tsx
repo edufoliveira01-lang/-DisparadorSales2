@@ -89,7 +89,7 @@ export function WhatsappProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (
-      !["inicializando", "autenticado", "aguardando_qr"].includes(state.status)
+      !["inicializando", "autenticado", "aguardando_qr", "pareando"].includes(state.status)
     )
       return;
     let ativo = true;

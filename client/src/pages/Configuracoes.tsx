@@ -73,7 +73,8 @@ const STATUS_LABEL: Record<WhatsappState["status"], string> = {
   desconectado: "Desconectado",
   inicializando: "Iniciando…",
   aguardando_qr: "Aguardando escaneamento",
-  autenticado: "Autenticando…",
+  pareando: "Validando vínculo…",
+  autenticado: "Sincronizando…",
   conectado: "Conectado",
   falha: "Falha na conexão",
 };
@@ -733,11 +734,18 @@ export function Configuracoes() {
             </p>
           )}
 
+          {whatsapp.status === "pareando" && (
+            <div className="space-y-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-3 text-sm text-blue-700 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-300">
+              <p className="flex items-center gap-2 font-medium"><Loader2 className="h-4 w-4 shrink-0 animate-spin" /> Validando o vínculo com o celular…</p>
+              <p className="text-xs opacity-80">Conclua a autorização no celular e aguarde a confirmação para iniciar a sincronização.</p>
+            </div>
+          )}
+
           {whatsapp.status === "autenticado" && (
             <div className="space-y-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-3 text-sm text-blue-700 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-300">
               <p className="flex items-center gap-2 font-medium">
                 <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-                QR Code confirmado. Sincronizando o WhatsApp
+                Dispositivo vinculado. Sincronizando o WhatsApp
                 {whatsapp.syncProgress !== null && whatsapp.syncProgress !== undefined ? ` (${Math.round(whatsapp.syncProgress)}%)` : ""}...
               </p>
               <div className="h-1.5 overflow-hidden rounded-full bg-blue-100 dark:bg-blue-900/60">
@@ -776,13 +784,13 @@ export function Configuracoes() {
                 <Button
                   onClick={handleConectarWhatsapp}
                   loading={whatsapp.conectando || whatsapp.status === "inicializando"}
-                  disabled={whatsapp.status === "aguardando_qr" || whatsapp.status === "autenticado"}
+                  disabled={whatsapp.status === "aguardando_qr" || whatsapp.status === "pareando" || whatsapp.status === "autenticado"}
                 >
                   {whatsapp.status === "aguardando_qr" ? <Loader2 className="h-4 w-4 animate-spin" /> : <WifiOff className="h-4 w-4" />}
                   Conectar WhatsApp
                 </Button>
 
-                {["inicializando", "aguardando_qr", "autenticado"].includes(whatsapp.status) && (
+                {["inicializando", "aguardando_qr", "pareando", "autenticado"].includes(whatsapp.status) && (
                   <Button variant="outline" onClick={handlePararWhatsapp}>
                     <Square className="h-4 w-4" /> Parar
                   </Button>

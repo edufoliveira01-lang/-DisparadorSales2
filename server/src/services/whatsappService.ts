@@ -29,7 +29,7 @@ import {
   type TipoResposta,
 } from "./pendingRepliesService";
 
-export type WhatsappStatus = "desconectado" | "inicializando" | "aguardando_qr" | "autenticado" | "conectado" | "falha";
+export type WhatsappStatus = "desconectado" | "inicializando" | "aguardando_qr" | "pareando" | "autenticado" | "conectado" | "falha";
 
 const AUTH_DATA_PATH = path.join(dataDir, "wwebjs_auth");
 const AUTH_SESSION_DIR = path.join(AUTH_DATA_PATH, "session");
@@ -489,6 +489,7 @@ class WhatsappManager {
   private tentativa = 0;
   private inicioTimer: ReturnType<typeof setTimeout> | null = null;
   private encerramento: Promise<void> | null = null;
+  private cancelarMonitorPareamento: (() => void) | null = null;
   private estabilidadeTimer: ReturnType<typeof setTimeout> | null = null;
   /** Incrementado a cada connect()/disconnect()/shutdown() para invalidar retries pendentes de uma tentativa anterior. */
   private geracao = 0;
@@ -565,6 +566,12 @@ class WhatsappManager {
     this.emit();
   }
 
+  private limparMonitorPareamento(): void {
+    const cancelar = this.cancelarMonitorPareamento;
+    this.cancelarMonitorPareamento = null;
+    cancelar?.();
+  }
+
   private limparEstabilidadeTimer(): void {
     if (!this.estabilidadeTimer) return;
     clearTimeout(this.estabilidadeTimer);
@@ -588,6 +595,7 @@ class WhatsappManager {
       this.tentativa = 0;
       this.desconexaoManual = false;
       this.limparEstabilidadeTimer();
+      this.limparMonitorPareamento();
       this.setState({
         status: "inicializando",
         lastError:
@@ -667,6 +675,7 @@ class WhatsappManager {
       if (minhaGeracao !== this.geracao) return;
       const client = this.client;
       this.client = null;
+      this.limparMonitorPareamento();
       if (client) {
         try {
           await encerrarWhatsappClient(client);
@@ -719,6 +728,7 @@ class WhatsappManager {
   private async iniciarTentativa(minhaGeracao: number): Promise<void> {
     if (minhaGeracao !== this.geracao) return; // uma chamada mais recente (connect/disconnect) já assumiu
 
+    this.limparMonitorPareamento();
     clearStaleChromiumLocks();
     // A sessão fica em Local Storage/IndexedDB e não é apagada aqui. Limpamos somente caches
     // descartáveis para impedir que um bundle antigo do WhatsApp Web derrube a conexão.
@@ -788,6 +798,13 @@ class WhatsappManager {
     });
     this.client = client;
 
+    let pronto = false;
+    let encerrandoTentativa = false;
+    let sequenciaQr = 0;
+    let sondagemEmAndamento = false;
+    let falhasDeSondagem = 0;
+    let monitorPareamento: ReturnType<typeof setInterval> | null = null;
+    const tentativaAtiva = () => minhaGeracao === this.geracao && this.client === client && !encerrandoTentativa;
     let readyWatchdog: ReturnType<typeof setTimeout> | null = null;
     const limparReadyWatchdog = () => {
       if (readyWatchdog) {
@@ -796,14 +813,22 @@ class WhatsappManager {
       }
     };
 
+    this.cancelarMonitorPareamento = () => {
+      sequenciaQr++;
+      limparReadyWatchdog();
+      if (monitorPareamento) clearInterval(monitorPareamento);
+      monitorPareamento = null;
+    };
+
     const failAndCleanUp = async (
       status: WhatsappStatus,
       message: string,
       invalidarSessao = false,
       diagnostico?: DiagnosticoWhatsapp
     ) => {
-      if (minhaGeracao !== this.geracao || this.client !== client) return;
-      limparReadyWatchdog();
+      if (!tentativaAtiva()) return;
+      encerrandoTentativa = true;
+      this.limparMonitorPareamento();
       this.limparEstabilidadeTimer();
 
       // O whatsapp-web.js costuma emitir "disconnected" de forma espúria durante o próprio
@@ -818,7 +843,7 @@ class WhatsappManager {
       // desconexão real.
       const statusAntesDaFalha = this.status;
       const aindaNaoConectouNestaTentativa = statusAntesDaFalha !== "conectado";
-      const falhaLogoAposEscanear = statusAntesDaFalha === "autenticado";
+      const falhaLogoAposEscanear = statusAntesDaFalha === "autenticado" || statusAntesDaFalha === "pareando";
       const motivoNormalizado = normalizarMotivoDesconexao(message);
 
       if (motivoNormalizado === "DEPRECATED_VERSION") invalidarWaVersionCache();
@@ -839,7 +864,7 @@ class WhatsappManager {
         this.setState({
           status: "inicializando",
           lastError: falhaLogoAposEscanear
-            ? `O WhatsApp desconectou logo após o escaneamento (${this.tentativa}/${MAX_TENTATIVAS_CONEXAO}) — gerando um novo QR Code automaticamente. Às vezes é preciso escanear mais de uma vez, é uma instabilidade conhecida e não indica erro no cadastro.`
+            ? `O WhatsApp não concluiu a sincronização (${this.tentativa}/${MAX_TENTATIVAS_CONEXAO}). Retomando a conexão com a sessão preservada…`
             : `Falha temporária ao conectar (${message}), tentando novamente (${this.tentativa}/${MAX_TENTATIVAS_CONEXAO})…`,
           qrDataUrl: null,
           syncProgress: null,
@@ -860,46 +885,91 @@ class WhatsappManager {
       this.setState({ status, lastError: message, qrDataUrl: null, syncProgress: null });
     };
 
+    const reconhecerPareamento = () => {
+      if (!tentativaAtiva() || pronto || this.status === "autenticado") return;
+      // A confirmação abre uma única janela de sincronização, após a validação do vínculo.
+      limparReadyWatchdog();
+      // Invalida também uma imagem de QR que ainda está sendo codificada.
+      sequenciaQr++;
+      this.setState({ status: "autenticado", qrDataUrl: null, syncProgress: this.syncProgress ?? 0 });
+      // O evento authenticated da biblioteca depende da sincronização. CONNECTED já
+      // confirma o vínculo, mas somente ready libera consultas e envio de mensagens.
+      readyWatchdog = setTimeout(() => {
+        void failAndCleanUp(
+          "falha",
+          "O dispositivo foi vinculado, mas o WhatsApp não concluiu a sincronização em 3 minutos. A sessão foi preservada para retomar a conexão."
+        );
+      }, TEMPO_LIMITE_APOS_AUTENTICAR_MS);
+      readyWatchdog.unref();
+    };
+
+    const aguardarValidacaoPareamento = () => {
+      if (!tentativaAtiva() || pronto || this.status !== "aguardando_qr") return;
+      sequenciaQr++;
+      this.setState({ status: "pareando", qrDataUrl: null, syncProgress: null });
+      readyWatchdog = setTimeout(() => {
+        void failAndCleanUp("falha", "O WhatsApp não concluiu a validação do vínculo com o celular em 3 minutos. A sessão foi preservada para retomar a conexão.");
+      }, TEMPO_LIMITE_APOS_AUTENTICAR_MS);
+      readyWatchdog.unref();
+    };
+
+    const verificarPareamento = async () => {
+      if (!tentativaAtiva() || pronto || sondagemEmAndamento || !client.pupPage) return;
+      sondagemEmAndamento = true;
+      try {
+        const estado = await comTempoLimiteDeOperacao(client.getState(), 8000, "verificar o pareamento");
+        if (!tentativaAtiva() || pronto) return;
+        falhasDeSondagem = 0;
+        if (estado === "CONNECTED") reconhecerPareamento();
+        else if (estado === "PAIRING") aguardarValidacaoPareamento();
+      } catch {
+        if (!tentativaAtiva() || pronto || this.status === "inicializando") return;
+        // Navegações isoladas não reiniciam o pareamento. Uma página que não responde
+        // repetidamente é recuperada pelo mesmo fluxo limitado de reconexão, sem logout.
+        if (++falhasDeSondagem >= 3) {
+          void failAndCleanUp("falha", "O navegador do WhatsApp deixou de responder durante o pareamento. A sessão foi preservada.");
+        }
+      } finally {
+        sondagemEmAndamento = false;
+      }
+    };
+    monitorPareamento = setInterval(() => { void verificarPareamento(); }, 2000);
+    monitorPareamento.unref();
+
     client.on("qr", async (qr) => {
-      if (minhaGeracao !== this.geracao || this.client !== client) return;
-      // Se uma sessão marcada como válida voltou a pedir QR, ela não é mais restaurável. Remove
-      // apenas o marcador; o profile atual permanece aberto para concluir este pareamento.
+      if (!tentativaAtiva() || pronto || this.status === "autenticado") return;
+      const seq = ++sequenciaQr;
+      if (this.status === "pareando") limparReadyWatchdog();
+      // Um QR novo indica que o vínculo anterior deixou de ser restaurável. Não apaga o profile.
       removerMarcadorDeSessao();
-      const qrDataUrl = await QRCode.toDataURL(qr);
-      if (minhaGeracao !== this.geracao || this.client !== client) return;
-      this.setState({ status: "aguardando_qr", qrDataUrl, syncProgress: null });
+      try {
+        const qrDataUrl = await QRCode.toDataURL(qr);
+        if (!tentativaAtiva() || pronto || seq !== sequenciaQr) return;
+        this.setState({ status: "aguardando_qr", qrDataUrl, syncProgress: null });
+      } catch {
+        if (tentativaAtiva() && !pronto && seq === sequenciaQr)
+          void failAndCleanUp("falha", "Não foi possível preparar o QR Code. Tente conectar novamente.");
+      }
     });
 
     client.on("loading_screen", (percent) => {
-      if (minhaGeracao !== this.geracao || this.client !== client) return;
+      if (!tentativaAtiva() || pronto) return;
       const valor = Number(percent);
       this.setState({ syncProgress: Number.isFinite(valor) ? Math.max(0, Math.min(100, valor)) : null });
+      // Progresso sozinho não comprova autenticação; consulta o estado do socket.
+      void verificarPareamento();
     });
 
-    client.on("authenticated", () => {
-      if (minhaGeracao !== this.geracao || this.client !== client) return;
-      this.setState({ status: "autenticado", qrDataUrl: null, syncProgress: 0 });
-
-      // Depois de autenticar, o whatsapp-web.js às vezes trava sem nunca emitir "ready" nem
-      // "disconnected" (mais comum em celulares/conexões lentas) — sem esse timeout a tela
-      // ficaria presa em "Autenticando…" para sempre. Se estourar, tratamos como falha
-      // transitória: o retry automático entra em ação e tenta uma conexão nova.
-      limparReadyWatchdog();
-      readyWatchdog = setTimeout(() => {
-        failAndCleanUp(
-          "desconectado",
-          "Tempo esgotado aguardando o WhatsApp sincronizar após a autenticação (celular pode estar lento ou sem internet)."
-        );
-      }, TEMPO_LIMITE_APOS_AUTENTICAR_MS);
-    });
+    client.on("authenticated", reconhecerPareamento);
 
     client.on("change_state", (state) => {
       console.log(`[WhatsApp][${os.hostname()}:${process.pid}] Estado da conexão: ${String(state)}`);
     });
 
     client.on("ready", () => {
-      if (minhaGeracao !== this.geracao || this.client !== client) return;
-      limparReadyWatchdog();
+      if (!tentativaAtiva()) return;
+      pronto = true;
+      this.limparMonitorPareamento();
       marcarSessaoPersistida();
       this.setState({ status: "conectado", qrDataUrl: null, syncProgress: 100 });
       this.limparEstabilidadeTimer();
@@ -929,7 +999,7 @@ class WhatsappManager {
     client.on("disconnected", async (reason) => {
       if (minhaGeracao !== this.geracao || this.client !== client) return;
       const motivo = String(reason);
-      const diagnostico = await coletarDiagnosticoWhatsapp(client).catch(() => undefined);
+      const diagnostico = await comTempoLimiteDeOperacao(coletarDiagnosticoWhatsapp(client), 5000, "coletar o diagnóstico da desconexão").catch(() => undefined);
       console.error(
         `[WhatsApp][${os.hostname()}:${process.pid}] Desconectado: ${motivo}` +
         (diagnostico ? `\n${formatarDiagnosticoWhatsapp(diagnostico)}` : "")
@@ -1057,6 +1127,7 @@ class WhatsappManager {
 
     client.initialize().then(() => {
       if (minhaGeracao !== this.geracao || this.client !== client) void encerrarWhatsappClient(client);
+      else void verificarPareamento();
     }).catch((err) => {
       failAndCleanUp("falha", err?.message ?? String(err));
     });
@@ -1071,6 +1142,7 @@ class WhatsappManager {
     this.geracao++;
     this.desconexaoManual = true;
     this.limparEstabilidadeTimer();
+    this.limparMonitorPareamento();
     const client = this.client;
     this.client = null;
     this.setState({

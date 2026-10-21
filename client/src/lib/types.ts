@@ -101,7 +101,7 @@ export interface CardViewModel {
 }
 
 export interface WhatsappState {
-  status: "desconectado" | "inicializando" | "aguardando_qr" | "autenticado" | "conectado" | "falha";
+  status: "desconectado" | "inicializando" | "aguardando_qr" | "pareando" | "autenticado" | "conectado" | "falha";
   qrDataUrl: string | null;
   lastError: string | null;
   syncProgress?: number | null;
