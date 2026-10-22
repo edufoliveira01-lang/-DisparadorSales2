@@ -444,6 +444,9 @@ export function listarPublicacoes(filtro: Record<string, string>) {
   vincularProcessosPendentes();
   const where: string[] = [],
     values: (string | number)[] = [];
+  const arquivo = filtro.arquivo || "ativos";
+  if (!["ativos", "concluidos", "todos"].includes(arquivo))
+    throw new DjenInputError("Filtro de conclusão inválido.");
   const csv = (v: string | undefined) => [
     ...new Set(
       (v || "")
@@ -477,6 +480,7 @@ export function listarPublicacoes(filtro: Record<string, string>) {
            WHERE outras.processo_chave=p.processo_chave
              AND outras.cancelada=0
              AND outras.categorias_json<>'[]'
+             ${arquivo === "ativos" ? "AND outras.concluida=0" : arquivo === "concluidos" ? "AND outras.concluida=1" : ""}
         )`,
       );
     where.push("(" + opcoes.join(" OR ") + ")");
@@ -504,8 +508,6 @@ export function listarPublicacoes(filtro: Record<string, string>) {
     );
     values.push(...advogados.map(Number));
   }
-  const arquivo = filtro.arquivo || "ativos";
-  if (!["ativos", "concluidos", "todos"].includes(arquivo)) throw new DjenInputError("Filtro de conclusão inválido.");
   if (arquivo !== "todos") where.push(arquivo === "concluidos" ? "p.concluida=1" : "p.concluida=0");
   const situacoes = csv(filtro.situacao);
   const condicoes: Record<string, string> = {
