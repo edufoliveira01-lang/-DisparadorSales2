@@ -51,6 +51,12 @@ const analise = (
   justificativa: "Classificação limitada aos fatos efetivamente comunicados.",
   evidencias: categorias.map((categoria) => ({ categoria, trecho: texto })),
   agendamento: { data: null, horario: null, local: null },
+  providencia: {
+    tipo: "ciencia",
+    descricao: null,
+    prazo_texto: null,
+    responsavel: "indeterminado",
+  },
   alertas: [],
 });
 function importar(texto = laudo) {
@@ -107,7 +113,7 @@ describe("evidência e significado da classificação", () => {
     const r = validarAnaliseCodex(analise(texto, ["pericia"]), texto);
     expect(r.categorias).toEqual([]);
   });
-  it("exige dados do mesmo agendamento e informa o que falta", () => {
+  it("aceita agendamento sem local e informa a pendência", () => {
     const texto =
       "Fica designada perícia para 25/10/2026, às 14h30, na Clínica Central, Rua A, 20.";
     const a = analise(texto, ["pericia"]);
@@ -118,7 +124,11 @@ describe("evidência e significado da classificação", () => {
     };
     expect(validarAnaliseCodex(a, texto).categorias).toEqual(["pericia"]);
     a.agendamento.local = null;
-    expect(validarAnaliseCodex(a, texto).categorias).toEqual([]);
+    const semLocal = validarAnaliseCodex(a, texto);
+    expect(semLocal.categorias).toEqual(["pericia"]);
+    expect(semLocal.alertas).toContain(
+      "Local da perícia não informado nesta publicação.",
+    );
   });
   it.each([
     "Após a juntada do laudo pericial, manifestem-se as partes.",
