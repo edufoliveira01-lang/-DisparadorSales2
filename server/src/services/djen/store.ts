@@ -40,7 +40,7 @@ function vincularProcessoAutomaticamente(
   const candidatos = (
     db
       .prepare(
-        "SELECT id,nome,processo,processo_chave FROM contacts WHERE processo_chave=? OR processo IS NOT NULL",
+        "SELECT id,nome,processo,processo_chave FROM contacts WHERE processo_chave=? OR (processo_chave='' AND processo IS NOT NULL)",
       )
       .all(processoChave) as {
       id: number;
