@@ -29,6 +29,49 @@ const canon = (value: string | null | undefined) =>
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 
+const MESES: Record<string, number> = {
+  janeiro: 1,
+  fevereiro: 2,
+  marco: 3,
+  abril: 4,
+  maio: 5,
+  junho: 6,
+  julho: 7,
+  agosto: 8,
+  setembro: 9,
+  outubro: 10,
+  novembro: 11,
+  dezembro: 12,
+};
+
+function dataPadrao(value: string | null) {
+  if (!value) return null;
+  const numerica = value.match(/\b(\d{1,2})\s*[/.\-]\s*(\d{1,2})\s*[/.\-]\s*(\d{4})\b/);
+  if (numerica)
+    return `${numerica[1].padStart(2, "0")}/${numerica[2].padStart(2, "0")}/${numerica[3]}`;
+  const extensa = canon(value).match(
+    /\b(\d{1,2})\s+de\s+(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)(?:\s*,?\s*de)?\s+(\d{4})\b/,
+  );
+  if (!extensa) return null;
+  return `${extensa[1].padStart(2, "0")}/${String(MESES[extensa[2]]).padStart(2, "0")}/${extensa[3]}`;
+}
+
+function horarioPadrao(value: string | null) {
+  if (!value) return null;
+  const match = canon(value).match(/\b(\d{1,2})\s*(?::|h|horas?)\s*(\d{0,2})/);
+  if (!match) return null;
+  const hora = Number(match[1]);
+  const minuto = Number(match[2] || 0);
+  if (hora > 23 || minuto > 59) return null;
+  return `${String(hora).padStart(2, "0")}:${String(minuto).padStart(2, "0")}`;
+}
+
+function dataHoraAgendamento(data: string | null, horario: string | null) {
+  const d = dataPadrao(data);
+  const h = horarioPadrao(horario);
+  return d && h ? parseBrazilianDate(d, h) : Number.NaN;
+}
+
 function publicacao(id: number) {
   return db
     .prepare(
@@ -75,10 +118,10 @@ export function statusControlePericia(publicacaoId: number) {
   if (!categorias.includes("pericia")) return null;
 
   const agendamento = agendamentoDaPublicacao(p);
-  const dataHoraMs =
-    agendamento.data && agendamento.horario
-      ? parseBrazilianDate(agendamento.data, agendamento.horario)
-      : Number.NaN;
+  const dataHoraMs = dataHoraAgendamento(
+    agendamento.data,
+    agendamento.horario,
+  );
   if (!Number.isFinite(dataHoraMs))
     return {
       status: "dados_incompletos" as StatusControle,
@@ -167,10 +210,14 @@ export function adicionarPublicacaoAoControle(publicacaoId: number) {
   const tipo = /per[ií]cia\s+social/i.test(p.texto)
     ? "Perícia social"
     : "Perícia médica";
+  const data = dataPadrao(agendamento.data);
+  const horario = horarioPadrao(agendamento.horario);
+  if (!data || !horario)
+    throw new DjenInputError("Não foi possível reconhecer a data e o horário da perícia.");
   const dados: Pericia = {
     tipo,
-    data: agendamento.data,
-    horario: agendamento.horario,
+    data,
+    horario,
     local: agendamento.local || "",
     nome: p.cliente_nome,
     telefone: p.telefone || "",
