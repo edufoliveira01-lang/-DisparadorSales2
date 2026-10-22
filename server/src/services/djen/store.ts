@@ -6,6 +6,7 @@ import { normalizeProcesso } from "../../utils/processo";
 import {
   CATEGORIAS_DJEN,
   RESULTADOS_DJEN,
+  ordemComPrazoDaParte,
   type CategoriaDjen,
 } from "./classifier";
 import {
@@ -161,9 +162,12 @@ export function configuracaoDjen() {
     ia_pausa: string | null;
     ia_paralelismo: number;
     ia_modo: "economico" | "equilibrado" | "precisao";
+    aguardo_dias: number;
   };
 }
 export function salvarConfiguracaoDjen(data: Record<string, unknown>) {
+  if (data.aguardo_dias !== undefined && ![15, 30, 60, 90].includes(Number(data.aguardo_dias)))
+    throw new DjenInputError("Use 15, 30, 60 ou 90 dias para o alerta de espera.");
   if (
     data.ia_paralelismo !== undefined &&
     (!Number.isInteger(data.ia_paralelismo) ||
@@ -202,6 +206,8 @@ export function salvarConfiguracaoDjen(data: Record<string, unknown>) {
     );
   if (data.ia_modo !== undefined)
     db.prepare("UPDATE djen_config SET ia_modo=? WHERE id=1").run(data.ia_modo);
+  if (data.aguardo_dias !== undefined)
+    db.prepare("UPDATE djen_config SET aguardo_dias=? WHERE id=1").run(Number(data.aguardo_dias));
   return configuracaoDjen();
 }
 export function importarPublicacoes(
@@ -325,6 +331,9 @@ export interface PublicacaoRow {
   resultado: string;
   revisada: number;
   lida: number;
+  concluida: number;
+  ia_status: string;
+  ia_json: string | null;
   cancelada: number;
   hash: string | null;
   cliente_id: number | null;
@@ -354,6 +363,13 @@ export function apresentarPublicacao(p: PublicacaoRow, integral = false) {
     ...dados
   } = p;
   const analise = ia_json ? JSON.parse(String(ia_json)) : null;
+  const providencia = analise?.providencia;
+  const prazoExpresso = providencia?.tipo === "prazo_explicito" &&
+    typeof providencia.prazo_texto === "string" &&
+    ordemComPrazoDaParte(providencia.prazo_texto) &&
+    ["escritorio", "cliente"].includes(providencia.responsavel);
+  const cumprimento = providencia?.tipo === "cumprimento" &&
+    ["escritorio", "cliente"].includes(providencia.responsavel);
   const destinatarios = JSON.parse(String(destinatarios_json || "[]")) as {
     nome?: string;
     polo?: string;
@@ -362,6 +378,11 @@ export function apresentarPublicacao(p: PublicacaoRow, integral = false) {
   return {
     ...dados,
     analise,
+    acao: {
+      tipo: prazoExpresso ? "prazo_explicito" : cumprimento ? "cumprimento" : "ciencia",
+      descricao: prazoExpresso || cumprimento ? providencia.descricao : null,
+      prazo_texto: prazoExpresso ? providencia.prazo_texto : null,
+    },
     parte_nome: parteNome,
     cliente_exibicao: dados.cliente_nome || parteNome,
     cliente_vinculado: Boolean(dados.cliente_id),
@@ -389,7 +410,7 @@ function apresentarProcessoAgrupado(p: PublicacaoRow, arquivo: string) {
         : "";
   const publicacoes = db
     .prepare(
-      `SELECT id,categorias_json,lida,revisada,concluida,ia_status
+      `SELECT id,categorias_json,lida,revisada,concluida,ia_status,ia_json,resultado
          FROM djen_publicacoes
         WHERE processo_chave=? AND cancelada=0${escopo}
         ORDER BY data_disponibilizacao DESC,id DESC`,
@@ -401,14 +422,33 @@ function apresentarProcessoAgrupado(p: PublicacaoRow, arquivo: string) {
     revisada: number;
     concluida: number;
     ia_status: string;
+    ia_json: string | null;
+    resultado: string;
   }[];
   const categorias = new Set<CategoriaDjen>();
   let periciaPublicacaoId: number | null = null;
+  let acao: { tipo: string; descricao: string | null; prazo_texto: string | null } = { tipo: "ciencia", descricao: null, prazo_texto: null };
+  let resultadoSentenca = "nao_identificado";
   for (const item of publicacoes) {
-    for (const categoria of JSON.parse(item.categorias_json || "[]") as CategoriaDjen[])
+    const categoriasItem = JSON.parse(item.categorias_json || "[]") as CategoriaDjen[];
+    for (const categoria of categoriasItem)
       categorias.add(categoria);
-    if (!periciaPublicacaoId && JSON.parse(item.categorias_json || "[]").includes("pericia"))
+    if (!periciaPublicacaoId && categoriasItem.includes("pericia"))
       periciaPublicacaoId = item.id;
+    if (categoriasItem.includes("sentenca") && resultadoSentenca === "nao_identificado")
+      resultadoSentenca = item.resultado;
+    try {
+      const providencia = item.ia_json ? JSON.parse(item.ia_json).providencia : null;
+      if (providencia && ["escritorio", "cliente"].includes(providencia.responsavel)) {
+        const prazoValido = providencia.tipo === "prazo_explicito" &&
+          typeof providencia.prazo_texto === "string" &&
+          ordemComPrazoDaParte(providencia.prazo_texto);
+        if (prazoValido && acao.tipo !== "prazo_explicito")
+          acao = { tipo: "prazo_explicito", descricao: providencia.descricao, prazo_texto: providencia.prazo_texto };
+        else if (providencia.tipo === "cumprimento" && acao.tipo === "ciencia")
+          acao = { tipo: "cumprimento", descricao: providencia.descricao, prazo_texto: null };
+      }
+    } catch { /* análise antiga incompleta */ }
   }
   const ids = publicacoes.map((item) => item.id);
   const prazos = ids.length
@@ -424,6 +464,8 @@ function apresentarProcessoAgrupado(p: PublicacaoRow, arquivo: string) {
   return {
     ...apresentada,
     categorias: CATEGORIAS_DJEN.filter((categoria) => categorias.has(categoria)),
+    resultado: resultadoSentenca,
+    acao,
     lida: publicacoes.every((item) => Boolean(item.lida)) ? 1 : 0,
     revisada: publicacoes.every((item) => Boolean(item.revisada)) ? 1 : 0,
     concluida: publicacoes.every((item) => Boolean(item.concluida)) ? 1 : 0,
@@ -681,7 +723,7 @@ export function resumoDjen() {
       (
         db
           .prepare(
-            "SELECT count(*) AS total FROM djen_publicacoes p WHERE p.cancelada=0 AND p.concluida=0 AND EXISTS(SELECT 1 FROM json_each(p.categorias_json) WHERE value=?)",
+            "SELECT count(DISTINCT p.processo_chave) AS total FROM djen_publicacoes p WHERE p.cancelada=0 AND p.concluida=0 AND EXISTS(SELECT 1 FROM json_each(p.categorias_json) WHERE value=?)",
           )
           .get(c) as { total: number }
       ).total,
@@ -692,7 +734,13 @@ export function resumoDjen() {
     outros: (
       db
         .prepare(
-          "SELECT count(*) AS total FROM djen_publicacoes WHERE cancelada=0 AND concluida=0 AND categorias_json='[]'",
+          `SELECT count(DISTINCT p.processo_chave) AS total FROM djen_publicacoes p
+            WHERE p.cancelada=0 AND p.concluida=0
+              AND NOT EXISTS (
+                SELECT 1 FROM djen_publicacoes outra
+                 WHERE outra.processo_chave=p.processo_chave AND outra.cancelada=0
+                   AND outra.concluida=0 AND outra.categorias_json<>'[]'
+              )`,
         )
         .get() as { total: number }
     ).total,
@@ -703,7 +751,7 @@ export function resumoDjen() {
     ).total,
     nao_lidas: (
       db
-        .prepare("SELECT count(*) AS total FROM djen_publicacoes WHERE lida=0 AND concluida=0")
+        .prepare("SELECT count(DISTINCT processo_chave) AS total FROM djen_publicacoes WHERE lida=0 AND concluida=0 AND cancelada=0")
         .get() as { total: number }
     ).total,
   };

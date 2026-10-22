@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { refinarCategoriasDaAnalise, type AnaliseCodex } from "../services/djen/classifier";
 
 /** Dados do acompanhamento processual não usam as tabelas de perícias, envios ou prazos. */
 export function runDjenMigrations(db: Database.Database): void {
@@ -124,6 +125,8 @@ export function runDjenMigrations(db: Database.Database): void {
     db.exec(
       "ALTER TABLE djen_config ADD COLUMN ia_modo TEXT NOT NULL DEFAULT 'economico' CHECK(ia_modo IN ('economico','equilibrado','precisao'))",
     );
+  if (!configCampos.some((c) => c.name === "aguardo_dias"))
+    db.exec("ALTER TABLE djen_config ADD COLUMN aguardo_dias INTEGER NOT NULL DEFAULT 30");
   db.exec(`
     CREATE TABLE IF NOT EXISTS djen_analise_cache (
       chave TEXT PRIMARY KEY, versao TEXT NOT NULL, analise_json TEXT NOT NULL,
@@ -157,40 +160,37 @@ export function runDjenMigrations(db: Database.Database): void {
       ultima_cobranca_em TEXT, observacoes TEXT NOT NULL DEFAULT '',
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS djen_acompanhamentos_aguardo (
+      publicacao_id INTEGER PRIMARY KEY REFERENCES djen_publicacoes(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'pendente' CHECK(status IN ('pendente','cobrado','resolvido')),
+      ultima_cobranca_em TEXT
+    );
   `);
-  db.prepare(
-    `UPDATE djen_publicacoes
-        SET categorias_json='["pericia"]',
-            ia_json=json_set(ia_json,'$.categorias',json('["pericia"]')),
-            situacao=CASE WHEN situacao='' THEN 'Perícia agendada' ELSE situacao END
-      WHERE revisada=0 AND cancelada=0 AND categorias_json='[]' AND ia_json IS NOT NULL
-        AND json_extract(ia_json,'$.agendamento.data') IS NOT NULL
-        AND json_extract(ia_json,'$.agendamento.horario') IS NOT NULL
-        AND (texto LIKE '%designad%' OR texto LIKE '%agendad%' OR texto LIKE '%redesignad%' OR texto LIKE '%marcad%')`,
-  ).run();
-  db.prepare(
-    `UPDATE djen_publicacoes
-        SET categorias_json='["acordao"]',
-            ia_json=json_set(ia_json,'$.categorias',json('["acordao"]')),
-            situacao=CASE WHEN situacao='' THEN 'Acórdão proferido' ELSE situacao END
-      WHERE revisada=0 AND cancelada=0 AND categorias_json='[]' AND ia_json IS NOT NULL
-        AND (
-          lower(situacao) LIKE 'acórdão%'
-          OR lower(json_extract(ia_json,'$.situacao')) LIKE 'acórdão%'
-          OR lower(json_extract(ia_json,'$.resumo')) LIKE 'acórdão%'
-        )
-        AND (
-          lower(texto) LIKE '%acórdão%'
-          OR (
-            lower(texto) LIKE '%turma recursal%'
-            AND (
-              lower(texto) LIKE '%negou provimento%'
-              OR lower(texto) LIKE '%deu provimento%'
-              OR lower(texto) LIKE '%por unanimidade%'
-              OR lower(texto) LIKE '%por maioria%'
-            )
-          )
-        )`,
-  ).run();
+  // Reconcilia análises antigas somente quando o próprio texto comprova o fato.
+  // Revisões humanas e registros sem análise permanecem intactos.
+  const candidatos = db.prepare(
+    "SELECT id,texto,ia_json FROM djen_publicacoes WHERE revisada=0 AND cancelada=0 AND categorias_json='[]' AND ia_json IS NOT NULL",
+  ).all() as { id: number; texto: string; ia_json: string }[];
+  const atualizar = db.prepare(
+    "UPDATE djen_publicacoes SET categorias_json=?,evidencias_json=?,ia_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND revisada=0 AND categorias_json='[]'",
+  );
+  db.transaction(() => {
+    for (const row of candidatos) {
+      try {
+        const analise = JSON.parse(row.ia_json) as AnaliseCodex;
+        if (!Array.isArray(analise.categorias) || !Array.isArray(analise.evidencias) || typeof analise.resumo !== "string") continue;
+        const refinada = refinarCategoriasDaAnalise(analise, row.texto);
+        if (!refinada.categorias.length) continue;
+        atualizar.run(
+          JSON.stringify(refinada.categorias),
+          JSON.stringify(refinada.evidencias),
+          JSON.stringify({ ...analise, ...refinada }),
+          row.id,
+        );
+      } catch {
+        // Uma análise legada incompleta nunca bloqueia a abertura do banco.
+      }
+    }
+  })();
 }
 

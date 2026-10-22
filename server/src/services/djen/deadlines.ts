@@ -2,6 +2,7 @@ import { db } from "../../db";
 import { getSetting, setSetting } from "../settingsService";
 import { dataValida, somarDias } from "./api";
 import { WorkflowInputError } from "./workflow";
+import { ordemComPrazoDaParte } from "./classifier";
 
 export class ErroCoberturaCalendario extends WorkflowInputError {
   constructor(
@@ -182,8 +183,10 @@ export function identificarPrazos(texto: string) {
       alerta: string;
     }[] = [];
   for (const m of normal.matchAll(re)) {
-    const a = Math.max(0, m.index! - 200),
-      b = Math.min(texto.length, m.index! + m[0].length + 200);
+    const anterior = Math.max(normal.lastIndexOf(".", m.index! - 1), normal.lastIndexOf(";", m.index! - 1), normal.lastIndexOf("\n", m.index! - 1));
+    const proximos = [".", ";", "\n"].map((c) => normal.indexOf(c, m.index! + m[0].length)).filter((i) => i >= 0);
+    const a = Math.max(0, anterior + 1),
+      b = Math.min(texto.length, proximos.length ? Math.min(...proximos) : texto.length);
     const contexto = normal.slice(a, b),
       valores = m[1].split(/\s+e\s+/).map((v) => mapa[v]);
     const valido = valores.every(
@@ -197,9 +200,7 @@ export function identificarPrazos(texto: string) {
     if (
       !dias ||
       dias > 365 ||
-      !/manifest|contestar|contrarrazo|replica|esclarec|impugn|recorrer/.test(
-        contexto,
-      )
+      !ordemComPrazoDaParte(contexto)
     )
       continue;
     result.push({
@@ -373,3 +374,4 @@ export function concluirPublicacao(id: number, concluida: boolean) {
     "UPDATE djen_publicacoes SET concluida=?,concluida_em=CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE NULL END WHERE id=?",
   ).run(concluida ? 1 : 0, concluida ? 1 : 0, id);
 }
+

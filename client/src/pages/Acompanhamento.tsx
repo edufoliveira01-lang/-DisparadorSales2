@@ -11,9 +11,6 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
-  Scale,
-  Gavel,
-  Stethoscope,
   FileCheck2,
   Search,
   Plus,
@@ -26,9 +23,10 @@ import {
   AlertCircle,
   FolderOpen,
   Sparkles,
-  Banknote,
-  Handshake,
   Trash2,
+  Clock3,
+  ArrowRight,
+  ListFilter,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay } from "@/lib/phone";
@@ -167,6 +165,11 @@ interface Publicacao {
       local: string | null;
     } | null;
   } | null;
+  acao?: {
+    tipo: "ciencia" | "cumprimento" | "prazo_explicito";
+    descricao: string | null;
+    prazo_texto: string | null;
+  };
   observacoes: string;
   link: string | null;
   certidao_url: string | null;
@@ -206,6 +209,18 @@ interface PericiaSemLaudo {
   ultima_cobranca_em: string | null;
   observacoes: string;
 }
+interface AguardandoRetorno {
+  publicacao_id: number;
+  processo: string;
+  cliente_nome: string | null;
+  data_disponibilizacao: string;
+  dias_sem_publicacao: number;
+  dias_espera: number;
+  motivo: string;
+  resumo: string;
+  acompanhamento_status: "pendente" | "cobrado";
+  ultima_cobranca_em: string | null;
+}
 interface Busca {
   id: number;
   status: string;
@@ -244,6 +259,7 @@ interface Status {
   resumo: Record<string, number>;
   advogados: Advogado[];
   pericias_sem_laudo: number;
+  aguardando_retorno: number;
   config: {
     automatico: number;
     intervalo_minutos: number;
@@ -251,6 +267,7 @@ interface Status {
     ia_ativa: number;
     ia_paralelismo: number;
     ia_modo: "economico" | "equilibrado" | "precisao";
+    aguardo_dias: number;
   };
 }
 const hoje = () =>
@@ -295,6 +312,8 @@ export function Acompanhamento() {
     ? "advogados"
     : pathname.endsWith("/monitoramento")
       ? "monitoramento"
+      : pathname.endsWith("/aguardando")
+        ? "aguardando"
       : "publicacoes";
   const [status, setStatus] = useState<Status | null>(null),
     [items, setItems] = useState<Publicacao[]>([]),
@@ -334,6 +353,7 @@ export function Acompanhamento() {
     ia_ativa: false,
     ia_paralelismo: 2,
     ia_modo: "economico" as "economico" | "equilibrado" | "precisao",
+    aguardo_dias: 30,
   });
   const [conexaoCodex, setConexaoCodex] = useState<{
     conectado: boolean;
@@ -352,6 +372,7 @@ export function Acompanhamento() {
   const [confirmacaoEnvio, setConfirmacaoEnvio] = useState(false);
   const [mostrarSemLaudo, setMostrarSemLaudo] = useState(false);
   const [periciasSemLaudo, setPericiasSemLaudo] = useState<PericiaSemLaudo[]>([]);
+  const [aguardando, setAguardando] = useState<AguardandoRetorno[]>([]);
   const [carregandoSemLaudo, setCarregandoSemLaudo] = useState(false);
   const [mensagem, setMensagem] = useState<{
       texto: string;
@@ -377,6 +398,9 @@ export function Acompanhamento() {
     } finally {
       setCarregandoSemLaudo(false);
     }
+  }, []);
+  const carregarAguardando = useCallback(async () => {
+    setAguardando(await api.get<AguardandoRetorno[]>("/djen/aguardando"));
   }, []);
   const carregarLista = useCallback(async () => {
     const current = ++seq.current;
@@ -420,6 +444,10 @@ export function Acompanhamento() {
   useEffect(() => {
     if (secao === "publicacoes") void carregarLista();
   }, [carregarLista, secao]);
+  useEffect(() => {
+    if (secao === "aguardando")
+      void carregarAguardando().catch((e) => setFalha(erro(e)));
+  }, [carregarAguardando, secao]);
   useEffect(() => {
     const timer = setTimeout(
       () => setFiltro((f) => ({ ...f, busca: buscaTexto, pagina: 1 })),
@@ -477,7 +505,8 @@ export function Acompanhamento() {
   const atualizarEmTempoReal = useCallback(() => {
     void carregarStatus().catch((e) => setFalha(erro(e)));
     if (secao === "publicacoes") void carregarLista();
-  }, [carregarStatus, carregarLista, secao]);
+    if (secao === "aguardando") void carregarAguardando();
+  }, [carregarStatus, carregarLista, carregarAguardando, secao]);
   useSocketEvent("djen:changed", atualizarEmTempoReal);
   useSocketEvent("connect", atualizarEmTempoReal);
   const filtrar = (key: string, value: string) =>
@@ -626,6 +655,8 @@ export function Acompanhamento() {
       ? "Advogados acompanhados"
       : secao === "monitoramento"
         ? "Monitoramento DJEN"
+        : secao === "aguardando"
+          ? "Aguardando retorno"
         : "Publicações processuais";
   return (
     <div className="space-y-5">
@@ -634,6 +665,8 @@ export function Acompanhamento() {
         description={
           secao === "publicacoes"
             ? "Decisões, acordos, pagamentos, perícias e demais andamentos dos processos."
+            : secao === "aguardando"
+              ? "Processos sem nova publicação após uma ordem de aguardar. Alertas operacionais, não prazos jurídicos."
             : secao === "advogados"
               ? "Cadastre um ou mais advogados pelo nome completo, número da OAB e UF."
               : "Consulte o DJEN por período e acompanhe a execução de cada busca."
@@ -661,33 +694,35 @@ export function Acompanhamento() {
                 onClick={() => {
                   void carregarStatus().catch((e) => show(erro(e), "error"));
                   if (secao === "publicacoes") void carregarLista();
+                  if (secao === "aguardando") void carregarAguardando();
                 }}
               >
                 <RefreshCw className="h-4 w-4" />
                 Atualizar
               </Button>
               {secao === "publicacoes" && (
-                <>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setMostrarSemLaudo(true);
-                      void carregarSemLaudo().catch((e) => show(erro(e), "error"));
-                    }}
-                  >
-                    <AlertCircle className="h-4 w-4" />
-                    Sem laudo ({status?.pericias_sem_laudo ?? 0})
-                  </Button>
-                  <Button onClick={() => navigate("/processos/monitoramento")}>
-                    <Search className="h-4 w-4" />
-                    Consultar DJEN
-                  </Button>
-                </>
+                <Button onClick={() => navigate("/processos/monitoramento")}>
+                  <Search className="h-4 w-4" /> Consultar DJEN
+                </Button>
               )}
             </>
           )
         }
       />
+      <nav aria-label="Área processual" className="flex flex-wrap gap-1 rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        {([
+          ["/processos", "Publicações", FolderOpen],
+          ["/processos/aguardando", `Aguardando${status?.aguardando_retorno ? ` · ${status.aguardando_retorno}` : ""}`, Clock3],
+          ["/processos/advogados", "Advogados", BriefcaseBusiness],
+          ["/processos/monitoramento", "Monitoramento", Settings2],
+        ] as const).map(([url, label, Icon]) => (
+          <button key={url} type="button" onClick={() => navigate(url)}
+            aria-current={(url === "/processos" ? secao === "publicacoes" : pathname === url) ? "page" : undefined}
+            className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${(url === "/processos" ? secao === "publicacoes" : pathname === url) ? "bg-accent-600 text-white shadow-sm" : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"}`}>
+            <Icon className="h-4 w-4" />{label}
+          </button>
+        ))}
+      </nav>
       {falha && (
         <p
           role="alert"
@@ -696,173 +731,99 @@ export function Acompanhamento() {
           {falha}
         </p>
       )}
+      {secao === "aguardando" && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-5 dark:border-amber-900 dark:bg-amber-950/20">
+            <p className="flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-200">
+              <Clock3 className="h-4 w-4" /> {aguardando.length} processo(s) para conferir
+            </p>
+            <p className="mt-2 max-w-3xl text-xs leading-relaxed text-amber-800 dark:text-amber-300">
+              O alerta surge quando a última publicação capturada determina aguardar e não há outra publicação no DJEN após o período indicado. Sem período expresso, usamos {status?.config.aguardo_dias ?? 30} dias como lembrete operacional. Confira os autos antes de cobrar o juízo ou perito; isto não é prazo processual.
+            </p>
+          </div>
+          {!aguardando.length ? (
+            <EmptyState icon={Clock3} title="Nenhum retorno pendente" description="Não há ordens de aguardar que tenham ultrapassado o período de acompanhamento sem nova publicação capturada." />
+          ) : aguardando.map((item) => (
+            <article key={item.publicacao_id} className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="flex flex-col gap-4 md:flex-row md:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone="warning">{item.dias_sem_publicacao} dias sem nova publicação</Badge>
+                    {item.acompanhamento_status === "cobrado" && <Badge tone="info">Cobrança registrada</Badge>}
+                  </div>
+                  <h2 className="mt-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{item.cliente_nome || "Cliente não vinculado"}</h2>
+                  <p className="mt-1 text-xs text-zinc-500">Processo {item.processo} · Última publicação em {dia(item.data_disponibilizacao)}</p>
+                  <p className="mt-3 text-xs font-medium">{item.motivo}</p>
+                  <p className="mt-1 line-clamp-3 max-w-3xl text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">{item.resumo}</p>
+                  <p className="mt-2 text-[11px] text-zinc-500">Lembrete após {item.dias_espera} dias · sem nova publicação capturada, não necessariamente sem movimentação nos autos</p>
+                </div>
+                <div className="flex shrink-0 flex-wrap items-start gap-2">
+                  <Button size="sm" variant="outline" onClick={() => void abrir(item.publicacao_id)}>Ver processo <ArrowRight className="h-3.5 w-3.5" /></Button>
+                  <Button size="sm" variant="outline" disabled={salvando} onClick={() => void acao(async () => {
+                    await api.put(`/djen/aguardando/${item.publicacao_id}`, { status: "cobrado" });
+                    await carregarAguardando(); await carregarStatus(); show("Cobrança registrada para acompanhamento.", "success");
+                  })}>Registrar cobrança</Button>
+                  <Button size="sm" variant="ghost" disabled={salvando} onClick={() => void acao(async () => {
+                    await api.put(`/djen/aguardando/${item.publicacao_id}`, { status: "resolvido" });
+                    await carregarAguardando(); await carregarStatus(); show("Acompanhamento concluído.", "success");
+                  })}>Concluir alerta</Button>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
       {secao === "publicacoes" && (
         <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-4">
-            {(
-              [
-                { tipo: "sentenca", Icon: Scale },
-                { tipo: "acordao", Icon: Gavel },
-                { tipo: "pericia", Icon: Stethoscope },
-                { tipo: "laudo_juntado", Icon: FileCheck2 },
-                { tipo: "rpv", Icon: Banknote },
-                { tipo: "homologacao_acordo", Icon: Handshake },
-                { tipo: "proposta_acordo", Icon: Handshake },
-                { tipo: "outros", Icon: FolderOpen },
-              ] as const
-            ).map(({ tipo, Icon }) => (
-              <button
-                key={tipo}
-                onClick={() =>
-                  filtrar(
-                    "categoria",
-                    filtro.categoria.split(",").includes(tipo)
-                      ? filtro.categoria
-                          .split(",")
-                          .filter((v) => v !== tipo)
-                          .join(",")
-                      : [
-                          ...filtro.categoria.split(",").filter(Boolean),
-                          tipo,
-                        ].join(","),
-                  )
-                }
-                aria-pressed={filtro.categoria.split(",").includes(tipo)}
-                className={`flex min-h-[104px] flex-col justify-between rounded-xl border bg-white p-4 text-left dark:bg-zinc-900 ${filtro.categoria.split(",").includes(tipo) ? "border-accent-400" : "border-zinc-200 dark:border-zinc-800"}`}
-              >
-                <span className="flex items-center justify-between gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-                  {FILTROS[tipo]}
-                  <Icon className="h-4 w-4 text-accent-500" />
-                </span>
-                <strong className="mt-2 block text-[26px] font-semibold text-[#496a54] dark:text-zinc-100">
-                  {status?.resumo[tipo] ?? 0}
-                </strong>
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+            {[
+              { label: "Processos na lista", value: total, Icon: FolderOpen, action: () => filtrar("categoria", "") },
+              { label: "Processos não lidos", value: status?.resumo.nao_lidas ?? 0, Icon: FileCheck2, action: () => filtrar("situacao", "nao_lidas") },
+              { label: "Aguardando retorno", value: status?.aguardando_retorno ?? 0, Icon: Clock3, action: () => navigate("/processos/aguardando") },
+              { label: "Perícias sem laudo · 60 dias", value: status?.pericias_sem_laudo ?? 0, Icon: AlertCircle, action: () => { setMostrarSemLaudo(true); void carregarSemLaudo(); } },
+            ].map(({ label, value, Icon, action }) => (
+              <button key={label} type="button" onClick={action} className="group rounded-2xl border border-zinc-200 bg-white p-4 text-left shadow-sm transition hover:border-accent-400 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900">
+                <span className="flex items-center justify-between gap-2 text-[11px] font-medium text-zinc-500"><span>{label}</span><Icon className="h-4 w-4 text-accent-600" /></span>
+                <strong className="mt-3 block text-2xl font-semibold text-zinc-900 dark:text-zinc-100">{value}</strong>
               </button>
             ))}
           </div>
-          <p className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
-            <Sparkles className="h-3.5 w-3.5" />
-            {status?.codex.pausa
-              ? `Análise pausada: ${status.codex.pausa}`
-              : status?.config.ia_ativa
-                ? `Codex: ${status.codex.pendentes} na fila${status.codex.executando_ids.length ? ` · ${status.codex.executando_ids.length} em análise` : ""}.`
-                : "Análise automática desativada. Use Analisar com Codex nos detalhes ou configure a análise automática em Monitoramento DJEN."}{" "}
-            Publicações sem classificação ficam em Outros.
-            {status?.config.ia_ativa && (
-              <span>
-                Tempo médio:{" "}
-                {status.codex.media_segundos === null
-                  ? "medindo…"
-                  : `${status.codex.media_segundos}s`}{" "}
-                · Previsão da fila:{" "}
-                {status.codex.pausa
-                  ? "pausada"
-                  : status.codex.estimativa_segundos === null
-                    ? "medindo…"
-                    : `${Math.ceil(status.codex.estimativa_segundos / 60)} min (estimativa)`}
-              </span>
-            )}
-          </p>
-          <section className="surface-panel p-4">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <Input
-                aria-label="Buscar publicações"
-                placeholder="Buscar processo, cliente ou trecho…"
-                value={buscaTexto}
-                onChange={(e) => setBuscaTexto(e.target.value)}
-              />
-              <MultiSelect
-                label="Categoria da publicação"
-                placeholder="Todas as categorias"
-                value={filtro.categoria.split(",").filter(Boolean)}
-                options={Object.entries(FILTROS).map(([value, label]) => ({
-                  value,
-                  label,
-                }))}
-                onChange={(v) => filtrar("categoria", v.join(","))}
-              />
-              <MultiSelect
-                label="Resultado da sentença"
-                placeholder="Todos os resultados"
-                value={filtro.resultado.split(",").filter(Boolean)}
-                options={Object.entries(RESULTADOS).map(([value, label]) => ({
-                  value,
-                  label,
-                }))}
-                onChange={(v) => filtrar("resultado", v.join(","))}
-              />
-              <MultiSelect
-                label="Advogado das publicações"
-                placeholder="Todos os advogados"
-                value={filtro.advogado_id.split(",").filter(Boolean)}
-                options={(status?.advogados || []).map((a) => ({
-                  value: String(a.id),
-                  label: `${a.nome} · ${a.uf_oab} ${a.numero_oab}`,
-                }))}
-                onChange={(v) => filtrar("advogado_id", v.join(","))}
-              />
+          <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-zinc-400" />
+                <Input className="pl-9" aria-label="Buscar publicações" placeholder="Buscar cliente, processo ou trecho…" value={buscaTexto} onChange={(e) => setBuscaTexto(e.target.value)} />
+              </div>
+              <Select className="lg:max-w-[210px]" aria-label="Situação dos processos" value={filtro.arquivo} onChange={(e) => filtrar("arquivo", e.target.value)}>
+                <option value="ativos">Pendentes de conclusão</option>
+                <option value="concluidos">Concluídos</option>
+                <option value="todos">Todos</option>
+              </Select>
             </div>
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs text-zinc-500">
-                {total} publicação(ões) · {status?.resumo.nao_lidas ?? 0} não
-                lidas
-              </p>
-              <MultiSelect
-                label="Situação das publicações"
-                placeholder="Todas as situações"
-                value={filtro.situacao.split(",").filter(Boolean)}
-                options={[
-                  { value: "nao_lidas", label: "Não lidas" },
-                  { value: "lidas", label: "Lidas" },
-                  { value: "revisar", label: "A revisar" },
-                  { value: "com_prazo", label: "Com prazo em aberto" },
-                ]}
-                onChange={(v) => filtrar("situacao", v.join(","))}
-              />
+              <details className="mt-3 rounded-xl border border-zinc-200 px-3 py-2 text-xs dark:border-zinc-700">
+                <summary className="flex cursor-pointer items-center gap-2 font-medium"><ListFilter className="h-4 w-4" /> Mais filtros</summary>
+                <div className="mt-4 grid gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-700 sm:grid-cols-2 xl:grid-cols-4">
+                  <MultiSelect label="Categorias (múltiplas)" placeholder="Todas as categorias" value={filtro.categoria.split(",").filter(Boolean)} options={Object.entries(FILTROS).map(([value, label]) => ({ value, label }))} onChange={(v) => filtrar("categoria", v.join(","))} />
+                  <MultiSelect label="Resultado da sentença" placeholder="Todos os resultados" value={filtro.resultado.split(",").filter(Boolean)} options={Object.entries(RESULTADOS).map(([value, label]) => ({ value, label }))} onChange={(v) => filtrar("resultado", v.join(","))} />
+                  <MultiSelect label="Advogado" placeholder="Todos os advogados" value={filtro.advogado_id.split(",").filter(Boolean)} options={(status?.advogados || []).map((a) => ({ value: String(a.id), label: `${a.nome} · ${a.uf_oab} ${a.numero_oab}` }))} onChange={(v) => filtrar("advogado_id", v.join(","))} />
+                  <MultiSelect label="Situação" placeholder="Todas as situações" value={filtro.situacao.split(",").filter(Boolean)} options={[{ value: "nao_lidas", label: "Não lidas" }, { value: "lidas", label: "Lidas" }, { value: "revisar", label: "A revisar" }, { value: "com_prazo", label: "Com prazo em aberto" }]} onChange={(v) => filtrar("situacao", v.join(","))} />
+                </div>
+              </details>
+            <div className="mt-4 flex gap-2 overflow-x-auto pb-1" aria-label="Tipos de andamento">
+              {([ ["", "Todos"], ["sentenca", "Sentenças"], ["acordao", "Acórdãos"], ["pericia", "Perícias"], ["laudo_juntado", "Laudos"], ["outros", "Outros"] ] as const).map(([value, label]) => (
+                <button key={label} type="button" onClick={() => filtrar("categoria", value)} aria-pressed={filtro.categoria === value}
+                  className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition ${filtro.categoria === value ? "bg-accent-600 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300"}`}>
+                  {label}{value && status?.resumo[value] !== undefined ? ` · ${status.resumo[value]}` : ""}
+                </button>
+              ))}
             </div>
           </section>
+          <p className="flex items-center gap-2 text-[11px] text-zinc-500"><Sparkles className="h-3.5 w-3.5" />{status?.codex.pausa ? `Análise pausada: ${status.codex.pausa}` : `${status?.codex.pendentes ?? 0} publicação(ões) aguardando classificação pelo Codex`}. Classificações pendentes aparecem em Outros até a análise.</p>
           <div
             id="navegacao-publicacoes"
-            className="sticky top-20 z-20 scroll-mt-24 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900"
+            className="sticky top-20 z-20 scroll-mt-24 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white/95 px-4 py-2 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95"
           >
-            <div className="flex flex-wrap items-center gap-3">
-              <Label htmlFor="arquivo-publicacoes">Exibir</Label>
-              <Select
-                id="arquivo-publicacoes"
-                className="max-w-xs"
-                value={filtro.arquivo}
-                onChange={(e) => filtrar("arquivo", e.target.value)}
-              >
-                <option value="ativos">Pendentes de conclusão</option>
-                <option value="concluidos">Concluídas</option>
-                <option value="todos">Todas</option>
-              </Select>
-              {total > 25 && (
-                <>
-                  <Label htmlFor="ir-pagina-publicacoes">Página</Label>
-                  <Select
-                    id="ir-pagina-publicacoes"
-                    className="max-w-[100px]"
-                    value={filtro.pagina}
-                    onChange={(e) =>
-                      setFiltro((f) => ({
-                        ...f,
-                        pagina: Number(e.target.value),
-                      }))
-                    }
-                  >
-                    {Array.from(
-                      { length: Math.max(1, Math.ceil(total / 25)) },
-                      (_, i) => (
-                        <option key={i} value={i + 1}>
-                          {i + 1}
-                        </option>
-                      ),
-                    )}
-                  </Select>
-                </>
-              )}
-            </div>
+            <p className="text-xs font-medium text-zinc-600 dark:text-zinc-300">{total} processo(s) encontrado(s)</p>
             <Pagination
               page={filtro.pagina - 1}
               totalItems={total}
@@ -929,7 +890,7 @@ export function Acompanhamento() {
                       void abrir(p.id);
                     }
                   }}
-                  className={`surface-panel cursor-pointer p-5 transition-colors hover:border-accent-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 ${!p.lida ? "border-l-4 border-l-accent-600 bg-accent-50/40 shadow-sm dark:bg-accent-950/20" : "opacity-85"}`}
+                  className={`group cursor-pointer rounded-2xl border bg-white p-5 shadow-sm transition-all hover:border-accent-400 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 dark:bg-zinc-900 ${!p.lida ? "border-l-4 border-l-accent-600 dark:border-zinc-800 dark:border-l-accent-500" : "border-zinc-200 dark:border-zinc-800"}`}
                 >
                   <div className="flex flex-col gap-4 sm:flex-row sm:justify-between">
                     <div className="min-w-0 flex-1">
@@ -983,31 +944,16 @@ export function Acompanhamento() {
                                       : "Dados da perícia incompletos"}
                           </Badge>
                         )}
-                        {!p.lida ? (
-                          <Badge tone="accent">● Não lida</Badge>
-                        ) : (
-                          <Badge>Lida</Badge>
-                        )}
-                        {Boolean(p.concluida) && (
-                          <Badge tone="success">Concluída</Badge>
-                        )}
-                        {!p.revisada && <Badge tone="warning">A revisar</Badge>}
-                        {p.ia_status === "pendente" && (
-                          <Badge>Aguardando Codex</Badge>
-                        )}
-                        {p.ia_status === "analisando" && (
-                          <Badge tone="info">Codex analisando</Badge>
-                        )}
-                        {p.ia_status === "erro" && (
-                          <Badge tone="danger">Falha na análise</Badge>
-                        )}
+                        {!p.lida && <Badge tone="accent">● Não lida</Badge>}
+                        {Boolean(p.concluida) && <Badge tone="success">Concluída</Badge>}
+                        {p.ia_status === "erro" && <Badge tone="danger">Análise pendente de revisão</Badge>}
+                        {(p.ia_status === "pendente" || p.ia_status === "analisando") && <Badge tone="neutral">Classificação em andamento</Badge>}
                         {Boolean(p.cancelada) && (
                           <Badge tone="danger">Cancelada na origem</Badge>
                         )}
                       </div>
-                      <h2 className="mt-3 break-all text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                        {p.processo || "Processo não informado"}
-                      </h2>
+                      <h2 className="mt-3 text-base font-semibold text-zinc-900 dark:text-zinc-100">{p.cliente_exibicao || "Cliente não identificado"}</h2>
+                      <p className="mt-1 break-all text-xs font-medium text-zinc-600 dark:text-zinc-300">Processo {p.processo || "não informado"}</p>
                       {Boolean(p.andamentos_total && p.andamentos_total > 1) && (
                         <p className="mt-1 text-[11px] font-medium text-accent-700 dark:text-accent-300">
                           {p.andamentos_total} andamentos agrupados neste processo
@@ -1016,13 +962,7 @@ export function Acompanhamento() {
                             : ""}
                         </p>
                       )}
-                      <p
-                        className={`mt-1 text-xs font-medium ${p.cliente_vinculado ? "text-zinc-700 dark:text-zinc-200" : "text-amber-700 dark:text-amber-300"}`}
-                      >
-                        {p.cliente_exibicao
-                          ? `Cliente: ${p.cliente_exibicao}${p.cliente_vinculado ? "" : " · vínculo pendente"}`
-                          : "Cliente não identificado na publicação"}
-                      </p>
+                      {!p.cliente_vinculado && <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-300">Cliente da publicação · confirmar vínculo com a agenda</p>}
                       <p className="mt-1 text-[11px] text-zinc-500">
                         {p.tribunal} · {p.orgao} · Disponibilizada em{" "}
                         {dia(p.data_disponibilizacao)}
@@ -1033,11 +973,11 @@ export function Acompanhamento() {
                         </p>
                       )}
                       {p.proximo_prazo && (
-                        <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
-                          Término do próximo prazo: {dia(p.proximo_prazo)} ·{" "}
-                          {p.prazos_abertos} em aberto
-                        </p>
+                        <p className="mt-2 text-xs font-semibold text-amber-700 dark:text-amber-300">Prazo registrado até {dia(p.proximo_prazo)} · {p.prazos_abertos} em aberto</p>
                       )}
+                      {!p.proximo_prazo && p.acao?.tipo === "prazo_explicito" && <p className="mt-2 text-xs font-semibold text-amber-700 dark:text-amber-300">Prazo expresso na publicação · conferir e calcular</p>}
+                      {!p.proximo_prazo && p.acao?.tipo === "cumprimento" && <p className="mt-2 text-xs font-semibold text-amber-700 dark:text-amber-300">Providência para o escritório · sem prazo expresso</p>}
+                      {!p.proximo_prazo && (!p.acao || p.acao.tipo === "ciencia") && <p className="mt-2 text-xs text-zinc-500">Ciência / acompanhamento · sem prazo identificado para a parte</p>}
                       <p className="mt-3 line-clamp-3 whitespace-pre-line break-words text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
                         {p.resumo}
                       </p>
@@ -1056,7 +996,8 @@ export function Acompanhamento() {
                         </p>
                       )}
                     </div>
-                    <div className="flex shrink-0 flex-wrap gap-2 sm:max-w-[180px]">
+                    <div className="flex shrink-0 flex-wrap items-start gap-2 sm:max-w-[200px] sm:flex-col sm:items-stretch">
+                      <Button variant="outline" size="sm" onClick={() => void abrir(p.id)}>Abrir processo <ArrowRight className="h-3.5 w-3.5" /></Button>
                       <Button
                         size="sm"
                         variant="outline"
@@ -1078,7 +1019,7 @@ export function Acompanhamento() {
                           })
                         }
                       >
-                        {p.concluida ? "Reabrir" : "Concluir"}
+                        {p.concluida ? "Reabrir processo" : "Concluir processo"}
                       </Button>
                       <Button
                         size="sm"
@@ -1096,14 +1037,6 @@ export function Acompanhamento() {
                         }
                       >
                         {p.lida ? "Marcar não lida" : "Marcar lida"}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="self-start"
-                        onClick={() => void abrir(p.id)}
-                      >
-                        Ver detalhes
                       </Button>
                     </div>
                   </div>
@@ -1258,7 +1191,7 @@ export function Acompanhamento() {
               />
               Consultar periodicamente os advogados ativos
             </label>
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <div>
                 <Label htmlFor="djen-intervalo">Intervalo em minutos</Label>
                 <Input
@@ -1292,6 +1225,12 @@ export function Acompanhamento() {
                     })
                   }
                 />
+              </div>
+              <div>
+                <Label htmlFor="djen-aguardo">Lembrete sem nova publicação</Label>
+                <Select id="djen-aguardo" value={config.aguardo_dias} onChange={(e) => setConfig({ ...config, aguardo_dias: Number(e.target.value) })}>
+                  {[15, 30, 60, 90].map((dias) => <option key={dias} value={dias}>{dias} dias (quando não indicado)</option>)}
+                </Select>
               </div>
               <Button
                 variant="outline"
@@ -1807,7 +1746,7 @@ export function Acompanhamento() {
             setDetalhe(null);
           }
         }}
-        title="Detalhes da publicação e do processo"
+        title="Processo · detalhes e próximos passos"
         maxWidth="max-w-6xl"
         footer={
           <>
@@ -1826,6 +1765,12 @@ export function Acompanhamento() {
       >
         {detalhe && (
           <div className="space-y-5">
+            {Boolean(detalhe.relacionadas_total && detalhe.relacionadas_total > 1) && (
+              <button type="button" onClick={() => setAbaDetalhe("historico")} className="flex w-full items-center justify-between gap-2 rounded-xl border border-accent-200 bg-accent-50/50 px-4 py-3 text-left text-xs font-medium text-accent-800 hover:bg-accent-50 dark:border-accent-900 dark:bg-accent-950/20 dark:text-accent-200">
+                <span>Este processo tem {detalhe.relacionadas_total} andamentos. Você está vendo um deles; consulte os demais no histórico.</span>
+                <ArrowRight className="h-4 w-4 shrink-0" />
+              </button>
+            )}
             <div className="rounded-xl border border-zinc-200 bg-zinc-50/70 p-4 dark:border-zinc-800 dark:bg-zinc-800/30">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
@@ -1938,6 +1883,18 @@ export function Acompanhamento() {
             </nav>
             {abaDetalhe === "resumo" && (
               <div className="space-y-5">
+                <section className={`rounded-xl border p-4 ${detalhe.acao?.tipo === "prazo_explicito" ? "border-amber-200 bg-amber-50/70 dark:border-amber-900 dark:bg-amber-950/20" : "border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/30"}`}>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">O que fazer agora</p>
+                  <h3 className="mt-1 text-sm font-semibold">
+                    {detalhe.acao?.tipo === "prazo_explicito" ? "Conferir prazo da parte" : detalhe.acao?.tipo === "cumprimento" ? "Providência sem prazo expresso" : "Acompanhar / tomar ciência"}
+                  </h3>
+                  <p className="mt-2 text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
+                    {detalhe.acao?.prazo_texto || detalhe.acao?.descricao || "Esta publicação não contém prazo expresso identificado para a parte autora ou para o escritório. Confira o inteiro teor antes de concluir."}
+                  </p>
+                  {detalhe.acao?.tipo === "prazo_explicito" && (
+                    <Button size="sm" variant="outline" className="mt-3" onClick={() => setAbaDetalhe("prazos")}>Conferir e calcular prazo <ArrowRight className="h-3.5 w-3.5" /></Button>
+                  )}
+                </section>
                 <section>
               <h3 className="text-sm font-semibold">
                 Partes e advogados da publicação
@@ -2028,33 +1985,29 @@ export function Acompanhamento() {
                   <p className="whitespace-pre-wrap">
                     {detalhe.analise.resumo}
                   </p>
-                  {detalhe.analise.providencia && (
+                  {detalhe.acao && (
                     <div className="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
                       <Badge
                         tone={
-                          detalhe.analise.providencia.tipo === "prazo_explicito"
+                          detalhe.acao.tipo === "prazo_explicito"
                             ? "danger"
-                            : detalhe.analise.providencia.tipo === "cumprimento"
+                            : detalhe.acao.tipo === "cumprimento"
                               ? "warning"
-                              : detalhe.analise.providencia.tipo === "ciencia"
-                                ? "success"
-                                : "neutral"
+                              : "success"
                         }
                       >
-                        {detalhe.analise.providencia.tipo === "prazo_explicito"
-                          ? "Prazo explícito"
-                          : detalhe.analise.providencia.tipo === "cumprimento"
+                        {detalhe.acao.tipo === "prazo_explicito"
+                          ? "Prazo explícito para a parte"
+                          : detalhe.acao.tipo === "cumprimento"
                             ? "Exige providência"
-                            : detalhe.analise.providencia.tipo === "ciencia"
-                              ? "Somente ciência"
-                              : "Providência a conferir"}
+                            : "Ciência / acompanhamento"}
                       </Badge>
-                      {detalhe.analise.providencia.descricao && (
-                        <p className="mt-2">{detalhe.analise.providencia.descricao}</p>
+                      {detalhe.acao.descricao && (
+                        <p className="mt-2">{detalhe.acao.descricao}</p>
                       )}
-                      {detalhe.analise.providencia.prazo_texto && (
+                      {detalhe.acao.prazo_texto && (
                         <p className="mt-1 text-zinc-500">
-                          Prazo informado: {detalhe.analise.providencia.prazo_texto}
+                          Prazo informado: {detalhe.acao.prazo_texto}
                         </p>
                       )}
                     </div>

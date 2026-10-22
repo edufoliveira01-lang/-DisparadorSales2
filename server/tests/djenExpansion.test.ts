@@ -33,6 +33,7 @@ import {
   listarAndamentosDoProcesso,
 } from "../src/services/djen/store";
 import { normalizarPublicacao } from "../src/services/djen/api";
+import { listarAguardandoMovimentacao, atualizarAguardandoMovimentacao } from "../src/services/djen/followUp";
 import {
   salvarPrazo,
   excluirPrazo,
@@ -100,7 +101,7 @@ function seed(n = 1) {
 }
 beforeEach(() => {
   db.exec(
-    "DELETE FROM djen_mensagens;DELETE FROM djen_publicacao_advogados;DELETE FROM djen_publicacoes;DELETE FROM djen_processos;DELETE FROM djen_advogados;DELETE FROM djen_analise_cache;DELETE FROM djen_codex_execucoes;UPDATE djen_config SET ia_ativa=0,ia_pausa=NULL,ia_paralelismo=2,ia_modo='economico'",
+    "DELETE FROM djen_acompanhamentos_aguardo;DELETE FROM djen_mensagens;DELETE FROM djen_publicacao_advogados;DELETE FROM djen_publicacoes;DELETE FROM djen_processos;DELETE FROM djen_advogados;DELETE FROM djen_analise_cache;DELETE FROM djen_codex_execucoes;UPDATE djen_config SET ia_ativa=0,ia_pausa=NULL,ia_paralelismo=2,ia_modo='economico'",
   );
   mocked.analisarComCodex.mockReset();
   mocked.analisarLoteComCodex.mockReset();
@@ -206,6 +207,16 @@ describe("casos apresentados pelo escritório", () => {
       "acordao",
     ]);
   });
+  it("recupera laudo efetivamente juntado, mas não confunde decisão monocrática com acórdão", () => {
+    const laudo = "Ato ordinatório. Dê-se ciência às partes da juntada do laudo no processo.";
+    const a = analysis(laudo, []);
+    a.situacao = "Laudo juntado";
+    expect(validarAnaliseCodex(a, laudo).categorias).toContain("laudo_juntado");
+    const monocratica = "Em decisão monocrática, o relator deu provimento ao recurso.";
+    const b = analysis(monocratica, []);
+    b.situacao = "Acórdão proferido";
+    expect(validarAnaliseCodex(b, monocratica).categorias).not.toContain("acordao");
+  });
   it("previsão futura de RPV não muda sentença de mérito para fase de RPV", () => {
     const texto =
       "SENTENÇA. Julgo procedente o pedido. Após o trânsito em julgado, haverá requisição de pequeno valor.";
@@ -227,6 +238,20 @@ describe("casos apresentados pelo escritório", () => {
   });
 });
 describe("filtros e acompanhamento independente", () => {
+  it("alerta ordem de aguardar só após intervalo sem nova publicação e permite concluir", () => {
+    const [id] = seed();
+    db.prepare("UPDATE djen_publicacoes SET texto=?,data_disponibilizacao=? WHERE id=?")
+      .run("Aguarde-se o retorno do perito por 30 dias.", "2000-01-01", id);
+    expect(listarAguardandoMovimentacao()).toMatchObject([{ publicacao_id: id, dias_espera: 30 }]);
+    atualizarAguardandoMovimentacao(id, "resolvido");
+    expect(listarAguardandoMovimentacao()).toEqual([]);
+  });
+  it("não alerta se outra publicação do mesmo processo foi capturada depois", () => {
+    const [antiga] = seed(2);
+    db.prepare("UPDATE djen_publicacoes SET texto=?,data_disponibilizacao=? WHERE id=?")
+      .run("Aguarde-se o retorno do perito por 30 dias.", "2000-01-01", antiga);
+    expect(listarAguardandoMovimentacao()).toEqual([]);
+  });
   it("aceita várias categorias e resultados sem duplicar as publicações", () => {
     const ids = seed(3);
     revisarPublicacao(ids[0], {

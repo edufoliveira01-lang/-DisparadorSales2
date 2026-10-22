@@ -309,6 +309,9 @@ describe("sugestão de prazo CPC com calendário configurado", () => {
         "Intime-se a autora para manifestar-se em quarenta e cinco dias.",
       )[0].dias,
     ).toBe(45);
+    expect(identificarPrazos("A autora cumpra a determinação em 10 dias.")[0].dias).toBe(10);
+    expect(identificarPrazos("Aguarde-se por 30 dias. Após, intime-se o perito para apresentar laudo em 15 dias.")).toEqual([]);
+    expect(identificarPrazos("O perito apresentará laudo em 20 dias. Dê-se ciência à autora.")).toEqual([]);
   });
   it("rejeita configurações inválidas e fontes não oficiais", () => {
     expect(() =>
@@ -364,3 +367,4 @@ describe("agenda processual isolada", () => {
     ).toEqual(antes);
   });
 });
+

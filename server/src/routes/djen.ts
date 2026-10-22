@@ -59,6 +59,7 @@ import {
   listarPericiasSemLaudo,
   atualizarAcompanhamentoPericia,
 } from "../services/djen/periciaIntegration";
+import { listarAguardandoMovimentacao, atualizarAguardandoMovimentacao } from "../services/djen/followUp";
 export const djenRouter = Router();
 const wrap =
   (
@@ -96,6 +97,7 @@ djenRouter.get(
       config: configuracaoDjen(),
       advogados: listarAdvogados(),
       pericias_sem_laudo: listarPericiasSemLaudo().length,
+      aguardando_retorno: listarAguardandoMovimentacao().length,
       codex: statusAnalisesCodex(),
     }),
   ),
@@ -231,6 +233,17 @@ djenRouter.get(
     const dias =
       typeof req.query.dias === "string" ? Number(req.query.dias) : 60;
     res.json(listarPericiasSemLaudo(dias));
+  }),
+);
+djenRouter.get(
+  "/aguardando",
+  wrap((_req, res) => res.json(listarAguardandoMovimentacao())),
+);
+djenRouter.put(
+  "/aguardando/:id",
+  wrap((req, res) => {
+    res.json(atualizarAguardandoMovimentacao(id(req.params.id), req.body.status));
+    changed();
   }),
 );
 djenRouter.put(

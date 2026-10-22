@@ -169,3 +169,10 @@ Os dois serviços continuam independentes. O acompanhamento DJEN apenas consulta
 - O cliente só é vinculado automaticamente quando nome e número do processo coincidem com um contato.
 - Perícias realizadas há pelo menos 60 dias, sem publicação posterior de laudo no mesmo processo, entram na fila operacional de cobrança. Essa fila não representa prazo jurídico.
 - A análise diferencia somente ciência, providência sem prazo e prazo explícito atribuído ao escritório/cliente.
+
+
+## Triagem processual e acompanhamento de espera (2.43)
+
+A lista reúne publicações por processo, mas cada andamento preserva sua classificação, documento, prazo e histórico. O painel distingue ciência, providência e prazo expresso dirigido à parte autora/escritório. Prazo do perito, do INSS e ordem de aguardar não criam prazo do cliente. Sugestões continuam sujeitas à conferência humana e ao calendário do tribunal.
+
+A área Aguardando retorno mostra somente processos cuja última publicação capturada ordenou espera e cujo período transcorreu sem nova publicação no DJEN. Na ausência de período literal, o lembrete operacional usa 30 dias por padrão, configuráveis no monitoramento; isso não comprova ausência de movimentação nos autos e não é prazo judicial. O acompanhamento de perícias sem laudo continua separado e só alerta após 60 dias.
