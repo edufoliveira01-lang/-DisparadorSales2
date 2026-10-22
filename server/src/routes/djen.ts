@@ -53,6 +53,12 @@ import {
   enfileirarAnaliseCodex,
   processarFilaCodex,
 } from "../services/djen/codexAnalysis";
+import {
+  statusControlePericia,
+  adicionarPublicacaoAoControle,
+  listarPericiasSemLaudo,
+  atualizarAcompanhamentoPericia,
+} from "../services/djen/periciaIntegration";
 export const djenRouter = Router();
 const wrap =
   (
@@ -89,6 +95,7 @@ djenRouter.get(
       resumo: resumoDjen(),
       config: configuracaoDjen(),
       advogados: listarAdvogados(),
+      pericias_sem_laudo: listarPericiasSemLaudo().length,
       codex: statusAnalisesCodex(),
     }),
   ),
@@ -193,7 +200,36 @@ djenRouter.get(
 );
 djenRouter.get(
   "/publicacoes/:id",
-  wrap((req, res) => res.json(detalhesPublicacao(id(req.params.id)))),
+  wrap((req, res) => {
+    const publicacaoId = id(req.params.id);
+    res.json({
+      ...detalhesPublicacao(publicacaoId),
+      pericia_controle: statusControlePericia(publicacaoId),
+    });
+  }),
+);
+djenRouter.post(
+  "/publicacoes/:id/pericia-controle",
+  wrap((req, res) => {
+    const resultado = adicionarPublicacaoAoControle(id(req.params.id));
+    changed();
+    res.status(201).json(resultado);
+  }),
+);
+djenRouter.get(
+  "/pericias/sem-laudo",
+  wrap((req, res) => {
+    const dias =
+      typeof req.query.dias === "string" ? Number(req.query.dias) : 7;
+    res.json(listarPericiasSemLaudo(dias));
+  }),
+);
+djenRouter.put(
+  "/pericias/:id/acompanhamento",
+  wrap((req, res) => {
+    res.json(atualizarAcompanhamentoPericia(id(req.params.id), req.body));
+    changed();
+  }),
 );
 djenRouter.put(
   "/publicacoes/:id/revisao",
