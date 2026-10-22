@@ -191,8 +191,8 @@ const decisaoColegiada = (s: string) =>
 
 /** Resgata apenas fatos consumados e conferíveis no próprio DJEN; não altera revisão humana. */
 export function refinarCategoriasDaAnalise(analise: AnaliseCodex, texto: string) {
-  const categorias = [...new Set(analise.categorias)];
-  const evidencias = [...analise.evidencias];
+  const categorias: CategoriaDjen[] = [];
+  const evidencias: AnaliseCodex["evidencias"] = [];
   const partes = texto.split(/\n+/).flatMap((p) =>
     p.length > 1100 ? p.match(/.{1,900}(?:\s|$)/g) || [p] : [p],
   );
@@ -205,15 +205,15 @@ export function refinarCategoriasDaAnalise(analise: AnaliseCodex, texto: string)
   };
 
   const hint = canon(`${analise.situacao || ""} ${analise.resumo}`);
-  if (/\b(?:acordao|julgamento colegiado)\b/.test(hint) || categorias.includes("acordao")) {
+  if (/\b(?:acordao|julgamento colegiado)\b/.test(hint) || analise.categorias.includes("acordao")) {
     const prova = trecho(/\b(?:acordao|acordam|acordaram|turma recursal|colegiado)\b/, (s) =>
       decisaoColegiada(s) &&
       !/\b(?:precedente|jurisprudencia|acordao anterior|citou o acordao)\b/.test(s),
-    ) || (decisaoColegiada(canon(texto)) && !/\b(?:precedente|jurisprudencia|acordao anterior)\b/.test(canon(texto.slice(0, 400)))
+    ) || (decisaoColegiada(canon(texto.slice(0, 1100))) && !/\b(?:precedente|jurisprudencia|acordao anterior)\b/.test(canon(texto.slice(0, 400)))
       ? texto.slice(0, 1100).trim() : undefined);
     adicionar("acordao", prova);
   }
-  if (/\b(?:laudo juntado|juntada do laudo|laudo pericial apresentado)\b/.test(hint) || categorias.includes("laudo_juntado")) {
+  if (/\b(?:laudo juntado|juntada do laudo|laudo pericial apresentado)\b/.test(hint) || analise.categorias.includes("laudo_juntado")) {
     const prova = trecho(
       /\b(?:juntad[oa]\s+(?:(?:do|de)\s+)?laudo|laudo[^.;]{0,100}juntad[oa]|laudo pericial[^.;]{0,100}apresentad[oa]|juntou-se[^.;]{0,100}laudo)\b/,
       (s) => !/\b(?:nao houve|nao foi|ainda nao|aguardando|apos a juntada|quando juntado|se juntado|devera juntar|junte-se o laudo|para juntada)\b/.test(s),
@@ -222,7 +222,7 @@ export function refinarCategoriasDaAnalise(analise: AnaliseCodex, texto: string)
   }
   const data = analise.agendamento?.data;
   const horario = analise.agendamento?.horario;
-  if ((categorias.includes("pericia") || /\bpericia (?:agendada|designada|redesignada|marcada)\b/.test(hint)) && data && horario) {
+  if ((analise.categorias.includes("pericia") || /\bpericia (?:agendada|designada|redesignada|marcada)\b/.test(hint)) && data && horario) {
     const source = canon(texto);
     const prova = trecho(
       /\b(?:pericia|exame pericial)\b/,
@@ -453,7 +453,7 @@ export function validarAnaliseCodex(
   const refinada = refinarCategoriasDaAnalise(a, texto);
   for (const categoria of refinada.categorias)
     if (!categorias.includes(categoria)) categorias.push(categoria);
-  a.evidencias = refinada.evidencias;
+  a.evidencias = [...a.evidencias, ...refinada.evidencias];
   const evidenceText = canon(a.evidencias.map((e) => e.trecho).join(" "));
   const homologacao = homologacaoEfetiva(evidenceText);
   if (homologacao && !categorias.includes("homologacao_acordo")) {
