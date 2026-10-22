@@ -289,6 +289,9 @@ export function Acompanhamento() {
   } | null>(null);
   const [revisaoAlterada, setRevisaoAlterada] = useState(false);
   const [situacao, setSituacao] = useState("");
+  const [abaDetalhe, setAbaDetalhe] = useState<
+    "resumo" | "publicacao" | "prazos" | "cliente" | "historico"
+  >("resumo");
   const [detalhe, setDetalhe] = useState<Publicacao | null>(null),
     [contatos, setContatos] = useState<Contact[]>([]),
     [categorias, setCategorias] = useState<Categoria[]>([]),
@@ -458,6 +461,7 @@ export function Acompanhamento() {
       ]);
       if (current !== detailSeq.current) return;
       setDetalhe(p);
+      setAbaDetalhe("resumo");
       setContatos(c);
       setRevisaoAlterada(false);
       setCategorias(p.categorias);
@@ -478,14 +482,17 @@ export function Acompanhamento() {
     if (!detalhe) return;
     const contato = contatos.find((c) => String(c.id) === processo.cliente_id);
     if (!contato) {
+      setAbaDetalhe("cliente");
       show(
         "Busque ou cadastre o cliente abaixo e selecione seu telefone.",
         "error",
       );
-      document
-        .getElementById("cliente-processo-area")
-        ?.scrollIntoView({ block: "center", behavior: "smooth" });
-      document.getElementById("buscar-cliente-processo")?.focus();
+      window.setTimeout(() => {
+        document
+          .getElementById("cliente-processo-area")
+          ?.scrollIntoView({ block: "center", behavior: "smooth" });
+        document.getElementById("buscar-cliente-processo")?.focus();
+      });
       return;
     }
     const atualizado = await api.put<Publicacao>(
@@ -895,6 +902,13 @@ export function Acompanhamento() {
                       <h2 className="mt-3 break-all text-sm font-semibold text-zinc-900 dark:text-zinc-100">
                         {p.processo || "Processo não informado"}
                       </h2>
+                      <p
+                        className={`mt-1 text-xs font-medium ${p.cliente_nome ? "text-zinc-700 dark:text-zinc-200" : "text-amber-700 dark:text-amber-300"}`}
+                      >
+                        {p.cliente_nome
+                          ? `Cliente: ${p.cliente_nome}`
+                          : "Cliente ainda não vinculado"}
+                      </p>
                       <p className="mt-1 text-[11px] text-zinc-500">
                         {p.tribunal} · {p.orgao} · Disponibilizada em{" "}
                         {dia(p.data_disponibilizacao)}
@@ -1587,7 +1601,7 @@ export function Acompanhamento() {
           }
         }}
         title="Detalhes da publicação e do processo"
-        maxWidth="max-w-4xl"
+        maxWidth="max-w-6xl"
         footer={
           <>
             <Button variant="outline" onClick={() => setDetalhe(null)}>
@@ -1605,12 +1619,46 @@ export function Acompanhamento() {
       >
         {detalhe && (
           <div className="space-y-5">
-            <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-              <h3 className="break-all text-base font-semibold">
-                {detalhe.processo || "Processo não informado"}
-              </h3>
-              <div className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
-                {[
+            <div className="rounded-xl border border-zinc-200 bg-zinc-50/70 p-4 dark:border-zinc-800 dark:bg-zinc-800/30">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                    Processo
+                  </p>
+                  <h3 className="mt-1 break-all text-base font-semibold">
+                    {detalhe.processo || "Processo não informado"}
+                  </h3>
+                  <p
+                    className={`mt-2 text-sm font-semibold ${detalhe.cliente_nome ? "text-zinc-800 dark:text-zinc-100" : "text-amber-700 dark:text-amber-300"}`}
+                  >
+                    {detalhe.cliente_nome
+                      ? `Cliente: ${detalhe.cliente_nome}`
+                      : "Cliente ainda não vinculado"}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(detalhe.categorias.length
+                    ? detalhe.categorias
+                    : (["outros"] as const)
+                  ).map((c) => (
+                    <Badge
+                      key={c}
+                      tone={c === "outros" ? "neutral" : tons[c]}
+                    >
+                      {c === "outros" ? "Outros" : TIPOS[c]}
+                    </Badge>
+                  ))}
+                  <Badge tone={detalhe.revisada ? "success" : "warning"}>
+                    {detalhe.revisada ? "Revisada" : "A revisar"}
+                  </Badge>
+                </div>
+              </div>
+              <details className="mt-4 text-xs">
+                <summary className="cursor-pointer font-medium text-accent-600">
+                  Ver dados do processo e links oficiais
+                </summary>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {[
                   ["Tribunal", detalhe.tribunal],
                   ["Órgão julgador", detalhe.orgao],
                   ["Classe", detalhe.classe],
@@ -1620,41 +1668,70 @@ export function Acompanhamento() {
                     "Disponibilização no DJEN",
                     dia(detalhe.data_disponibilizacao),
                   ],
-                ].map(([label, value]) => (
-                  <div key={label}>
-                    <p className="text-[10px] text-zinc-500">{label}</p>
-                    <p className="mt-1 break-words">
-                      {value || "Não informado na publicação"}
-                    </p>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3 flex flex-wrap gap-3 text-xs text-accent-600">
-                {detalhe.certidao_url && (
-                  <a
-                    href={detalhe.certidao_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    Certidão oficial DJEN
-                  </a>
-                )}
-                {detalhe.link && (
-                  <a
-                    href={detalhe.link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    Consultar no tribunal
-                  </a>
-                )}
-              </div>
+                  ].map(([label, value]) => (
+                    <div key={label}>
+                      <p className="text-[10px] text-zinc-500">{label}</p>
+                      <p className="mt-1 break-words">
+                        {value || "Não informado na publicação"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-3 text-xs text-accent-600">
+                  {detalhe.certidao_url && (
+                    <a
+                      href={detalhe.certidao_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Certidão oficial DJEN
+                    </a>
+                  )}
+                  {detalhe.link && (
+                    <a
+                      href={detalhe.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Consultar no tribunal
+                    </a>
+                  )}
+                </div>
+              </details>
             </div>
-            <section>
+            <nav
+              aria-label="Seções dos detalhes do processo"
+              className="sticky top-0 z-10 -mx-1 flex gap-1 overflow-x-auto rounded-xl border border-zinc-200 bg-white/95 p-1 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95"
+            >
+              {(
+                [
+                  ["resumo", "Visão geral"],
+                  ["publicacao", "Publicação"],
+                  [
+                    "prazos",
+                    `Prazos${detalhe.prazos?.length ? ` (${detalhe.prazos.length})` : ""}`,
+                  ],
+                  ["cliente", detalhe.cliente_nome ? "Cliente" : "Vincular cliente"],
+                  ["historico", "Histórico"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setAbaDetalhe(id)}
+                  className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${abaDetalhe === id ? "bg-accent-600 text-white" : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </nav>
+            {abaDetalhe === "resumo" && (
+              <div className="space-y-5">
+                <section>
               <h3 className="text-sm font-semibold">
                 Partes e advogados da publicação
               </h3>
@@ -1674,8 +1751,8 @@ export function Acompanhamento() {
                     "Advogados não detalhados na resposta da fonte."}
                 </p>
               </div>
-            </section>
-            <section className="rounded-xl border border-accent-200 bg-accent-50/40 p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                </section>
+                <section className="rounded-xl border border-accent-200 bg-accent-50/40 p-4 dark:border-zinc-800 dark:bg-zinc-900">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h3 className="flex items-center gap-2 text-sm font-semibold">
                   <Sparkles className="h-4 w-4" /> Análise pelo Codex
@@ -1780,7 +1857,11 @@ export function Acompanhamento() {
                   </p>
                 </div>
               )}
-            </section>
+                </section>
+              </div>
+            )}
+            {abaDetalhe === "publicacao" && (
+              <div className="space-y-5">
             <DjenDocumentos
               key={`docs-${detalhe.id}`}
               id={detalhe.id}
@@ -1801,11 +1882,14 @@ export function Acompanhamento() {
                 {detalhe.texto}
               </p>
             </details>
-            <section className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-              <h3 className="flex items-center gap-2 text-sm font-semibold">
+              </div>
+            )}
+            {abaDetalhe === "resumo" && (
+            <details className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+              <summary className="flex cursor-pointer items-center gap-2 text-sm font-semibold">
                 <CheckCheck className="h-4 w-4" />
-                Conferir classificação
-              </h3>
+                Conferir ou ajustar classificação
+              </summary>
               <p className="mt-1 text-xs text-zinc-500">
                 Confira a sugestão do Codex e o inteiro teor antes de salvar a
                 revisão. Sem categoria aplicável, selecione Outros.
@@ -1915,7 +1999,9 @@ export function Acompanhamento() {
                     : "Aguardando revisão"}
                 </Badge>
               </div>
-            </section>
+            </details>
+            )}
+            {abaDetalhe === "prazos" && (
             <DjenPrazos
               key={`prazos-${detalhe.id}`}
               id={detalhe.id}
@@ -1928,6 +2014,8 @@ export function Acompanhamento() {
                 void carregarLista();
               }}
             />
+            )}
+            {abaDetalhe === "cliente" && (
             <section className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
               <h3 id="cliente-processo-area" className="text-sm font-semibold">
                 Cliente e anotações do processo
@@ -1962,17 +2050,17 @@ export function Acompanhamento() {
                 loading={salvando}
                 onClick={() =>
                   void acao(async () => {
-                    setDetalhe(
-                      await api.put<Publicacao>(
-                        `/djen/publicacoes/${detalhe.id}/processo`,
-                        {
-                          ...processo,
-                          cliente_id: processo.cliente_id
-                            ? Number(processo.cliente_id)
-                            : null,
-                        },
-                      ),
+                    const atualizado = await api.put<Publicacao>(
+                      `/djen/publicacoes/${detalhe.id}/processo`,
+                      {
+                        ...processo,
+                        cliente_id: processo.cliente_id
+                          ? Number(processo.cliente_id)
+                          : null,
+                      },
                     );
+                    setDetalhe(atualizado);
+                    await carregarLista();
                     show("Dados do processo salvos.", "success");
                   })
                 }
@@ -1985,6 +2073,9 @@ export function Acompanhamento() {
                 antes do envio.
               </p>
             </section>
+            )}
+            {abaDetalhe === "historico" && (
+              <div className="space-y-5">
             <DjenHistorico
               key={`hist-${detalhe.id}`}
               id={detalhe.id}
@@ -2034,6 +2125,8 @@ export function Acompanhamento() {
                 ))
               )}
             </section>
+              </div>
+            )}
           </div>
         )}
       </Modal>
