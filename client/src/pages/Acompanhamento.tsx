@@ -115,6 +115,17 @@ interface Publicacao {
       horario: string | null;
       local: string | null;
     };
+    providencia?: {
+      tipo: "ciencia" | "cumprimento" | "prazo_explicito" | "indeterminado";
+      descricao: string | null;
+      prazo_texto: string | null;
+      responsavel:
+        | "escritorio"
+        | "cliente"
+        | "perito"
+        | "outra_parte"
+        | "indeterminado";
+    };
   } | null;
   texto?: string;
   categorias: Categoria[];
@@ -128,6 +139,31 @@ interface Publicacao {
   cliente_id: number | null;
   cliente_nome: string | null;
   cliente_telefone: string | null;
+  parte_nome?: string | null;
+  cliente_exibicao?: string | null;
+  cliente_vinculado?: boolean;
+  pericia_controle?: {
+    status:
+      | "nao_cadastrada"
+      | "cadastrada_nao_informada"
+      | "duplicidade"
+      | "redesignacao"
+      | "cadastrada_a_conferir"
+      | "dados_incompletos";
+    informado: boolean;
+    mensagem: string;
+    agendamento: {
+      data: string | null;
+      horario: string | null;
+      local: string | null;
+    };
+    existente?: {
+      id: number;
+      data: string;
+      horario: string | null;
+      local: string | null;
+    } | null;
+  } | null;
   observacoes: string;
   link: string | null;
   certidao_url: string | null;
@@ -154,6 +190,18 @@ interface Publicacao {
     erro: string | null;
     created_at: string;
   }[];
+}
+interface PericiaSemLaudo {
+  pericia_id: number;
+  nome: string;
+  processo: string;
+  data: string;
+  horario: string | null;
+  local: string | null;
+  dias_decorridos: number;
+  acompanhamento_status: "pendente" | "cobrado";
+  ultima_cobranca_em: string | null;
+  observacoes: string;
 }
 interface Busca {
   id: number;
@@ -192,6 +240,7 @@ interface Status {
   ultimas: Busca[];
   resumo: Record<string, number>;
   advogados: Advogado[];
+  pericias_sem_laudo: number;
   config: {
     automatico: number;
     intervalo_minutos: number;
@@ -298,6 +347,9 @@ export function Acompanhamento() {
     [resultado, setResultado] = useState<Resultado>("nao_identificado"),
     [processo, setProcesso] = useState({ cliente_id: "", observacoes: "" });
   const [confirmacaoEnvio, setConfirmacaoEnvio] = useState(false);
+  const [mostrarSemLaudo, setMostrarSemLaudo] = useState(false);
+  const [periciasSemLaudo, setPericiasSemLaudo] = useState<PericiaSemLaudo[]>([]);
+  const [carregandoSemLaudo, setCarregandoSemLaudo] = useState(false);
   const [mensagem, setMensagem] = useState<{
       texto: string;
       request_id: string;
@@ -312,6 +364,16 @@ export function Acompanhamento() {
     const data = await api.get<Status>("/djen/status");
     setStatus(data);
     return data;
+  }, []);
+  const carregarSemLaudo = useCallback(async () => {
+    setCarregandoSemLaudo(true);
+    try {
+      setPericiasSemLaudo(
+        await api.get<PericiaSemLaudo[]>("/djen/pericias/sem-laudo?dias=7"),
+      );
+    } finally {
+      setCarregandoSemLaudo(false);
+    }
   }, []);
   const carregarLista = useCallback(async () => {
     const current = ++seq.current;
@@ -602,10 +664,22 @@ export function Acompanhamento() {
                 Atualizar
               </Button>
               {secao === "publicacoes" && (
-                <Button onClick={() => navigate("/processos/monitoramento")}>
-                  <Search className="h-4 w-4" />
-                  Consultar DJEN
-                </Button>
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setMostrarSemLaudo(true);
+                      void carregarSemLaudo().catch((e) => show(erro(e), "error"));
+                    }}
+                  >
+                    <AlertCircle className="h-4 w-4" />
+                    Sem laudo ({status?.pericias_sem_laudo ?? 0})
+                  </Button>
+                  <Button onClick={() => navigate("/processos/monitoramento")}>
+                    <Search className="h-4 w-4" />
+                    Consultar DJEN
+                  </Button>
+                </>
               )}
             </>
           )
@@ -903,11 +977,11 @@ export function Acompanhamento() {
                         {p.processo || "Processo não informado"}
                       </h2>
                       <p
-                        className={`mt-1 text-xs font-medium ${p.cliente_nome ? "text-zinc-700 dark:text-zinc-200" : "text-amber-700 dark:text-amber-300"}`}
+                        className={`mt-1 text-xs font-medium ${p.cliente_vinculado ? "text-zinc-700 dark:text-zinc-200" : "text-amber-700 dark:text-amber-300"}`}
                       >
-                        {p.cliente_nome
-                          ? `Cliente: ${p.cliente_nome}`
-                          : "Cliente ainda não vinculado"}
+                        {p.cliente_exibicao
+                          ? `Cliente: ${p.cliente_exibicao}${p.cliente_vinculado ? "" : " · vínculo pendente"}`
+                          : "Cliente não identificado na publicação"}
                       </p>
                       <p className="mt-1 text-[11px] text-zinc-500">
                         {p.tribunal} · {p.orgao} · Disponibilizada em{" "}
@@ -1593,6 +1667,99 @@ export function Acompanhamento() {
         )}
       </Modal>
       <Modal
+        open={mostrarSemLaudo}
+        onClose={() => setMostrarSemLaudo(false)}
+        title="Perícias realizadas sem laudo identificado"
+        maxWidth="max-w-4xl"
+        footer={
+          <Button variant="outline" onClick={() => setMostrarSemLaudo(false)}>
+            Fechar
+          </Button>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-xs text-zinc-500">
+            Alerta operacional para perícias realizadas há pelo menos 7 dias sem
+            publicação de laudo identificada no mesmo processo. Não é contagem de
+            prazo jurídico.
+          </p>
+          {carregandoSemLaudo ? (
+            <p className="text-sm text-zinc-500">Carregando…</p>
+          ) : !periciasSemLaudo.length ? (
+            <EmptyState
+              icon={FileCheck2}
+              title="Nenhuma cobrança pendente"
+              description="Não há perícias vencidas sem laudo identificado neste momento."
+            />
+          ) : (
+            periciasSemLaudo.map((p) => (
+              <article
+                key={p.pericia_id}
+                className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800"
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold">{p.nome}</p>
+                    <p className="mt-1 text-xs text-zinc-500">{p.processo}</p>
+                    <p className="mt-2 text-xs">
+                      Perícia em {p.data}
+                      {p.horario ? ` às ${p.horario}` : ""} ·{" "}
+                      {p.dias_decorridos} dia(s) decorridos
+                    </p>
+                    {p.local && (
+                      <p className="mt-1 text-xs text-zinc-500">{p.local}</p>
+                    )}
+                    {p.ultima_cobranca_em && (
+                      <p className="mt-2 text-xs text-amber-700">
+                        Cobrança registrada em {p.ultima_cobranca_em}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={salvando}
+                      onClick={() =>
+                        void acao(async () => {
+                          await api.put(
+                            `/djen/pericias/${p.pericia_id}/acompanhamento`,
+                            { status: "cobrado", observacoes: p.observacoes || "" },
+                          );
+                          await carregarSemLaudo();
+                          await carregarStatus();
+                          show("Cobrança registrada.", "success");
+                        })
+                      }
+                    >
+                      Registrar cobrança
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={salvando}
+                      onClick={() =>
+                        void acao(async () => {
+                          await api.put(
+                            `/djen/pericias/${p.pericia_id}/acompanhamento`,
+                            { status: "resolvido", observacoes: p.observacoes || "" },
+                          );
+                          await carregarSemLaudo();
+                          await carregarStatus();
+                          show("Acompanhamento concluído.", "success");
+                        })
+                      }
+                    >
+                      Concluir
+                    </Button>
+                  </div>
+                </div>
+              </article>
+            ))
+          )}
+        </div>
+      </Modal>
+      <Modal
         open={Boolean(detalhe) && !mensagem}
         onClose={() => {
           if (!salvando) {
@@ -1629,11 +1796,11 @@ export function Acompanhamento() {
                     {detalhe.processo || "Processo não informado"}
                   </h3>
                   <p
-                    className={`mt-2 text-sm font-semibold ${detalhe.cliente_nome ? "text-zinc-800 dark:text-zinc-100" : "text-amber-700 dark:text-amber-300"}`}
+                    className={`mt-2 text-sm font-semibold ${detalhe.cliente_vinculado ? "text-zinc-800 dark:text-zinc-100" : "text-amber-700 dark:text-amber-300"}`}
                   >
-                    {detalhe.cliente_nome
-                      ? `Cliente: ${detalhe.cliente_nome}`
-                      : "Cliente ainda não vinculado"}
+                    {detalhe.cliente_exibicao
+                      ? `Cliente: ${detalhe.cliente_exibicao}${detalhe.cliente_vinculado ? "" : " · vínculo pendente"}`
+                      : "Cliente não identificado na publicação"}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -1821,6 +1988,37 @@ export function Acompanhamento() {
                   <p className="whitespace-pre-wrap">
                     {detalhe.analise.resumo}
                   </p>
+                  {detalhe.analise.providencia && (
+                    <div className="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                      <Badge
+                        tone={
+                          detalhe.analise.providencia.tipo === "prazo_explicito"
+                            ? "danger"
+                            : detalhe.analise.providencia.tipo === "cumprimento"
+                              ? "warning"
+                              : detalhe.analise.providencia.tipo === "ciencia"
+                                ? "success"
+                                : "neutral"
+                        }
+                      >
+                        {detalhe.analise.providencia.tipo === "prazo_explicito"
+                          ? "Prazo explícito"
+                          : detalhe.analise.providencia.tipo === "cumprimento"
+                            ? "Exige providência"
+                            : detalhe.analise.providencia.tipo === "ciencia"
+                              ? "Somente ciência"
+                              : "Providência a conferir"}
+                      </Badge>
+                      {detalhe.analise.providencia.descricao && (
+                        <p className="mt-2">{detalhe.analise.providencia.descricao}</p>
+                      )}
+                      {detalhe.analise.providencia.prazo_texto && (
+                        <p className="mt-1 text-zinc-500">
+                          Prazo informado: {detalhe.analise.providencia.prazo_texto}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <p className="text-zinc-500">
                     {detalhe.analise.justificativa}
                   </p>
@@ -1835,6 +2033,60 @@ export function Acompanhamento() {
                           <strong>{label}:</strong> {value || "Não informado"}
                         </p>
                       ))}
+                    </div>
+                  )}
+                  {detalhe.pericia_controle && (
+                    <div className="rounded-lg border border-violet-200 bg-violet-50/60 p-3 dark:border-violet-900 dark:bg-violet-950/20">
+                      <p className="font-semibold">Controle de perícias</p>
+                      <p className="mt-1">{detalhe.pericia_controle.mensagem}</p>
+                      {detalhe.pericia_controle.existente && (
+                        <p className="mt-1 text-zinc-500">
+                          Registro atual: {detalhe.pericia_controle.existente.data}
+                          {detalhe.pericia_controle.existente.horario
+                            ? ` às ${detalhe.pericia_controle.existente.horario}`
+                            : ""}
+                          {detalhe.pericia_controle.existente.local
+                            ? ` · ${detalhe.pericia_controle.existente.local}`
+                            : ""}
+                        </p>
+                      )}
+                      {!["duplicidade", "dados_incompletos"].includes(
+                        detalhe.pericia_controle.status,
+                      ) && (
+                        <Button
+                          className="mt-3"
+                          size="sm"
+                          variant={
+                            detalhe.pericia_controle.status === "redesignacao"
+                              ? "primary"
+                              : "outline"
+                          }
+                          loading={salvando}
+                          onClick={() =>
+                            void acao(async () => {
+                              await api.post(
+                                `/djen/publicacoes/${detalhe.id}/pericia-controle`,
+                                {},
+                              );
+                              const atualizado = await api.get<Publicacao>(
+                                `/djen/publicacoes/${detalhe.id}`,
+                              );
+                              setDetalhe(atualizado);
+                              await carregarStatus();
+                              show(
+                                detalhe.pericia_controle?.status === "redesignacao"
+                                  ? "Redesignação registrada no controle de perícias."
+                                  : "Perícia adicionada ao controle.",
+                                "success",
+                              );
+                            })
+                          }
+                        >
+                          {detalhe.pericia_controle.status === "redesignacao"
+                            ? "Registrar redesignação"
+                            : "Adicionar ao controle de perícias"}
+                        </Button>
+                      )}
                     </div>
                   )}
                   {detalhe.analise.alertas.map((a, i) => (
