@@ -195,7 +195,16 @@ djenRouter.get(
         (req.query[key] as unknown[]).every((v) => typeof v === "string")
       )
         filtro[key] = (req.query[key] as string[]).join(",");
-    res.json(listarPublicacoes(filtro));
+    const lista = listarPublicacoes(filtro);
+    res.json({
+      ...lista,
+      items: lista.items.map((publicacao) => ({
+        ...publicacao,
+        pericia_controle: publicacao.categorias.includes("pericia")
+          ? statusControlePericia(publicacao.id)
+          : null,
+      })),
+    });
   }),
 );
 djenRouter.get(
