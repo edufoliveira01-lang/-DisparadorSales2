@@ -151,5 +151,21 @@ export function runDjenMigrations(db: Database.Database): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT, chave TEXT NOT NULL REFERENCES djen_calendarios_oficiais(chave) ON DELETE CASCADE,
       tipo TEXT NOT NULL, descricao TEXT NOT NULL, dados_json TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS djen_acompanhamentos_pericia (
+      pericia_id INTEGER PRIMARY KEY REFERENCES pericias_agendadas(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'pendente' CHECK(status IN ('pendente','cobrado','resolvido')),
+      ultima_cobranca_em TEXT, observacoes TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
   `);
+  db.prepare(
+    `UPDATE djen_publicacoes
+        SET categorias_json='["pericia"]',
+            ia_json=json_set(ia_json,'$.categorias',json('["pericia"]')),
+            situacao=CASE WHEN situacao='' THEN 'Perícia agendada' ELSE situacao END
+      WHERE revisada=0 AND cancelada=0 AND categorias_json='[]' AND ia_json IS NOT NULL
+        AND json_extract(ia_json,'$.agendamento.data') IS NOT NULL
+        AND json_extract(ia_json,'$.agendamento.horario') IS NOT NULL
+        AND (texto LIKE '%designad%' OR texto LIKE '%agendad%' OR texto LIKE '%redesignad%' OR texto LIKE '%marcad%')`,
+  ).run();
 }
