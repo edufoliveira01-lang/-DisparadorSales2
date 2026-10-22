@@ -204,6 +204,12 @@ describe("execução restrita do Codex CLI", () => {
                   justificativa: "Juntada confirmada no texto.",
                   evidencias: [{ categoria: "laudo_juntado", trecho: laudo }],
                   agendamento: { data: null, horario: null, local: null },
+                  providencia: {
+                    tipo: "ciencia",
+                    descricao: null,
+                    prazo_texto: null,
+                    responsavel: "indeterminado",
+                  },
                   alertas: [],
                 }),
               );
@@ -269,6 +275,12 @@ describe("execução restrita do Codex CLI", () => {
                         horario: null,
                         local: null,
                       },
+                      providencia: {
+                        tipo: "ciencia",
+                        descricao: null,
+                        prazo_texto: null,
+                        responsavel: "indeterminado",
+                      },
                       alertas: [],
                     },
                   },
@@ -285,6 +297,12 @@ describe("execução restrita do Codex CLI", () => {
                         data: null,
                         horario: null,
                         local: null,
+                      },
+                      providencia: {
+                        tipo: "ciencia",
+                        descricao: null,
+                        prazo_texto: null,
+                        responsavel: "indeterminado",
                       },
                       alertas: [],
                     },
