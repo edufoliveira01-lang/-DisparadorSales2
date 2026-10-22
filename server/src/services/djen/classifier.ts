@@ -52,7 +52,7 @@ export function normalizarTexto(value: string): string {
     .toLowerCase();
 }
 
-export const VERSAO_CLASSIFICADOR = "2.38.0";
+export const VERSAO_CLASSIFICADOR = "2.41.0";
 export class ErroAnaliseCodex extends Error {}
 export interface ContextoPublicacao {
   classe?: string;
@@ -71,6 +71,12 @@ export interface AnaliseCodex {
     horario: string | null;
     local: string | null;
   };
+  providencia: {
+    tipo: "ciencia" | "cumprimento" | "prazo_explicito" | "indeterminado";
+    descricao: string | null;
+    prazo_texto: string | null;
+    responsavel: "escritorio" | "cliente" | "perito" | "outra_parte" | "indeterminado";
+  };
   alertas: string[];
 }
 const nullable = { type: ["string", "null"] };
@@ -85,6 +91,7 @@ export const ESQUEMA_ANALISE_CODEX = {
     "justificativa",
     "evidencias",
     "agendamento",
+    "providencia",
     "alertas",
   ],
   properties: {
@@ -114,6 +121,23 @@ export const ESQUEMA_ANALISE_CODEX = {
       required: ["data", "horario", "local"],
       properties: { data: nullable, horario: nullable, local: nullable },
     },
+    providencia: {
+      type: "object",
+      additionalProperties: false,
+      required: ["tipo", "descricao", "prazo_texto", "responsavel"],
+      properties: {
+        tipo: {
+          type: "string",
+          enum: ["ciencia", "cumprimento", "prazo_explicito", "indeterminado"],
+        },
+        descricao: nullable,
+        prazo_texto: nullable,
+        responsavel: {
+          type: "string",
+          enum: ["escritorio", "cliente", "perito", "outra_parte", "indeterminado"],
+        },
+      },
+    },
     alertas: { type: "array", items: { type: "string" } },
   },
 };
@@ -121,7 +145,7 @@ export const REGRAS_ANALISE_CODEX = `Você faz triagem de publicações do DJEN 
 CATEGORIAS (podem coexistir apenas se houver fatos efetivos distintos):
 - sentenca: julgamento do MÉRITO dos pedidos da ação de conhecimento. Não use esta categoria como rótulo genérico de todo documento formalmente chamado sentença. Sentença de extinção de execução/RPV, homologação de acordo e extinção sem julgamento do mérito têm suas categorias próprias abaixo. Não basta citar sentença anterior, jurisprudência, pedido de julgamento, cumprimento de sentença ou decisão interlocutória. Tipo documental é pista, não prova suficiente. Resultado procedente/improcedente/parcial somente se o dispositivo desta sentença o afirmar; decisão sobre tutela, recurso ou citação de outra decisão não define resultado. Se duvidoso: nao_identificado.
 - acordao: comunica acórdão efetivamente proferido pelo colegiado ou seu julgamento. Não basta citar precedente, pedir aplicação de acórdão, informar remessa para julgamento ou mencionar sentença. Recurso provido não equivale automaticamente a pedido procedente.
-- pericia: comunica agendamento efetivo de perícia com DATA, HORÁRIO e LOCAL explícitos. Pedido de perícia, deferimento, determinação de realização, nomeação do perito, solicitação de proposta/data/hora/local e agendamento incompleto NÃO entram nesta categoria. Classifique a decisão incidental como decisao_interlocutoria quando cabível; caso contrário, use Outros e indique o que falta. Se cancelada, não trate como agendamento confirmado. Copie os três campos literalmente da publicação; não derive a data da disponibilização, prazos ou outros eventos. Agendamento incompleto pode preencher campos presentes, mas não recebe categoria pericia.
+- pericia: comunica agendamento efetivo de perícia com DATA e HORÁRIO explícitos. O LOCAL deve ser copiado quando constar; se estiver ausente, mantenha pericia e gere alerta "local não informado". Pedido de perícia, deferimento, determinação de realização, nomeação do perito ou solicitação para o perito informar data/horário NÃO entram nesta categoria. Classifique a decisão incidental como decisao_interlocutoria quando cabível; caso contrário, use Outros. Se cancelada, não trate como agendamento confirmado. Não derive data ou horário da disponibilização, de prazos ou de outros eventos.
 - laudo_juntado: comunica que o laudo pericial deste processo FOI efetivamente juntado ou apresentado. Menção a exames, laudo particular, futuros quesitos, prazo para entrega, ordem para juntada, futura vista às partes após o laudo ou instruções condicionais NÃO comprovam juntada. Exija frase explícita de fato já ocorrido.
 - rpv: andamento na fase/incidente de requisição de pequeno valor: requisição, depósito, pagamento, satisfação/extinção ou providências desse incidente. Não basta futura previsão de RPV ao final de sentença de mérito ou citação de outro processo. Use a classe processual como contexto. Exemplo: classe Requisição de Pequeno Valor, depósito do INSS e JULGO EXTINTA a execução => rpv + extincao_execucao, e levantamento_valores se expedido alvará; NÃO sentenca.
 - precatorio: andamento efetivo na fase/incidente de precatório, não menção hipotética futura.
@@ -138,6 +162,7 @@ Não acumule despacho/intimacao genéricos com categorias específicas. Podem co
 RESULTADO DA SENTENÇA: JULGO PARCIALMENTE PROCEDENTES os pedidos + JULGO IMPROCEDENTE um pedido específico (ex. dano moral) é PARCIAL, não conflito. O resultado global parcialmente procedente prevalece sobre capítulos individuais. Sem julgamento de mérito, use nao_identificado e a situação específica.
 SITUACAO: título curto e descritivo do fato, por exemplo "RPV paga · execução extinta", "Acordo homologado · pagamento parcelado", "Perícia determinada · aguardando agendamento", "Sentença parcialmente procedente". Serve para detalhar inclusive fatos que fiquem em Outros.
 OUTROS: categorias=[] quando fora das categorias previstas ou sem evidência suficiente. Não invente categorias novas. Em caso de dúvida, use Outros e explique a dúvida.
+PROVIDÊNCIA: diferencie o que é apenas ciência do que exige atuação. Use ciencia quando a publicação somente comunica um fato e não ordena manifestação do escritório/cliente. Use cumprimento quando há providência dirigida ao escritório ou cliente, mas sem prazo numérico explícito. Use prazo_explicito somente quando o texto traz prazo literal e uma ação atribuída ao escritório/cliente; copie esse trecho em prazo_texto. Prazo dirigido ao perito, à parte contrária ou ao juízo não é prazo do escritório: identifique o responsável correto e não crie prazo processual para o cliente. Use indeterminado quando não for possível saber.
 RESUMO: descreva objetivamente os fatos e determinações desta publicação, em até 150 palavras. Não afirme ter analisado os autos completos nem transforme providência futura em fato ocorrido. Explique em justificativa por que entrou nas categorias ou em Outros. Em evidencias, use SOMENTE citações literais e suficientes (15 a 1200 caracteres) da publicação para cada categoria atribuída, nunca texto criado por você. Alertas: dúvidas, dados faltantes e necessidade de conferência. Campo não informado: null. Não produza porcentagem de certeza.
 `;
 export function promptAnaliseCodex(
@@ -194,7 +219,21 @@ export function validarAnaliseCodex(
     !a.justificativa.trim() ||
     a.justificativa.length > 2500 ||
     !a.agendamento ||
-    typeof a.agendamento !== "object"
+    typeof a.agendamento !== "object" ||
+    !a.providencia ||
+    typeof a.providencia !== "object" ||
+    !["ciencia", "cumprimento", "prazo_explicito", "indeterminado"].includes(
+      a.providencia.tipo,
+    ) ||
+    !["escritorio", "cliente", "perito", "outra_parte", "indeterminado"].includes(
+      a.providencia.responsavel,
+    ) ||
+    (a.providencia.descricao !== null &&
+      (typeof a.providencia.descricao !== "string" ||
+        a.providencia.descricao.length > 1000)) ||
+    (a.providencia.prazo_texto !== null &&
+      (typeof a.providencia.prazo_texto !== "string" ||
+        a.providencia.prazo_texto.length > 1200))
   )
     return fail();
   if (
@@ -225,30 +264,49 @@ export function validarAnaliseCodex(
     )
       return fail();
   }
+  if (
+    a.providencia.prazo_texto &&
+    !source.includes(canon(a.providencia.prazo_texto))
+  )
+    return fail();
+  if (
+    a.providencia.tipo === "prazo_explicito" &&
+    (!a.providencia.prazo_texto ||
+      !["escritorio", "cliente"].includes(a.providencia.responsavel))
+  ) {
+    a.providencia.tipo = "indeterminado";
+    a.providencia.prazo_texto = null;
+  }
   const alertas = [...a.alertas];
   let categorias = [...new Set(a.categorias)].filter((c) => {
     const evidence = a.evidencias.filter((e) => e.categoria === c);
     if (!evidence.length) return false;
     if (c === "pericia") {
       const { data, horario, local } = a.agendamento;
-      return Boolean(
+      const agendamentoEfetivo = evidence.some((e) => {
+        const s = canon(e.trecho);
+        return (
+          /\b(?:designada|agendada|redesignada|marcada|realizar-se-a|sera realizada)\b/.test(
+            s,
+          ) &&
+          !/\b(?:cancelad[ao]|desmarcad[ao]|revogad[ao])\b/.test(s) &&
+          !/\b(?:solicite-se|informe|devera informar|para designacao|aguardando designacao)\b/.test(
+            s,
+          )
+        );
+      });
+      const valida = Boolean(
         data &&
           horario &&
-          local &&
           /\b\d{1,2}(?:\s*[/.-]\s*\d{1,2}|\s+de\s+[a-z]+)/.test(canon(data)) &&
           /\b\d{1,2}(?:\s*[:h]\s*\d{0,2}|\s*horas?)/.test(canon(horario)) &&
-          evidence.some((e) => {
-            const s = canon(e.trecho);
-            return (
-              /\b(?:designada|agendada|redesignada|marcada|realizar-se-a|sera realizada)\b/.test(
-                s,
-              ) &&
-              !future.test(s) &&
-              !/\b(?:cancelad[ao]|desmarcad[ao]|revogad[ao])\b/.test(s) &&
-              [data, horario, local].every((v) => s.includes(canon(v)))
-            );
-          }),
+          source.includes(canon(data)) &&
+          source.includes(canon(horario)) &&
+          agendamentoEfetivo,
       );
+      if (valida && !local)
+        alertas.push("Local da perícia não informado nesta publicação.");
+      return valida;
     }
     if (c === "laudo_juntado")
       return evidence.some((e) => {
@@ -435,6 +493,7 @@ export function validarAnaliseCodex(
     justificativa: a.justificativa.trim(),
     evidencias: a.evidencias.filter((e) => categorias.includes(e.categoria)),
     agendamento: a.agendamento,
+    providencia: a.providencia,
     alertas,
   };
 }
