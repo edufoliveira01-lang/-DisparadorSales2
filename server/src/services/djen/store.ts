@@ -16,6 +16,74 @@ import {
 } from "./api";
 
 export class DjenInputError extends Error {}
+
+const nomeChaveCliente = (value: string | null | undefined) =>
+  (value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+\([ap]\)\s*$/i, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+function vincularProcessoAutomaticamente(
+  processoChave: string,
+  destinatarios: { nome: string; polo?: string }[],
+) {
+  if (!processoChave || !destinatarios.length) return null;
+  const processo = db
+    .prepare("SELECT cliente_id FROM djen_processos WHERE chave=?")
+    .get(processoChave) as { cliente_id: number | null } | undefined;
+  if (!processo || processo.cliente_id) return processo?.cliente_id || null;
+
+  const nomes = new Set(destinatarios.map((d) => nomeChaveCliente(d.nome)).filter(Boolean));
+  const candidatos = (
+    db
+      .prepare(
+        "SELECT id,nome,processo,processo_chave FROM contacts WHERE processo_chave=? OR processo IS NOT NULL",
+      )
+      .all(processoChave) as {
+      id: number;
+      nome: string;
+      processo: string | null;
+      processo_chave: string;
+    }[]
+  ).filter(
+    (contato) =>
+      (contato.processo_chave === processoChave ||
+        normalizeProcesso(contato.processo) === processoChave) &&
+      nomes.has(nomeChaveCliente(contato.nome)),
+  );
+  const ids = [...new Set(candidatos.map((c) => c.id))];
+  if (ids.length !== 1) return null;
+  db.prepare(
+    "UPDATE djen_processos SET cliente_id=? WHERE chave=? AND cliente_id IS NULL",
+  ).run(ids[0], processoChave);
+  return ids[0];
+}
+
+function vincularProcessosPendentes() {
+  const pendentes = db
+    .prepare(
+      `SELECT pr.chave,p.destinatarios_json
+         FROM djen_processos pr
+         JOIN djen_publicacoes p ON p.id=(
+           SELECT p2.id FROM djen_publicacoes p2
+            WHERE p2.processo_chave=pr.chave
+            ORDER BY p2.id DESC LIMIT 1
+         )
+        WHERE pr.cliente_id IS NULL`,
+    )
+    .all() as { chave: string; destinatarios_json: string }[];
+  for (const item of pendentes) {
+    try {
+      vincularProcessoAutomaticamente(item.chave, JSON.parse(item.destinatarios_json || "[]"));
+    } catch {
+      // Dados incompletos permanecem para vínculo manual; nunca vinculamos por suposição.
+    }
+  }
+}
+
 const UFS = new Set(
   "AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO".split(
     " ",
@@ -151,6 +219,7 @@ export function importarPublicacoes(
       db.prepare(
         "INSERT OR IGNORE INTO djen_processos(chave,numero) VALUES (?,?)",
       ).run(chave, p.processo);
+      vincularProcessoAutomaticamente(chave, p.destinatarios);
       // Até a análise do Codex, permanece em Outros; não há inferência por palavras-chave.
       const classificacao = {
         categorias: [],
@@ -285,17 +354,23 @@ export function apresentarPublicacao(p: PublicacaoRow, integral = false) {
     ...dados
   } = p;
   const analise = ia_json ? JSON.parse(String(ia_json)) : null;
+  const destinatarios = JSON.parse(String(destinatarios_json || "[]")) as {
+    nome?: string;
+    polo?: string;
+  }[];
+  const parteNome = destinatarios.find((d) => d.nome)?.nome?.trim() || null;
   return {
     ...dados,
     analise,
+    parte_nome: parteNome,
+    cliente_exibicao: dados.cliente_nome || parteNome,
+    cliente_vinculado: Boolean(dados.cliente_id),
     texto: integral ? texto : undefined,
     resumo: analise?.resumo || texto.slice(0, 320),
     categorias: JSON.parse(categorias_json),
     evidencias: JSON.parse(evidencias_json),
     advogados,
-    destinatarios: integral
-      ? JSON.parse(String(destinatarios_json))
-      : undefined,
+    destinatarios: integral ? destinatarios : undefined,
     advogados_publicacao: integral
       ? JSON.parse(String(advogados_json))
       : undefined,
@@ -305,6 +380,7 @@ export function apresentarPublicacao(p: PublicacaoRow, integral = false) {
   };
 }
 export function listarPublicacoes(filtro: Record<string, string>) {
+  vincularProcessosPendentes();
   const where: string[] = [],
     values: (string | number)[] = [];
   const csv = (v: string | undefined) => [
