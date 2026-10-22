@@ -167,5 +167,5 @@ Os dois serviços continuam independentes. O acompanhamento DJEN apenas consulta
 - Mesmo processo, data, horário e local já informados: duplicidade.
 - Mesmo processo com outra data ou horário: possível redesignação.
 - O cliente só é vinculado automaticamente quando nome e número do processo coincidem com um contato.
-- Perícias realizadas há pelo menos sete dias, sem publicação posterior de laudo no mesmo processo, entram na fila operacional de cobrança. Essa fila não representa prazo jurídico.
+- Perícias realizadas há pelo menos 60 dias, sem publicação posterior de laudo no mesmo processo, entram na fila operacional de cobrança. Essa fila não representa prazo jurídico.
 - A análise diferencia somente ciência, providência sem prazo e prazo explícito atribuído ao escritório/cliente.

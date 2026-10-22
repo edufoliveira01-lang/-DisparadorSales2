@@ -101,6 +101,9 @@ interface Publicacao {
   documentos?: Documento[];
   historico?: Evento[];
   relacionadas_total?: number;
+  andamentos_total?: number;
+  andamentos_nao_lidos?: number;
+  pericia_publicacao_id?: number | null;
   ia_status: string;
   ia_erro: string | null;
   ia_em: string | null;
@@ -369,7 +372,7 @@ export function Acompanhamento() {
     setCarregandoSemLaudo(true);
     try {
       setPericiasSemLaudo(
-        await api.get<PericiaSemLaudo[]>("/djen/pericias/sem-laudo?dias=7"),
+        await api.get<PericiaSemLaudo[]>("/djen/pericias/sem-laudo?dias=60"),
       );
     } finally {
       setCarregandoSemLaudo(false);
@@ -1005,6 +1008,14 @@ export function Acompanhamento() {
                       <h2 className="mt-3 break-all text-sm font-semibold text-zinc-900 dark:text-zinc-100">
                         {p.processo || "Processo não informado"}
                       </h2>
+                      {Boolean(p.andamentos_total && p.andamentos_total > 1) && (
+                        <p className="mt-1 text-[11px] font-medium text-accent-700 dark:text-accent-300">
+                          {p.andamentos_total} andamentos agrupados neste processo
+                          {p.andamentos_nao_lidos
+                            ? ` · ${p.andamentos_nao_lidos} não lido${p.andamentos_nao_lidos > 1 ? "s" : ""}`
+                            : ""}
+                        </p>
+                      )}
                       <p
                         className={`mt-1 text-xs font-medium ${p.cliente_vinculado ? "text-zinc-700 dark:text-zinc-200" : "text-amber-700 dark:text-amber-300"}`}
                       >
@@ -1708,7 +1719,7 @@ export function Acompanhamento() {
       >
         <div className="space-y-3">
           <p className="text-xs text-zinc-500">
-            Alerta operacional para perícias realizadas há pelo menos 7 dias sem
+            Alerta operacional somente para perícias realizadas há pelo menos 60 dias sem
             publicação de laudo identificada no mesmo processo. Não é contagem de
             prazo jurídico.
           </p>
@@ -2486,3 +2497,4 @@ export function Acompanhamento() {
     </div>
   );
 }
+

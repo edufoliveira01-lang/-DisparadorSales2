@@ -246,8 +246,8 @@ export function adicionarPublicacaoAoControle(publicacaoId: number) {
   };
 }
 
-export function listarPericiasSemLaudo(diasAposPericia = 7) {
-  const dias = Math.max(0, Math.min(180, Math.trunc(diasAposPericia) || 7));
+export function listarPericiasSemLaudo(diasAposPericia = 60) {
+  const dias = Math.max(60, Math.min(180, Math.trunc(diasAposPericia) || 60));
   return db
     .prepare(
       `SELECT pa.id AS pericia_id,pa.nome,pa.processo,pa.data,pa.horario,pa.local,
@@ -298,3 +298,4 @@ export function atualizarAcompanhamentoPericia(
   ).run(periciaId, status, status, observacoes);
   return { ok: true };
 }
+

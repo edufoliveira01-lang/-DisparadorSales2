@@ -95,9 +95,8 @@ function seed(n = 1) {
     }),
   );
   importarPublicacoes(pubs, a, "oab");
-  return listarPublicacoes({})
-    .items.map((p) => Number(p.id))
-    .sort((a, b) => a - b);
+  return (db.prepare("SELECT id FROM djen_publicacoes ORDER BY id").all() as { id: number }[])
+    .map((p) => p.id);
 }
 beforeEach(() => {
   db.exec(
@@ -200,6 +199,13 @@ describe("casos apresentados pelo escritório", () => {
     ];
     expect(validarAnaliseCodex(a, texto).resultado).toBe("parcial");
   });
+  it("reconhece julgamento conclusivo de Turma Recursal como acórdão", () => {
+    const texto =
+      "A Turma Recursal, por unanimidade, conheceu do recurso e negou provimento ao recurso da parte autora.";
+    expect(validarAnaliseCodex(analysis(texto, ["acordao"]), texto).categorias).toEqual([
+      "acordao",
+    ]);
+  });
   it("previsão futura de RPV não muda sentença de mérito para fase de RPV", () => {
     const texto =
       "SENTENÇA. Julgo procedente o pedido. Após o trânsito em julgado, haverá requisição de pequeno valor.";
@@ -231,8 +237,8 @@ describe("filtros e acompanhamento independente", () => {
       categorias: ["sentenca"],
       resultado: "parcial",
     });
-    expect(listarPublicacoes({ categoria: "rpv,sentenca" }).total).toBe(2);
-    expect(listarPublicacoes({ categoria: "rpv,outros" }).total).toBe(2);
+    expect(listarPublicacoes({ categoria: "rpv,sentenca" }).total).toBe(1);
+    expect(listarPublicacoes({ categoria: "rpv,outros" }).total).toBe(1);
     expect(
       listarPublicacoes({
         categoria: "rpv,sentenca",
@@ -242,6 +248,20 @@ describe("filtros e acompanhamento independente", () => {
     expect(() =>
       listarPublicacoes({ categoria: "sentenca,nao_existe" }),
     ).toThrow();
+  });
+  it("agrupa todas as publicações do mesmo processo em um único card", () => {
+    const ids = seed(3);
+    revisarPublicacao(ids[0], {
+      categorias: ["pericia"],
+      resultado: "nao_identificado",
+    });
+    const lista = listarPublicacoes({});
+    expect(lista.total).toBe(1);
+    expect(lista.items[0]).toMatchObject({
+      andamentos_total: 3,
+      andamentos_nao_lidos: 3,
+    });
+    expect(lista.items[0].categorias).toContain("pericia");
   });
   it("salva início, término, conclusão e histórico sem alterar o calendário de perícias", () => {
     const [id, outro] = seed(2);
@@ -488,3 +508,4 @@ describe("fila paralela", () => {
     expect(statusAnalisesCodex().falhas).toBe(1);
   });
 });
+

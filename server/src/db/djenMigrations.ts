@@ -168,4 +168,29 @@ export function runDjenMigrations(db: Database.Database): void {
         AND json_extract(ia_json,'$.agendamento.horario') IS NOT NULL
         AND (texto LIKE '%designad%' OR texto LIKE '%agendad%' OR texto LIKE '%redesignad%' OR texto LIKE '%marcad%')`,
   ).run();
+  db.prepare(
+    `UPDATE djen_publicacoes
+        SET categorias_json='["acordao"]',
+            ia_json=json_set(ia_json,'$.categorias',json('["acordao"]')),
+            situacao=CASE WHEN situacao='' THEN 'Acórdão proferido' ELSE situacao END
+      WHERE revisada=0 AND cancelada=0 AND categorias_json='[]' AND ia_json IS NOT NULL
+        AND (
+          lower(situacao) LIKE 'acórdão%'
+          OR lower(json_extract(ia_json,'$.situacao')) LIKE 'acórdão%'
+          OR lower(json_extract(ia_json,'$.resumo')) LIKE 'acórdão%'
+        )
+        AND (
+          lower(texto) LIKE '%acórdão%'
+          OR (
+            lower(texto) LIKE '%turma recursal%'
+            AND (
+              lower(texto) LIKE '%negou provimento%'
+              OR lower(texto) LIKE '%deu provimento%'
+              OR lower(texto) LIKE '%por unanimidade%'
+              OR lower(texto) LIKE '%por maioria%'
+            )
+          )
+        )`,
+  ).run();
 }
+

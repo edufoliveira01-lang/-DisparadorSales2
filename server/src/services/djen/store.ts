@@ -379,6 +379,67 @@ export function apresentarPublicacao(p: PublicacaoRow, integral = false) {
       : null,
   };
 }
+
+function apresentarProcessoAgrupado(p: PublicacaoRow, arquivo: string) {
+  const escopo =
+    arquivo === "ativos"
+      ? " AND concluida=0"
+      : arquivo === "concluidos"
+        ? " AND concluida=1"
+        : "";
+  const publicacoes = db
+    .prepare(
+      `SELECT id,categorias_json,lida,revisada,concluida,ia_status
+         FROM djen_publicacoes
+        WHERE processo_chave=? AND cancelada=0${escopo}
+        ORDER BY data_disponibilizacao DESC,id DESC`,
+    )
+    .all(p.processo_chave) as {
+    id: number;
+    categorias_json: string;
+    lida: number;
+    revisada: number;
+    concluida: number;
+    ia_status: string;
+  }[];
+  const categorias = new Set<CategoriaDjen>();
+  let periciaPublicacaoId: number | null = null;
+  for (const item of publicacoes) {
+    for (const categoria of JSON.parse(item.categorias_json || "[]") as CategoriaDjen[])
+      categorias.add(categoria);
+    if (!periciaPublicacaoId && JSON.parse(item.categorias_json || "[]").includes("pericia"))
+      periciaPublicacaoId = item.id;
+  }
+  const ids = publicacoes.map((item) => item.id);
+  const prazos = ids.length
+    ? (db
+        .prepare(
+          `SELECT MIN(termino) AS proximo_prazo,COUNT(*) AS prazos_abertos
+             FROM djen_prazos
+            WHERE status='aberto' AND publicacao_id IN (${ids.map(() => "?").join(",")})`,
+        )
+        .get(...ids) as { proximo_prazo: string | null; prazos_abertos: number })
+    : { proximo_prazo: null, prazos_abertos: 0 };
+  const apresentada = apresentarPublicacao(p);
+  return {
+    ...apresentada,
+    categorias: CATEGORIAS_DJEN.filter((categoria) => categorias.has(categoria)),
+    lida: publicacoes.every((item) => Boolean(item.lida)) ? 1 : 0,
+    revisada: publicacoes.every((item) => Boolean(item.revisada)) ? 1 : 0,
+    concluida: publicacoes.every((item) => Boolean(item.concluida)) ? 1 : 0,
+    ia_status: publicacoes.some((item) => item.ia_status === "analisando")
+      ? "analisando"
+      : publicacoes.some((item) => item.ia_status === "erro")
+        ? "erro"
+        : publicacoes.some((item) => item.ia_status === "pendente")
+          ? "pendente"
+          : apresentada.ia_status,
+    andamentos_total: publicacoes.length,
+    andamentos_nao_lidos: publicacoes.filter((item) => !item.lida).length,
+    pericia_publicacao_id: periciaPublicacaoId,
+    ...prazos,
+  };
+}
 export function listarPublicacoes(filtro: Record<string, string>) {
   vincularProcessosPendentes();
   const where: string[] = [],
@@ -409,7 +470,15 @@ export function listarPublicacoes(filtro: Record<string, string>) {
       );
       values.push(...especificas);
     }
-    if (categorias.includes("outros")) opcoes.push("p.categorias_json='[]'");
+    if (categorias.includes("outros"))
+      opcoes.push(
+        `NOT EXISTS(
+          SELECT 1 FROM djen_publicacoes outras
+           WHERE outras.processo_chave=p.processo_chave
+             AND outras.cancelada=0
+             AND outras.categorias_json<>'[]'
+        )`,
+      );
     where.push("(" + opcoes.join(" OR ") + ")");
   }
   const resultados = csv(filtro.resultado);
@@ -474,22 +543,41 @@ export function listarPublicacoes(filtro: Record<string, string>) {
   const condition = where.length ? " WHERE " + where.join(" AND ") : "";
   const total = (
     db
-      .prepare("SELECT count(*) AS total FROM (" + SELECT_PUB + condition + ")")
+      .prepare(
+        "SELECT count(DISTINCT processo_chave) AS total FROM (" +
+          SELECT_PUB +
+          condition +
+          ")",
+      )
       .get(...values) as { total: number }
   ).total;
   const pagina = Math.max(
     1,
     Math.min(10000, Number.parseInt(filtro.pagina || "1", 10) || 1),
   );
-  const rows = db
+  const grupos = db
     .prepare(
-      SELECT_PUB +
+      `SELECT p.processo_chave,MAX(p.data_disponibilizacao) AS ultima_data,MAX(p.id) AS ultimo_id
+         FROM djen_publicacoes p
+         JOIN djen_processos pr ON pr.chave=p.processo_chave
+         LEFT JOIN contacts c ON c.id=pr.cliente_id` +
         condition +
-        " ORDER BY p.data_disponibilizacao DESC,p.id DESC LIMIT 25 OFFSET ?",
+        " GROUP BY p.processo_chave ORDER BY ultima_data DESC,ultimo_id DESC LIMIT 25 OFFSET ?",
     )
-    .all(...values, (pagina - 1) * 25) as PublicacaoRow[];
+    .all(...values, (pagina - 1) * 25) as { processo_chave: string }[];
+  const rows = grupos.map((grupo) => {
+    const extra = condition ? " AND p.processo_chave=?" : " WHERE p.processo_chave=?";
+    return db
+      .prepare(
+        SELECT_PUB +
+          condition +
+          extra +
+          " ORDER BY p.data_disponibilizacao DESC,p.id DESC LIMIT 1",
+      )
+      .get(...values, grupo.processo_chave) as PublicacaoRow;
+  });
   return {
-    items: rows.map((p) => apresentarPublicacao(p)),
+    items: rows.map((p) => apresentarProcessoAgrupado(p, arquivo)),
     total,
     pagina,
     por_pagina: 25,
@@ -638,3 +726,4 @@ export function listarAndamentosDoProcesso(id: number, pagina = 1) {
     .all(p.processo_chave, (pagina - 1) * 25);
   return { items, total, pagina, por_pagina: 25 };
 }
+

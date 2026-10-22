@@ -201,7 +201,7 @@ djenRouter.get(
       items: lista.items.map((publicacao) => ({
         ...publicacao,
         pericia_controle: publicacao.categorias.includes("pericia")
-          ? statusControlePericia(publicacao.id)
+          ? statusControlePericia(publicacao.pericia_publicacao_id || publicacao.id)
           : null,
       })),
     });
@@ -229,7 +229,7 @@ djenRouter.get(
   "/pericias/sem-laudo",
   wrap((req, res) => {
     const dias =
-      typeof req.query.dias === "string" ? Number(req.query.dias) : 7;
+      typeof req.query.dias === "string" ? Number(req.query.dias) : 60;
     res.json(listarPericiasSemLaudo(dias));
   }),
 );
@@ -432,14 +432,23 @@ djenRouter.post(
     if (typeof req.body.concluida !== "boolean")
       throw new DjenInputError("Informe a conclusão.");
     const n = id(req.params.id);
-    concluirPublicacao(n, req.body.concluida);
-    registrarHistoricoDjen(
-      n,
-      "conclusao",
-      req.body.concluida
-        ? "Publicação concluída pelo usuário."
-        : "Publicação reaberta pelo usuário.",
-    );
+    const processo = db
+      .prepare("SELECT processo_chave FROM djen_publicacoes WHERE id=?")
+      .get(n) as { processo_chave: string } | undefined;
+    if (!processo) throw new DjenInputError("Publicação não encontrada.");
+    const publicacoes = db
+      .prepare("SELECT id FROM djen_publicacoes WHERE processo_chave=? AND cancelada=0")
+      .all(processo.processo_chave) as { id: number }[];
+    for (const publicacao of publicacoes) {
+      concluirPublicacao(publicacao.id, req.body.concluida);
+      registrarHistoricoDjen(
+        publicacao.id,
+        "conclusao",
+        req.body.concluida
+          ? "Processo concluído pelo usuário; andamentos agrupados foram arquivados."
+          : "Processo reaberto pelo usuário; andamentos agrupados voltaram à lista.",
+      );
+    }
     changed();
     res.json(detalhesPublicacao(n));
   }),
@@ -449,9 +458,14 @@ djenRouter.post(
   wrap((req, res) => {
     if (typeof req.body.lida !== "boolean")
       throw new DjenInputError("Informe a leitura.");
-    db.prepare("UPDATE djen_publicacoes SET lida=? WHERE id=?").run(
+    const n = id(req.params.id);
+    const processo = db
+      .prepare("SELECT processo_chave FROM djen_publicacoes WHERE id=?")
+      .get(n) as { processo_chave: string } | undefined;
+    if (!processo) throw new DjenInputError("Publicação não encontrada.");
+    db.prepare("UPDATE djen_publicacoes SET lida=? WHERE processo_chave=? AND cancelada=0").run(
       req.body.lida ? 1 : 0,
-      id(req.params.id),
+      processo.processo_chave,
     );
     changed();
     res.json({ ok: true });
@@ -491,3 +505,4 @@ djenRouter.post(
     changed();
   }),
 );
+
