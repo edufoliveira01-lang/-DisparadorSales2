@@ -156,3 +156,16 @@ Não foi usado login ChatGPT de produção no desenvolvimento. A análise real d
 ## Validação da importação automática (2.39.0)
 
 Em 21/10/2026, consultas reais às fontes oficiais retornaram calendários do TJSP/São Paulo, JFSP/Catanduva, TRF3/8ª Turma, TRF4/JFSC/Florianópolis e TJDFT. Os testes usam recortes dessas respostas para conferir formato, ano, feriados locais/transferidos, textos consolidados, suspensões restritas, falhas, atualização periódica, concorrência, virada do ano, prioridade manual e preservação dos ajustes. Não há uso de Codex ou API de IA na importação de calendários. A rotina não muda configurações do WhatsApp, não recria agendas e não reclassifica publicações.
+
+
+## Integração controlada com perícias (2.41)
+
+Os dois serviços continuam independentes. O acompanhamento DJEN apenas consulta o controle de perícias para indicar se o mesmo processo/data/horário/local já está cadastrado e se houve comunicação pelo WhatsApp. A gravação no controle de perícias só ocorre por ação explícita do usuário.
+
+- Perícia agendada exige data e horário; local ausente gera pendência de complementação.
+- Determinação genérica de perícia sem data e horário não é agendamento.
+- Mesmo processo, data, horário e local já informados: duplicidade.
+- Mesmo processo com outra data ou horário: possível redesignação.
+- O cliente só é vinculado automaticamente quando nome e número do processo coincidem com um contato.
+- Perícias realizadas há pelo menos sete dias, sem publicação posterior de laudo no mesmo processo, entram na fila operacional de cobrança. Essa fila não representa prazo jurídico.
+- A análise diferencia somente ciência, providência sem prazo e prazo explícito atribuído ao escritório/cliente.
