@@ -951,6 +951,35 @@ export function Acompanhamento() {
                             {RESULTADOS[p.resultado]}
                           </Badge>
                         )}
+                        {p.pericia_controle && (
+                          <Badge
+                            tone={
+                              p.pericia_controle.status === "duplicidade"
+                                ? "success"
+                                : p.pericia_controle.status === "redesignacao"
+                                  ? "warning"
+                                  : p.pericia_controle.status ===
+                                      "cadastrada_nao_informada"
+                                    ? "info"
+                                    : "neutral"
+                            }
+                          >
+                            {p.pericia_controle.status === "duplicidade"
+                              ? "Já informada · duplicidade"
+                              : p.pericia_controle.status === "redesignacao"
+                                ? "Possível redesignação"
+                                : p.pericia_controle.status ===
+                                    "cadastrada_nao_informada"
+                                  ? "No calendário · sem confirmação de aviso"
+                                  : p.pericia_controle.status ===
+                                      "cadastrada_a_conferir"
+                                    ? "No calendário · conferir local"
+                                    : p.pericia_controle.status ===
+                                        "nao_cadastrada"
+                                      ? "Ainda fora do controle de perícias"
+                                      : "Dados da perícia incompletos"}
+                          </Badge>
+                        )}
                         {!p.lida ? (
                           <Badge tone="accent">● Não lida</Badge>
                         ) : (
