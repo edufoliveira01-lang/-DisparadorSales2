@@ -57,6 +57,12 @@ const analysis = (
   justificativa: "Evidência explícita.",
   evidencias: categorias.map((categoria) => ({ categoria, trecho: texto })),
   agendamento: { data: null, horario: null, local: null },
+  providencia: {
+    tipo: "ciencia",
+    descricao: null,
+    prazo_texto: null,
+    responsavel: "indeterminado",
+  },
   alertas: [],
 });
 function seed(n = 1) {
