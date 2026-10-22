@@ -108,6 +108,12 @@ describe("classificação e estado das publicações", () => {
         { categoria: "homologacao_acordo", trecho: texto },
       ],
       agendamento: { data: null, horario: null, local: null },
+      providencia: {
+        tipo: "ciencia",
+        descricao: null,
+        prazo_texto: null,
+        responsavel: "indeterminado",
+      },
       alertas: [],
     };
     const r = validarAnaliseCodex(a, texto);
@@ -127,6 +133,12 @@ describe("classificação e estado das publicações", () => {
         { categoria: "extincao_processo", trecho: texto },
       ],
       agendamento: { data: null, horario: null, local: null },
+      providencia: {
+        tipo: "ciencia",
+        descricao: null,
+        prazo_texto: null,
+        responsavel: "indeterminado",
+      },
       alertas: [],
     };
     expect(validarAnaliseCodex(a, texto).categorias).toEqual([
@@ -144,6 +156,12 @@ describe("classificação e estado das publicações", () => {
       justificativa: "Verificar proposta.",
       evidencias: [{ categoria: "proposta_acordo", trecho: texto }],
       agendamento: { data: null, horario: null, local: null },
+      providencia: {
+        tipo: "ciencia",
+        descricao: null,
+        prazo_texto: null,
+        responsavel: "indeterminado",
+      },
       alertas: [],
     };
     expect(validarAnaliseCodex(a, texto).categorias).toEqual([]);
