@@ -72,7 +72,7 @@ export function Sidebar({ open, onNavigate }: SidebarProps) {
       <nav aria-label="Menu principal" className="scrollbar-thin flex-1 space-y-1 overflow-y-auto px-3 py-5">
         {active === "processos" ? <>
           <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Acompanhamento processual</p>
-          {[{to:"/processos",label:"Publicações",icon:Scale,end:true},{to:"/processos/advogados",label:"Advogados",icon:BriefcaseBusiness},{to:"/processos/monitoramento",label:"Monitoramento DJEN",icon:Search}].map(({to,label,icon:Icon,end})=><NavLink key={to} to={to} end={end} onClick={onNavigate} className={linkClass}><Icon className="h-5 w-5" />{label}</NavLink>)}
+          {[{to:"/processos",label:"Publicações",icon:Scale,end:true},{to:"/processos/advogados",label:"Advogados",icon:BriefcaseBusiness},{to:"/processos/monitoramento",label:"Monitoramento DJEN",icon:Search},{to:"/processos/calendarios",label:"Calendários de prazos",icon:CalendarDays}].map(({to,label,icon:Icon,end})=><NavLink key={to} to={to} end={end} onClick={onNavigate} className={linkClass}><Icon className="h-5 w-5" />{label}</NavLink>)}
           <p className="px-3 pb-1 pt-5 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Compartilhado</p>
           <NavLink to="/agenda" onClick={onNavigate} className={linkClass}><Users className="h-5 w-5" />Agenda de contatos</NavLink>
         </> : <>

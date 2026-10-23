@@ -27,6 +27,7 @@ import {
   Clock3,
   ArrowRight,
   ListFilter,
+  CalendarDays,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay } from "@/lib/phone";
@@ -715,6 +716,7 @@ export function Acompanhamento() {
           ["/processos/aguardando", `Aguardando${status?.aguardando_retorno ? ` · ${status.aguardando_retorno}` : ""}`, Clock3],
           ["/processos/advogados", "Advogados", BriefcaseBusiness],
           ["/processos/monitoramento", "Monitoramento", Settings2],
+          ["/processos/calendarios", "Calendários", CalendarDays],
         ] as const).map(([url, label, Icon]) => (
           <button key={url} type="button" onClick={() => navigate(url)}
             aria-current={(url === "/processos" ? secao === "publicacoes" : pathname === url) ? "page" : undefined}

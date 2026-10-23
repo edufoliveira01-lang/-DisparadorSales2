@@ -1,4 +1,3 @@
-import { AutomaticCalendars } from "./AutomaticCalendars";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "@/lib/api";
@@ -23,10 +22,12 @@ type Config = {
   calendarios: Calendario[];
 };
 export function DeadlineSettings() {
-  const ano = new Date().getFullYear(),
+  const parametros = new URLSearchParams(window.location.search);
+  const anoSolicitado = Number(parametros.get("ano"));
+  const ano = Number.isInteger(anoSolicitado) && anoSolicitado >= 2000 && anoSolicitado <= 2100 ? anoSolicitado : new Date().getFullYear(),
     vazio = {
-      tribunal: "",
-      orgao: "",
+      tribunal: parametros.get("tribunal")?.slice(0, 20) || "",
+      orgao: parametros.get("orgao")?.slice(0, 300) || "",
       inicio: `${ano}-01-01`,
       fim: `${ano}-12-31`,
       fonte: "",
@@ -129,8 +130,12 @@ export function DeadlineSettings() {
         será criado no dia do término; o início e as observações ficam na
         descrição.
       </p>
-      <AutomaticCalendars />
-      <details className="border-t pt-4" id="calendario-manual">
+      <div className="rounded-xl border border-zinc-200 p-4 text-xs dark:border-zinc-800">
+        <p className="font-semibold">Calendários automáticos dos tribunais</p>
+        <p className="mt-1 text-zinc-500">Consulte a cobertura, procure por tribunal ou órgão e veja quais fontes precisam de atenção.</p>
+        <Link to="/processos/calendarios" className="mt-2 inline-block font-semibold text-accent-600 underline">Abrir calendários de prazos</Link>
+      </div>
+      <details className="border-t pt-4" id="calendario-manual" open={new URLSearchParams(window.location.search).has("manual")}>
         <summary className="cursor-pointer text-sm font-semibold">
           Preencher calendário manual completo (alternativa)
         </summary>

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -55,8 +56,8 @@ const estados: Record<string, string> = {
   parcial: "Importado · atos a conferir",
   pendente: "Aguardando importação",
   atualizando: "Atualizando…",
-  erro: "Fonte indisponível",
-  sem_fonte: "Preenchimento manual disponível",
+  erro: "Falha ao consultar fonte",
+  sem_fonte: "Sem fonte automática validada",
   localidade_pendente: "Informe a localidade",
 };
 const dataBR = (d: string) => d.split("-").reverse().join("/");
@@ -68,11 +69,34 @@ const mensagem = (e: unknown) =>
 export function AutomaticCalendars() {
   const [estado, setEstado] = useState<Estado | null>(null),
     [erro, setErro] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [busca, setBusca] = useState(""),
+    [tribunal, setTribunal] = useState(""),
+    [ano, setAno] = useState(""),
+    [status, setStatus] = useState(""),
+    [pagina, setPagina] = useState(1);
   const carregar = useCallback(async () => {
     setEstado(await api.get<Estado>("/djen/calendarios"));
   }, []);
   const consultando = Boolean(estado && (estado.executando || estado.na_fila));
+  const suportados = useMemo(() => new Set(estado?.fontes.map((f) => f.tribunal) || []), [estado?.fontes]);
+  const calendarios = estado?.calendarios || [];
+  const tribunais = [...new Set(calendarios.map((c) => c.tribunal))].sort();
+  const anos = [...new Set(calendarios.map((c) => c.ano))].sort((a, b) => b - a);
+  const filtrados = calendarios.filter((c) => {
+    const termo = busca.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    const indice = `${c.tribunal} ${c.orgao} ${c.municipio || ""} ${c.uf || ""} ${c.ano}`
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    return (!termo || indice.includes(termo)) && (!tribunal || c.tribunal === tribunal)
+      && (!ano || c.ano === Number(ano)) && (!status || c.status === status);
+  }).sort((a, b) => {
+    const prioridade: Record<string, number> = { erro: 0, localidade_pendente: 1, sem_fonte: 2, parcial: 3, pendente: 4, atualizando: 5, ok: 6 };
+    return (prioridade[a.status] ?? 7) - (prioridade[b.status] ?? 7)
+      || b.ano - a.ano || a.tribunal.localeCompare(b.tribunal) || a.orgao.localeCompare(b.orgao);
+  });
+  const totalPaginas = Math.max(1, Math.ceil(filtrados.length / 12));
+  const paginaAtual = Math.min(pagina, totalPaginas);
+  const visiveis = filtrados.slice((paginaAtual - 1) * 12, paginaAtual * 12);
   useEffect(() => {
     let ativo = true;
     void api
@@ -121,10 +145,10 @@ export function AutomaticCalendars() {
     }
   }
   return (
-    <div className="space-y-3 border-t pt-4" id="calendarios-automaticos">
+    <div className="space-y-5" id="calendarios-automaticos">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold">Calendários automáticos</h3>
+          <h2 className="text-base font-semibold">Calendários dos tribunais</h2>
           <p className="mt-1 text-xs text-zinc-500">
             Feriados e suspensões oficiais por tribunal, órgão e ano.
             Atualização a cada 6 horas e antes de calcular quando os dados
@@ -139,7 +163,7 @@ export function AutomaticCalendars() {
             void executar(() => api.post("/djen/calendarios/sincronizar"))
           }
         >
-          Atualizar agora
+          Atualizar fontes disponíveis
         </Button>
       </div>
       {erro && (
@@ -177,17 +201,56 @@ export function AutomaticCalendars() {
               a um.
             </p>
           )}
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[
+              ["Calendários identificados", calendarios.length],
+              ["Importados", calendarios.filter((c) => c.status === "ok" || c.status === "parcial").length],
+              ["Precisam de atenção", calendarios.filter((c) => ["sem_fonte", "erro", "localidade_pendente", "parcial"].includes(c.status)).length],
+            ].map(([label, valor]) => (
+              <div key={label} className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                <span className="block text-xs text-zinc-500">{label}</span>
+                <strong className="mt-1 block text-xl">{valor}</strong>
+              </div>
+            ))}
+          </div>
+          <div className="grid gap-2 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900 sm:grid-cols-2 xl:grid-cols-4">
+            <Input aria-label="Buscar tribunal, órgão ou cidade" placeholder="Buscar tribunal, órgão ou cidade…" value={busca} onChange={(e) => { setBusca(e.target.value); setPagina(1); }} />
+            <Select aria-label="Filtrar tribunal" value={tribunal} onChange={(e) => { setTribunal(e.target.value); setPagina(1); }}>
+              <option value="">Todos os tribunais</option>
+              {tribunais.map((t) => <option key={t} value={t}>{t}</option>)}
+            </Select>
+            <Select aria-label="Filtrar ano" value={ano} onChange={(e) => { setAno(e.target.value); setPagina(1); }}>
+              <option value="">Todos os anos</option>
+              {anos.map((a) => <option key={a} value={a}>{a}</option>)}
+            </Select>
+            <Select aria-label="Filtrar situação da importação" value={status} onChange={(e) => { setStatus(e.target.value); setPagina(1); }}>
+              <option value="">Todas as situações</option>
+              {Object.entries(estados).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </Select>
+          </div>
+          <p className="text-xs text-zinc-500" aria-live="polite">
+            {filtrados.length} de {calendarios.length} calendário(s) · página {paginaAtual} de {totalPaginas}. Fontes automáticas: {estado.fontes.map((f) => f.tribunal).join(", ")}.
+          </p>
+          {!filtrados.length && <p className="rounded-xl border p-5 text-sm text-zinc-500">Nenhum calendário corresponde à busca. Ajuste os filtros.</p>}
           <div className="space-y-2">
-            {estado.calendarios.map((c) => (
+            {visiveis.map((c) => (
               <CalendarioCard
                 key={c.chave}
                 c={c}
                 estado={estado}
                 busy={busy}
                 executar={executar}
+                suportado={suportados.has(c.tribunal)}
               />
             ))}
           </div>
+          {totalPaginas > 1 && (
+            <div className="flex items-center justify-between gap-3 text-xs">
+              <Button size="sm" variant="outline" disabled={paginaAtual <= 1} onClick={() => setPagina(paginaAtual - 1)}>Anterior</Button>
+              <span>Página {paginaAtual} de {totalPaginas}</span>
+              <Button size="sm" variant="outline" disabled={paginaAtual >= totalPaginas} onClick={() => setPagina(paginaAtual + 1)}>Próximo</Button>
+            </div>
+          )}
           <details className="text-xs text-zinc-500">
             <summary className="cursor-pointer">
               Fontes automáticas disponíveis
@@ -207,10 +270,8 @@ export function AutomaticCalendars() {
                 </p>
               ))}
               <p>
-                Outros tribunais, localidades sem fonte disponível ou atos
-                extraordinários ausentes nas páginas oficiais podem ser
-                preenchidos manualmente abaixo. Uma falha de consulta não é
-                tratada como ausência de feriados.
+                Tribunais sem importador validado e atos extraordinários ausentes nas fontes podem ser conferidos no calendário manual.
+                Uma falha de consulta não é tratada como ausência de feriados.
               </p>
             </div>
           </details>
@@ -225,11 +286,13 @@ function CalendarioCard({
   estado,
   busy,
   executar,
+  suportado,
 }: {
   c: Calendario;
   estado: Estado;
   busy: boolean;
   executar: (fn: () => Promise<unknown>) => Promise<void>;
+  suportado: boolean;
 }) {
   const salvo = estado.config.localidades.find(
     (l) => l.tribunal === c.tribunal && l.orgao === c.orgao,
@@ -268,6 +331,7 @@ function CalendarioCard({
   const pendentes = c.eventos.filter(
     (e) => e.tipo === "pendencia" && !c.ajustes.ignorar.includes(e.id),
   ).length;
+  const manual = `/configuracoes?${new URLSearchParams({ prazos: "1", manual: "1", tribunal: c.tribunal, orgao: c.orgao, ano: String(c.ano) })}#calendario-manual`;
   return (
     <details className="rounded-xl border bg-white/50 p-3 dark:bg-zinc-900/50">
       <summary className="cursor-pointer text-xs">
@@ -280,7 +344,7 @@ function CalendarioCard({
           {c.status === "parcial" && !pendentes
             ? "Atualizado · conferências resolvidas"
             : estados[c.status] || c.status}{" "}
-          · {c.municipio || "Localidade a identificar"}
+          {c.municipio ? ` · ${c.municipio}` : c.status === "localidade_pendente" ? " · Localidade a informar" : ""}
           {c.uf ? `/${c.uf}` : ""}
           {pendentes ? ` · ${pendentes} ato(s) a conferir` : ""}
         </span>
@@ -292,6 +356,7 @@ function CalendarioCard({
         </span>
       </summary>
       <div className="mt-4 space-y-3 text-xs">
+        {!suportado && <p className="rounded-lg bg-amber-50 p-3 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">Ainda não há importador automático validado para {c.tribunal}. A localidade, por si só, não habilita a importação. <Link className="font-semibold underline" to={manual}>Preencher calendário manual deste órgão</Link>.</p>}
         {c.erro && (
           <p
             role="alert"
@@ -305,7 +370,7 @@ function CalendarioCard({
             {a}
           </p>
         ))}
-        <Button
+        {suportado && <Button
           size="sm"
           variant="outline"
           disabled={busy}
@@ -320,8 +385,8 @@ function CalendarioCard({
           }
         >
           Atualizar este calendário
-        </Button>
-        <details>
+        </Button>}
+        {suportado && <details>
           <summary className="cursor-pointer font-semibold">
             Informar ou corrigir localidade
           </summary>
@@ -422,7 +487,7 @@ function CalendarioCard({
               </Button>
             </div>
           </form>
-        </details>
+        </details>}
         <details>
           <summary className="cursor-pointer font-semibold">
             Ver datas e corrigir manualmente ({c.eventos.length} importados ·{" "}
