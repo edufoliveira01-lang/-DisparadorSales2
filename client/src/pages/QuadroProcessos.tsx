@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, ArrowRight, CalendarClock, Clock3, GripVertical, History, Pencil, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, CalendarClock, Clock3, History, Pencil, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
 import { useToast } from "@/components/ui/Toast";
@@ -12,7 +12,7 @@ import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PageHeader } from "@/components/ui/PageHeader";
 
-interface Lista { id: number; nome: string; posicao: number; contar_dias: number }
+interface Lista { id: number; nome: string; posicao: number; contar_dias: number; codigo: string | null; regra_categoria: string | null }
 interface Cartao {
   processo_chave: string; lista_id: number; posicao: number; entrou_em: string;
   inicio_espera_em: string | null; modo: "automatico" | "manual";
@@ -30,16 +30,23 @@ const dataBR = (s: string) => s.slice(0, 10).split("-").reverse().join("/");
 const hoje = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 const diasDesde = (data: string) => Math.max(0, Math.floor((Date.parse(`${hoje()}T12:00:00Z`) - Date.parse(`${data}T12:00:00Z`)) / 86400000));
 const msg = (e: unknown) => e instanceof ApiError ? e.message : "Não foi possível salvar a alteração no quadro.";
+const regras = [
+  ["proposta_acordo", "Proposta de acordo"], ["homologacao_acordo", "Acordo homologado"],
+  ["precatorio", "Precatório"], ["extincao_execucao", "Execução extinta"],
+  ["extincao_processo", "Processo extinto"], ["levantamento_valores", "Levantamento de valores"],
+  ["decisao_interlocutoria", "Decisão interlocutória"], ["despacho", "Despacho"], ["intimacao", "Intimação"],
+] as const;
 
 export function QuadroProcessos() {
   const navigate = useNavigate(), { show } = useToast();
   const [quadro, setQuadro] = useState<Quadro | null>(null);
   const [busca, setBusca] = useState(""), [filtro, setFiltro] = useState("todos");
   const [erro, setErro] = useState(""), [busy, setBusy] = useState(false);
-  const [arrastando, setArrastando] = useState<string | null>(null);
   const [nomeNovo, setNomeNovo] = useState(""), [contarNovo, setContarNovo] = useState(false);
+  const [regraNova, setRegraNova] = useState("");
   const [editando, setEditando] = useState<number | null>(null);
   const [nomeEdicao, setNomeEdicao] = useState(""), [contarEdicao, setContarEdicao] = useState(false);
+  const [regraEdicao, setRegraEdicao] = useState("");
   const [excluir, setExcluir] = useState<Lista | null>(null);
   const [historicoDe, setHistoricoDe] = useState<Cartao | null>(null);
   const [historico, setHistorico] = useState<Movimento[]>([]);
@@ -57,10 +64,6 @@ export function QuadroProcessos() {
     try { await fn(); await carregar(); }
     catch (e) { show(msg(e), "error"); }
     finally { setBusy(false); }
-  }
-  function mover(chave: string, listaId: number, antesDe?: string) {
-    if (busy) return;
-    void acao(() => api.put(`/djen/kanban/cartoes/${encodeURIComponent(chave)}`, { lista_id: listaId, antes_de: antesDe }));
   }
   function abrirHistorico(c: Cartao) {
     setHistoricoDe(c); setHistorico([]);
@@ -81,7 +84,7 @@ export function QuadroProcessos() {
     (filtro === "todos" || (filtro === "prazos" && c.prazos_abertos > 0) || (filtro === "nao_lidos" && c.publicacoes_nao_lidas > 0)),
   ) || [];
   return <div className="space-y-5">
-    <PageHeader title="Quadro dos processos" description="Etapas identificadas pelo DJEN avançam automaticamente quando há prova clara. Você pode mover ou fixar um cartão manualmente; isso não altera publicações, prazos ou a agenda de perícias."
+    <PageHeader title="Quadro dos processos" description="Os cartões são posicionados automaticamente pelo histórico das publicações do DJEN. Quando um fato não é comprovado, o processo aguarda identificação."
       actions={<><Button variant="outline" onClick={() => navigate("/processos")}><ArrowLeft className="h-4 w-4" /> Publicações</Button><Button variant="outline" onClick={() => void carregar()}><RefreshCw className="h-4 w-4" /> Atualizar</Button></>} />
     <div className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
       <div className="relative min-w-[220px] flex-1"><Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-zinc-400" />
@@ -100,16 +103,17 @@ export function QuadroProcessos() {
           const cartoes = filtrados.filter((c) => c.lista_id === lista.id);
           const totalNaLista = quadro.cartoes.filter((c) => c.lista_id === lista.id).length;
           return <section key={lista.id} aria-label={`${lista.nome}: ${cartoes.length} processos`}
-            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
-            onDrop={(e) => { e.preventDefault(); const chave = e.dataTransfer.getData("text/plain"); if (chave) mover(chave, lista.id); setArrastando(null); }}
-            className={`w-[292px] shrink-0 rounded-2xl border p-3 transition-colors dark:bg-zinc-900 ${arrastando ? "border-accent-300 bg-accent-50/40 dark:border-accent-800" : "border-zinc-200 bg-zinc-100/70 dark:border-zinc-800"}`}>
+            className="w-[292px] shrink-0 rounded-2xl border border-zinc-200 bg-zinc-100/70 p-3 dark:border-zinc-800 dark:bg-zinc-900">
             {editando === lista.id ? <form className="space-y-2" onSubmit={(e) => {
               e.preventDefault(); void acao(async () => {
-                await api.put(`/djen/kanban/listas/${lista.id}`, { nome: nomeEdicao, contar_dias: contarEdicao });
+                await api.put(`/djen/kanban/listas/${lista.id}`, { nome: nomeEdicao, contar_dias: contarEdicao, regra_categoria: regraEdicao });
                 setEditando(null);
               });
             }}>
               <Input autoFocus aria-label="Nome da lista" value={nomeEdicao} onChange={(e) => setNomeEdicao(e.target.value)} maxLength={70} />
+              {!lista.codigo && <Select aria-label="Categoria automática desta lista" value={regraEdicao} onChange={(e) => setRegraEdicao(e.target.value)} required>
+                <option value="">Escolha a categoria do DJEN</option>{regras.map(([codigo, nome]) => <option key={codigo} value={codigo}>{nome}</option>)}
+              </Select>}
               <label className="flex items-center gap-2 text-xs"><Checkbox checked={contarEdicao} onChange={(e) => setContarEdicao(e.target.checked)} /> Contar dias nesta etapa</label>
               <div className="flex gap-2"><Button size="sm" disabled={busy} type="submit">Salvar</Button><Button size="sm" variant="ghost" type="button" onClick={() => setEditando(null)}>Cancelar</Button></div>
             </form> : <div className="mb-3 flex items-center justify-between gap-1 px-1">
@@ -120,16 +124,15 @@ export function QuadroProcessos() {
               {lista.contar_dias ? <span className="mr-auto flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-300"><CalendarClock className="h-3 w-3" /> Contagem de espera</span> : <span className="mr-auto text-[10px] text-zinc-400">Etapa do processo</span>}
               <button type="button" disabled={indice === 0 || busy} aria-label={`Mover lista ${lista.nome} à esquerda`} title="Mover lista à esquerda" onClick={() => ordenar(lista, -1)} className="rounded p-1 text-zinc-500 hover:bg-white disabled:opacity-30 dark:hover:bg-zinc-800"><ArrowLeft className="h-3.5 w-3.5" /></button>
               <button type="button" disabled={indice === quadro.listas.length - 1 || busy} aria-label={`Mover lista ${lista.nome} à direita`} title="Mover lista à direita" onClick={() => ordenar(lista, 1)} className="rounded p-1 text-zinc-500 hover:bg-white disabled:opacity-30 dark:hover:bg-zinc-800"><ArrowRight className="h-3.5 w-3.5" /></button>
-              <button type="button" aria-label={`Editar lista ${lista.nome}`} title="Editar lista" onClick={() => { setEditando(lista.id); setNomeEdicao(lista.nome); setContarEdicao(Boolean(lista.contar_dias)); }} className="rounded p-1 text-zinc-500 hover:bg-white dark:hover:bg-zinc-800"><Pencil className="h-3.5 w-3.5" /></button>
-              <button type="button" aria-label={`Excluir lista ${lista.nome}`} title={totalNaLista ? "Mova os cartões antes de excluir" : "Excluir lista"} disabled={busy || totalNaLista > 0 || lista.id === Math.min(...quadro.listas.map((l) => l.id))} onClick={() => setExcluir(lista)} className="rounded p-1 text-zinc-500 hover:bg-white disabled:opacity-30 dark:hover:bg-zinc-800"><Trash2 className="h-3.5 w-3.5" /></button>
+              <button type="button" aria-label={`Editar lista ${lista.nome}`} title="Editar lista" onClick={() => { setEditando(lista.id); setNomeEdicao(lista.nome); setContarEdicao(Boolean(lista.contar_dias)); setRegraEdicao(lista.regra_categoria || ""); }} className="rounded p-1 text-zinc-500 hover:bg-white dark:hover:bg-zinc-800"><Pencil className="h-3.5 w-3.5" /></button>
+              <button type="button" aria-label={`Excluir lista ${lista.nome}`} title={totalNaLista ? "A lista contém processos" : "Excluir lista"} disabled={busy || totalNaLista > 0 || lista.id === Math.min(...quadro.listas.map((l) => l.id))} onClick={() => setExcluir(lista)} className="rounded p-1 text-zinc-500 hover:bg-white disabled:opacity-30 dark:hover:bg-zinc-800"><Trash2 className="h-3.5 w-3.5" /></button>
             </div>}
+            {!lista.codigo && !lista.regra_categoria && editando !== lista.id && <p className="mb-2 rounded-lg bg-amber-50 p-2 text-[11px] text-amber-800">Escolha uma categoria do DJEN em Editar lista para ativar a movimentação automática.</p>}
             <div className="scrollbar-thin max-h-[min(68vh,780px)] min-h-24 space-y-2 overflow-y-auto pr-1">
-              {cartoes.map((card) => <article key={card.processo_chave} draggable={!busy} onDragStart={(e) => { e.dataTransfer.setData("text/plain", card.processo_chave); e.dataTransfer.effectAllowed = "move"; setArrastando(card.processo_chave); }} onDragEnd={() => setArrastando(null)}
-                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const chave = e.dataTransfer.getData("text/plain"); if (chave && chave !== card.processo_chave) mover(chave, lista.id, card.processo_chave); setArrastando(null); }}
+              {cartoes.map((card) => <article key={card.processo_chave}
                 className={`rounded-xl border bg-white p-3 shadow-sm transition hover:border-accent-400 dark:bg-zinc-950 ${card.publicacoes_nao_lidas ? "border-l-4 border-l-accent-600 dark:border-zinc-800" : "border-zinc-200 dark:border-zinc-800"}`}>
                 <button type="button" onClick={() => navigate(`/processos?abrir=${card.publicacao_id}`)} className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500">
-                  <span className="flex items-start justify-between gap-2"><strong className="line-clamp-2 text-xs leading-snug text-zinc-900 dark:text-zinc-100">{card.cliente_nome || "Nome a conferir"}</strong><GripVertical className="h-4 w-4 shrink-0 cursor-grab text-zinc-400" /></span>
+                  <span className="flex items-start justify-between gap-2"><strong className="line-clamp-2 text-xs leading-snug text-zinc-900 dark:text-zinc-100">{card.cliente_nome || "Nome a conferir"}</strong></span>
                   <span className="mt-1 block text-[11px] text-zinc-500">{card.numero}</span>
                   <span className="mt-2 line-clamp-2 block text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-300">{card.situacao || card.resumo}</span>
                   <span className="mt-2 flex flex-wrap gap-1 text-[10px]">
@@ -139,42 +142,35 @@ export function QuadroProcessos() {
                   </span>
                 </button>
                 <div className="mt-2 text-[10px] text-zinc-500">
-                  <span className={`inline-flex rounded-full px-2 py-0.5 font-medium ${card.modo === "automatico" ? "bg-sky-50 text-sky-800 dark:bg-sky-950 dark:text-sky-300" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"}`} title={card.etapa_evidencia || undefined}>
-                    {card.modo === "automatico" ? card.etapa_publicacao_id ? "Etapa automática · DJEN" : "Aguardando identificação" : "Etapa manual"}
+                  <span className="inline-flex rounded-full bg-sky-50 px-2 py-0.5 font-medium text-sky-800 dark:bg-sky-950 dark:text-sky-300" title={card.etapa_evidencia || undefined}>
+                    {card.etapa_publicacao_id ? "Etapa automática · DJEN" : "Sem etapa comprovada no histórico"}
                   </span>
-                  {card.modo === "automatico" && card.etapa_evidencia && <p className="mt-1 line-clamp-2 leading-relaxed" title={card.etapa_evidencia}>Base: “{card.etapa_evidencia}”</p>}
+                  {card.etapa_evidencia && <p className="mt-1 line-clamp-2 leading-relaxed" title={card.etapa_evidencia}>Base: “{card.etapa_evidencia}”</p>}
                 </div>
-                {card.modo === "manual" && card.sugestao?.lista_nome && <div className="mt-2 rounded-lg border border-sky-100 bg-sky-50 p-2 text-[11px] text-sky-900 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200">
-                  <p title={card.sugestao.evidencia || undefined}>DJEN sugere: <strong>{card.sugestao.lista_nome}</strong></p>
-                </div>}
                 {lista.contar_dias > 0 && <div className="mt-3 rounded-lg bg-amber-50 p-2 text-[11px] text-amber-900 dark:bg-amber-950 dark:text-amber-200">
                   <span className="flex items-center gap-1 font-semibold"><Clock3 className="h-3.5 w-3.5" /> {card.inicio_espera_em ? `${diasDesde(card.inicio_espera_em)} dia(s) nesta espera` : "Informe o início da espera"}</span>
                   <label className="mt-1 flex items-center gap-2">Desde <input type="date" aria-label={`Início da espera de ${card.numero}`} max={hoje()} value={card.inicio_espera_em || ""} disabled={busy}
                     onChange={(e) => { const data = e.target.value; if (data) void acao(() => api.put(`/djen/kanban/cartoes/${encodeURIComponent(card.processo_chave)}/inicio`, { inicio_em: data })); }}
                     className="max-w-[145px] rounded border border-amber-200 bg-white px-1 py-0.5 text-[11px] text-zinc-800 dark:border-amber-900 dark:bg-zinc-900 dark:text-zinc-100" /></label>
                 </div>}
-                <div className="mt-3 flex items-center gap-2 border-t border-zinc-100 pt-2 dark:border-zinc-800">
-                  <div className="min-w-0 flex-1"><Select aria-label={`Mover ${card.numero} para outra lista`} value={lista.id} disabled={busy} className="text-[11px]" onChange={(e) => mover(card.processo_chave, Number(e.target.value))}>
-                    {quadro.listas.map((op) => <option key={op.id} value={op.id}>{op.nome}</option>)}
-                  </Select></div>
+                <div className="mt-3 flex items-center justify-end gap-2 border-t border-zinc-100 pt-2 dark:border-zinc-800">
                   <button type="button" aria-label={`Histórico das etapas de ${card.numero}`} title="Histórico das etapas" onClick={() => abrirHistorico(card)} className="rounded p-1.5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><History className="h-4 w-4" /></button>
                 </div>
-                <button type="button" disabled={busy} onClick={() => void acao(() => api.put(`/djen/kanban/cartoes/${encodeURIComponent(card.processo_chave)}/${card.modo === "automatico" ? "manual" : "automatico"}`))}
-                  className="mt-2 text-[11px] font-medium text-accent-700 hover:underline disabled:opacity-50 dark:text-accent-300">
-                  {card.modo === "automatico" ? "Fixar etapa manualmente" : "Voltar à classificação automática"}
-                </button>
               </article>)}
-              {!cartoes.length && <p className="rounded-lg border border-dashed border-zinc-300 p-3 text-center text-xs text-zinc-400 dark:border-zinc-700">Arraste um processo para cá</p>}
+              {!cartoes.length && <p className="rounded-lg border border-dashed border-zinc-300 p-3 text-center text-xs text-zinc-400 dark:border-zinc-700">Nenhum processo nesta etapa</p>}
             </div>
           </section>;
         })}
         <form className="w-[292px] shrink-0 rounded-2xl border border-dashed border-zinc-300 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900" onSubmit={(e) => {
-          e.preventDefault(); void acao(async () => { await api.post("/djen/kanban/listas", { nome: nomeNovo, contar_dias: contarNovo }); setNomeNovo(""); setContarNovo(false); });
+          e.preventDefault(); void acao(async () => { await api.post("/djen/kanban/listas", { nome: nomeNovo, contar_dias: contarNovo, regra_categoria: regraNova }); setNomeNovo(""); setContarNovo(false); setRegraNova(""); });
         }}>
           <h2 className="flex items-center gap-2 text-sm font-semibold"><Plus className="h-4 w-4" /> Nova lista</h2>
           <Input aria-label="Nome da nova lista" placeholder="Ex.: Proposta de acordo" className="mt-3" value={nomeNovo} onChange={(e) => setNomeNovo(e.target.value)} maxLength={70} />
+          <Select aria-label="Categoria automática da nova lista" className="mt-2" value={regraNova} onChange={(e) => setRegraNova(e.target.value)} required>
+            <option value="">Escolha a categoria do DJEN</option>{regras.map(([codigo, nome]) => <option key={codigo} value={codigo}>{nome}</option>)}
+          </Select>
           <label className="mt-3 flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300"><Checkbox checked={contarNovo} onChange={(e) => setContarNovo(e.target.checked)} /> Contar dias nesta etapa</label>
-          <Button size="sm" type="submit" disabled={busy || nomeNovo.trim().length < 2} className="mt-3">Criar lista</Button>
+          <Button size="sm" type="submit" disabled={busy || nomeNovo.trim().length < 2 || !regraNova} className="mt-3">Criar lista</Button>
         </form>
       </div>
     </div>}
