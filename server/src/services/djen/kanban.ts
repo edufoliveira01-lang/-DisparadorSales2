@@ -47,11 +47,11 @@ function sincronizarEtapasAutomaticas() {
   ).all() as { processo_chave: string; lista_id: number; modo: string; etapa_publicacao_id: number | null; codigo_atual: string | null; nome_atual: string }[];
   if (!cards.length) return;
   const rows = db.prepare(
-    `SELECT p.processo_chave,p.id,p.texto,p.categorias_json,p.evidencias_json,p.data_disponibilizacao
+    `SELECT p.processo_chave,p.id,p.texto,p.classe,p.categorias_json,p.evidencias_json,p.data_disponibilizacao
        FROM djen_publicacoes p JOIN djen_kanban_cartoes k ON k.processo_chave=p.processo_chave
       WHERE p.cancelada=0 AND k.revisar_etapa=1
       ORDER BY p.processo_chave,p.data_disponibilizacao,p.id`,
-  ).all() as { processo_chave: string; id: number; texto: string; categorias_json: string; evidencias_json: string; data_disponibilizacao: string }[];
+  ).all() as { processo_chave: string; id: number; texto: string; classe: string; categorias_json: string; evidencias_json: string; data_disponibilizacao: string }[];
   const candidatos = new Map<string, Candidato>();
   const sinaisPorId = new Map<number, string>();
   for (const pub of rows) {
@@ -210,9 +210,9 @@ export function ordenarListasKanban(ids: unknown) {
 
 export function excluirListaKanban(id: number) {
   const todas = listas();
-  if (!todas.some((l) => l.id === id)) throw new DjenInputError("Lista não encontrada.");
-  if (todas.length === 1 || id === Math.min(...todas.map((l) => l.id)))
-    throw new DjenInputError("A lista de triagem precisa permanecer no quadro.");
+  const lista = todas.find((l) => l.id === id);
+  if (!lista) throw new DjenInputError("Lista não encontrada.");
+  if (lista.codigo) throw new DjenInputError("As etapas padrão, inclusive a triagem, precisam permanecer no quadro automático.");
   if (db.prepare("SELECT 1 FROM djen_kanban_cartoes WHERE lista_id=? LIMIT 1").get(id))
     throw new DjenInputError("Mova os cartões antes de excluir esta lista.");
   db.prepare("DELETE FROM djen_kanban_listas WHERE id=?").run(id);
