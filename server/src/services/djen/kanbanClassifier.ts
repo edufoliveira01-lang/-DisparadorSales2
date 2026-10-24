@@ -8,6 +8,10 @@ export const ETAPAS_AUTOMATICAS = [
 ] as const;
 export type EtapaAutomatica = (typeof ETAPAS_AUTOMATICAS)[number];
 export type SinalEtapa = { codigo: EtapaAutomatica; evidencia: string };
+export const CATEGORIAS_LISTA_PERSONALIZADA = [
+  "proposta_acordo", "homologacao_acordo", "precatorio", "extincao_execucao",
+  "extincao_processo", "levantamento_valores", "decisao_interlocutoria", "despacho", "intimacao",
+] as const;
 const canon = (s: string) => normalizarTexto(s).replace(/\s+/g, " ").trim();
 const riscoFuturo = /\b(?:apos|quando|caso|se houver|eventual|hipotese|ainda nao|nao houve|nao foi|nao ha|nao consta|devera|deverao|sera|serao|a ser|para ser|aguarde-se)\b/;
 const fatoAtual = (s: string, re: RegExp) => {
@@ -74,4 +78,50 @@ export function classificarPublicacaoParaQuadro(texto: string): SinalEtapa | nul
   if (!sinais.length) return null;
   return sinais.reduce((maisAvancado, atual) =>
     ETAPAS_AUTOMATICAS.indexOf(atual.codigo) > ETAPAS_AUTOMATICAS.indexOf(maisAvancado.codigo) ? atual : maisAvancado);
+}
+
+/** Reaproveita evidências já conferidas da análise DJEN, sem pedir outra execução do Codex. */
+export function classificarPublicacaoComHistorico(row: {
+  texto: string; categorias_json: string; evidencias_json: string;
+}): SinalEtapa | null {
+  const literal = classificarPublicacaoParaQuadro(row.texto);
+  let categorias: unknown;
+  let evidencias: unknown;
+  try {
+    categorias = JSON.parse(row.categorias_json);
+    evidencias = JSON.parse(row.evidencias_json);
+  } catch { return literal; }
+  if (!Array.isArray(categorias) || !Array.isArray(evidencias)) return literal;
+  const etapas: Record<string, EtapaAutomatica> = {
+    sentenca: "sentenca", acordao: "acordao", laudo_juntado: "laudo_manifestacoes",
+    cumprimento_sentenca: "cumprimento_sentenca",
+  };
+  let melhor = literal;
+  for (const item of evidencias) {
+    if (!item || typeof item !== "object" || typeof item.categoria !== "string" ||
+        typeof item.trecho !== "string" || !categorias.includes(item.categoria)) continue;
+    const codigo = etapas[item.categoria];
+    const prova = canon(item.trecho);
+    // Evidências produzidas pela IA somente valem se forem trechos literais do DJEN.
+    if (!codigo || prova.length < 15 || !canon(row.texto).includes(prova)) continue;
+    const sinal = { codigo, evidencia: item.trecho.slice(0, 230) };
+    if (!melhor || ETAPAS_AUTOMATICAS.indexOf(sinal.codigo) > ETAPAS_AUTOMATICAS.indexOf(melhor.codigo))
+      melhor = sinal;
+  }
+  return melhor;
+}
+
+export function evidenciasDeCategorias(row: { texto: string; categorias_json: string; evidencias_json: string }): { categoria: string; evidencia: string }[] {
+  try {
+    const categorias = JSON.parse(row.categorias_json) as unknown;
+    const evidencias = JSON.parse(row.evidencias_json) as unknown;
+    if (!Array.isArray(categorias) || !Array.isArray(evidencias)) return [];
+    const fonte = canon(row.texto);
+    return evidencias.flatMap((item) => {
+      if (!item || typeof item !== "object" || typeof item.categoria !== "string" || typeof item.trecho !== "string" ||
+          !categorias.includes(item.categoria) || !CATEGORIAS_LISTA_PERSONALIZADA.includes(item.categoria as typeof CATEGORIAS_LISTA_PERSONALIZADA[number]) ||
+          canon(item.trecho).length < 15 || !fonte.includes(canon(item.trecho))) return [];
+      return [{ categoria: item.categoria, evidencia: item.trecho.slice(0, 230) }];
+    });
+  } catch { return []; }
 }
