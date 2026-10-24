@@ -121,11 +121,14 @@ export function QuadroProcessos() {
               <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800">{cartoes.length}</span>
             </div>}
             {editando !== lista.id && <div className="mb-3 flex items-center gap-1 border-b border-zinc-200 pb-2 dark:border-zinc-800">
-              {lista.contar_dias ? <span className="mr-auto flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-300"><CalendarClock className="h-3 w-3" /> Contagem de espera</span> : <span className="mr-auto text-[10px] text-zinc-400">Etapa do processo</span>}
+              {lista.regra_categoria
+                ? <span className="mr-auto max-w-[145px] truncate text-[10px] text-sky-700 dark:text-sky-300" title={`Categoria DJEN: ${regras.find(([codigo]) => codigo === lista.regra_categoria)?.[1] || lista.regra_categoria}`}>DJEN: {regras.find(([codigo]) => codigo === lista.regra_categoria)?.[1] || lista.regra_categoria}</span>
+                : lista.contar_dias ? <span className="mr-auto flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-300"><CalendarClock className="h-3 w-3" /> Contagem de espera</span>
+                  : <span className="mr-auto text-[10px] text-zinc-400">Etapa do processo</span>}
               <button type="button" disabled={indice === 0 || busy} aria-label={`Mover lista ${lista.nome} à esquerda`} title="Mover lista à esquerda" onClick={() => ordenar(lista, -1)} className="rounded p-1 text-zinc-500 hover:bg-white disabled:opacity-30 dark:hover:bg-zinc-800"><ArrowLeft className="h-3.5 w-3.5" /></button>
               <button type="button" disabled={indice === quadro.listas.length - 1 || busy} aria-label={`Mover lista ${lista.nome} à direita`} title="Mover lista à direita" onClick={() => ordenar(lista, 1)} className="rounded p-1 text-zinc-500 hover:bg-white disabled:opacity-30 dark:hover:bg-zinc-800"><ArrowRight className="h-3.5 w-3.5" /></button>
               <button type="button" aria-label={`Editar lista ${lista.nome}`} title="Editar lista" onClick={() => { setEditando(lista.id); setNomeEdicao(lista.nome); setContarEdicao(Boolean(lista.contar_dias)); setRegraEdicao(lista.regra_categoria || ""); }} className="rounded p-1 text-zinc-500 hover:bg-white dark:hover:bg-zinc-800"><Pencil className="h-3.5 w-3.5" /></button>
-              <button type="button" aria-label={`Excluir lista ${lista.nome}`} title={totalNaLista ? "A lista contém processos" : "Excluir lista"} disabled={busy || totalNaLista > 0 || lista.id === Math.min(...quadro.listas.map((l) => l.id))} onClick={() => setExcluir(lista)} className="rounded p-1 text-zinc-500 hover:bg-white disabled:opacity-30 dark:hover:bg-zinc-800"><Trash2 className="h-3.5 w-3.5" /></button>
+              <button type="button" aria-label={`Excluir lista ${lista.nome}`} title={lista.codigo ? "Etapa padrão do quadro" : totalNaLista ? "A lista contém processos" : "Excluir lista"} disabled={busy || totalNaLista > 0 || Boolean(lista.codigo)} onClick={() => setExcluir(lista)} className="rounded p-1 text-zinc-500 hover:bg-white disabled:opacity-30 dark:hover:bg-zinc-800"><Trash2 className="h-3.5 w-3.5" /></button>
             </div>}
             {!lista.codigo && !lista.regra_categoria && editando !== lista.id && <p className="mb-2 rounded-lg bg-amber-50 p-2 text-[11px] text-amber-800">Escolha uma categoria do DJEN em Editar lista para ativar a movimentação automática.</p>}
             <div className="scrollbar-thin max-h-[min(68vh,780px)] min-h-24 space-y-2 overflow-y-auto pr-1">
@@ -143,7 +146,7 @@ export function QuadroProcessos() {
                 </button>
                 <div className="mt-2 text-[10px] text-zinc-500">
                   <span className="inline-flex rounded-full bg-sky-50 px-2 py-0.5 font-medium text-sky-800 dark:bg-sky-950 dark:text-sky-300" title={card.etapa_evidencia || undefined}>
-                    {card.etapa_publicacao_id ? "Etapa automática · DJEN" : "Sem etapa comprovada no histórico"}
+                    {card.etapa_publicacao_id ? "Etapa automática · DJEN" : "Fase processual ainda não identificada"}
                   </span>
                   {card.etapa_evidencia && <p className="mt-1 line-clamp-2 leading-relaxed" title={card.etapa_evidencia}>Base: “{card.etapa_evidencia}”</p>}
                 </div>
@@ -169,6 +172,7 @@ export function QuadroProcessos() {
           <Select aria-label="Categoria automática da nova lista" className="mt-2" value={regraNova} onChange={(e) => setRegraNova(e.target.value)} required>
             <option value="">Escolha a categoria do DJEN</option>{regras.map(([codigo, nome]) => <option key={codigo} value={codigo}>{nome}</option>)}
           </Select>
+          <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">O nome da lista é livre. A categoria escolhida é a regra: quando o DJEN identificar esse ato na publicação, o cartão entra automaticamente na lista. Depois ele pode avançar com um novo andamento.</p>
           <label className="mt-3 flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300"><Checkbox checked={contarNovo} onChange={(e) => setContarNovo(e.target.checked)} /> Contar dias nesta etapa</label>
           <Button size="sm" type="submit" disabled={busy || nomeNovo.trim().length < 2 || !regraNova} className="mt-3">Criar lista</Button>
         </form>
