@@ -397,6 +397,8 @@ const TEMPO_PARA_CONSIDERAR_CONEXAO_ESTAVEL_MS = 2 * 60 * 1000;
  * fica presa em "Autenticando…" para sempre, sem nenhuma tentativa automática de recuperação.
  */
 const TEMPO_LIMITE_APOS_AUTENTICAR_MS = 3 * 60 * 1000;
+const INTERVALO_SAUDE_WHATSAPP_MS = 45 * 1000;
+const INTERVALO_RETOMADA_SESSAO_MS = 2 * 60 * 1000;
 
 type Listener = () => void;
 
@@ -491,6 +493,10 @@ class WhatsappManager {
   private encerramento: Promise<void> | null = null;
   private cancelarMonitorPareamento: (() => void) | null = null;
   private estabilidadeTimer: ReturnType<typeof setTimeout> | null = null;
+  private monitorSaudeTimer: ReturnType<typeof setInterval> | null = null;
+  private retomadaTimer: ReturnType<typeof setTimeout> | null = null;
+  private falhasSaude = 0;
+  private verificandoSaude = false;
   /** Incrementado a cada connect()/disconnect()/shutdown() para invalidar retries pendentes de uma tentativa anterior. */
   private geracao = 0;
   private listeners = new Set<Listener>();
@@ -552,12 +558,15 @@ class WhatsappManager {
         this.inicioTimer = null;
         if (geracao !== this.geracao || this.status !== "inicializando") return;
         void this.stop().then(() => {
-          if (this.geracao === geracao + 1)
+          if (this.geracao === geracao + 1) {
+            this.desconexaoManual = false;
             this.setState({
               status: "falha",
               lastError:
                 "O WhatsApp excedeu 2 minutos ao iniciar. A tentativa foi encerrada. Clique em Conectar para tentar novamente; a sessão foi preservada.",
             });
+            this.agendarRetomada();
+          }
         });
       }, 120000);
       this.inicioTimer.unref();
@@ -578,6 +587,49 @@ class WhatsappManager {
     this.estabilidadeTimer = null;
   }
 
+  private limparMonitorSaude(): void {
+    if (this.monitorSaudeTimer) clearInterval(this.monitorSaudeTimer);
+    this.monitorSaudeTimer = null;
+    this.falhasSaude = 0;
+  }
+
+  /** Sessões salvas voltam a tentar conectar mesmo após esgotar as tentativas rápidas. */
+  private agendarRetomada(): void {
+    if (this.retomadaTimer || this.desconexaoManual || !possuiMarcadorDeSessao()) return;
+    this.retomadaTimer = setTimeout(() => {
+      this.retomadaTimer = null;
+      if (!this.desconexaoManual && this.status !== "conectado" && possuiMarcadorDeSessao()) this.connect();
+    }, INTERVALO_RETOMADA_SESSAO_MS);
+    this.retomadaTimer.unref();
+  }
+
+  /** Detecta um WhatsApp Web congelado antes de o próximo envio do escritório falhar. */
+  private iniciarMonitorSaude(client: Client): void {
+    this.limparMonitorSaude();
+    this.monitorSaudeTimer = setInterval(async () => {
+      if (this.verificandoSaude || this.client !== client || this.status !== "conectado") return;
+      this.verificandoSaude = true;
+      try {
+        const browser = client.pupBrowser;
+        if (browser && typeof browser.isConnected === "function" && !browser.isConnected()) throw new Error("Chromium desconectado");
+        const estado = await comTempoLimiteDeOperacao(client.getState(), 8000, "verificar a saúde do WhatsApp");
+        if (this.client !== client || this.status !== "conectado") return;
+        if (estado === "CONNECTED") this.falhasSaude = 0;
+        else this.falhasSaude++;
+      } catch (err) {
+        if (this.client === client && this.status === "conectado") {
+          this.falhasSaude++;
+          console.warn("[WhatsApp] Verificação de saúde falhou:", err);
+        }
+      } finally {
+        this.verificandoSaude = false;
+      }
+      if (this.client === client && this.status === "conectado" && this.falhasSaude >= 2)
+        void this.recuperarBrowserTravado("Verificações de saúde consecutivas sem resposta do WhatsApp Web.");
+    }, INTERVALO_SAUDE_WHATSAPP_MS);
+    this.monitorSaudeTimer.unref();
+  }
+
   /**
    * Reinicia apenas o Chromium/whatsapp-web.js, preservando o LocalAuth e o marcador da sessão.
    * É o equivalente seguro à reconexão manual que antes destravava o envio, mas sem logout e
@@ -595,6 +647,7 @@ class WhatsappManager {
       this.tentativa = 0;
       this.desconexaoManual = false;
       this.limparEstabilidadeTimer();
+      this.limparMonitorSaude();
       this.limparMonitorPareamento();
       this.setState({
         status: "inicializando",
@@ -693,12 +746,15 @@ class WhatsappManager {
         qrDataUrl: null,
         syncProgress: null,
       });
+      this.agendarRetomada();
     });
   }
 
   connect(): boolean {
     if (this.encerramento) return false;
     if (this.client || this.status === "inicializando") return true;
+    if (this.retomadaTimer) clearTimeout(this.retomadaTimer);
+    this.retomadaTimer = null;
     if (!adquirirLockDaInstancia()) {
       this.setState({
         status: "falha",
@@ -831,6 +887,7 @@ class WhatsappManager {
       encerrandoTentativa = true;
       this.limparMonitorPareamento();
       this.limparEstabilidadeTimer();
+      this.limparMonitorSaude();
 
       // O whatsapp-web.js costuma emitir "disconnected" de forma espúria durante o próprio
       // fluxo de pareamento (ex: "Max qrcode retries reached", ou uma oscilação momentânea
@@ -884,6 +941,7 @@ class WhatsappManager {
         );
       }
       this.setState({ status, lastError: message, qrDataUrl: null, syncProgress: null });
+      if (!motivoImpedeRetryAutomatico(motivoNormalizado)) this.agendarRetomada();
     };
 
     const reconhecerPareamento = () => {
@@ -998,6 +1056,7 @@ class WhatsappManager {
       this.limparMonitorPareamento();
       marcarSessaoPersistida();
       this.setState({ status: "conectado", qrDataUrl: null, syncProgress: 100 });
+      this.iniciarMonitorSaude(client);
       this.limparEstabilidadeTimer();
       this.estabilidadeTimer = setTimeout(() => {
         if (this.client === client && this.status === "conectado") this.tentativa = 0;
@@ -1183,6 +1242,9 @@ class WhatsappManager {
     this.geracao++;
     this.desconexaoManual = true;
     this.limparEstabilidadeTimer();
+    this.limparMonitorSaude();
+    if (this.retomadaTimer) clearTimeout(this.retomadaTimer);
+    this.retomadaTimer = null;
     this.limparMonitorPareamento();
     const client = this.client;
     this.client = null;
