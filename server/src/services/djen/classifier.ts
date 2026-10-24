@@ -177,10 +177,17 @@ export function ordemComPrazoDaParte(trecho: string) {
   const s = canon(trecho);
   const destinatario = /\b(?:autor[ae]?|parte autora|demandante|requerente|exequente|impetrante|advogad[oa]s?|procurador[ae]?s?|patrono|as partes|ambas as partes)\b/.test(s);
   const acao = /\b(?:cumpra|cumpram|manifest(?:e|em|ar)|apresent(?:e|em|ar)|junt(?:e|em|ar)|impugn(?:e|em|ar)|emend(?:e|em|ar)|regulariz(?:e|em|ar)|contest(?:e|em|ar)|replic(?:a|ar)|comprov(?:e|em|ar)|contrarrazo(?:e|em|ar)|esclarec(?:a|am|er)|recorr(?:a|am|er))\b/.test(s);
-  const periodo = /\b(?:prazo de|em|dentro de)\s+(?:\d{1,3}|[a-z]+(?:\s+e\s+[a-z]+)?)\s*(?:\([^)]{1,40}\)\s*)?dias\b/.test(s);
+  const periodo = /\b(?:prazo de|em|dentro de)\s+(?:\d{1,3}|[a-z]+(?:\s+e\s+[a-z]+)?)\s*(?:\([^)]{1,40}\)\s*)?dias\b/.exec(s);
   const aguardo = /\b(?:aguarde-se|aguardar|aguarde|sobrestado|suspenso)\b/.test(s);
   const outroDestinatario = /\b(?:perito|inss|parte re|requerido|executado|autarquia)\b/.test(s);
-  return destinatario && acao && periodo && !aguardo && !outroDestinatario;
+  // Menções ao INSS ou perito como origem de uma proposta/documento não mudam
+  // quem recebeu a ordem. Se ambos aparecem, exige destinatário direto.
+  const antesPrazo = periodo ? s.slice(0, periodo.index) : "";
+  const alvo = String.raw`(?:autor[ae]?|parte autora|demandante|requerente|exequente|impetrante|advogad[oa]s?|procurador[ae]?s?|patrono|as partes|ambas as partes)`;
+  const direto = new RegExp(String.raw`\b(?:intime-se|intimem-se|notifique-se|de-se vista|abra-se vista)\s+(?:(?:a|ao|as|aos|o|os)\s+)?${alvo}\b`).test(antesPrazo)
+    || new RegExp(String.raw`\b${alvo}\b.{0,45}\b(?:foi|fica|esta)\s+intimad[oa]s?\b`).test(antesPrazo)
+    || new RegExp(String.raw`\b${alvo}\b.{0,45}\b(?:cumpra|cumpram|devera|deverao|manifeste|manifestem|apresente|apresentem|junte|juntem|impugne|impugnem)\b`).test(antesPrazo);
+  return Boolean(destinatario && acao && periodo && !aguardo && (!outroDestinatario || direto));
 }
 const decisaoColegiada = (s: string) =>
   !/\b(?:decisao monocratica|decisao singular|decidiu monocraticamente)\b/.test(s) &&
