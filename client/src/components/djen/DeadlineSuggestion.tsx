@@ -4,6 +4,7 @@ import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { Checkbox } from "@/components/ui/Checkbox";
 type Candidato = {
   dias: number;
   trecho: string;
@@ -45,7 +46,7 @@ export function DeadlineSuggestion({
   );
   const [candidatos, setCandidatos] = useState<Candidato[]>([]),
     [descricao, setDescricao] = useState("Manifestação processual"),
-    [dias, setDias] = useState(15),
+    [dias, setDias] = useState<number | "">(""),
     [base, setBase] = useState(data),
     [marco, setMarco] = useState("disponibilizacao"),
     [unidade, setUnidade] = useState("uteis"),
@@ -54,7 +55,10 @@ export function DeadlineSuggestion({
     [erro, setErro] = useState(""),
     [busy, setBusy] = useState(false),
     [salvando, setSalvando] = useState(false),
-    [salvo, setSalvo] = useState(false);
+    [salvo, setSalvo] = useState(false),
+    [confirmarDivergencia, setConfirmarDivergencia] = useState(false);
+  const divergente = dias !== "" && candidatos.length > 0 &&
+    !candidatos.some((c) => c.dias === dias && c.unidade === unidade);
   useEffect(() => {
     let ativo = true;
     sequenciaCalculo.current++;
@@ -64,6 +68,8 @@ export function DeadlineSuggestion({
     setBusy(false);
     setSalvo(false);
     setBase(data);
+    setDias("");
+    setConfirmarDivergencia(false);
     void api
       .get<{
         candidatos: Candidato[];
@@ -73,7 +79,7 @@ export function DeadlineSuggestion({
         if (ativo) {
           setCandidatos(r.candidatos);
           setCalendario(r.calendario_automatico);
-          const principal = r.candidatos[0];
+          const principal = r.candidatos.length === 1 ? r.candidatos[0] : null;
           if (principal) {
             setDias(principal.dias);
             setDescricao(principal.descricao);
@@ -98,9 +104,14 @@ export function DeadlineSuggestion({
     sequenciaCalculo.current++;
     setResultado(null);
     setSalvo(false);
+    setConfirmarDivergencia(false);
+    setErro("");
   };
   useEffect(() => {
-    if (!prontoParaCalcular) return;
+    if (!prontoParaCalcular || dias === "" || !Number.isInteger(dias) || dias < 1 || (divergente && !confirmarDivergencia)) {
+      setResultado(null);
+      return;
+    }
     const sequencia = ++sequenciaCalculo.current;
     setResultado(null);
     setErro("");
@@ -114,6 +125,7 @@ export function DeadlineSuggestion({
           unidade,
           regime: "cpc",
           confirmado: true,
+          divergencia_confirmada: confirmarDivergencia,
         })
         .then((r) => {
           if (sequencia === sequenciaCalculo.current) setResultado(r);
@@ -131,7 +143,7 @@ export function DeadlineSuggestion({
         });
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [base, dias, id, marco, prontoParaCalcular, unidade]);
+  }, [base, dias, id, marco, prontoParaCalcular, unidade, divergente, confirmarDivergencia]);
   return (
     <details
       open
@@ -195,11 +207,11 @@ export function DeadlineSuggestion({
               </div>
             ))}
             {!candidatos.length && (
-              <p className="text-xs text-zinc-500">
-                Nenhuma ordem com prazo explícito foi identificada. Informe os
-                dias após conferir a publicação e o regime aplicável.
+              <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
+                Nenhum prazo da parte foi reconhecido nesta publicação. Confira o texto e informe os dias manualmente; o sistema não preencherá 15 dias por padrão.
               </p>
             )}
+            {candidatos.length > 1 && <p className="text-xs font-medium text-amber-800 dark:text-amber-300">Há mais de um prazo expresso. Selecione a ordem correta acima para calcular.</p>}
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <Label htmlFor="calc-dias">Quantidade de dias</Label>
@@ -210,7 +222,7 @@ export function DeadlineSuggestion({
                   max={365}
                   value={dias}
                   onChange={(e) => {
-                    setDias(Number(e.target.value));
+                    setDias(e.target.value === "" ? "" : Number(e.target.value));
                     invalidar();
                   }}
                 />
@@ -269,6 +281,10 @@ export function DeadlineSuggestion({
             </div>
           </div>
         </details>
+        {divergente && <label className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs font-medium text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          <Checkbox checked={confirmarDivergencia} onChange={(e) => setConfirmarDivergencia(e.target.checked)} />
+          <span>Os {dias} dias {unidade === "uteis" ? "úteis" : "corridos"} informados diferem do prazo extraído da publicação. Conferi o texto e confirmo esta alteração manual.</span>
+        </label>}
         <p className="text-xs">
           <Link to="/configuracoes?prazos=1" className="text-accent-600">
             Ver calendário automático, ajustes manuais e agenda de prazos
