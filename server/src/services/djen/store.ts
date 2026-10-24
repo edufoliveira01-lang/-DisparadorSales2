@@ -1,5 +1,6 @@
 import { registrarHistoricoDjen } from "./history";
 import { dadosAcompanhamento } from "./workflow";
+import { identificarPrazos } from "./deadlines";
 import { db } from "../../db";
 import { getContact } from "../contactsService";
 import { normalizeProcesso } from "../../utils/processo";
@@ -364,10 +365,12 @@ export function apresentarPublicacao(p: PublicacaoRow, integral = false) {
   } = p;
   const analise = ia_json ? JSON.parse(String(ia_json)) : null;
   const providencia = analise?.providencia;
-  const prazoExpresso = providencia?.tipo === "prazo_explicito" &&
+  const prazoDoTexto = identificarPrazos(texto)[0];
+  const prazoDoCodex = providencia?.tipo === "prazo_explicito" &&
     typeof providencia.prazo_texto === "string" &&
     ordemComPrazoDaParte(providencia.prazo_texto) &&
     ["escritorio", "cliente"].includes(providencia.responsavel);
+  const prazoExpresso = Boolean(prazoDoTexto || prazoDoCodex);
   const cumprimento = providencia?.tipo === "cumprimento" &&
     ["escritorio", "cliente"].includes(providencia.responsavel);
   const destinatarios = JSON.parse(String(destinatarios_json || "[]")) as {
@@ -380,8 +383,8 @@ export function apresentarPublicacao(p: PublicacaoRow, integral = false) {
     analise,
     acao: {
       tipo: prazoExpresso ? "prazo_explicito" : cumprimento ? "cumprimento" : "ciencia",
-      descricao: prazoExpresso || cumprimento ? providencia.descricao : null,
-      prazo_texto: prazoExpresso ? providencia.prazo_texto : null,
+      descricao: prazoDoTexto?.descricao || (prazoDoCodex || cumprimento ? providencia.descricao : null),
+      prazo_texto: prazoDoTexto?.trecho || (prazoDoCodex ? providencia.prazo_texto : null),
     },
     parte_nome: parteNome,
     cliente_exibicao: dados.cliente_nome || parteNome,
@@ -410,13 +413,14 @@ function apresentarProcessoAgrupado(p: PublicacaoRow, arquivo: string) {
         : "";
   const publicacoes = db
     .prepare(
-      `SELECT id,categorias_json,lida,revisada,concluida,ia_status,ia_json,resultado
+      `SELECT id,texto,categorias_json,lida,revisada,concluida,ia_status,ia_json,resultado
          FROM djen_publicacoes
         WHERE processo_chave=? AND cancelada=0${escopo}
         ORDER BY data_disponibilizacao DESC,id DESC`,
     )
     .all(p.processo_chave) as {
     id: number;
+    texto: string;
     categorias_json: string;
     lida: number;
     revisada: number;
@@ -437,6 +441,9 @@ function apresentarProcessoAgrupado(p: PublicacaoRow, arquivo: string) {
       periciaPublicacaoId = item.id;
     if (categoriasItem.includes("sentenca") && resultadoSentenca === "nao_identificado")
       resultadoSentenca = item.resultado;
+    const prazoDoTexto = identificarPrazos(item.texto)[0];
+    if (prazoDoTexto && acao.tipo !== "prazo_explicito")
+      acao = { tipo: "prazo_explicito", descricao: prazoDoTexto.descricao, prazo_texto: prazoDoTexto.trecho };
     try {
       const providencia = item.ia_json ? JSON.parse(item.ia_json).providencia : null;
       if (providencia && ["escritorio", "cliente"].includes(providencia.responsavel)) {
