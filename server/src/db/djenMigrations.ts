@@ -179,6 +179,7 @@ export function runDjenMigrations(db: Database.Database): void {
       nome TEXT NOT NULL COLLATE NOCASE UNIQUE,
       posicao INTEGER NOT NULL,
       codigo TEXT UNIQUE,
+      regra_categoria TEXT,
       contar_dias INTEGER NOT NULL DEFAULT 0 CHECK(contar_dias IN (0,1)),
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
@@ -210,7 +211,7 @@ export function runDjenMigrations(db: Database.Database): void {
   `);
   if (!(db.prepare("SELECT id FROM djen_kanban_listas LIMIT 1").get())) {
     const etapas = [
-      "A classificar", "Petição inicial", "Emenda inicial", "Perito designado",
+      "Sem etapa identificada", "Petição inicial", "Emenda inicial", "Perito designado",
       "Perícia agendada", "Perícia realizada", "Laudo / manifestações",
       "Sentença", "Recurso", "Acórdão", "Cumprimento de sentença",
       "Aguardando implantação do benefício", "Cálculos", "Aguardando expedição de RPV",
@@ -221,6 +222,7 @@ export function runDjenMigrations(db: Database.Database): void {
   }
   const colunasListas = db.prepare("PRAGMA table_info(djen_kanban_listas)").all() as { name: string }[];
   if (!colunasListas.some((c) => c.name === "codigo")) db.exec("ALTER TABLE djen_kanban_listas ADD COLUMN codigo TEXT");
+  if (!colunasListas.some((c) => c.name === "regra_categoria")) db.exec("ALTER TABLE djen_kanban_listas ADD COLUMN regra_categoria TEXT");
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_djen_kanban_listas_codigo ON djen_kanban_listas(codigo)");
   const codigos = [
     "triagem", "peticao_inicial", "emenda_inicial", "perito_designado", "pericia_agendada",
@@ -231,6 +233,7 @@ export function runDjenMigrations(db: Database.Database): void {
   // Os 16 primeiros IDs são as etapas criadas na instalação inicial; renomes não alteram sua identidade.
   db.transaction(() => codigos.forEach((codigo, indice) =>
     db.prepare("UPDATE djen_kanban_listas SET codigo=? WHERE id=? AND codigo IS NULL").run(codigo, indice + 1)))();
+  db.prepare("UPDATE OR IGNORE djen_kanban_listas SET nome='Sem etapa identificada' WHERE codigo='triagem' AND nome='A classificar'").run();
   const colunasCartoes = db.prepare("PRAGMA table_info(djen_kanban_cartoes)").all() as { name: string }[];
   if (!colunasCartoes.some((c) => c.name === "modo")) {
     db.exec("ALTER TABLE djen_kanban_cartoes ADD COLUMN modo TEXT NOT NULL DEFAULT 'automatico' CHECK(modo IN ('automatico','manual'))");
@@ -247,18 +250,27 @@ export function runDjenMigrations(db: Database.Database): void {
   if (!colunasCartoes.some((c) => c.name === "sugestao_evidencia")) db.exec("ALTER TABLE djen_kanban_cartoes ADD COLUMN sugestao_evidencia TEXT");
   const colunasMovimentos = db.prepare("PRAGMA table_info(djen_kanban_movimentos)").all() as { name: string }[];
   if (!colunasMovimentos.some((c) => c.name === "origem_movimento")) db.exec("ALTER TABLE djen_kanban_movimentos ADD COLUMN origem_movimento TEXT NOT NULL DEFAULT 'manual'");
+  db.exec("DROP TRIGGER IF EXISTS djen_kanban_publicacao_atualizada");
   db.exec(`
     CREATE TRIGGER IF NOT EXISTS djen_kanban_publicacao_inserida AFTER INSERT ON djen_publicacoes
     BEGIN UPDATE djen_kanban_cartoes SET revisar_etapa=1 WHERE processo_chave=NEW.processo_chave; END;
     CREATE TRIGGER IF NOT EXISTS djen_kanban_publicacao_atualizada
-      AFTER UPDATE OF texto,ia_json,categorias_json,cancelada,data_disponibilizacao,processo_chave ON djen_publicacoes
+      AFTER UPDATE OF texto,ia_json,categorias_json,evidencias_json,cancelada,data_disponibilizacao,processo_chave ON djen_publicacoes
     BEGIN
       UPDATE djen_kanban_cartoes SET revisar_etapa=1 WHERE processo_chave=NEW.processo_chave;
       UPDATE djen_kanban_cartoes SET revisar_etapa=1 WHERE processo_chave=OLD.processo_chave;
     END;
     CREATE TRIGGER IF NOT EXISTS djen_kanban_publicacao_excluida AFTER DELETE ON djen_publicacoes
     BEGIN UPDATE djen_kanban_cartoes SET revisar_etapa=1 WHERE processo_chave=OLD.processo_chave; END;
+    CREATE TABLE IF NOT EXISTS djen_kanban_meta (chave TEXT PRIMARY KEY, valor TEXT NOT NULL);
   `);
+  // A versão anterior deixava cartões em modo manual. Reprocessa uma vez todo o
+  // histórico já capturado; depois os gatilhos cuidam apenas dos processos alterados.
+  const versaoQuadro = db.prepare("SELECT valor FROM djen_kanban_meta WHERE chave='classificador'").get() as { valor: string } | undefined;
+  if (versaoQuadro?.valor !== "2.49.0") db.transaction(() => {
+    db.exec("UPDATE djen_kanban_cartoes SET modo='automatico',etapa_publicacao_id=NULL,etapa_evidencia=NULL,revisar_etapa=1");
+    db.prepare("INSERT INTO djen_kanban_meta(chave,valor) VALUES ('classificador','2.49.0') ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor").run();
+  })();
   // Reconcilia análises antigas somente quando o próprio texto comprova o fato.
   // Revisões humanas e registros sem análise permanecem intactos.
   const candidatos = db.prepare(
