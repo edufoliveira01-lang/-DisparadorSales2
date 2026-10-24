@@ -21,7 +21,7 @@ function publicar(processo: string, data: string, texto: string) {
 }
 beforeEach(() => {
   db.exec("DELETE FROM djen_kanban_movimentos;DELETE FROM djen_kanban_cartoes;DELETE FROM djen_publicacao_advogados;DELETE FROM djen_prazos;DELETE FROM djen_publicacoes;DELETE FROM djen_processos;");
-  db.exec("DELETE FROM djen_kanban_listas WHERE codigo IS NULL;UPDATE djen_kanban_listas SET posicao=id-1;");
+  db.exec("DELETE FROM djen_kanban_listas WHERE codigo IS NULL;UPDATE djen_kanban_listas SET posicao=CASE WHEN codigo='distribuicao' THEN 2 WHEN id<=2 THEN id-1 ELSE id END;");
 });
 
 describe("evidência para etapas automáticas", () => {
@@ -29,11 +29,17 @@ describe("evidência para etapas automáticas", () => {
     const texto = "Turma Recursal, por unanimidade, deu provimento ao recurso da autora.";
     expect(classificarPublicacaoComHistorico({ texto, categorias_json: '["acordao"]', evidencias_json: JSON.stringify([{ categoria: "acordao", trecho: texto }]) })).toMatchObject({ codigo: "acordao" });
     expect(classificarPublicacaoComHistorico({ texto: "Citado o acórdão anterior.", categorias_json: '["acordao"]', evidencias_json: JSON.stringify([{ categoria: "acordao", trecho: texto }]) })).toBeNull();
+    const extincao = "Certificada a extinção definitiva do processo após o pagamento.";
+    expect(classificarPublicacaoComHistorico({ texto: extincao, categorias_json: '["extincao_processo"]', evidencias_json: JSON.stringify([{ categoria: "extincao_processo", trecho: extincao }]) })?.codigo).toBe("concluido");
   });
   it.each([
     ["Foi recebida a petição inicial da autora.", "peticao_inicial"],
+    ["Processo distribuído à 4ª Vara Federal.", "distribuicao"],
+    ["A apelação foi distribuída à 17ª Câmara de Direito Público.", "recurso"],
     ["Intime-se a autora para emendar a petição inicial.", "emenda_inicial"],
     ["Nomeio o perito para realizar o exame.", "perito_designado"],
+    ["Juntada de manifestação do perito nos autos.", "perito_designado"],
+    ["Juntada de manifestação do perito sobre o laudo complementar.", "laudo_manifestacoes"],
     ["A perícia foi designada para 20/10/2026 às 14:00, local: Rua Central, 10.", "pericia_agendada"],
     ["Designada perícia para 20/10/2026 às 14h, na sala 4 do fórum.", "pericia_agendada"],
     ["A perícia foi realizada em 20/08/2026.", "pericia_realizada"],
@@ -43,10 +49,12 @@ describe("evidência para etapas automáticas", () => {
     ["ACÓRDÃO. ACORDAM os magistrados em dar provimento.", "acordao"],
     ["Iniciado o cumprimento de sentença.", "cumprimento_sentenca"],
     ["Intime-se o INSS para implantar o benefício em 30 dias.", "aguarda_implantacao"],
+    ["Implantação ou revisão de benefício determinada no cumprimento de sentença.", "aguarda_implantacao"],
     ["Perito de cálculos intimado a apresentar cálculos.", "calculos"],
     ["Determino a expedição de RPV.", "aguarda_expedicao_rpv"],
     ["RPV expedida e enviada ao tribunal.", "rpv_expedida"],
     ["A RPV foi expedida, e o INSS deverá responder depois.", "rpv_expedida"],
+    ["Extinção anotada · autos arquivados.", "concluido"],
   ])("identifica %s", (texto, esperado) => {
     expect(classificarPublicacaoParaQuadro(texto)?.codigo).toBe(esperado);
   });
@@ -60,8 +68,24 @@ describe("evidência para etapas automáticas", () => {
     "Citado o acórdão anterior como precedente jurisprudencial.",
     "A sentença anterior foi mencionada pelo recorrente.",
     "O INSS ainda não implantou o benefício.",
+    "Após a extinção, os autos serão arquivados.",
+    "A apelação será distribuída oportunamente.",
   ])("não transforma previsão ou referência em fato: %s", (texto) => {
     expect(classificarPublicacaoParaQuadro(texto)).toBeNull();
+  });
+  it("usa a classe do processo com ato literal para distinguir cálculos e cumprimento", () => {
+    expect(classificarPublicacaoComHistorico({
+      texto: "Exequente intimada a se manifestar sobre impugnação.", classe: "Cumprimento de sentença",
+      categorias_json: "[]", evidencias_json: "[]",
+    })?.codigo).toBe("cumprimento_sentenca");
+    expect(classificarPublicacaoComHistorico({
+      texto: "Executados intimados a se manifestar sobre cálculos.", classe: "Cumprimento de sentença",
+      categorias_json: "[]", evidencias_json: "[]",
+    })?.codigo).toBe("calculos");
+    expect(classificarPublicacaoComHistorico({
+      texto: "Aguarde-se o prazo de cálculo, sem nova intimação.", classe: "Cumprimento de sentença",
+      categorias_json: "[]", evidencias_json: "[]",
+    })).toBeNull();
   });
 });
 
@@ -96,6 +120,7 @@ describe("quadro processual", () => {
       expect((antigo.prepare("SELECT modo,revisar_etapa FROM djen_kanban_cartoes WHERE processo_chave='manual-antigo'").get() as { modo: string; revisar_etapa: number })).toMatchObject({ modo: "automatico", revisar_etapa: 1 });
       expect((antigo.prepare("SELECT modo FROM djen_kanban_cartoes WHERE processo_chave='voltou-triagem'").get() as { modo: string }).modo).toBe("automatico");
       expect((antigo.prepare("SELECT codigo FROM djen_kanban_listas WHERE id=2").get() as { codigo: string }).codigo).toBe("peticao_inicial");
+      expect((antigo.prepare("SELECT nome FROM djen_kanban_listas WHERE codigo='distribuicao'").get() as { nome: string }).nome).toBe("Distribuição");
       antigo.exec("UPDATE djen_kanban_meta SET valor='2.48.0' WHERE chave='classificador';UPDATE djen_kanban_cartoes SET modo='manual',revisar_etapa=0");
       runDjenMigrations(antigo);
       expect((antigo.prepare("SELECT modo,revisar_etapa FROM djen_kanban_cartoes WHERE processo_chave='manual-antigo'").get() as { modo: string; revisar_etapa: number }))
@@ -120,6 +145,15 @@ describe("quadro processual", () => {
     expect(listarKanban().cartoes.find((c) => c.processo_chave === "auto-1")!.lista_id)
       .toBe(depois.listas.find((l) => l.codigo === "laudo_manifestacoes")!.id);
     expect((historicoCartaoKanban("auto-1") as { origem_movimento: string }[]).every((item) => item.origem_movimento === "automatico")).toBe(true);
+  });
+  it("reclassifica publicações antigas quando se acrescenta a etapa Distribuição", () => {
+    publicar("fase-distribuicao", "2026-09-01", "Petição inicial protocolada.");
+    publicar("fase-distribuicao", "2026-09-03", "Processo distribuído à 4ª Vara Federal.");
+    const quadro = listarKanban();
+    expect(quadro.cartoes.find((c) => c.processo_chave === "fase-distribuicao")!.lista_id)
+      .toBe(quadro.listas.find((l) => l.codigo === "distribuicao")!.id);
+    expect(quadro.listas.findIndex((l) => l.codigo === "distribuicao"))
+      .toBe(quadro.listas.findIndex((l) => l.codigo === "peticao_inicial") + 1);
   });
 
   it("usa histórico mesmo para cartões que estavam manuais e impede novo movimento manual", () => {
