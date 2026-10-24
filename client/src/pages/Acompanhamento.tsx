@@ -41,6 +41,7 @@ import { Select } from "@/components/ui/Select";
 import { Badge } from "@/components/ui/Badge";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Modal } from "@/components/ui/Modal";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Pagination } from "@/components/ui/Pagination";
@@ -212,11 +213,14 @@ interface PericiaSemLaudo {
 }
 interface AguardandoRetorno {
   publicacao_id: number;
+  tipo: "aguardo_juizo" | "perito_laudo" | "perito_esclarecimentos" | "perito_calculos" | "inss_implantacao" | "parte_contraria";
+  responsavel: string;
   processo: string;
   cliente_nome: string | null;
   data_disponibilizacao: string;
-  dias_sem_publicacao: number;
+  dias_decorridos: number;
   dias_espera: number;
+  prazo_citado_dias: number | null;
   motivo: string;
   resumo: string;
   acompanhamento_status: "pendente" | "cobrado";
@@ -331,6 +335,8 @@ export function Acompanhamento() {
       pagina: 1,
     }),
     [buscaTexto, setBuscaTexto] = useState("");
+  const filtroAtualRef = useRef(filtro);
+  filtroAtualRef.current = filtro;
   const [consulta, setConsulta] = useState({
       inicio: seteDias(),
       fim: hoje(),
@@ -374,6 +380,11 @@ export function Acompanhamento() {
   const [mostrarSemLaudo, setMostrarSemLaudo] = useState(false);
   const [periciasSemLaudo, setPericiasSemLaudo] = useState<PericiaSemLaudo[]>([]);
   const [aguardando, setAguardando] = useState<AguardandoRetorno[]>([]);
+  const [tipoAguardando, setTipoAguardando] = useState("");
+  const [buscaAguardando, setBuscaAguardando] = useState("");
+  const [selecionados, setSelecionados] = useState<number[]>([]);
+  const [confirmarLote, setConfirmarLote] = useState(false);
+  const [selecionandoTodos, setSelecionandoTodos] = useState(false);
   const [carregandoSemLaudo, setCarregandoSemLaudo] = useState(false);
   const [mensagem, setMensagem] = useState<{
       texto: string;
@@ -512,6 +523,41 @@ export function Acompanhamento() {
   useSocketEvent("connect", atualizarEmTempoReal);
   const filtrar = (key: string, value: string) =>
     setFiltro((f) => ({ ...f, [key]: value, pagina: 1 }));
+  useEffect(() => setSelecionados([]), [filtro.categoria, filtro.resultado, filtro.advogado_id, filtro.situacao, filtro.arquivo, filtro.busca]);
+  const tiposAguardando: Record<AguardandoRetorno["tipo"], string> = {
+    aguardo_juizo: "Aguardando juízo", perito_laudo: "Laudo pelo perito",
+    perito_esclarecimentos: "Esclarecimentos do perito", perito_calculos: "Cálculos periciais",
+    inss_implantacao: "Implantação pelo INSS", parte_contraria: "Manifestação da outra parte",
+  };
+  const aguardandoVisiveis = aguardando.filter((item) =>
+    (!tipoAguardando || item.tipo === tipoAguardando) &&
+    (!buscaAguardando.trim() || `${item.processo} ${item.cliente_nome || ""} ${item.motivo}`.toLocaleLowerCase("pt-BR").includes(buscaAguardando.trim().toLocaleLowerCase("pt-BR"))),
+  );
+  const paginaSelecionada = items.length > 0 && items.every((item) => selecionados.includes(item.id));
+  async function selecionarTodosFiltrados() {
+    setSelecionandoTodos(true);
+    try {
+      const filtroSolicitado = JSON.stringify({ ...filtro, pagina: 1 });
+      const q = new URLSearchParams(Object.fromEntries(Object.entries(filtro).map(([k, v]) => [k, String(v)])));
+      const resposta = await api.get<{ ids: number[]; total: number }>(`/djen/publicacoes/ids?${q}`);
+      if (JSON.stringify({ ...filtroAtualRef.current, pagina: 1 }) !== filtroSolicitado) return;
+      setSelecionados(resposta.ids);
+      show(`${resposta.total} processo(s) selecionado(s) neste filtro.`, "success");
+    } catch (e) { show(erro(e), "error"); }
+    finally { setSelecionandoTodos(false); }
+  }
+  async function concluirSelecionados() {
+    setSalvando(true);
+    try {
+      const resultado = await api.post<{ processos: number }>("/djen/publicacoes/conclusao-em-lote", { ids: selecionados });
+      setConfirmarLote(false);
+      setSelecionados([]);
+      await carregarLista();
+      await carregarStatus();
+      show(`${resultado.processos} processo(s) concluído(s).`, "success");
+    } catch (e) { show(erro(e), "error"); }
+    finally { setSalvando(false); }
+  }
   async function acao(fn: () => Promise<void>) {
     if (lock.current) return;
     lock.current = true;
@@ -667,7 +713,7 @@ export function Acompanhamento() {
           secao === "publicacoes"
             ? "Decisões, acordos, pagamentos, perícias e demais andamentos dos processos."
             : secao === "aguardando"
-              ? "Processos sem nova publicação após uma ordem de aguardar. Alertas operacionais, não prazos jurídicos."
+              ? "Ordens pendentes do juízo, peritos, INSS e parte contrária para conferência."
             : secao === "advogados"
               ? "Cadastre um ou mais advogados pelo nome completo, número da OAB e UF."
               : "Consulte o DJEN por período e acompanhe a execução de cada busca."
@@ -737,36 +783,44 @@ export function Acompanhamento() {
         <div className="space-y-4">
           <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-5 dark:border-amber-900 dark:bg-amber-950/20">
             <p className="flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-200">
-              <Clock3 className="h-4 w-4" /> {aguardando.length} processo(s) para conferir
+              <Clock3 className="h-4 w-4" /> {aguardando.length} acompanhamento(s) para conferir
             </p>
             <p className="mt-2 max-w-3xl text-xs leading-relaxed text-amber-800 dark:text-amber-300">
-              O alerta surge quando a última publicação capturada determina aguardar e não há outra publicação no DJEN após o período indicado. Sem período expresso, usamos {status?.config.aguardo_dias ?? 30} dias como lembrete operacional. Confira os autos antes de cobrar o juízo ou perito; isto não é prazo processual.
+              O sistema acompanha intimações e determinações capturadas no DJEN. Uma publicação posterior só encerra o alerta se trouxer indicação explícita de cumprimento; confira os autos antes de cobrar. O prazo citado não é contado como prazo processual nesta tela. Sem período expresso, o lembrete aparece após {status?.config.aguardo_dias ?? 30} dias.
             </p>
           </div>
-          {!aguardando.length ? (
-            <EmptyState icon={Clock3} title="Nenhum retorno pendente" description="Não há ordens de aguardar que tenham ultrapassado o período de acompanhamento sem nova publicação capturada." />
-          ) : aguardando.map((item) => (
-            <article key={item.publicacao_id} className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900 sm:flex-row">
+            <Input aria-label="Buscar acompanhamento" placeholder="Buscar cliente, processo ou ordem…" value={buscaAguardando} onChange={(e) => setBuscaAguardando(e.target.value)} />
+            <Select aria-label="Filtrar tipo de acompanhamento" className="sm:max-w-[260px]" value={tipoAguardando} onChange={(e) => setTipoAguardando(e.target.value)}>
+              <option value="">Todos os tipos</option>
+              {Object.entries(tiposAguardando).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+            </Select>
+          </div>
+          {!aguardandoVisiveis.length ? (
+            <EmptyState icon={Clock3} title="Nenhum acompanhamento neste filtro" description="Ajuste a busca ou o tipo. Os alertas aparecem após o período indicado para conferência." />
+          ) : aguardandoVisiveis.map((item) => (
+            <article key={`${item.publicacao_id}:${item.tipo}`} className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
               <div className="flex flex-col gap-4 md:flex-row md:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone="warning">{item.dias_sem_publicacao} dias sem nova publicação</Badge>
+                    <Badge tone="warning">{tiposAguardando[item.tipo]}</Badge>
+                    <Badge>{item.dias_decorridos} dias desde a publicação</Badge>
                     {item.acompanhamento_status === "cobrado" && <Badge tone="info">Cobrança registrada</Badge>}
                   </div>
                   <h2 className="mt-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{item.cliente_nome || "Cliente não vinculado"}</h2>
-                  <p className="mt-1 text-xs text-zinc-500">Processo {item.processo} · Última publicação em {dia(item.data_disponibilizacao)}</p>
-                  <p className="mt-3 text-xs font-medium">{item.motivo}</p>
+                  <p className="mt-1 text-xs text-zinc-500">Processo {item.processo} · {item.responsavel} · Ordem publicada em {dia(item.data_disponibilizacao)}</p>
+                  <p className="mt-3 whitespace-pre-wrap text-xs font-medium">{item.motivo}</p>
                   <p className="mt-1 line-clamp-3 max-w-3xl text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">{item.resumo}</p>
-                  <p className="mt-2 text-[11px] text-zinc-500">Lembrete após {item.dias_espera} dias · sem nova publicação capturada, não necessariamente sem movimentação nos autos</p>
+                  <p className="mt-2 text-[11px] text-zinc-500">Conferir após {item.dias_espera} dias desde a publicação{item.prazo_citado_dias ? ` · prazo mencionado: ${item.prazo_citado_dias} dias` : ""} · cumprimento não identificado nas publicações capturadas</p>
                 </div>
                 <div className="flex shrink-0 flex-wrap items-start gap-2">
                   <Button size="sm" variant="outline" onClick={() => void abrir(item.publicacao_id)}>Ver processo <ArrowRight className="h-3.5 w-3.5" /></Button>
                   <Button size="sm" variant="outline" disabled={salvando} onClick={() => void acao(async () => {
-                    await api.put(`/djen/aguardando/${item.publicacao_id}`, { status: "cobrado" });
+                    await api.put(`/djen/aguardando/${item.publicacao_id}`, { tipo: item.tipo, status: "cobrado" });
                     await carregarAguardando(); await carregarStatus(); show("Cobrança registrada para acompanhamento.", "success");
                   })}>Registrar cobrança</Button>
                   <Button size="sm" variant="ghost" disabled={salvando} onClick={() => void acao(async () => {
-                    await api.put(`/djen/aguardando/${item.publicacao_id}`, { status: "resolvido" });
+                    await api.put(`/djen/aguardando/${item.publicacao_id}`, { tipo: item.tipo, status: "resolvido" });
                     await carregarAguardando(); await carregarStatus(); show("Acompanhamento concluído.", "success");
                   })}>Concluir alerta</Button>
                 </div>
@@ -833,6 +887,22 @@ export function Acompanhamento() {
               onPageChange={(p) => setFiltro((f) => ({ ...f, pagina: p + 1 }))}
             />
           </div>
+          {filtro.arquivo === "ativos" && items.length > 0 && (
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-zinc-200 bg-white px-4 py-3 text-xs dark:border-zinc-800 dark:bg-zinc-900">
+              <label className="flex cursor-pointer items-center gap-2">
+                <Checkbox checked={paginaSelecionada} onChange={(e) => setSelecionados((atual) => e.target.checked
+                  ? [...new Set([...atual, ...items.map((item) => item.id)])]
+                  : atual.filter((id) => !items.some((item) => item.id === id)))} />
+                Selecionar esta página ({items.length})
+              </label>
+              {total > items.length && <Button size="sm" variant="ghost" loading={selecionandoTodos} onClick={() => void selecionarTodosFiltrados()}>Selecionar todos os {total} processos filtrados</Button>}
+              {selecionados.length > 0 && <>
+                <span className="text-zinc-500">{selecionados.length} selecionado(s)</span>
+                <Button size="sm" disabled={salvando} onClick={() => setConfirmarLote(true)}>Concluir selecionados</Button>
+                <Button size="sm" variant="ghost" onClick={() => setSelecionados([])}>Limpar seleção</Button>
+              </>}
+            </div>
+          )}
           {status?.executando && (
             <p className="flex items-center gap-2 text-xs text-accent-600">
               <RefreshCw className="h-3.5 w-3.5 animate-spin" />
@@ -894,6 +964,10 @@ export function Acompanhamento() {
                   }}
                   className={`group cursor-pointer rounded-2xl border bg-white p-5 shadow-sm transition-all hover:border-accent-400 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 dark:bg-zinc-900 ${!p.lida ? "border-l-4 border-l-accent-600 dark:border-zinc-800 dark:border-l-accent-500" : "border-zinc-200 dark:border-zinc-800"}`}
                 >
+                  {filtro.arquivo === "ativos" && <label className="mb-3 inline-flex cursor-pointer items-center gap-2 text-xs text-zinc-500">
+                    <Checkbox checked={selecionados.includes(p.id)} onChange={(e) => setSelecionados((atual) => e.target.checked ? [...new Set([...atual, p.id])] : atual.filter((id) => id !== p.id))} />
+                    Selecionar processo
+                  </label>}
                   <div className="flex flex-col gap-4 sm:flex-row sm:justify-between">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap gap-2">
@@ -1647,6 +1721,16 @@ export function Acompanhamento() {
           </div>
         )}
       </Modal>
+      <ConfirmDialog
+        open={confirmarLote}
+        title="Concluir processos selecionados?"
+        message={`Os ${selecionados.length} processos selecionados sairão da lista de pendentes e poderão ser encontrados em Concluídos. Os alertas de obrigações externas continuam no acompanhamento até serem resolvidos.`}
+        confirmLabel={`Concluir ${selecionados.length}`}
+        confirmVariant="primary"
+        loading={salvando}
+        onConfirm={() => void concluirSelecionados()}
+        onCancel={() => setConfirmarLote(false)}
+      />
       <Modal
         open={mostrarSemLaudo}
         onClose={() => setMostrarSemLaudo(false)}
