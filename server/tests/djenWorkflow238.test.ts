@@ -282,6 +282,14 @@ describe("sugestão de prazo CPC com calendário configurado", () => {
     ).toThrow(/Confirme/);
   });
   it("identifica prazo explícito de manifestação sem criar prazo para pagamento de proposta", () => {
+    const proposta = "A parte autora foi intimada a se manifestar, em cinco dias, sobre proposta de acordo apresentada pelo INSS.";
+    expect(identificarPrazos(proposta)).toMatchObject([{ dias: 5, descricao: "Manifestação sobre proposta de acordo" }]);
+    const id = seed();
+    db.prepare("UPDATE djen_publicacoes SET texto=?,ia_json=NULL WHERE id=?").run(proposta, id);
+    expect(detalhesPublicacao(id).acao).toMatchObject({ tipo: "prazo_explicito", prazo_texto: proposta.slice(0, -1) });
+    expect(listarPublicacoes({}).items[0].acao).toMatchObject({ tipo: "prazo_explicito", prazo_texto: proposta.slice(0, -1) });
+    expect(identificarPrazos("Considerando proposta do INSS, intime-se a autora para se manifestar em cinco dias.")[0].dias).toBe(5);
+    expect(identificarPrazos("Intime-se o INSS para se manifestar sobre a proposta da autora em cinco dias.")).toEqual([]);
     expect(
       identificarPrazos(
         "Intime-se a autora para manifestar-se sobre a proposta de acordo em 15 (quinze) dias.",
