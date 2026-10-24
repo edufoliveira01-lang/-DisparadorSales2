@@ -15,13 +15,16 @@ import { PageHeader } from "@/components/ui/PageHeader";
 interface Lista { id: number; nome: string; posicao: number; contar_dias: number }
 interface Cartao {
   processo_chave: string; lista_id: number; posicao: number; entrou_em: string;
-  inicio_espera_em: string | null; numero: string; cliente_nome: string | null;
+  inicio_espera_em: string | null; modo: "automatico" | "manual";
+  etapa_publicacao_id: number | null; etapa_evidencia: string | null;
+  sugestao: { codigo: string; lista_nome: string | null; evidencia: string | null } | null;
+  numero: string; cliente_nome: string | null;
   publicacao_id: number; data_disponibilizacao: string; situacao: string;
   resumo: string; categorias: string[]; publicacoes_total: number;
   publicacoes_nao_lidas: number; prazos_abertos: number;
 }
 interface Quadro { listas: Lista[]; cartoes: Cartao[] }
-interface Movimento { origem: string | null; destino: string; created_at: string }
+interface Movimento { origem: string | null; destino: string; origem_movimento: "automatico" | "manual"; created_at: string }
 const normal = (texto: string) => texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 const dataBR = (s: string) => s.slice(0, 10).split("-").reverse().join("/");
 const hoje = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
@@ -78,7 +81,7 @@ export function QuadroProcessos() {
     (filtro === "todos" || (filtro === "prazos" && c.prazos_abertos > 0) || (filtro === "nao_lidos" && c.publicacoes_nao_lidas > 0)),
   ) || [];
   return <div className="space-y-5">
-    <PageHeader title="Quadro dos processos" description="Acompanhe cada processo por etapa. A posição do cartão é uma organização da equipe e não altera publicações, prazos ou a agenda de perícias."
+    <PageHeader title="Quadro dos processos" description="Etapas identificadas pelo DJEN avançam automaticamente quando há prova clara. Você pode mover ou fixar um cartão manualmente; isso não altera publicações, prazos ou a agenda de perícias."
       actions={<><Button variant="outline" onClick={() => navigate("/processos")}><ArrowLeft className="h-4 w-4" /> Publicações</Button><Button variant="outline" onClick={() => void carregar()}><RefreshCw className="h-4 w-4" /> Atualizar</Button></>} />
     <div className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
       <div className="relative min-w-[220px] flex-1"><Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-zinc-400" />
@@ -135,6 +138,15 @@ export function QuadroProcessos() {
                     {card.categorias.slice(0, 1).map((c) => <span key={c} className="rounded bg-zinc-100 px-1.5 py-0.5 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">{c.replaceAll("_", " ")}</span>)}
                   </span>
                 </button>
+                <div className="mt-2 text-[10px] text-zinc-500">
+                  <span className={`inline-flex rounded-full px-2 py-0.5 font-medium ${card.modo === "automatico" ? "bg-sky-50 text-sky-800 dark:bg-sky-950 dark:text-sky-300" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"}`} title={card.etapa_evidencia || undefined}>
+                    {card.modo === "automatico" ? card.etapa_publicacao_id ? "Etapa automática · DJEN" : "Aguardando identificação" : "Etapa manual"}
+                  </span>
+                  {card.modo === "automatico" && card.etapa_evidencia && <p className="mt-1 line-clamp-2 leading-relaxed" title={card.etapa_evidencia}>Base: “{card.etapa_evidencia}”</p>}
+                </div>
+                {card.modo === "manual" && card.sugestao?.lista_nome && <div className="mt-2 rounded-lg border border-sky-100 bg-sky-50 p-2 text-[11px] text-sky-900 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200">
+                  <p title={card.sugestao.evidencia || undefined}>DJEN sugere: <strong>{card.sugestao.lista_nome}</strong></p>
+                </div>}
                 {lista.contar_dias > 0 && <div className="mt-3 rounded-lg bg-amber-50 p-2 text-[11px] text-amber-900 dark:bg-amber-950 dark:text-amber-200">
                   <span className="flex items-center gap-1 font-semibold"><Clock3 className="h-3.5 w-3.5" /> {card.inicio_espera_em ? `${diasDesde(card.inicio_espera_em)} dia(s) nesta espera` : "Informe o início da espera"}</span>
                   <label className="mt-1 flex items-center gap-2">Desde <input type="date" aria-label={`Início da espera de ${card.numero}`} max={hoje()} value={card.inicio_espera_em || ""} disabled={busy}
@@ -147,6 +159,10 @@ export function QuadroProcessos() {
                   </Select></div>
                   <button type="button" aria-label={`Histórico das etapas de ${card.numero}`} title="Histórico das etapas" onClick={() => abrirHistorico(card)} className="rounded p-1.5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><History className="h-4 w-4" /></button>
                 </div>
+                <button type="button" disabled={busy} onClick={() => void acao(() => api.put(`/djen/kanban/cartoes/${encodeURIComponent(card.processo_chave)}/${card.modo === "automatico" ? "manual" : "automatico"}`))}
+                  className="mt-2 text-[11px] font-medium text-accent-700 hover:underline disabled:opacity-50 dark:text-accent-300">
+                  {card.modo === "automatico" ? "Fixar etapa manualmente" : "Voltar à classificação automática"}
+                </button>
               </article>)}
               {!cartoes.length && <p className="rounded-lg border border-dashed border-zinc-300 p-3 text-center text-xs text-zinc-400 dark:border-zinc-700">Arraste um processo para cá</p>}
             </div>
@@ -167,7 +183,7 @@ export function QuadroProcessos() {
       if (excluir) void acao(async () => { await api.delete(`/djen/kanban/listas/${excluir.id}`); setExcluir(null); });
     }} />
     <Modal open={Boolean(historicoDe)} onClose={() => setHistoricoDe(null)} title={`Etapas do processo ${historicoDe?.numero || ""}`} maxWidth="max-w-xl" footer={<Button variant="outline" onClick={() => setHistoricoDe(null)}><X className="h-4 w-4" /> Fechar</Button>}>
-      {!historico.length ? <p className="text-xs text-zinc-500">Nenhuma mudança manual de etapa registrada.</p> : <ol className="space-y-2 text-xs">{historico.map((item, i) => <li key={i} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800"><strong>{item.origem || "Início"} → {item.destino}</strong><span className="mt-1 block text-zinc-500">{new Date(item.created_at.replace(" ", "T") + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span></li>)}</ol>}
+      {!historico.length ? <p className="text-xs text-zinc-500">Nenhuma mudança de etapa registrada.</p> : <ol className="space-y-2 text-xs">{historico.map((item, i) => <li key={i} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800"><strong>{item.origem || "Início"} → {item.destino}</strong><span className="mt-1 block text-zinc-500">{item.origem_movimento === "automatico" ? "DJEN · " : "Movimento manual · "}{new Date(item.created_at.replace(" ", "T") + "Z").toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</span></li>)}</ol>}
     </Modal>
   </div>;
 }
