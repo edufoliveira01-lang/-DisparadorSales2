@@ -216,7 +216,7 @@ export function refinarCategoriasDaAnalise(analise: AnaliseCodex, texto: string)
   if (/\b(?:laudo juntado|juntada do laudo|laudo pericial apresentado)\b/.test(hint) || analise.categorias.includes("laudo_juntado")) {
     const prova = trecho(
       /\b(?:juntad[oa]\s+(?:(?:do|de)\s+)?laudo|laudo[^.;]{0,100}juntad[oa]|laudo pericial[^.;]{0,100}apresentad[oa]|juntou-se[^.;]{0,100}laudo)\b/,
-      (s) => !/\b(?:nao houve|nao foi|ainda nao|aguardando|apos a juntada|quando juntado|se juntado|devera juntar|junte-se o laudo|para juntada)\b/.test(s),
+      (s) => !future.test(s) && !/\b(?:nao houve|nao foi|ainda nao|aguardando|apos a juntada|apos juntado|quando juntado|se juntado|devera juntar|devera ser apresentado|junte-se o laudo|para juntada)\b/.test(s),
     );
     adicionar("laudo_juntado", prova);
   }
