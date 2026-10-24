@@ -6,6 +6,7 @@ import { Sidebar } from "./Sidebar";
 import { GlobalBatchProgress } from "./GlobalBatchProgress";
 import { useWhatsapp } from "@/context/WhatsappContext";
 import { Badge } from "./ui/Badge";
+import { ProcessAlerts } from "./ProcessAlerts";
 
 export function Layout({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -31,6 +32,7 @@ export function Layout({ children }: { children: ReactNode }) {
       </header>
       <main className="min-w-0 flex-1">
         <GlobalBatchProgress />
+        <ProcessAlerts />
         <div className="mx-auto w-full max-w-[1480px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8">{children}</div>
       </main>
     </div>
