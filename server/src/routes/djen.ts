@@ -33,6 +33,7 @@ import {
   listarAdvogados,
   salvarAdvogado,
   listarPublicacoes,
+  listarIdsPublicacoes,
   detalhesPublicacao,
   revisarPublicacao,
   salvarProcessoDaPublicacao,
@@ -60,6 +61,8 @@ import {
   atualizarAcompanhamentoPericia,
 } from "../services/djen/periciaIntegration";
 import { listarAguardandoMovimentacao, atualizarAguardandoMovimentacao } from "../services/djen/followUp";
+import { listarObrigacoesExternas, atualizarObrigacaoExterna } from "../services/djen/externalFollowUp";
+import { concluirProcessosSelecionados } from "../services/djen/bulk";
 export const djenRouter = Router();
 const wrap =
   (
@@ -88,6 +91,21 @@ const id = (value: string) => {
   return n;
 };
 const changed = () => emitEvent("djen:changed", {});
+const acompanhamentos = () => [
+  ...listarAguardandoMovimentacao().map((item) => ({
+    ...item, tipo: "aguardo_juizo", responsavel: "Juízo", prazo_citado_dias: null,
+    dias_decorridos: item.dias_sem_publicacao,
+  })),
+  ...listarObrigacoesExternas(),
+];
+const filtroPublicacoes = (req: import("express").Request) => {
+  const filtro: Record<string, string> = {};
+  for (const key of ["arquivo", "categoria", "resultado", "advogado_id", "situacao", "busca", "inicio", "fim", "pagina"])
+    if (typeof req.query[key] === "string") filtro[key] = req.query[key] as string;
+    else if (Array.isArray(req.query[key]) && (req.query[key] as unknown[]).every((v) => typeof v === "string"))
+      filtro[key] = (req.query[key] as string[]).join(",");
+  return filtro;
+};
 djenRouter.get(
   "/status",
   wrap((_req, res) =>
@@ -97,7 +115,7 @@ djenRouter.get(
       config: configuracaoDjen(),
       advogados: listarAdvogados(),
       pericias_sem_laudo: listarPericiasSemLaudo().length,
-      aguardando_retorno: listarAguardandoMovimentacao().length,
+      aguardando_retorno: acompanhamentos().length,
       codex: statusAnalisesCodex(),
     }),
   ),
@@ -178,26 +196,7 @@ djenRouter.post(
 djenRouter.get(
   "/publicacoes",
   wrap((req, res) => {
-    const filtro: Record<string, string> = {};
-    for (const key of [
-      "arquivo",
-      "categoria",
-      "resultado",
-      "advogado_id",
-      "situacao",
-      "busca",
-      "inicio",
-      "fim",
-      "pagina",
-    ])
-      if (typeof req.query[key] === "string")
-        filtro[key] = req.query[key] as string;
-      else if (
-        Array.isArray(req.query[key]) &&
-        (req.query[key] as unknown[]).every((v) => typeof v === "string")
-      )
-        filtro[key] = (req.query[key] as string[]).join(",");
-    const lista = listarPublicacoes(filtro);
+    const lista = listarPublicacoes(filtroPublicacoes(req));
     res.json({
       ...lista,
       items: lista.items.map((publicacao) => ({
@@ -207,6 +206,17 @@ djenRouter.get(
           : null,
       })),
     });
+  }),
+);
+djenRouter.get(
+  "/publicacoes/ids",
+  wrap((req, res) => res.json(listarIdsPublicacoes(filtroPublicacoes(req)))),
+);
+djenRouter.post(
+  "/publicacoes/conclusao-em-lote",
+  wrap((req, res) => {
+    const resultado = concluirProcessosSelecionados(req.body?.ids);
+    changed(); res.json(resultado);
   }),
 );
 djenRouter.get(
@@ -237,12 +247,15 @@ djenRouter.get(
 );
 djenRouter.get(
   "/aguardando",
-  wrap((_req, res) => res.json(listarAguardandoMovimentacao())),
+  wrap((_req, res) => res.json(acompanhamentos())),
 );
 djenRouter.put(
   "/aguardando/:id",
   wrap((req, res) => {
-    res.json(atualizarAguardandoMovimentacao(id(req.params.id), req.body.status));
+    const tipo = req.body?.tipo || "aguardo_juizo";
+    res.json(tipo === "aguardo_juizo"
+      ? atualizarAguardandoMovimentacao(id(req.params.id), req.body.status)
+      : atualizarObrigacaoExterna(id(req.params.id), tipo, req.body.status));
     changed();
   }),
 );
