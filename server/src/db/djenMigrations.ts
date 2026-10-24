@@ -233,6 +233,15 @@ export function runDjenMigrations(db: Database.Database): void {
   // Os 16 primeiros IDs são as etapas criadas na instalação inicial; renomes não alteram sua identidade.
   db.transaction(() => codigos.forEach((codigo, indice) =>
     db.prepare("UPDATE djen_kanban_listas SET codigo=? WHERE id=? AND codigo IS NULL").run(codigo, indice + 1)))();
+  if (!db.prepare("SELECT id FROM djen_kanban_listas WHERE codigo='distribuicao'").get()) db.transaction(() => {
+    const existente = db.prepare("SELECT id FROM djen_kanban_listas WHERE nome='Distribuição' COLLATE NOCASE AND codigo IS NULL").get() as { id: number } | undefined;
+    if (existente) {
+      db.prepare("UPDATE djen_kanban_listas SET codigo='distribuicao',regra_categoria=NULL WHERE id=?").run(existente.id);
+    } else {
+      db.prepare("UPDATE djen_kanban_listas SET posicao=posicao+1 WHERE posicao>=2").run();
+      db.prepare("INSERT INTO djen_kanban_listas(nome,posicao,codigo) VALUES ('Distribuição',2,'distribuicao')").run();
+    }
+  })();
   db.prepare("UPDATE OR IGNORE djen_kanban_listas SET nome='Sem etapa identificada' WHERE codigo='triagem' AND nome='A classificar'").run();
   const colunasCartoes = db.prepare("PRAGMA table_info(djen_kanban_cartoes)").all() as { name: string }[];
   if (!colunasCartoes.some((c) => c.name === "modo")) {
@@ -267,9 +276,9 @@ export function runDjenMigrations(db: Database.Database): void {
   // A versão anterior deixava cartões em modo manual. Reprocessa uma vez todo o
   // histórico já capturado; depois os gatilhos cuidam apenas dos processos alterados.
   const versaoQuadro = db.prepare("SELECT valor FROM djen_kanban_meta WHERE chave='classificador'").get() as { valor: string } | undefined;
-  if (versaoQuadro?.valor !== "2.49.0") db.transaction(() => {
+  if (versaoQuadro?.valor !== "2.50.0") db.transaction(() => {
     db.exec("UPDATE djen_kanban_cartoes SET modo='automatico',etapa_publicacao_id=NULL,etapa_evidencia=NULL,revisar_etapa=1");
-    db.prepare("INSERT INTO djen_kanban_meta(chave,valor) VALUES ('classificador','2.49.0') ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor").run();
+    db.prepare("INSERT INTO djen_kanban_meta(chave,valor) VALUES ('classificador','2.50.0') ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor").run();
   })();
   // Reconcilia análises antigas somente quando o próprio texto comprova o fato.
   // Revisões humanas e registros sem análise permanecem intactos.
