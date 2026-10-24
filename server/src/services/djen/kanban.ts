@@ -1,16 +1,20 @@
 import { db } from "../../db";
 import { DjenInputError } from "./store";
+import { classificarPublicacaoParaQuadro, ETAPAS_AUTOMATICAS, type EtapaAutomatica } from "./kanbanClassifier";
 
-type Lista = { id: number; nome: string; posicao: number; contar_dias: number };
+type Lista = { id: number; nome: string; posicao: number; contar_dias: number; codigo: string | null };
 type Cartao = {
   processo_chave: string; lista_id: number; posicao: number; entrou_em: string;
-  inicio_espera_em: string | null; numero: string; cliente_nome: string | null;
+  inicio_espera_em: string | null; modo: "automatico" | "manual";
+  etapa_publicacao_id: number | null; etapa_evidencia: string | null;
+  sugestao_codigo: string | null; sugestao_publicacao_id: number | null; sugestao_evidencia: string | null;
+  numero: string; cliente_nome: string | null;
   destinatarios_json: string; publicacao_id: number; data_disponibilizacao: string;
   situacao: string; texto: string; ia_json: string | null; categorias_json: string;
   publicacoes_total: number; prazos_abertos: number; publicacoes_nao_lidas: number;
 };
 const hoje = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-const listas = () => db.prepare("SELECT id,nome,posicao,contar_dias FROM djen_kanban_listas ORDER BY posicao,id").all() as Lista[];
+const listas = () => db.prepare("SELECT id,nome,posicao,contar_dias,codigo FROM djen_kanban_listas ORDER BY posicao,id").all() as Lista[];
 const nomeValido = (nome: unknown) => {
   if (typeof nome !== "string" || nome.trim().length < 2 || nome.trim().length > 70)
     throw new DjenInputError("Informe um nome de lista com 2 a 70 caracteres.");
@@ -30,8 +34,74 @@ function incluirProcessosNovos() {
   ).run(primeira.id, primeira.id);
 }
 
-export function listarKanban() {
+type Candidato = { codigo: EtapaAutomatica; evidencia: string; publicacao_id: number; data: string };
+function sincronizarEtapasAutomaticas(forcarProcesso?: string) {
+  const colunas = listas();
+  const porCodigo = new Map(colunas.filter((l) => l.codigo).map((l) => [l.codigo, l]));
+  const cards = db.prepare(
+    `SELECT k.processo_chave,k.lista_id,k.modo,k.etapa_publicacao_id,l.codigo AS codigo_atual,l.nome AS nome_atual
+       FROM djen_kanban_cartoes k JOIN djen_kanban_listas l ON l.id=k.lista_id
+      WHERE k.revisar_etapa=1`,
+  ).all() as { processo_chave: string; lista_id: number; modo: string; etapa_publicacao_id: number | null; codigo_atual: string | null; nome_atual: string }[];
+  if (!cards.length) return;
+  const rows = db.prepare(
+    `SELECT p.processo_chave,p.id,p.texto,p.data_disponibilizacao
+       FROM djen_publicacoes p JOIN djen_kanban_cartoes k ON k.processo_chave=p.processo_chave
+      WHERE p.cancelada=0 AND k.revisar_etapa=1
+      ORDER BY p.processo_chave,p.data_disponibilizacao,p.id`,
+  ).all() as { processo_chave: string; id: number; texto: string; data_disponibilizacao: string }[];
+  const candidatos = new Map<string, Candidato>();
+  const sinaisPorId = new Map<number, EtapaAutomatica>();
+  for (const pub of rows) {
+    const sinal = classificarPublicacaoParaQuadro(pub.texto);
+    if (!sinal) continue;
+    sinaisPorId.set(pub.id, sinal.codigo);
+    const antigo = candidatos.get(pub.processo_chave);
+    if (!antigo || ETAPAS_AUTOMATICAS.indexOf(sinal.codigo) >= ETAPAS_AUTOMATICAS.indexOf(antigo.codigo))
+      candidatos.set(pub.processo_chave, { ...sinal, publicacao_id: pub.id, data: pub.data_disponibilizacao });
+  }
+  const atualizar = db.prepare("UPDATE djen_kanban_cartoes SET lista_id=?,entrou_em=CURRENT_TIMESTAMP,inicio_espera_em=?,etapa_publicacao_id=?,etapa_evidencia=?,updated_at=CURRENT_TIMESTAMP WHERE processo_chave=?");
+  const salvarSinal = db.prepare("UPDATE djen_kanban_cartoes SET revisar_etapa=0,sugestao_codigo=?,sugestao_publicacao_id=?,sugestao_evidencia=? WHERE processo_chave=?");
+  const atualizarProva = db.prepare("UPDATE djen_kanban_cartoes SET etapa_publicacao_id=?,etapa_evidencia=? WHERE processo_chave=?");
+  const historico = db.prepare("INSERT INTO djen_kanban_movimentos(processo_chave,origem,destino,origem_movimento) VALUES (?,?,?,'automatico')");
+  db.transaction(() => {
+    for (const card of cards) {
+      const sinal = candidatos.get(card.processo_chave);
+      salvarSinal.run(sinal?.codigo || null, sinal?.publicacao_id || null, sinal?.evidencia || null, card.processo_chave);
+      if (card.modo !== "automatico") continue;
+      const provaRevogada = card.etapa_publicacao_id !== null && sinaisPorId.get(card.etapa_publicacao_id) !== card.codigo_atual;
+      if (!sinal) {
+        const triagem = porCodigo.get("triagem");
+        if (provaRevogada && triagem && triagem.id !== card.lista_id) {
+          atualizar.run(triagem.id, null, null, null, card.processo_chave);
+          historico.run(card.processo_chave, card.nome_atual, triagem.nome);
+        }
+        continue;
+      }
+      const coluna = porCodigo.get(sinal.codigo);
+      if (!coluna) continue;
+      const rankAtual = ETAPAS_AUTOMATICAS.indexOf(card.codigo_atual as EtapaAutomatica);
+      const rankNovo = ETAPAS_AUTOMATICAS.indexOf(sinal.codigo);
+      const mudou = coluna.id !== card.lista_id && (card.processo_chave === forcarProcesso || provaRevogada || rankNovo > rankAtual);
+      if (mudou) {
+        atualizar.run(coluna.id, coluna.contar_dias ? (sinal.data <= hoje() ? sinal.data : hoje()) : null,
+          sinal.publicacao_id, sinal.evidencia, card.processo_chave);
+        historico.run(card.processo_chave, card.nome_atual, coluna.nome);
+      } else if (coluna.id === card.lista_id && card.etapa_publicacao_id !== sinal.publicacao_id) {
+        atualizarProva.run(sinal.publicacao_id, sinal.evidencia, card.processo_chave);
+      }
+    }
+  })();
+}
+
+/** Executado após um lote do DJEN; publica o quadro já classificado para a interface. */
+export function atualizarKanbanComNovasPublicacoes() {
   incluirProcessosNovos();
+  sincronizarEtapasAutomaticas();
+}
+
+export function listarKanban() {
+  atualizarKanbanComNovasPublicacoes();
   const cards = db.prepare(
     `SELECT k.*,pr.numero,c.nome AS cliente_nome,p.destinatarios_json,p.id AS publicacao_id,
             p.data_disponibilizacao,p.situacao,p.texto,p.ia_json,p.categorias_json,
@@ -47,8 +117,11 @@ export function listarKanban() {
          ORDER BY q.data_disponibilizacao DESC,q.id DESC LIMIT 1)
       ORDER BY k.lista_id,k.posicao,k.processo_chave`,
   ).all() as Cartao[];
+  const colunas = listas();
+  const listasPorId = new Map(colunas.map((l) => [l.id, l]));
+  const listasPorCodigo = new Map(colunas.filter((l) => l.codigo).map((l) => [l.codigo, l]));
   return {
-    listas: listas(),
+    listas: colunas,
     cartoes: cards.map((c) => {
       let nome = c.cliente_nome;
       let resumo = c.situacao || c.texto.slice(0, 240);
@@ -65,7 +138,10 @@ export function listarKanban() {
         categorias = Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : [];
       } catch { /* Nenhuma categoria confiável. */ }
       const { destinatarios_json, ia_json, texto, categorias_json, ...resto } = c;
-      return { ...resto, cliente_nome: nome, resumo: resumo.slice(0, 220), categorias };
+      const sugestao = c.modo === "manual" && c.sugestao_codigo && c.sugestao_codigo !== listasPorId.get(c.lista_id)?.codigo
+        ? { codigo: c.sugestao_codigo, lista_nome: listasPorCodigo.get(c.sugestao_codigo)?.nome || null, evidencia: c.sugestao_evidencia }
+        : null;
+      return { ...resto, cliente_nome: nome, resumo: resumo.slice(0, 220), categorias, sugestao };
     }),
   };
 }
@@ -135,7 +211,7 @@ export function moverCartaoKanban(processo: string, destino: number, antesDe?: s
   const update = db.prepare("UPDATE djen_kanban_cartoes SET lista_id=?,posicao=?,updated_at=CURRENT_TIMESTAMP WHERE processo_chave=?");
   db.transaction(() => {
     if (atual.lista_id !== destino) {
-      db.prepare("UPDATE djen_kanban_cartoes SET lista_id=?,entrou_em=CURRENT_TIMESTAMP,inicio_espera_em=?,updated_at=CURRENT_TIMESTAMP WHERE processo_chave=?")
+      db.prepare("UPDATE djen_kanban_cartoes SET lista_id=?,entrou_em=CURRENT_TIMESTAMP,inicio_espera_em=?,modo='manual',etapa_publicacao_id=NULL,etapa_evidencia=NULL,updated_at=CURRENT_TIMESTAMP WHERE processo_chave=?")
         .run(destino, coluna.contar_dias ? hoje() : null, processo);
       origem.filter((r) => r.processo_chave !== processo).forEach((r, i) => update.run(atual.lista_id, i, r.processo_chave));
       db.prepare("INSERT INTO djen_kanban_movimentos(processo_chave,origem,destino) VALUES (?,?,?)")
@@ -143,6 +219,22 @@ export function moverCartaoKanban(processo: string, destino: number, antesDe?: s
     }
     outros.forEach((chave, i) => update.run(destino, i, chave));
   })();
+  return { ok: true };
+}
+
+export function ativarClassificacaoAutomatica(processo: string) {
+  incluirProcessosNovos();
+  const atual = db.prepare("SELECT processo_chave FROM djen_kanban_cartoes WHERE processo_chave=?").get(processo);
+  if (!atual) throw new DjenInputError("Processo não encontrado no quadro.");
+  db.prepare("UPDATE djen_kanban_cartoes SET modo='automatico',revisar_etapa=1,updated_at=CURRENT_TIMESTAMP WHERE processo_chave=?").run(processo);
+  sincronizarEtapasAutomaticas(processo);
+  return { ok: true };
+}
+
+export function fixarEtapaManual(processo: string) {
+  incluirProcessosNovos();
+  const result = db.prepare("UPDATE djen_kanban_cartoes SET modo='manual',updated_at=CURRENT_TIMESTAMP WHERE processo_chave=?").run(processo);
+  if (!result.changes) throw new DjenInputError("Processo não encontrado no quadro.");
   return { ok: true };
 }
 
@@ -161,5 +253,5 @@ export function alterarInicioEsperaKanban(processo: string, data: unknown) {
 export function historicoCartaoKanban(processo: string) {
   if (!db.prepare("SELECT chave FROM djen_processos WHERE chave=?").get(processo))
     throw new DjenInputError("Processo não encontrado.");
-  return db.prepare("SELECT origem,destino,created_at FROM djen_kanban_movimentos WHERE processo_chave=? ORDER BY id DESC LIMIT 50").all(processo);
+  return db.prepare("SELECT origem,destino,origem_movimento,created_at FROM djen_kanban_movimentos WHERE processo_chave=? ORDER BY id DESC LIMIT 50").all(processo);
 }
