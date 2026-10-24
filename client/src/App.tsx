@@ -1,6 +1,7 @@
 import { ActiveServiceProvider } from "@/context/ActiveServiceContext";
 import { Acompanhamento } from "@/pages/Acompanhamento";
 import { CalendariosPrazos } from "@/pages/CalendariosPrazos";
+import { QuadroProcessos } from "@/pages/QuadroProcessos";
 import { Route, Routes, useLocation } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { WhatsappProvider } from "@/context/WhatsappContext";
@@ -33,6 +34,7 @@ export default function App() {
       <BatchProgressProvider>
         <Layout>
           <Routes>
+            <Route path="/processos/quadro" element={<QuadroProcessos />} />
             <Route path="/processos/calendarios" element={<CalendariosPrazos />} />
             <Route path="/processos/*" element={<Acompanhamento />} />
             <Route path="/" element={<Dashboard />} />
