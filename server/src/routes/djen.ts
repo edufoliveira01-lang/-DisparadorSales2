@@ -13,6 +13,7 @@ import {
   configPrazos,
   salvarConfigPrazos,
   sugestoesPrazos,
+  identificarPrazos,
   concluirPublicacao,
 } from "../services/djen/deadlines";
 import { enviarPrazoAgenda } from "../services/djen/calendar";
@@ -519,6 +520,10 @@ djenRouter.post(
   "/publicacoes/:id/prazos/calcular",
   wrap(async (req, res) => {
     const p = detalhesPublicacao(id(req.params.id));
+    const candidatos = identificarPrazos(p.texto || "");
+    if (candidatos.length && !candidatos.some((c) => c.dias === Number(req.body?.dias) && c.unidade === req.body?.unidade)
+        && req.body?.divergencia_confirmada !== true)
+      throw new DjenInputError("A quantidade de dias difere do prazo expresso nesta publicação. Confira o texto e confirme a alteração antes de calcular.");
     res.json(await calcularComCalendarioOficial(p.tribunal, p.orgao, req.body));
   }),
 );
