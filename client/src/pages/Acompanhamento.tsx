@@ -22,6 +22,7 @@ import {
   Settings2,
   AlertCircle,
   FolderOpen,
+  Columns3,
   Sparkles,
   Trash2,
   Clock3,
@@ -412,6 +413,16 @@ export function Acompanhamento() {
     }
   }, []);
   useEffect(() => {
+    const params = new URLSearchParams(search);
+    const id = Number(params.get("abrir"));
+    if (!Number.isSafeInteger(id) || id <= 0) return;
+    params.delete("abrir");
+    navigate({ pathname, search: params.toString() }, { replace: true });
+    void abrir(id);
+  // A abertura é acionada apenas por mudança de URL, não por cada atualização da lista.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, pathname, navigate]);
+  useEffect(() => {
     const parametros = new URLSearchParams(search);
     if (parametros.get("semLaudo") !== "1") return;
     setMostrarSemLaudo(true);
@@ -767,6 +778,7 @@ export function Acompanhamento() {
       <nav aria-label="Área processual" className="flex flex-wrap gap-1 rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         {([
           ["/processos", "Publicações", FolderOpen],
+          ["/processos/quadro", "Quadro", Columns3],
           ["/processos/aguardando", `Aguardando${status?.aguardando_retorno ? ` · ${status.aguardando_retorno}` : ""}`, Clock3],
           ["/processos/advogados", "Advogados", BriefcaseBusiness],
           ["/processos/monitoramento", "Monitoramento", Settings2],
