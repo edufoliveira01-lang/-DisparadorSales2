@@ -178,6 +178,7 @@ export function runDjenMigrations(db: Database.Database): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       nome TEXT NOT NULL COLLATE NOCASE UNIQUE,
       posicao INTEGER NOT NULL,
+      codigo TEXT UNIQUE,
       contar_dias INTEGER NOT NULL DEFAULT 0 CHECK(contar_dias IN (0,1)),
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
@@ -187,6 +188,13 @@ export function runDjenMigrations(db: Database.Database): void {
       posicao INTEGER NOT NULL DEFAULT 0,
       entrou_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       inicio_espera_em TEXT,
+      modo TEXT NOT NULL DEFAULT 'automatico' CHECK(modo IN ('automatico','manual')),
+      etapa_publicacao_id INTEGER,
+      etapa_evidencia TEXT,
+      revisar_etapa INTEGER NOT NULL DEFAULT 1,
+      sugestao_codigo TEXT,
+      sugestao_publicacao_id INTEGER,
+      sugestao_evidencia TEXT,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_djen_kanban_cartoes_lista ON djen_kanban_cartoes(lista_id,posicao);
@@ -195,6 +203,7 @@ export function runDjenMigrations(db: Database.Database): void {
       processo_chave TEXT NOT NULL REFERENCES djen_processos(chave) ON DELETE CASCADE,
       origem TEXT,
       destino TEXT NOT NULL,
+      origem_movimento TEXT NOT NULL DEFAULT 'manual',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_djen_kanban_movimentos_processo ON djen_kanban_movimentos(processo_chave,id DESC);
@@ -210,6 +219,46 @@ export function runDjenMigrations(db: Database.Database): void {
     const inserir = db.prepare("INSERT OR IGNORE INTO djen_kanban_listas(nome,posicao,contar_dias) VALUES (?,?,?)");
     db.transaction(() => etapas.forEach((nome, posicao) => inserir.run(nome, posicao, nome === "Aguardando expedição de RPV" ? 1 : 0)))();
   }
+  const colunasListas = db.prepare("PRAGMA table_info(djen_kanban_listas)").all() as { name: string }[];
+  if (!colunasListas.some((c) => c.name === "codigo")) db.exec("ALTER TABLE djen_kanban_listas ADD COLUMN codigo TEXT");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_djen_kanban_listas_codigo ON djen_kanban_listas(codigo)");
+  const codigos = [
+    "triagem", "peticao_inicial", "emenda_inicial", "perito_designado", "pericia_agendada",
+    "pericia_realizada", "laudo_manifestacoes", "sentenca", "recurso", "acordao",
+    "cumprimento_sentenca", "aguarda_implantacao", "calculos", "aguarda_expedicao_rpv",
+    "rpv_expedida", "concluido",
+  ];
+  // Os 16 primeiros IDs são as etapas criadas na instalação inicial; renomes não alteram sua identidade.
+  db.transaction(() => codigos.forEach((codigo, indice) =>
+    db.prepare("UPDATE djen_kanban_listas SET codigo=? WHERE id=? AND codigo IS NULL").run(codigo, indice + 1)))();
+  const colunasCartoes = db.prepare("PRAGMA table_info(djen_kanban_cartoes)").all() as { name: string }[];
+  if (!colunasCartoes.some((c) => c.name === "modo")) {
+    db.exec("ALTER TABLE djen_kanban_cartoes ADD COLUMN modo TEXT NOT NULL DEFAULT 'automatico' CHECK(modo IN ('automatico','manual'))");
+    // Etapas movidas na versão anterior ficam manuais; nenhuma escolha existente é sobrescrita.
+    db.exec(`UPDATE djen_kanban_cartoes SET modo='manual'
+      WHERE lista_id<>(SELECT MIN(id) FROM djen_kanban_listas)
+         OR EXISTS(SELECT 1 FROM djen_kanban_movimentos m WHERE m.processo_chave=djen_kanban_cartoes.processo_chave)`);
+  }
+  if (!colunasCartoes.some((c) => c.name === "etapa_publicacao_id")) db.exec("ALTER TABLE djen_kanban_cartoes ADD COLUMN etapa_publicacao_id INTEGER");
+  if (!colunasCartoes.some((c) => c.name === "etapa_evidencia")) db.exec("ALTER TABLE djen_kanban_cartoes ADD COLUMN etapa_evidencia TEXT");
+  if (!colunasCartoes.some((c) => c.name === "revisar_etapa")) db.exec("ALTER TABLE djen_kanban_cartoes ADD COLUMN revisar_etapa INTEGER NOT NULL DEFAULT 1");
+  if (!colunasCartoes.some((c) => c.name === "sugestao_codigo")) db.exec("ALTER TABLE djen_kanban_cartoes ADD COLUMN sugestao_codigo TEXT");
+  if (!colunasCartoes.some((c) => c.name === "sugestao_publicacao_id")) db.exec("ALTER TABLE djen_kanban_cartoes ADD COLUMN sugestao_publicacao_id INTEGER");
+  if (!colunasCartoes.some((c) => c.name === "sugestao_evidencia")) db.exec("ALTER TABLE djen_kanban_cartoes ADD COLUMN sugestao_evidencia TEXT");
+  const colunasMovimentos = db.prepare("PRAGMA table_info(djen_kanban_movimentos)").all() as { name: string }[];
+  if (!colunasMovimentos.some((c) => c.name === "origem_movimento")) db.exec("ALTER TABLE djen_kanban_movimentos ADD COLUMN origem_movimento TEXT NOT NULL DEFAULT 'manual'");
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS djen_kanban_publicacao_inserida AFTER INSERT ON djen_publicacoes
+    BEGIN UPDATE djen_kanban_cartoes SET revisar_etapa=1 WHERE processo_chave=NEW.processo_chave; END;
+    CREATE TRIGGER IF NOT EXISTS djen_kanban_publicacao_atualizada
+      AFTER UPDATE OF texto,ia_json,categorias_json,cancelada,data_disponibilizacao,processo_chave ON djen_publicacoes
+    BEGIN
+      UPDATE djen_kanban_cartoes SET revisar_etapa=1 WHERE processo_chave=NEW.processo_chave;
+      UPDATE djen_kanban_cartoes SET revisar_etapa=1 WHERE processo_chave=OLD.processo_chave;
+    END;
+    CREATE TRIGGER IF NOT EXISTS djen_kanban_publicacao_excluida AFTER DELETE ON djen_publicacoes
+    BEGIN UPDATE djen_kanban_cartoes SET revisar_etapa=1 WHERE processo_chave=OLD.processo_chave; END;
+  `);
   // Reconcilia análises antigas somente quando o próprio texto comprova o fato.
   // Revisões humanas e registros sem análise permanecem intactos.
   const candidatos = db.prepare(
