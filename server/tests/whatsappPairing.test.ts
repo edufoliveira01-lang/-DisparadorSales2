@@ -45,9 +45,11 @@ const manager = whatsappManager as unknown as {
   client: FakeClient | null;
   geracao: number;
   tentativa: number;
+  desconexaoManual: boolean;
   iniciarTentativa: (g: number) => Promise<void>;
   iniciarTentativaSegura: (g: number) => void;
   reconciliarPendentesAoReconectar: () => Promise<void>;
+  recuperarBrowserTravado: (motivo: string) => Promise<void>;
 };
 const deferred = <T>() => {
   let resolve!: (v: T) => void;
@@ -73,6 +75,7 @@ beforeEach(async () => {
   vi.spyOn(manager, "reconciliarPendentesAoReconectar").mockResolvedValue();
   manager.geracao++;
   manager.tentativa = 0;
+  manager.desconexaoManual = false;
   await manager.iniciarTentativa(manager.geracao);
   client = mocks.clients[0] as FakeClient;
   await vi.advanceTimersByTimeAsync(1);
@@ -85,6 +88,35 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 describe("pareamento por QR e sincronização do WhatsApp", () => {
+  it("recupera a sessão conectada quando duas verificações seguidas encontram navegador congelado", async () => {
+    client.getState.mockResolvedValue("CONNECTED");
+    client.emit("ready");
+    const recuperar = vi.spyOn(manager, "recuperarBrowserTravado").mockResolvedValue();
+    client.getState.mockImplementation(async () => { throw new Error("contexto indisponível"); });
+    await vi.advanceTimersByTimeAsync(45001);
+    expect(recuperar).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(45001);
+    expect(recuperar).toHaveBeenCalledOnce();
+  });
+  it("não reinicia a sessão por uma falha transitória isolada", async () => {
+    client.getState.mockResolvedValue("CONNECTED");
+    client.emit("ready");
+    const recuperar = vi.spyOn(manager, "recuperarBrowserTravado").mockResolvedValue();
+    client.getState.mockRejectedValueOnce(new Error("navegação momentânea"));
+    await vi.advanceTimersByTimeAsync(90001);
+    expect(recuperar).not.toHaveBeenCalled();
+  });
+  it("retoma a sessão salva após esgotar as tentativas rápidas de reconexão", async () => {
+    client.getState.mockResolvedValue("CONNECTED");
+    client.emit("ready");
+    manager.tentativa = 6;
+    const iniciar = vi.spyOn(manager, "iniciarTentativaSegura").mockImplementation(() => {});
+    client.emit("disconnected", "UNLAUNCHED");
+    await vi.advanceTimersByTimeAsync(100);
+    expect(whatsappManager.getState().status).toBe("desconectado");
+    await vi.advanceTimersByTimeAsync(120001);
+    expect(iniciar).toHaveBeenCalledOnce();
+  });
   it("retira o QR quando o socket confirma o vínculo antes de authenticated", async () => {
     client.emit("qr", "primeiro");
     await vi.advanceTimersByTimeAsync(1);
@@ -176,6 +208,7 @@ describe("pareamento por QR e sincronização do WhatsApp", () => {
     expect(whatsappManager.getState().lastError).toMatch(/3 minutos/);
   });
   it("ready não volta a autenticar nem perde o progresso com eventos atrasados", async () => {
+    client.getState.mockResolvedValue("CONNECTED");
     client.emit("ready");
     client.emit("authenticated");
     client.emit("loading_screen", 20);
