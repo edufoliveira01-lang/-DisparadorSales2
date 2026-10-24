@@ -165,6 +165,15 @@ export function runDjenMigrations(db: Database.Database): void {
       status TEXT NOT NULL DEFAULT 'pendente' CHECK(status IN ('pendente','cobrado','resolvido')),
       ultima_cobranca_em TEXT
     );
+    CREATE TABLE IF NOT EXISTS djen_acompanhamentos_obrigacoes (
+      publicacao_id INTEGER NOT NULL REFERENCES djen_publicacoes(id) ON DELETE CASCADE,
+      tipo TEXT NOT NULL CHECK(tipo IN ('perito_laudo','perito_esclarecimentos','perito_calculos','inss_implantacao','parte_contraria')),
+      status TEXT NOT NULL DEFAULT 'pendente' CHECK(status IN ('pendente','cobrado','resolvido')),
+      ultima_cobranca_em TEXT,
+      PRIMARY KEY(publicacao_id,tipo)
+    );
+    CREATE INDEX IF NOT EXISTS idx_djen_publicacoes_processo_data
+      ON djen_publicacoes(processo_chave,data_disponibilizacao DESC,id DESC);
   `);
   // Reconcilia análises antigas somente quando o próprio texto comprova o fato.
   // Revisões humanas e registros sem análise permanecem intactos.
