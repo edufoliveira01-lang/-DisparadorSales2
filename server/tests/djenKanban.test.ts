@@ -4,7 +4,7 @@ import Database from "better-sqlite3";
 import { runMigrations } from "../src/db/migrations";
 import { runDjenMigrations } from "../src/db/djenMigrations";
 import { concluirPublicacao } from "../src/services/djen/deadlines";
-import { classificarPublicacaoParaQuadro } from "../src/services/djen/kanbanClassifier";
+import { classificarPublicacaoParaQuadro, classificarPublicacaoComHistorico } from "../src/services/djen/kanbanClassifier";
 import {
   listarKanban, criarListaKanban, alterarListaKanban, ordenarListasKanban,
   excluirListaKanban, moverCartaoKanban, alterarInicioEsperaKanban, historicoCartaoKanban,
@@ -21,9 +21,15 @@ function publicar(processo: string, data: string, texto: string) {
 }
 beforeEach(() => {
   db.exec("DELETE FROM djen_kanban_movimentos;DELETE FROM djen_kanban_cartoes;DELETE FROM djen_publicacao_advogados;DELETE FROM djen_prazos;DELETE FROM djen_publicacoes;DELETE FROM djen_processos;");
+  db.exec("DELETE FROM djen_kanban_listas WHERE codigo IS NULL;UPDATE djen_kanban_listas SET posicao=id-1;");
 });
 
 describe("evidência para etapas automáticas", () => {
+  it("reaproveita acórdão comprovado na análise anterior sem executar Codex novamente", () => {
+    const texto = "Turma Recursal, por unanimidade, deu provimento ao recurso da autora.";
+    expect(classificarPublicacaoComHistorico({ texto, categorias_json: '["acordao"]', evidencias_json: JSON.stringify([{ categoria: "acordao", trecho: texto }]) })).toMatchObject({ codigo: "acordao" });
+    expect(classificarPublicacaoComHistorico({ texto: "Citado o acórdão anterior.", categorias_json: '["acordao"]', evidencias_json: JSON.stringify([{ categoria: "acordao", trecho: texto }]) })).toBeNull();
+  });
   it.each([
     ["Foi recebida a petição inicial da autora.", "peticao_inicial"],
     ["Intime-se a autora para emendar a petição inicial.", "emenda_inicial"],
@@ -60,7 +66,19 @@ describe("evidência para etapas automáticas", () => {
 });
 
 describe("quadro processual", () => {
-  it("migra o quadro anterior preservando cartões movimentados manualmente", () => {
+  it("classifica lista personalizada pela categoria já verificada do DJEN e avança com publicação posterior", () => {
+    const texto = "O INSS apresentou proposta de acordo nos autos.";
+    const id = publicar("acordo-custom", "2026-07-01", texto);
+    db.prepare("UPDATE djen_publicacoes SET categorias_json=?,evidencias_json=? WHERE id=?")
+      .run('["proposta_acordo"]', JSON.stringify([{ categoria: "proposta_acordo", trecho: texto }]), id);
+    const lista = criarListaKanban({ nome: "Proposta de acordo", regra_categoria: "proposta_acordo" }) as { id: number };
+    expect(listarKanban().cartoes.find((c) => c.processo_chave === "acordo-custom")!.lista_id).toBe(lista.id);
+    publicar("acordo-custom", "2026-08-01", "SENTENÇA. Julgo procedente o pedido da autora.");
+    const quadro = listarKanban();
+    expect(quadro.cartoes.find((c) => c.processo_chave === "acordo-custom")!.lista_id)
+      .toBe(quadro.listas.find((l) => l.codigo === "sentenca")!.id);
+  });
+  it("migra o quadro anterior e reabre todos os cartões para classificação automática", () => {
     const antigo = new Database(":memory:");
     try {
       runMigrations(antigo);
@@ -75,9 +93,13 @@ describe("quadro processual", () => {
         INSERT INTO djen_kanban_movimentos(processo_chave,origem,destino) VALUES ('voltou-triagem','Sentença','A classificar');
       `);
       runDjenMigrations(antigo);
-      expect((antigo.prepare("SELECT modo FROM djen_kanban_cartoes WHERE processo_chave='manual-antigo'").get() as { modo: string }).modo).toBe("manual");
-      expect((antigo.prepare("SELECT modo FROM djen_kanban_cartoes WHERE processo_chave='voltou-triagem'").get() as { modo: string }).modo).toBe("manual");
+      expect((antigo.prepare("SELECT modo,revisar_etapa FROM djen_kanban_cartoes WHERE processo_chave='manual-antigo'").get() as { modo: string; revisar_etapa: number })).toMatchObject({ modo: "automatico", revisar_etapa: 1 });
+      expect((antigo.prepare("SELECT modo FROM djen_kanban_cartoes WHERE processo_chave='voltou-triagem'").get() as { modo: string }).modo).toBe("automatico");
       expect((antigo.prepare("SELECT codigo FROM djen_kanban_listas WHERE id=2").get() as { codigo: string }).codigo).toBe("peticao_inicial");
+      antigo.exec("UPDATE djen_kanban_meta SET valor='2.48.0' WHERE chave='classificador';UPDATE djen_kanban_cartoes SET modo='manual',revisar_etapa=0");
+      runDjenMigrations(antigo);
+      expect((antigo.prepare("SELECT modo,revisar_etapa FROM djen_kanban_cartoes WHERE processo_chave='manual-antigo'").get() as { modo: string; revisar_etapa: number }))
+        .toMatchObject({ modo: "automatico", revisar_etapa: 1 });
     } finally { antigo.close(); }
   });
   it("classifica histórico, avança com novo fato e não regride por publicação genérica ou antiga", () => {
@@ -100,19 +122,17 @@ describe("quadro processual", () => {
     expect((historicoCartaoKanban("auto-1") as { origem_movimento: string }[]).every((item) => item.origem_movimento === "automatico")).toBe(true);
   });
 
-  it("mantém escolha manual, mostra sugestão e permite retomar a classificação automática", () => {
+  it("usa histórico mesmo para cartões que estavam manuais e impede novo movimento manual", () => {
     publicar("auto-2", "2026-06-01", "SENTENÇA. Julgo procedente o pedido.");
     const quadro = listarKanban();
     const recurso = quadro.listas.find((l) => l.codigo === "recurso")!;
-    moverCartaoKanban("auto-2", recurso.id);
+    db.prepare("UPDATE djen_kanban_cartoes SET lista_id=?,modo='manual',etapa_publicacao_id=NULL,revisar_etapa=1 WHERE processo_chave=?").run(recurso.id, "auto-2");
     publicar("auto-2", "2026-08-01", "Foi expedida a RPV para pagamento.");
-    const manual = listarKanban().cartoes.find((c) => c.processo_chave === "auto-2")!;
-    expect(manual).toMatchObject({ lista_id: recurso.id, modo: "manual", sugestao: { codigo: "rpv_expedida" } });
-    ativarClassificacaoAutomatica("auto-2");
     const automatico = listarKanban().cartoes.find((c) => c.processo_chave === "auto-2")!;
-    expect(automatico).toMatchObject({ lista_id: quadro.listas.find((l) => l.codigo === "rpv_expedida")!.id, modo: "automatico" });
-    fixarEtapaManual("auto-2");
-    expect(listarKanban().cartoes.find((c) => c.processo_chave === "auto-2")!.modo).toBe("manual");
+    expect(automatico.lista_id).toBe(quadro.listas.find((l) => l.codigo === "rpv_expedida")!.id);
+    expect(() => moverCartaoKanban("auto-2", recurso.id)).toThrow(/automaticamente/);
+    expect(() => fixarEtapaManual("auto-2")).toThrow(/automaticamente/);
+    expect(ativarClassificacaoAutomatica("auto-2")).toEqual({ ok: true });
   });
 
   it("começa a espera de RPV na publicação e revê o sinal cancelado", () => {
@@ -131,51 +151,50 @@ describe("quadro processual", () => {
     publicar("500001", "2026-10-02", "Despacho.");
     publicar("500002", "2026-10-03", "Perícia.");
     const quadro = listarKanban();
-    expect(quadro.listas[0].nome).toBe("A classificar");
+    expect(quadro.listas[0].nome).toBe("Sem etapa identificada");
     expect(quadro.listas.some((l) => l.nome === "Aguardando expedição de RPV" && l.contar_dias === 1)).toBe(true);
     expect(quadro.cartoes).toHaveLength(2);
     const sentenca = quadro.listas.find((l) => l.nome === "Sentença")!;
-    moverCartaoKanban("500001", sentenca.id);
+    db.prepare("UPDATE djen_kanban_cartoes SET lista_id=?,modo='manual',etapa_publicacao_id=NULL,revisar_etapa=1 WHERE processo_chave=?").run(sentenca.id, "500001");
     publicar("500001", "2026-10-04", "Nova publicação do mesmo processo.");
     const atualizado = listarKanban().cartoes.find((c) => c.processo_chave === "500001")!;
-    expect(atualizado.lista_id).toBe(sentenca.id);
+    expect(atualizado.lista_id).toBe(quadro.listas[0].id);
     expect(atualizado.publicacoes_total).toBe(3);
     expect(atualizado.data_disponibilizacao).toBe("2026-10-04");
   });
 
   it("registra movimentos, reordena e conta dias da espera sem concluir prazo ou publicação", () => {
-    const id = publicar("500003", "2026-10-01", "Aguardando expedição.");
-    publicar("500004", "2026-10-02", "Outro caso.");
+    const id = publicar("500003", "2026-10-01", "Determino a expedição de RPV.");
+    publicar("500004", "2026-10-02", "Determino a expedição de RPV.");
     db.prepare("INSERT INTO djen_prazos(publicacao_id,descricao,inicio,termino,status) VALUES (?,?,?,?,?)")
       .run(id, "Manifestação", "2026-10-02", "2026-10-30", "aberto");
     const rpv = listarKanban().listas.find((l) => l.nome === "Aguardando expedição de RPV")!;
-    moverCartaoKanban("500003", rpv.id);
-    moverCartaoKanban("500004", rpv.id, "500003");
+    expect(listarKanban().cartoes.filter((c) => c.lista_id === rpv.id)).toHaveLength(2);
     alterarInicioEsperaKanban("500003", "2026-08-01");
     expect(() => alterarInicioEsperaKanban("500003", "2999-01-01")).toThrow();
-    expect(listarKanban().cartoes.filter((c) => c.lista_id === rpv.id).map((c) => c.processo_chave)).toEqual(["500004", "500003"]);
+    expect(listarKanban().cartoes.filter((c) => c.lista_id === rpv.id)).toHaveLength(2);
     concluirPublicacao(id, true);
     expect(listarKanban().cartoes.find((c) => c.processo_chave === "500003")).toMatchObject({ inicio_espera_em: "2026-08-01", prazos_abertos: 1 });
-    expect(historicoCartaoKanban("500003")).toMatchObject([{ origem: "A classificar", destino: "Aguardando expedição de RPV" }]);
+    expect(historicoCartaoKanban("500003")).toMatchObject([{ origem: "Sem etapa identificada", destino: "Aguardando expedição de RPV" }]);
     expect((db.prepare("SELECT concluida FROM djen_publicacoes WHERE id=?").get(id) as { concluida: number }).concluida).toBe(1);
   });
 
   it("permite criar, editar, ordenar e excluir somente listas vazias", () => {
     publicar("500005", "2026-10-01", "Proposta de acordo.");
     const quadro = listarKanban();
-    const criada = criarListaKanban({ nome: "Proposta de acordo", contar_dias: true }) as { id: number; contar_dias: number };
+    const criada = criarListaKanban({ nome: "Proposta de acordo", contar_dias: true, regra_categoria: "proposta_acordo" }) as { id: number; contar_dias: number };
     expect(criada.contar_dias).toBe(1);
-    alterarListaKanban(criada.id, { nome: "Acordo em negociação", contar_dias: false });
+    alterarListaKanban(criada.id, { nome: "Acordo em negociação", contar_dias: false, regra_categoria: "proposta_acordo" });
     const ids = listarKanban().listas.map((l) => l.id);
     ordenarListasKanban([criada.id, ...ids.filter((id) => id !== criada.id)]);
     expect(listarKanban().listas[0].id).toBe(criada.id);
     publicar("500006", "2026-10-02", "Nova publicação.");
     expect(listarKanban().cartoes.find((c) => c.processo_chave === "500006")!.lista_id).toBe(quadro.listas[0].id);
-    moverCartaoKanban("500005", criada.id);
+    db.prepare("UPDATE djen_kanban_cartoes SET lista_id=? WHERE processo_chave=?").run(criada.id, "500005");
     expect(() => excluirListaKanban(criada.id)).toThrow(/Mova/);
-    moverCartaoKanban("500005", quadro.listas[0].id);
+    db.prepare("UPDATE djen_kanban_cartoes SET lista_id=? WHERE processo_chave=?").run(quadro.listas[0].id, "500005");
     expect(excluirListaKanban(criada.id)).toEqual({ ok: true });
     expect(() => excluirListaKanban(quadro.listas[0].id)).toThrow(/triagem/);
-    expect(() => criarListaKanban({ nome: quadro.listas[0].nome })).toThrow(/Já existe/);
+    expect(() => criarListaKanban({ nome: quadro.listas[0].nome, regra_categoria: "proposta_acordo" })).toThrow(/Já existe/);
   });
 });
