@@ -17,7 +17,7 @@ export function Layout({ children }: { children: ReactNode }) {
     "/": "Dashboard", "/agenda": "Agenda", "/calendario": "Calendário",
     "/templates": "Templates", "/historico": "Histórico", "/pendentes": "Pendentes de Resposta",
     "/logs": "Logs", "/configuracoes": "Configurações",
-    "/processos": "Publicações", "/processos/advogados": "Advogados", "/processos/monitoramento": "Monitoramento DJEN",
+    "/processos": "Publicações", "/processos/quadro": "Quadro dos processos", "/processos/advogados": "Advogados", "/processos/monitoramento": "Monitoramento DJEN",
   }[pathname.startsWith("/templates/") ? "/templates" : pathname] ?? "Sales & Associados";
   return <div className="flex min-h-screen bg-zinc-50 dark:bg-zinc-950">
     <Sidebar open={sidebarOpen} onNavigate={() => setSidebarOpen(false)} />
