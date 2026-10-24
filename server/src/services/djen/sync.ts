@@ -1,5 +1,6 @@
 import { iniciarMonitorCalendarios, pararMonitorCalendarios, enfileirarCalendarios } from "./officialCalendars/service";
 import { db } from "../../db";
+import { atualizarKanbanComNovasPublicacoes } from "./kanban";
 import { emitEvent } from "../../websocket";
 import {
   iniciarMonitorCodex,
@@ -140,6 +141,12 @@ async function executarBusca(
               (items) => {
                 recebidas += items.length;
                 novas += importarPublicacoes(items, advogado, modo);
+                try {
+                  atualizarKanbanComNovasPublicacoes();
+                } catch (error) {
+                  // Falha no quadro não interrompe a captura das publicações.
+                  console.error("[DJEN] Não foi possível atualizar o quadro processual:", error);
+                }
                 db.prepare(
                   "UPDATE djen_buscas SET novas=?,recebidas=?,consultas=? WHERE id=?",
                 ).run(novas, recebidas, ctx.requests, id);
