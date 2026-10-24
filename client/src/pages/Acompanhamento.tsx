@@ -309,7 +309,7 @@ const UFS =
   );
 
 export function Acompanhamento() {
-  const { pathname } = useLocation(),
+  const { pathname, search } = useLocation(),
     navigate = useNavigate(),
     { show } = useToast(),
     whatsapp = useWhatsapp();
@@ -411,6 +411,14 @@ export function Acompanhamento() {
       setCarregandoSemLaudo(false);
     }
   }, []);
+  useEffect(() => {
+    const parametros = new URLSearchParams(search);
+    if (parametros.get("semLaudo") !== "1") return;
+    setMostrarSemLaudo(true);
+    void carregarSemLaudo().catch(() => setFalha("Não foi possível carregar as perícias sem laudo."));
+    parametros.delete("semLaudo");
+    navigate({ pathname, search: parametros.toString() }, { replace: true });
+  }, [search, pathname, navigate, carregarSemLaudo]);
   const carregarAguardando = useCallback(async () => {
     setAguardando(await api.get<AguardandoRetorno[]>("/djen/aguardando"));
   }, []);
