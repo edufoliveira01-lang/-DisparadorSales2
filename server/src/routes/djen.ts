@@ -64,6 +64,10 @@ import {
 import { listarAguardandoMovimentacao, atualizarAguardandoMovimentacao } from "../services/djen/followUp";
 import { listarObrigacoesExternas, atualizarObrigacaoExterna } from "../services/djen/externalFollowUp";
 import { concluirProcessosSelecionados } from "../services/djen/bulk";
+import {
+  listarKanban, criarListaKanban, alterarListaKanban, ordenarListasKanban,
+  excluirListaKanban, moverCartaoKanban, alterarInicioEsperaKanban, historicoCartaoKanban,
+} from "../services/djen/kanban";
 export const djenRouter = Router();
 const wrap =
   (
@@ -121,6 +125,20 @@ djenRouter.get(
     }),
   ),
 );
+djenRouter.get("/kanban", wrap((_req, res) => res.json(listarKanban())));
+djenRouter.post("/kanban/listas", wrap((req, res) => { const lista = criarListaKanban(req.body || {}); changed(); res.json(lista); }));
+djenRouter.put("/kanban/listas/ordem", wrap((req, res) => { const result = ordenarListasKanban(req.body?.ids); changed(); res.json(result); }));
+djenRouter.put("/kanban/listas/:id", wrap((req, res) => { const result = alterarListaKanban(id(req.params.id), req.body || {}); changed(); res.json(result); }));
+djenRouter.delete("/kanban/listas/:id", wrap((req, res) => { const result = excluirListaKanban(id(req.params.id)); changed(); res.json(result); }));
+djenRouter.put("/kanban/cartoes/:processoChave", wrap((req, res) => {
+  const result = moverCartaoKanban(req.params.processoChave, id(String(req.body?.lista_id)), req.body?.antes_de);
+  changed(); res.json(result);
+}));
+djenRouter.put("/kanban/cartoes/:processoChave/inicio", wrap((req, res) => {
+  const result = alterarInicioEsperaKanban(req.params.processoChave, req.body?.inicio_em);
+  changed(); res.json(result);
+}));
+djenRouter.get("/kanban/cartoes/:processoChave/historico", wrap((req, res) => res.json(historicoCartaoKanban(req.params.processoChave))));
 djenRouter.put(
   "/config",
   wrap((req, res) => {
