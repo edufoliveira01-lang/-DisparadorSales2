@@ -174,7 +174,42 @@ export function runDjenMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_djen_publicacoes_processo_data
       ON djen_publicacoes(processo_chave,data_disponibilizacao DESC,id DESC);
+    CREATE TABLE IF NOT EXISTS djen_kanban_listas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nome TEXT NOT NULL COLLATE NOCASE UNIQUE,
+      posicao INTEGER NOT NULL,
+      contar_dias INTEGER NOT NULL DEFAULT 0 CHECK(contar_dias IN (0,1)),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS djen_kanban_cartoes (
+      processo_chave TEXT PRIMARY KEY REFERENCES djen_processos(chave) ON DELETE CASCADE,
+      lista_id INTEGER NOT NULL REFERENCES djen_kanban_listas(id),
+      posicao INTEGER NOT NULL DEFAULT 0,
+      entrou_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      inicio_espera_em TEXT,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_djen_kanban_cartoes_lista ON djen_kanban_cartoes(lista_id,posicao);
+    CREATE TABLE IF NOT EXISTS djen_kanban_movimentos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      processo_chave TEXT NOT NULL REFERENCES djen_processos(chave) ON DELETE CASCADE,
+      origem TEXT,
+      destino TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_djen_kanban_movimentos_processo ON djen_kanban_movimentos(processo_chave,id DESC);
   `);
+  if (!(db.prepare("SELECT id FROM djen_kanban_listas LIMIT 1").get())) {
+    const etapas = [
+      "A classificar", "Petição inicial", "Emenda inicial", "Perito designado",
+      "Perícia agendada", "Perícia realizada", "Laudo / manifestações",
+      "Sentença", "Recurso", "Acórdão", "Cumprimento de sentença",
+      "Aguardando implantação do benefício", "Cálculos", "Aguardando expedição de RPV",
+      "RPV expedida / aguardando pagamento", "Concluído",
+    ];
+    const inserir = db.prepare("INSERT OR IGNORE INTO djen_kanban_listas(nome,posicao,contar_dias) VALUES (?,?,?)");
+    db.transaction(() => etapas.forEach((nome, posicao) => inserir.run(nome, posicao, nome === "Aguardando expedição de RPV" ? 1 : 0)))();
+  }
   // Reconcilia análises antigas somente quando o próprio texto comprova o fato.
   // Revisões humanas e registros sem análise permanecem intactos.
   const candidatos = db.prepare(
