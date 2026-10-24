@@ -482,8 +482,7 @@ function apresentarProcessoAgrupado(p: PublicacaoRow, arquivo: string) {
     ...prazos,
   };
 }
-export function listarPublicacoes(filtro: Record<string, string>) {
-  vincularProcessosPendentes();
+function montarConsultaPublicacoes(filtro: Record<string, string>) {
   const where: string[] = [],
     values: (string | number)[] = [];
   const arquivo = filtro.arquivo || "ativos";
@@ -585,6 +584,22 @@ export function listarPublicacoes(filtro: Record<string, string>) {
     values.push(filtro.fim);
   }
   const condition = where.length ? " WHERE " + where.join(" AND ") : "";
+  return { condition, values, arquivo };
+}
+export function listarIdsPublicacoes(filtro: Record<string, string>) {
+  vincularProcessosPendentes();
+  const { condition, values, arquivo } = montarConsultaPublicacoes(filtro);
+  if (arquivo !== "ativos") throw new DjenInputError("Selecione processos pendentes para a conclusão em lote.");
+  const from = ` FROM djen_publicacoes p JOIN djen_processos pr ON pr.chave=p.processo_chave
+                LEFT JOIN contacts c ON c.id=pr.cliente_id` + condition;
+  const total = (db.prepare("SELECT count(DISTINCT p.processo_chave) AS total" + from).get(...values) as { total: number }).total;
+  if (total > 5000) throw new DjenInputError("Mais de 5.000 processos encontrados. Refine os filtros antes de selecionar todos.");
+  const ids = (db.prepare("SELECT MIN(p.id) AS id" + from + " GROUP BY p.processo_chave").all(...values) as { id: number }[]).map((r) => r.id);
+  return { ids, total };
+}
+export function listarPublicacoes(filtro: Record<string, string>) {
+  vincularProcessosPendentes();
+  const { condition, values, arquivo } = montarConsultaPublicacoes(filtro);
   const total = (
     db
       .prepare(
