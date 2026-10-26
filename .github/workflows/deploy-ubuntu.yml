@@ -38,21 +38,63 @@ jobs:
           ROOT_DEPS=false
           SERVER_DEPS=false
           CLIENT_DEPS=false
+          # Compara o conteúdo dos manifestos, ignorando apenas a versão
+          # do próprio projeto. Versões das bibliotecas continuam sendo consideradas.
+          deps_changed() {
+            node - "$1" "$GITHUB_SHA" <<'NODE'
+          const { execFileSync } = require("node:child_process");
+          const [path, target] = process.argv.slice(2);
+          function read(ref) {
+            try { return JSON.parse(execFileSync("git", ["show", ref + ":" + path], {encoding:"utf8", stdio:["ignore","pipe","ignore"]})); }
+            catch { return null; }
+          }
+          function normalize(value) {
+            if (!value) return value;
+            delete value.version;
+            if (path.endsWith("package-lock.json") || path.endsWith("npm-shrinkwrap.json")) {
+              if (value.packages && value.packages[""]) delete value.packages[""].version;
+            }
+            function sorted(v) {
+              if (Array.isArray(v)) return v.map(sorted);
+              if (v && typeof v === "object") return Object.fromEntries(Object.keys(v).sort().map(k => [k, sorted(v[k])]));
+              return v;
+            }
+            return sorted(value);
+          }
+          const before = read("HEAD"), after = read(target);
+          // Arquivo novo, removido ou inválido: reinstala por precaução.
+          console.log(!before || !after || JSON.stringify(normalize(before)) !== JSON.stringify(normalize(after)) ? "true" : "false");
+          NODE
+          }
           classify() {
             case "$1" in
-              .github/*|docs/*|*.md|LICENSE|LICENSE.*) ;;
-              package.json|package-lock.json|npm-shrinkwrap.json|.npmrc)
+              .github/*|docs/*|*.md|LICENSE|LICENSE.*|server/tests/*|client/tests/*) ;;
+              package.json|package-lock.json|npm-shrinkwrap.json)
+                if [ "$1" = package.json ]; then SERVER=true; CLIENT=true; fi
+                if [ "$(deps_changed "$1")" = true ]; then
+                  ROOT_DEPS=true; SERVER_DEPS=true; CLIENT_DEPS=true; SERVER=true; CLIENT=true
+                else
+                  echo "Sem mudança de dependências: $1"
+                fi ;;
+              .npmrc)
                 ROOT_DEPS=true; SERVER_DEPS=true; CLIENT_DEPS=true; SERVER=true; CLIENT=true ;;
-              server/package.json|server/package-lock.json|server/npm-shrinkwrap.json|server/.npmrc)
-                SERVER_DEPS=true; SERVER=true ;;
-              client/package.json|client/package-lock.json|client/npm-shrinkwrap.json|client/.npmrc)
-                CLIENT_DEPS=true; CLIENT=true ;;
+              server/package.json|server/package-lock.json|server/npm-shrinkwrap.json)
+                if [ "$1" = server/package.json ]; then SERVER=true; fi
+                if [ "$(deps_changed "$1")" = true ]; then SERVER_DEPS=true; SERVER=true
+                else echo "Sem mudança de dependências: $1"; fi ;;
+              client/package.json|client/package-lock.json|client/npm-shrinkwrap.json)
+                if [ "$1" = client/package.json ]; then CLIENT=true; fi
+                if [ "$(deps_changed "$1")" = true ]; then CLIENT_DEPS=true; CLIENT=true
+                else echo "Sem mudança de dependências: $1"; fi ;;
+              server/.npmrc) SERVER_DEPS=true; SERVER=true ;;
+              client/.npmrc) CLIENT_DEPS=true; CLIENT=true ;;
               server/*) SERVER=true ;;
               client/*) CLIENT=true ;;
               *) SERVER=true; CLIENT=true ;;
             esac
           }
           while IFS= read -r -d '' arquivo; do
+            printf 'Alterado: %s\n' "$arquivo"
             classify "$arquivo"
           done < <(git diff --no-renames --name-only -z HEAD "$GITHUB_SHA")
           
