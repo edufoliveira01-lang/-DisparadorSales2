@@ -850,7 +850,7 @@ export function Acompanhamento() {
         </div>
       )}
       {secao === "publicacoes" && (
-        <>
+        <div className="process-workbench"><aside className="process-filter-rail">
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             {[
               { label: "Processos na lista", value: total, Icon: FolderOpen, action: () => filtrar("categoria", "") },
@@ -894,6 +894,7 @@ export function Acompanhamento() {
               ))}
             </div>
           </section>
+          </aside><div className="process-results">
           <p className="flex items-center gap-2 text-[11px] text-zinc-500"><Sparkles className="h-3.5 w-3.5" />{status?.codex.pausa ? `Análise pausada: ${status.codex.pausa}` : `${status?.codex.pendentes ?? 0} publicação(ões) aguardando classificação pelo Codex`}. Classificações pendentes aparecem em Outros até a análise.</p>
           <div
             id="navegacao-publicacoes"
@@ -1151,7 +1152,7 @@ export function Acompanhamento() {
                 ?.scrollIntoView({ block: "start", behavior: "smooth" });
             }}
           />
-        </>
+        </div></div>
       )}
       {secao === "advogados" && (
         <section className="surface-panel overflow-hidden">

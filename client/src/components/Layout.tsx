@@ -21,9 +21,9 @@ export function Layout({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => {
     try {
-      return localStorage.getItem("disparazap:sidebar") === "collapsed";
+      return localStorage.getItem("disparazap:navigation-v2") !== "expanded";
     } catch {
-      return false;
+      return true;
     }
   });
   const [searchOpen, setSearchOpen] = useState(false);
@@ -71,7 +71,7 @@ export function Layout({ children }: { children: ReactNode }) {
     setCollapsed((value) => {
       try {
         localStorage.setItem(
-          "disparazap:sidebar",
+          "disparazap:navigation-v2",
           value ? "expanded" : "collapsed",
         );
       } catch {
@@ -112,7 +112,8 @@ export function Layout({ children }: { children: ReactNode }) {
             >
               <Menu className="h-5 w-5" />
             </button>
-            <div className="min-w-0">
+            <nav className="workspace-switch" aria-label="Área de trabalho"><Link to="/" aria-current={active === "pericias" ? "true" : undefined}>Perícias e avisos</Link><Link to="/processos" aria-current={active === "processos" ? "true" : undefined}>Processos e DJEN</Link></nav>
+            <div className="min-w-0 topbar-breadcrumb">
               <p className="hidden items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400 md:flex">
                 <span>
                   {active === "processos"
@@ -140,8 +141,8 @@ export function Layout({ children }: { children: ReactNode }) {
               aria-label="Buscar páginas (Ctrl ou Command K)"
             >
               <Search className="h-[17px] w-[17px]" />
-              <span className="hidden lg:inline">Ir para…</span>
-              <kbd className="hidden rounded-md border border-zinc-200 bg-white px-1.5 py-0.5 text-[10px] text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 lg:inline">
+              <span className="hidden xl:inline">Buscar no espaço…</span>
+              <kbd className="hidden rounded-md border border-zinc-200 bg-white px-1.5 py-0.5 text-[10px] text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 xl:inline">
                 ⌘ / Ctrl K
               </kbd>
             </button>

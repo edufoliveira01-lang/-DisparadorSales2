@@ -68,13 +68,15 @@ export type SettingsSectionKey = (typeof sections)[number]["key"];
 export function SettingsOverview({
   onOpen,
   whatsappConnected,
+  selected,
 }: {
   onOpen: (section: SettingsSectionKey) => void;
   whatsappConnected: boolean;
+  selected?: SettingsSectionKey | null;
 }) {
   return (
     <div
-      className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3"
+      className="settings-navigation"
       aria-label="Ferramentas e configurações"
     >
       {sections.map(({ key, title, description, icon: Icon }) => (
@@ -83,7 +85,8 @@ export function SettingsOverview({
           type="button"
           aria-label={`Configurar ${title}`}
           onClick={() => onOpen(key)}
-          className="group settings-tile"
+          aria-current={selected === key ? "page" : undefined}
+          className="group settings-nav-item"
         >
           <div className="flex items-center justify-between gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-50 text-accent-600 dark:bg-accent-900/30 dark:text-accent-300">

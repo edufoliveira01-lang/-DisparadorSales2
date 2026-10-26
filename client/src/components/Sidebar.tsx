@@ -169,7 +169,7 @@ export function Sidebar({
                         className="h-[19px] w-[19px] shrink-0"
                         strokeWidth={1.7}
                       />
-                      <span className="sidebar-copy">{item.label}</span>
+                      <span className="sidebar-copy">{item.label}</span><span className="sidebar-short">{({"/":"Início","/calendario":"Agenda","/templates":"Mensagens","/pendentes":"Retornos","/historico":"Envios","/processos":"Publicações","/processos/quadro":"Quadro","/processos/aguardando":"Espera","/processos/advogados":"Advogados","/processos/monitoramento":"DJEN","/processos/calendarios":"Prazos","/agenda":"Contatos","/logs":"Atividade","/configuracoes":"Ajustes"} as Record<string,string>)[item.to]}</span>
                     </NavLink>
                   );
                 })}

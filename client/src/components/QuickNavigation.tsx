@@ -39,7 +39,7 @@ export function QuickNavigation({
     if (to !== pathname) navigate(to);
   }
   return (
-    <Modal
+    <Modal presentation="center"
       open={open}
       onClose={onClose}
       title="Ir para uma página"

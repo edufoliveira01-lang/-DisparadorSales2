@@ -1,3 +1,4 @@
+import { Settings as SettingsIcon } from "lucide-react";
 import { DeadlineSettings } from "@/components/djen/DeadlineSettings";
 import { SettingsOverview, type SettingsSectionKey } from "@/components/SettingsOverview";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -462,7 +463,8 @@ export function Configuracoes() {
         </Button>}
       />
 
-      {configSection === null ? <SettingsOverview onOpen={setConfigSection} whatsappConnected={whatsapp.status === "conectado"} /> : <Button variant="ghost" onClick={() => setConfigSection(null)}>← Voltar para as configurações</Button>}
+      <div className="settings-layout"><aside><SettingsOverview selected={configSection} onOpen={setConfigSection} whatsappConnected={whatsapp.status === "conectado"} /></aside><div className="settings-detail">
+      {configSection === null && <div className="settings-welcome"><span className="eyebrow">Do seu jeito</span><h2>Um espaço que acompanha<br />o seu ritmo.</h2><p>Escolha uma área ao lado para ajustar suas conexões, sua aparência e sua rotina.</p><div className="settings-orbit" aria-hidden="true"><SettingsIcon className="h-12 w-12" /></div><Button onClick={()=>setConfigSection("aparencia")}>Personalizar aparência</Button></div>}
 
       <section hidden={configSection !== "aparencia"}><Card>
         <CardContent className="pt-5">
@@ -1022,6 +1024,7 @@ export function Configuracoes() {
           </p>
       </CollapsibleCard></section>
 
+      </div></div>
       <ConfirmDialog
         open={confirmRestoreOpen}
         title="Restaurar backup"

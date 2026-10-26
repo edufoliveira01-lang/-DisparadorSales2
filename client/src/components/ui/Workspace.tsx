@@ -19,7 +19,7 @@ export function WorkspacePanel({
   className?: string;
 }) {
   return (
-    <section className={cn("surface-panel overflow-hidden", className)}>
+    <section className={cn("workspace-panel", className)}>
       {(title || aside) && (
         <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-5 sm:px-6">
           <div>
@@ -74,16 +74,16 @@ export function WorkspaceRow({
         selected && "is-selected",
       )}
     >
-      <div className="flex items-start gap-3 px-5 py-5 sm:px-6">
+      <div className="workspace-row-body">
         {selection && <div className="shrink-0 pt-0.5">{selection}</div>}
-        <div className="grid min-w-0 flex-1 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_auto] xl:items-center">
+        <div className="workspace-row-content">
           <div className="min-w-0">{primary}</div>
           <div className="min-w-0 text-sm text-zinc-600 dark:text-zinc-300">
             {secondary}
           </div>
           <div
             className={cn(
-              "flex max-w-sm flex-wrap items-center gap-2",
+              "workspace-action-tray",
               actionsClassName,
             )}
           >

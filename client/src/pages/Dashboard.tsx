@@ -157,6 +157,7 @@ function classesIconeEventoDashboard(categoria: CategoriaEvento): string {
 export function Dashboard() {
   const { show } = useToast();
   const navigate = useNavigate();
+  const [agendaTab, setAgendaTab] = useState(0);
 
   const [cards, setCards] = useState<CardViewModel[] | null>(null);
   const [panorama, setPanorama] = useState<PanoramaDashboard | null>(null);
@@ -846,91 +847,16 @@ export function Dashboard() {
       />
 
 
-      <section className="welcome-panel" aria-label="Resumo do dia">
-        <div className="relative z-10 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-          <div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-violet-200">Seu dia, organizado</p><h2 className="mt-2 text-xl font-semibold tracking-tight sm:text-2xl">Tudo pronto para o próximo passo.</h2><p className="mt-2 max-w-xl text-[13px] leading-relaxed text-violet-100">Confira os compromissos e mantenha seus clientes informados.</p></div>
-          <Button variant="outline" className="self-start border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white dark:border-white/25 dark:bg-white/10 dark:text-white dark:hover:bg-white/20 sm:self-center" onClick={() => navigate("/calendario")}><CalendarDays className="h-4 w-4" /> Abrir calendário <ArrowRight className="h-4 w-4" /></Button>
-        </div>
-        <div className="relative z-10 mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-white/15 pt-4 text-xs text-violet-100"><span className="flex items-center gap-2"><CalendarDays className="h-4 w-4" />{panorama === null ? "Carregando agenda…" : `${visaoGeral.hoje.length} ${visaoGeral.hoje.length === 1 ? "compromisso" : "compromissos"} hoje`}</span><button type="button" onClick={() => navigate("/pendentes")} className="flex items-center gap-2 rounded-md hover:text-white"><MessageSquareReply className="h-4 w-4" />{panorama === null ? "Carregando retornos…" : `${visaoGeral.aguardandoResposta} aguardando resposta`}<ArrowRight className="h-3.5 w-3.5" /></button></div>
-      </section>
-
-      <div className="grid grid-cols-3 gap-[13px]">
-        <StatCard layout="inline" icon={<Clock3 />} label="Pendentes" value={resumo.pendentes} tone="warning" helper="Ainda não enviados" />
-        <StatCard layout="inline" icon={<ShieldCheck />} label="Prontos" value={resumo.prontos} tone="accent" helper="Contato e compromisso conferidos" />
-        <StatCard layout="inline" icon={<CheckCheck />} label="Enviados" value={resumo.enviados} tone="info" helper="Envios concluídos" />
-      </div>
-
-      <section className="grid gap-5 min-[1100px]:grid-cols-3" aria-label="Compromissos e lembretes">
-        <PainelEventosDashboard
-          titulo="Agenda de hoje"
-          descricao={`${visaoGeral.hoje.length} ${visaoGeral.hoje.length === 1 ? "compromisso" : "compromissos"} para hoje`}
-          eventos={visaoGeral.hoje}
-          total={visaoGeral.hoje.length}
-          carregando={panorama === null}
-          vazio="Nenhum compromisso agendado para hoje."
-          somenteHorario
-          onVerTudo={() => navigate("/calendario")}
-          onEnviarItem={solicitarLembreteIndividual}
-          onEnviarTodos={() => abrirConfirmLembreteBatch("hoje")}
-          enviandoId={enviandoLembreteId}
-          enviandoBatch={Boolean(lembreteBatchProgress)}
-        />
-        <PainelEventosDashboard
-          titulo="Próxima data"
-          descricao={
-            visaoGeral.proximoDiaLabel
-              ? `${visaoGeral.proximaData.length} ${visaoGeral.proximaData.length === 1 ? "compromisso" : "compromissos"} em ${visaoGeral.proximoDiaLabel}`
-              : "Nenhum compromisso futuro"
-          }
-          eventos={visaoGeral.proximaData}
-          total={visaoGeral.proximaData.length}
-          carregando={panorama === null}
-          vazio="Nenhum compromisso futuro agendado."
-          onVerTudo={() => navigate("/calendario")}
-          onEnviarItem={solicitarLembreteIndividual}
-          onEnviarTodos={() => abrirConfirmLembreteBatch("proximaData")}
-          enviandoId={enviandoLembreteId}
-          enviandoBatch={Boolean(lembreteBatchProgress)}
-        />
-        <PainelEventosDashboard
-          titulo="Próximos compromissos"
-          descricao={`${visaoGeral.totalFuturas} ${visaoGeral.totalFuturas === 1 ? "evento futuro" : "eventos futuros"}`}
-          eventos={visaoGeral.futuras}
-          total={visaoGeral.totalFuturas}
-          carregando={panorama === null}
-          vazio="Nenhum compromisso futuro encontrado."
-          onVerTudo={() => navigate("/calendario")}
-          onEnviarItem={solicitarLembreteIndividual}
-          enviandoId={enviandoLembreteId}
-          enviandoBatch={Boolean(lembreteBatchProgress)}
-          expandirLocalmente={false}
-        />
-      </section>
-
-      <details className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <summary className="cursor-pointer px-5 py-3 text-xs text-zinc-600 dark:text-zinc-300">Comunicações: {visaoGeral.aguardandoResposta} aguardando resposta · {visaoGeral.entreguesAguardando} entregues sem retorno · {visaoGeral.falhasRecentes} falhas em 7 dias</summary>
-      <section className="surface-panel p-4">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="font-semibold text-zinc-950 dark:text-white">Panorama geral</h2>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Situação atual das comunicações e dos últimos sete dias.</p>
-          </div>
-          <Button variant="ghost" size="sm" className="self-start" onClick={() => navigate("/pendentes")}>
-            Ver pendências <ArrowRight className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-        <div className="mt-4 grid grid-cols-2 gap-2 xl:grid-cols-4">
-          <PanoramaItem icon={<MessageSquareReply />} label="Aguardando resposta" value={visaoGeral.aguardandoResposta} tone="accent" />
-          <PanoramaItem icon={<CheckCheck />} label="Entregues, sem retorno" value={visaoGeral.entreguesAguardando} tone="warning" />
-          <PanoramaItem icon={<Send />} label="Envios em 7 dias" value={visaoGeral.enviosRecentes} tone="info" />
-          <PanoramaItem icon={<AlertTriangle />} label="Falhas em 7 dias" value={visaoGeral.falhasRecentes} tone="danger" />
-        </div>
-      </section>
-
-      </details>
-
+      <div className="overview-layout">
+        <div className="overview-work">
+          <section className="work-intro">
+            <div><span className="eyebrow">Seu espaço de ação</span><h2>Uma conversa de cada vez.<br /><span>Uma rotina mais leve.</span></h2><p>Revise os avisos abaixo e mantenha seus clientes por perto.</p></div>
+            <div className="work-metrics" aria-label="Situação dos avisos">
+              {[{label:"Para enviar",value:resumo.pendentes,icon:Clock3,filter:"pendentes"},{label:"Conferidos",value:resumo.prontos,icon:ShieldCheck,filter:"todos"},{label:"Enviados",value:resumo.enviados,icon:CheckCheck,filter:"enviados"}].map(({label,value,icon:Icon,filter}) => <button key={label} type="button" onClick={() => setFiltroStatus(filter as FiltroStatus)} className="metric-orbit"><Icon className="h-4 w-4" /><strong>{value}</strong><span>{label}</span></button>)}
+            </div>
+          </section>
       {erro ? <EmptyState icon={Inbox} title="Não foi possível carregar os cards" description={erro} action={<Button variant="outline" onClick={() => navigate("/configuracoes")}>Ir para Configurações</Button>} /> : (
-        <WorkspacePanel title="Avisos aos clientes" description="Revise os compromissos e prepare a mensagem de cada cliente."
+        <WorkspacePanel title="Central de avisos" description="Revise os compromissos e prepare a mensagem de cada cliente."
           aside={<span className="text-xs text-zinc-500 dark:text-zinc-400">{cardsFiltrados.length} de {cards?.length ?? 0} avisos</span>}
           toolbar={<div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_190px_230px]">
@@ -947,7 +873,7 @@ export function Dashboard() {
           footer="Os avisos usam os dados do Trello e os contatos deste serviço. Confira as informações antes de confirmar o envio."
         >
           {cards === null ? <div className="grid gap-4 p-4 lg:grid-cols-2">{Array.from({length: 4}).map((_, index) => <Skeleton key={index} className="h-64" />)}</div> : cardsFiltrados.length === 0 ? <EmptyState icon={Inbox} title={cards.length === 0 ? "Nenhum aviso para preparar" : "Nenhum aviso corresponde aos filtros"} description={cards.length === 0 ? "Confira a lista do Trello em Configurações." : "Tente ajustar a busca ou os filtros."} /> : (
-            <div className="grid items-stretch gap-5 p-[17px] min-[1100px]:grid-cols-2">
+            <div className="dispatch-feed">
               {cardsFiltrados.map((card) => (
                 <DispatchCard
                   key={card.cardId}
@@ -972,6 +898,55 @@ export function Dashboard() {
           )}
         </WorkspacePanel>
       )}
+        </div><aside className="day-rail" aria-label="Sua agenda e retornos">
+          <div className="day-rail-heading"><span className="eyebrow">No seu radar</span><p>{new Intl.DateTimeFormat("pt-BR",{weekday:"long",day:"numeric",month:"long",timeZone:"America/Sao_Paulo"}).format(new Date())}</p><button type="button" onClick={() => navigate("/calendario")} aria-label="Abrir calendário completo"><CalendarDays className="h-5 w-5" /></button></div>
+          <div className="agenda-switch" role="tablist" aria-label="Período dos compromissos">{["Hoje","Próxima data","Depois"].map((label,index)=><button key={label} type="button" role="tab" aria-selected={agendaTab===index} onClick={()=>setAgendaTab(index)}>{label}</button>)}</div>
+          <div key={agendaTab} className="agenda-stage" role="tabpanel" aria-label={["Hoje","Próxima data","Depois"][agendaTab]}>{agendaTab === 0 && (<PainelEventosDashboard
+          titulo="Agenda de hoje"
+          descricao={`${visaoGeral.hoje.length} ${visaoGeral.hoje.length === 1 ? "compromisso" : "compromissos"} para hoje`}
+          eventos={visaoGeral.hoje}
+          total={visaoGeral.hoje.length}
+          carregando={panorama === null}
+          vazio="Nenhum compromisso agendado para hoje."
+          somenteHorario
+          onVerTudo={() => navigate("/calendario")}
+          onEnviarItem={solicitarLembreteIndividual}
+          onEnviarTodos={() => abrirConfirmLembreteBatch("hoje")}
+          enviandoId={enviandoLembreteId}
+          enviandoBatch={Boolean(lembreteBatchProgress)}
+        />)}{agendaTab === 1 && (<PainelEventosDashboard
+          titulo="Próxima data"
+          descricao={
+            visaoGeral.proximoDiaLabel
+              ? `${visaoGeral.proximaData.length} ${visaoGeral.proximaData.length === 1 ? "compromisso" : "compromissos"} em ${visaoGeral.proximoDiaLabel}`
+              : "Nenhum compromisso futuro"
+          }
+          eventos={visaoGeral.proximaData}
+          total={visaoGeral.proximaData.length}
+          carregando={panorama === null}
+          vazio="Nenhum compromisso futuro agendado."
+          onVerTudo={() => navigate("/calendario")}
+          onEnviarItem={solicitarLembreteIndividual}
+          onEnviarTodos={() => abrirConfirmLembreteBatch("proximaData")}
+          enviandoId={enviandoLembreteId}
+          enviandoBatch={Boolean(lembreteBatchProgress)}
+        />)}{agendaTab === 2 && (<PainelEventosDashboard
+          titulo="Próximos compromissos"
+          descricao={`${visaoGeral.totalFuturas} ${visaoGeral.totalFuturas === 1 ? "evento futuro" : "eventos futuros"}`}
+          eventos={visaoGeral.futuras}
+          total={visaoGeral.totalFuturas}
+          carregando={panorama === null}
+          vazio="Nenhum compromisso futuro encontrado."
+          onVerTudo={() => navigate("/calendario")}
+          onEnviarItem={solicitarLembreteIndividual}
+          enviandoId={enviandoLembreteId}
+          enviandoBatch={Boolean(lembreteBatchProgress)}
+          expandirLocalmente={false}
+        />)}</div>
+          <button type="button" className="return-bubble" onClick={()=>navigate("/pendentes")}><span className="return-bubble-icon"><MessageSquareReply className="h-6 w-6" /></span><span><strong>{visaoGeral.aguardandoResposta}</strong><span>clientes aguardando retorno</span></span><ArrowRight className="h-5 w-5" /></button>
+          <div className="rail-note"><span className="eyebrow">Últimos sete dias</span><div><span>Mensagens enviadas</span><strong>{visaoGeral.enviosRecentes}</strong></div><div><span>Falhas para revisar</span><strong>{visaoGeral.falhasRecentes}</strong></div><div><span>Entregues sem retorno</span><strong>{visaoGeral.entreguesAguardando}</strong></div></div>
+        </aside>
+      </div>
 
       <Modal
         open={Boolean(preview)}

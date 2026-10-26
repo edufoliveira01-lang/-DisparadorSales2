@@ -23,7 +23,7 @@ export function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   return (
-    <Modal
+    <Modal presentation="center"
       open={open}
       onClose={onCancel}
       title={title}
@@ -43,3 +43,4 @@ export function ConfirmDialog({
     </Modal>
   );
 }
+

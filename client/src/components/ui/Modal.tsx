@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ModalProps {
+  presentation?: "drawer" | "center";
   open: boolean;
   onClose: () => void;
   title: string;
@@ -15,7 +16,7 @@ interface ModalProps {
   maxWidth?: string;
 }
 
-export function Modal({ open, onClose, title, description, leftAction, rightAction, children, footer, maxWidth = "max-w-lg" }: ModalProps) {
+export function Modal({ presentation = "drawer", open, onClose, title, description, leftAction, rightAction, children, footer, maxWidth = "max-w-lg" }: ModalProps) {
   const titleId = useId();
   const descriptionId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -56,9 +57,9 @@ export function Modal({ open, onClose, title, description, leftAction, rightActi
   const temAcoesLaterais = Boolean(leftAction || rightAction);
 
   return createPortal(
-    <div className={cn("fixed inset-0 z-50 flex items-center justify-center py-4", temAcoesLaterais ? "px-14" : "px-4")}>
+    <div className={cn("fixed inset-0 z-50 flex items-center justify-center py-4", temAcoesLaterais ? "px-14" : "px-4", presentation === "drawer" && !temAcoesLaterais && "drawer-overlay")}>
       <div className="absolute inset-0 bg-zinc-950/50 animate-fade-in backdrop-blur-sm" onClick={onClose} />
-      <div ref={containerRef} className={cn("relative w-full", maxWidth)}>
+      <div ref={containerRef} className={cn("relative w-full", maxWidth, presentation === "drawer" && !temAcoesLaterais && "drawer-host")}>
         {leftAction && (
           <div className="absolute right-full top-1/2 z-10 mr-2 -translate-y-1/2">
             {leftAction}

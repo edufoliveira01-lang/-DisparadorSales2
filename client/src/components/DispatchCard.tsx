@@ -50,13 +50,13 @@ export function DispatchCard(props: CardItemProps) {
     <>
       <article
         className={cn(
-          "flex min-w-0 flex-col rounded-2xl border bg-white shadow-soft transition-[border-color,box-shadow] duration-200 hover:shadow-card [overflow-wrap:anywhere] p-5 dark:bg-zinc-900",
+          "dispatch-ticket",
           selecionado
             ? "border-accent-400 ring-1 ring-accent-200 dark:ring-accent-800"
             : "border-zinc-200 dark:border-zinc-800",
         )}
       >
-        <div className="flex items-start gap-2.5">
+        <div className="dispatch-identity"><span className="client-avatar" aria-hidden="true">{card.nomeCliente.split(" ").filter(Boolean).slice(0,2).map(word=>word[0]).join("")}</span>
           <Checkbox
             aria-label={`Selecionar ${card.nomeCliente}`}
             checked={selecionado}
@@ -85,13 +85,7 @@ export function DispatchCard(props: CardItemProps) {
             <Pencil className="h-3.5 w-3.5" />
           </Button>
         </div>
-        {(card.incompleta || dadosNaoIdentificados) && (
-          <Badge tone="warning" className="mt-3 self-start">
-            <AlertTriangle className="h-3 w-3" /> Descrição incompleta · revisar
-            dados
-          </Badge>
-        )}
-        <div className="my-4 space-y-2">
+        <div className="dispatch-schedule">
           {card.pericias.map((p, index) => {
             return (
               <section
@@ -148,7 +142,13 @@ export function DispatchCard(props: CardItemProps) {
             </p>
           )}
         </div>
-        <div className="space-y-3">
+        <div className="dispatch-controls">        {(card.incompleta || dadosNaoIdentificados) && (
+          <Badge tone="warning" className="mt-3 self-start">
+            <AlertTriangle className="h-3 w-3" /> Descrição incompleta · revisar
+            dados
+          </Badge>
+        )}
+
           <div className="flex flex-wrap items-center gap-2">
             <Badge
               tone={
@@ -198,7 +198,7 @@ export function DispatchCard(props: CardItemProps) {
                 : `Último aviso: ${new Date(card.ultimoEnvio.data).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`}
             </p>
           )}
-          <div className="flex flex-wrap gap-[7px] pt-0.5">
+          <div className="ticket-actions">
             <Button
               size="sm"
               onClick={props.onEnviar}
