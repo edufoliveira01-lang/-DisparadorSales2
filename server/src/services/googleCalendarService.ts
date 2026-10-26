@@ -690,6 +690,12 @@ function eventSearchText(event: GoogleCalendarEvent): string {
   return normalizeText([event.summary, event.description, event.location].filter(Boolean).join(" "));
 }
 
+function eventProcessNumbers(event: GoogleCalendarEvent): string[] {
+  const text = [event.summary, event.description].filter(Boolean).join(" ");
+  const cnjNumbers = text.match(/\b\d{7}[\s.\-/]*\d{2}[\s.\-/]*\d{4}[\s.\-/]*\d[\s.\-/]*\d{2}[\s.\-/]*\d{4}\b/g) || [];
+  return cnjNumbers.map((value) => value.replace(/\D/g, ""));
+}
+
 const MANUAL_MATCH_WINDOW_DAYS = 7;
 
 function eventDateRange(event: GoogleCalendarEvent): { start: string; end: string } | null {
@@ -721,7 +727,7 @@ function manualCandidates(
   usedIds: Set<string>
 ): GoogleCalendarEvent[] {
   const appointmentDate = eventDateKey(pericia);
-  const process = normalizeText(pericia.processo);
+  const process = (pericia.processo || "").replace(/\D/g, "");
   const name = normalizeText(pericia.nome);
   const type = normalizeText(pericia.tipo);
   const date = normalizeText(pericia.data);
@@ -731,16 +737,20 @@ function manualCandidates(
     if (!eventIsInsideManualMatchWindow(event, appointmentDate)) return false;
 
     const text = eventSearchText(event);
-    const processMatches = Boolean(process && text.includes(process));
+    const eventProcesses = eventProcessNumbers(event);
+    // Um evento manual pode ter sido criado apenas com nome, tipo e data, sem o processo.
+    // Se tiver processo, ele precisa coincidir para não associar outro cliente por engano.
+    if (process && eventProcesses.length > 0 && !eventProcesses.includes(process)) return false;
+    const processMatches = Boolean(process && eventProcesses.includes(process));
     const nameMatches = Boolean(name && text.includes(name));
     const typeMatches = Boolean(type && text.includes(type));
     const dateMatches = Boolean(date && text.includes(date)) || eventCoversAppointmentDate(event, appointmentDate);
     const secondaryMatches = [nameMatches, typeMatches, dateMatches].filter(Boolean).length;
 
-    // Com processo cadastrado, ele é obrigatório e pelo menos dois campos de conferência
-    // também precisam coincidir. Sem processo, somente nome + tipo + data é considerado seguro.
+    // Com processo no evento, exigimos o mesmo número e mais dois campos. Se o evento
+    // manual não informa processo, exigimos nome completo, tipo e data juntos.
     return process
-      ? processMatches && secondaryMatches >= 2
+      ? (processMatches && secondaryMatches >= 2) || (eventProcesses.length === 0 && nameMatches && typeMatches && dateMatches)
       : nameMatches && typeMatches && dateMatches;
   });
 }
