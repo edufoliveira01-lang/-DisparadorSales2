@@ -16,89 +16,179 @@ jobs:
   deploy:
     runs-on: [self-hosted, Linux, X64, disparazap]
     timeout-minutes: 45
-
     steps:
-      - name: Preparar e publicar atualização
+      - name: Preparar e publicar atualização seletiva
         shell: bash
         run: |
           set -Eeuo pipefail
           umask 077
-
           APP=/home/dropsales/disparador-sales2
           BACKUPS=/home/dropsales/disparazap-backups
           export PM2_HOME=/home/dropsales/.pm2
-
           exec 9>/home/dropsales/.disparazap-deploy.lock
           flock -n 9
-
           cd "$APP"
           test -z "$(git status --porcelain)"
           git fetch origin main
-          git merge-base --is-ancestor HEAD "$GITHUB_SHA"
           git cat-file -e "$GITHUB_SHA^{commit}"
-
+          git merge-base --is-ancestor HEAD "$GITHUB_SHA"
+          
+          SERVER=false
+          CLIENT=false
+          ROOT_DEPS=false
+          SERVER_DEPS=false
+          CLIENT_DEPS=false
+          classify() {
+            case "$1" in
+              .github/*|docs/*|*.md|LICENSE|LICENSE.*) ;;
+              package.json|package-lock.json|npm-shrinkwrap.json|.npmrc)
+                ROOT_DEPS=true; SERVER_DEPS=true; CLIENT_DEPS=true; SERVER=true; CLIENT=true ;;
+              server/package.json|server/package-lock.json|server/npm-shrinkwrap.json|server/.npmrc)
+                SERVER_DEPS=true; SERVER=true ;;
+              client/package.json|client/package-lock.json|client/npm-shrinkwrap.json|client/.npmrc)
+                CLIENT_DEPS=true; CLIENT=true ;;
+              server/*) SERVER=true ;;
+              client/*) CLIENT=true ;;
+              *) SERVER=true; CLIENT=true ;;
+            esac
+          }
+          while IFS= read -r -d '' arquivo; do
+            classify "$arquivo"
+          done < <(git diff --no-renames --name-only -z HEAD "$GITHUB_SHA")
+          
+          # Uma primeira instalação ou cache ausente exige preparar a parte correspondente.
+          if [ "$SERVER" = true ] || [ "$CLIENT" = true ]; then
+            if [ ! -d node_modules ]; then ROOT_DEPS=true; fi
+            if [ "$SERVER" = true ] && [ ! -d server/node_modules ]; then SERVER_DEPS=true; fi
+            if [ "$CLIENT" = true ] && [ ! -d client/node_modules ]; then CLIENT_DEPS=true; fi
+          fi
+          echo "Servidor: $SERVER | Interface: $CLIENT"
+          echo "Instalar dependências: raiz=$ROOT_DEPS servidor=$SERVER_DEPS interface=$CLIENT_DEPS"
+          if [ "$SERVER" = false ] && [ "$CLIENT" = false ]; then
+            git merge --ff-only "$GITHUB_SHA"
+            echo "Somente documentação/configuração do fluxo: nenhum serviço reiniciado."
+            exit 0
+          fi
+          
           STAGE=$(mktemp -d /home/dropsales/disparazap-build-XXXXXX)
-          trap 'rm -rf -- "$STAGE"' EXIT
-
+          STOPPED=false
+          cleanup() {
+            result=$?
+            trap - EXIT
+            if [ "$STOPPED" = true ]; then
+              RUNNER_TRACKING_ID="" pm2 restart disparador-backend --update-env || true
+            fi
+            rm -rf -- "$STAGE"
+            exit "$result"
+          }
+          trap cleanup EXIT
           git archive "$GITHUB_SHA" | tar -x -C "$STAGE"
           cd "$STAGE"
-          npm run install:all
-          npm run build --prefix server
-          npm run build --prefix client
-
-          test -f server/dist/index.js
-          test -f client/dist/index.html
-
+          if [ "$ROOT_DEPS" = true ]; then
+            npm install
+          else
+            cp -a --reflink=auto "$APP/node_modules" node_modules
+          fi
+          if [ "$SERVER" = true ]; then
+            if [ "$SERVER_DEPS" = true ]; then
+              npm install --prefix server --include=optional
+              npm run codex:install --prefix server
+            else
+              cp -a --reflink=auto "$APP/server/node_modules" server/node_modules
+            fi
+            npm run build --prefix server
+            test -f server/dist/index.js
+          fi
+          if [ "$CLIENT" = true ]; then
+            if [ "$CLIENT_DEPS" = true ]; then
+              npm install --prefix client
+            else
+              cp -a --reflink=auto "$APP/client/node_modules" client/node_modules
+            fi
+            npm run build --prefix client
+            test -f client/dist/index.html
+          fi
+          
           mkdir -p "$BACKUPS"
           chmod 700 "$BACKUPS"
-          BACKUP="$BACKUPS/deploy-$(date +%Y%m%d-%H%M%S)-$GITHUB_RUN_ID"
-          mkdir -m 700 "$BACKUP"
-
+          BACKUP=$(mktemp -d "$BACKUPS/deploy-$(date +%Y%m%d-%H%M%S)-XXXXXX")
           cd "$APP"
           git rev-parse HEAD > "$BACKUP/commit-anterior.txt"
-          pm2 stop disparador-backend
-          trap 'RUNNER_TRACKING_ID="" pm2 restart disparador-backend --update-env || true; rm -rf -- "$STAGE"' EXIT
-
-          # Encerra somente Chromium que usa o perfil deste sistema.
-          CHROME_PATTERN='^/home/dropsales/\.cache/puppeteer/chrome/.*--user-data-dir=/home/dropsales/disparador-sales2/server/data/wwebjs_auth/session( |$)'
-          if pgrep -u "$(id -u)" -f "$CHROME_PATTERN" >/dev/null; then
-            pkill -TERM -u "$(id -u)" -f "$CHROME_PATTERN" || true
+          if [ "$CLIENT" = true ]; then
+            tar -czf "$BACKUP/interface.tar.gz" -C /var/www disparazap
           fi
-          for tentativa in {1..20}; do
-            if ! pgrep -u "$(id -u)" -f "$CHROME_PATTERN" >/dev/null; then
-              break
+          if [ "$SERVER" = true ]; then
+            pm2 stop disparador-backend
+            STOPPED=true
+            CHROME_PATTERN='^/home/dropsales/\.cache/puppeteer/chrome/.*--user-data-dir=/home/dropsales/disparador-sales2/server/data/wwebjs_auth/session( |$)'
+            if pgrep -u "$(id -u)" -f "$CHROME_PATTERN" >/dev/null; then
+              pkill -TERM -u "$(id -u)" -f "$CHROME_PATTERN" || true
             fi
-            sleep 1
-          done
-          if pgrep -u "$(id -u)" -f "$CHROME_PATTERN" >/dev/null; then
-            echo "Chromium ainda usa a sessão; publicação interrompida."
-            exit 1
+            for tentativa in {1..20}; do
+              if ! pgrep -u "$(id -u)" -f "$CHROME_PATTERN" >/dev/null; then break; fi
+              sleep 1
+            done
+            if pgrep -u "$(id -u)" -f "$CHROME_PATTERN" >/dev/null; then
+              echo "Chromium ainda usa a sessão; publicação interrompida."
+              exit 1
+            fi
+            tar --exclude='server/node_modules' -czf "$BACKUP/servidor.tar.gz" server
           fi
-
-          tar -czf "$BACKUP/servidor.tar.gz" server
-          tar -czf "$BACKUP/interface.tar.gz" -C /var/www disparazap
-
+          
           git merge --ff-only "$GITHUB_SHA"
-
-          mv server/dist "$BACKUP/dist-anterior"
-          mv server/node_modules "$BACKUP/node_modules-anterior"
-          cp -a "$STAGE/server/dist" server/dist
-          cp -a "$STAGE/server/node_modules" server/node_modules
-
-          cp -r "$STAGE/client/dist/." /var/www/disparazap/
-          chmod -R a+rX /var/www/disparazap
-
-          RUNNER_TRACKING_ID="" pm2 restart disparador-backend --update-env
-          trap 'rm -rf -- "$STAGE"' EXIT
-
+          if [ "$ROOT_DEPS" = true ]; then
+            if [ -d node_modules ]; then mv node_modules "$BACKUP/root-node_modules-anterior"; fi
+            mv "$STAGE/node_modules" node_modules
+          fi
+          if [ "$SERVER" = true ]; then
+            mv server/dist "$BACKUP/dist-anterior"
+            mv "$STAGE/server/dist" server/dist
+            if [ "$SERVER_DEPS" = true ]; then
+              if [ -d server/node_modules ]; then mv server/node_modules "$BACKUP/node_modules-anterior"; fi
+              mv "$STAGE/server/node_modules" server/node_modules
+            fi
+          fi
+          if [ "$CLIENT" = true ]; then
+            # Atualiza o cache local de dependências somente quando elas mudaram.
+            if [ "$CLIENT_DEPS" = true ]; then
+              if [ -d client/node_modules ]; then mv client/node_modules "$BACKUP/client-node_modules-anterior"; fi
+              mv "$STAGE/client/node_modules" client/node_modules
+            fi
+            # Copia somente artefatos diferentes; index.html é publicado por último.
+            # Assets antigos são mantidos para abas que ainda usam a versão anterior.
+            python3 - "$STAGE/client/dist" /var/www/disparazap <<'PY'
+          import filecmp
+          import os
+          import shutil
+          import sys
+          from pathlib import Path
+          src, dst = map(Path, sys.argv[1:])
+          files = sorted((p for p in src.rglob("*") if p.is_file()),
+                         key=lambda p: p.relative_to(src).as_posix() == "index.html")
+          for source in files:
+              target = dst / source.relative_to(src)
+              target.parent.mkdir(parents=True, exist_ok=True)
+              target.parent.chmod(0o755)
+              if target.is_file() and filecmp.cmp(source, target, shallow=False):
+                  continue
+              temporary = target.with_name(target.name + ".deploy-tmp")
+              shutil.copyfile(source, temporary)
+              temporary.chmod(0o644)
+              os.replace(temporary, target)
+              print("Publicado:", source.relative_to(src))
+          PY
+          fi
+          if [ "$SERVER" = true ]; then
+            RUNNER_TRACKING_ID="" pm2 restart disparador-backend --update-env
+            STOPPED=false
+          fi
           for tentativa in {1..30}; do
-            if curl -fsS http://127.0.0.1:8081/api/health; then
+            if curl --max-time 5 -fsS http://127.0.0.1:8081/api/health; then
               echo
-              echo "Atualização concluída."
+              echo "Atualização seletiva concluída."
               exit 0
             fi
             sleep 2
           done
-
-          echo "A atualização terminou, mas a API não respondeu. Verifique o PM2."
+          echo "A API não respondeu; verifique o PM2."
           exit 1
