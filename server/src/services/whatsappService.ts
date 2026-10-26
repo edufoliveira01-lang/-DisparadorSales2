@@ -10,7 +10,8 @@ import { getSetting } from "./settingsService";
 import { enviarMensagemTelegram } from "./telegramService";
 import { recordSystemLog } from "./systemLogsService";
 import { moveCard } from "./trelloService";
-import { updateLogAckByMessageId } from "./logsService";
+import { listLogsAguardandoConfirmacao, updateLogAckByMessageId } from "./logsService";
+import { reconciliarConfirmacaoDeEnvio } from "./deliveryAckReconciliation";
 import { sendConfirmedWhatsappMessage, type ConfirmedWhatsappSend } from "./confirmedWhatsappSend";
 import {
   atrasoRetryConexaoMs,
@@ -398,6 +399,7 @@ const TEMPO_PARA_CONSIDERAR_CONEXAO_ESTAVEL_MS = 2 * 60 * 1000;
  */
 const TEMPO_LIMITE_APOS_AUTENTICAR_MS = 3 * 60 * 1000;
 const INTERVALO_SAUDE_WHATSAPP_MS = 45 * 1000;
+const INTERVALO_CONFERENCIA_ENTREGA_MS = 2 * 60 * 1000;
 const INTERVALO_RETOMADA_SESSAO_MS = 2 * 60 * 1000;
 
 type Listener = () => void;
@@ -494,6 +496,9 @@ class WhatsappManager {
   private cancelarMonitorPareamento: (() => void) | null = null;
   private estabilidadeTimer: ReturnType<typeof setTimeout> | null = null;
   private monitorSaudeTimer: ReturnType<typeof setInterval> | null = null;
+  private conferenciaEntregaTimer: ReturnType<typeof setInterval> | null = null;
+  private conferindoEntregas = false;
+  private ultimoLogConferido = 0;
   private retomadaTimer: ReturnType<typeof setTimeout> | null = null;
   private falhasSaude = 0;
   private verificandoSaude = false;
@@ -590,7 +595,42 @@ class WhatsappManager {
   private limparMonitorSaude(): void {
     if (this.monitorSaudeTimer) clearInterval(this.monitorSaudeTimer);
     this.monitorSaudeTimer = null;
+    if (this.conferenciaEntregaTimer) clearInterval(this.conferenciaEntregaTimer);
+    this.conferenciaEntregaTimer = null;
     this.falhasSaude = 0;
+  }
+
+  private async conferirEntregasRecentes(client: Client): Promise<void> {
+    if (this.conferindoEntregas || this.client !== client || this.status !== "conectado") return;
+    this.conferindoEntregas = true;
+    try {
+      const envios = listLogsAguardandoConfirmacao(this.ultimoLogConferido, 10);
+      if (!envios.length) {
+        this.ultimoLogConferido = 0;
+        return;
+      }
+      for (const envio of envios) {
+        if (this.client !== client || this.status !== "conectado") break;
+        try {
+          await reconciliarConfirmacaoDeEnvio(client, envio);
+        } catch (err) {
+          console.warn(`[WhatsApp] Não foi possível conferir a entrega do envio ${envio.id}:`, err);
+        }
+        this.ultimoLogConferido = envio.id;
+      }
+    } finally {
+      this.conferindoEntregas = false;
+    }
+  }
+
+  private iniciarConferenciaEntrega(client: Client): void {
+    this.ultimoLogConferido = 0;
+    this.conferenciaEntregaTimer = setInterval(() => {
+      void this.conferirEntregasRecentes(client);
+    }, INTERVALO_CONFERENCIA_ENTREGA_MS);
+    this.conferenciaEntregaTimer.unref();
+    const inicial = setTimeout(() => void this.conferirEntregasRecentes(client), 15000);
+    inicial.unref();
   }
 
   /** Sessões salvas voltam a tentar conectar mesmo após esgotar as tentativas rápidas. */
@@ -1057,6 +1097,7 @@ class WhatsappManager {
       marcarSessaoPersistida();
       this.setState({ status: "conectado", qrDataUrl: null, syncProgress: 100 });
       this.iniciarMonitorSaude(client);
+      this.iniciarConferenciaEntrega(client);
       this.limparEstabilidadeTimer();
       this.estabilidadeTimer = setTimeout(() => {
         if (this.client === client && this.status === "conectado") this.tentativa = 0;
@@ -1195,7 +1236,7 @@ class WhatsappManager {
 
         // Se não encontrou nem log nem pendente, pode ser que o registro ainda não tenha sido
         // salvo no banco (race condition). Guardamos o ack para tentar aplicar logo em seguida.
-        if (!log && !pending) {
+        if (!log || !pending) {
           const stableKey = whatsappMessageStableKey(messageId);
           console.log(`[WhatsApp] ACK órfão detectado (race condition), guardando: ${stableKey}`);
           const previousAck = this.acksPendentes.get(stableKey);
@@ -1531,6 +1572,14 @@ class WhatsappManager {
       // completo quanto o stanza ID reduzido, pois ambos aparecem em versões reais da lib.
       const directId = whatsappMessageIdCandidates(sent?.id)[0];
       if (directId) {
+        // O WhatsApp pode devolver o ACK final no próprio sendMessage sem emitir um evento
+        // posterior. Preservamos esse dado até os registros serem criados no banco.
+        if (Number.isInteger(sent?.ack) && sent.ack >= 2 && sent.ack <= 4) {
+          const key = whatsappMessageStableKey(directId);
+          const anterior = this.acksPendentes.get(key);
+          if (anterior === undefined || sent.ack > anterior) this.acksPendentes.set(key, sent.ack);
+          setTimeout(() => this.acksPendentes.delete(key), 30000).unref();
+        }
         console.log(`[WhatsApp] ID retornado no envio direto: ${directId}`);
         this.removerEnvioAguardando(chatId, mensagem);
         return directId;
