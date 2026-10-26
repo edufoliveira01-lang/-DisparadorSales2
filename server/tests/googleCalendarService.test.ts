@@ -158,6 +158,46 @@ describe("integração com o Google Agenda", () => {
     });
   });
 
+  it("reaproveita evento manual sem processo quando nome, tipo e data coincidem", () => {
+    const compromisso = pericia();
+    const eventoManual = {
+      id: "evento-anterior-ao-envio",
+      summary: "Perícia médica — CLIENTE TESTE",
+      start: { date: "2026-12-20" },
+      end: { date: "2026-12-21" },
+    };
+
+    expect(findExistingEvent(compromisso, destination({ eventMode: "create_additional" }), [eventoManual], new Set())).toEqual({
+      event: eventoManual,
+      conflict: false,
+      candidates: [eventoManual],
+    });
+  });
+
+  it("reaproveita processo CNJ mesmo quando o evento usa só os dígitos", () => {
+    const compromisso = pericia();
+    const eventoManual = {
+      id: "evento-processo-sem-formatacao",
+      summary: "Perícia médica — CLIENTE TESTE — 00000000020260000000",
+      start: { date: "2026-12-20" },
+      end: { date: "2026-12-21" },
+    };
+
+    expect(findExistingEvent(compromisso, destination(), [eventoManual], new Set()).event).toEqual(eventoManual);
+  });
+
+  it("não vincula outro processo quando o evento informa número diferente", () => {
+    const compromisso = pericia();
+    const eventoOutroProcesso = {
+      id: "outro-processo",
+      summary: "Perícia médica — CLIENTE TESTE — 1000000-00.2026.0.00.0000",
+      start: { date: "2026-12-20" },
+      end: { date: "2026-12-21" },
+    };
+
+    expect(findExistingEvent(compromisso, destination(), [eventoOutroProcesso], new Set()).event).toBeNull();
+  });
+
   it("não considera um evento manual fora da faixa segura de sete dias", () => {
     const compromisso = pericia({ data: "20/12/2026" });
     const eventoDistante = {
