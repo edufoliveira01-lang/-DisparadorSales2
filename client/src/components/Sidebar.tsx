@@ -1,115 +1,210 @@
-import { useActiveService } from "@/context/ActiveServiceContext";
+import { useEffect, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
+  Zap,
+  X,
+  PanelLeftClose,
+  PanelLeftOpen,
+  ChevronRight,
   CalendarDays,
   Scale,
-  Columns3,
-  Search,
-  BriefcaseBusiness,
-  LayoutDashboard,
-  Users,
-  MessageSquareText,
-  History,
-  MessageSquareReply,
-  Settings,
-  ScrollText,
-  X,
 } from "lucide-react";
+import { useActiveService } from "@/context/ActiveServiceContext";
 import { cn } from "@/lib/utils";
-import { Select } from "@/components/ui/Select";
+import { navigation } from "@/lib/navigation";
 import { APP_VERSION } from "@/lib/appVersion";
-
-const itemsAntesTemplates = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/agenda", label: "Agenda", icon: Users },
-  { to: "/calendario", label: "Calendário", icon: CalendarDays },
-];
-
-const itemsDepoisTemplates = [
-  { to: "/historico", label: "Histórico", icon: History },
-  { to: "/pendentes", label: "Pendentes de Resposta", icon: MessageSquareReply },
-  { to: "/logs", label: "Logs", icon: ScrollText },
-  { to: "/configuracoes", label: "Configurações", icon: Settings },
-];
 
 interface SidebarProps {
   open: boolean;
+  collapsed: boolean;
+  onToggle: () => void;
   onNavigate: () => void;
 }
-
-const linkClass = ({ isActive }: { isActive: boolean }) =>
-  cn(
-    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-normal transition-colors",
-    isActive
-      ? "bg-accent-50 font-semibold text-[#2c8455] ring-1 ring-inset ring-accent-100 dark:bg-accent-900/30 dark:text-accent-300 dark:ring-accent-800"
-      : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+export function Sidebar({
+  open,
+  collapsed,
+  onToggle,
+  onNavigate,
+}: SidebarProps) {
+  const active = useActiveService();
+  const navigate = useNavigate();
+  const asideRef = useRef<HTMLElement>(null);
+  const [desktop, setDesktop] = useState(
+    () => window.matchMedia("(min-width: 1024px)").matches,
   );
-
-export function Sidebar({ open, onNavigate }: SidebarProps) {
-  const active=useActiveService();
-  const navigate=useNavigate();
-
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 1024px)");
+    const update = () => setDesktop(media.matches);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    if (asideRef.current) asideRef.current.inert = !desktop && !open;
+    if (desktop || !open) return;
+    const previous =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    const root = asideRef.current;
+    root
+      ?.querySelector<HTMLButtonElement>('button[aria-label="Fechar menu"]')
+      ?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      const elements = Array.from(
+        root?.querySelectorAll<HTMLElement>("a[href], button") ?? [],
+      ).filter((el) => el.getClientRects().length > 0);
+      const first = elements[0],
+        last = elements[elements.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      previous?.focus();
+    };
+  }, [desktop, open]);
   return (
     <aside
+      ref={asideRef}
+      aria-hidden={!desktop && !open}
+      id="main-navigation"
       className={cn(
-        "fixed inset-y-0 left-0 z-40 flex h-screen w-[min(18rem,calc(100vw-3rem))] shrink-0 flex-col border-r border-zinc-200/80 bg-white shadow-2xl transition-transform duration-200 dark:border-zinc-800 dark:bg-zinc-900 lg:w-[236px] lg:shadow-none",
-        "lg:sticky lg:top-0 lg:translate-x-0",
-        open ? "translate-x-0" : "-translate-x-full"
+        "app-sidebar",
+        open && "is-open",
+        collapsed && "is-collapsed",
       )}
     >
-      <div className="flex h-20 shrink-0 items-center gap-3 border-b border-zinc-200 px-5 dark:border-zinc-800">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-500 font-serif text-2xl text-white">S</div>
-        <div className="min-w-0 flex-1"><p className="text-sm font-semibold leading-snug tracking-tight text-zinc-900 dark:text-white">Sales &amp; Associados</p><p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">Plataforma de serviços</p></div>
-        <button type="button" onClick={onNavigate} className="rounded-lg p-1 text-zinc-400 lg:hidden" aria-label="Fechar menu"><X className="h-4 w-4" /></button>
+      <div className="sidebar-brand">
+        <span className="brand-mark">
+          <Zap className="h-6 w-6" fill="currentColor" strokeWidth={1.5} />
+        </span>
+        <div className="sidebar-copy min-w-0 flex-1">
+          <p className="text-base font-semibold tracking-tight text-white">
+            DisparaZap <span className="text-violet-300">2</span>
+          </p>
+          <p className="mt-0.5 text-[11px] text-slate-400">
+            Sales &amp; Associados
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onNavigate}
+          className="rounded-xl p-2 text-slate-300 lg:hidden"
+          aria-label="Fechar menu"
+        >
+          <X className="h-5 w-5" />
+        </button>
       </div>
-      <div className="border-b border-zinc-200 px-4 py-5 dark:border-zinc-800">
-        <label htmlFor="active-service" className="mb-2 block text-[9px] font-semibold uppercase tracking-[0.15em] text-zinc-500 dark:text-zinc-400">Serviço ativo</label>
-        <Select id="active-service" value={active} onChange={e=>{navigate(e.target.value==="processos"?"/processos":"/");onNavigate();}} className="text-xs font-medium">
-          <option value="pericias">Perícias e avisos</option>
-          <option value="processos">Processos e DJEN</option>
-        </Select>
+      <div className="sidebar-services" aria-label="Escolher área de trabalho">
+        {(
+          [
+            {
+              id: "pericias",
+              label: "Perícias e avisos",
+              icon: CalendarDays,
+              to: "/",
+            },
+            {
+              id: "processos",
+              label: "Processos e DJEN",
+              icon: Scale,
+              to: "/processos",
+            },
+          ] as const
+        ).map(({ id, label, icon: Icon, to }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => {
+              navigate(to);
+              onNavigate();
+            }}
+            aria-pressed={active === id}
+            title={label}
+            className={cn("service-option", active === id && "is-active")}
+          >
+            <Icon className="h-[18px] w-[18px] shrink-0" />
+            <span className="sidebar-copy flex-1 text-left">{label}</span>
+            <ChevronRight className="sidebar-copy h-3.5 w-3.5" />
+          </button>
+        ))}
       </div>
-
-      <nav aria-label="Menu principal" className="scrollbar-thin flex-1 space-y-1 overflow-y-auto px-3 py-5">
-        {active === "processos" ? <>
-          <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Acompanhamento processual</p>
-          {[{to:"/processos",label:"Publicações",icon:Scale,end:true},{to:"/processos/quadro",label:"Quadro dos processos",icon:Columns3},{to:"/processos/advogados",label:"Advogados",icon:BriefcaseBusiness},{to:"/processos/monitoramento",label:"Monitoramento DJEN",icon:Search},{to:"/processos/calendarios",label:"Calendários de prazos",icon:CalendarDays}].map(({to,label,icon:Icon,end})=><NavLink key={to} to={to} end={end} onClick={onNavigate} className={linkClass}><Icon className="h-5 w-5" />{label}</NavLink>)}
-          <p className="px-3 pb-1 pt-5 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Compartilhado</p>
-          <NavLink to="/agenda" onClick={onNavigate} className={linkClass}><Users className="h-5 w-5" />Agenda de contatos</NavLink>
-        </> : <>
-        <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Perícias e avisos</p>
-        {itemsAntesTemplates.map(({ to, label, icon: Icon, end }) => (
-          <NavLink key={to} to={to} end={end} onClick={onNavigate} className={linkClass}>
-            <Icon className="h-5 w-5" />
-            {label}
-          </NavLink>
-        ))}
-
-        <p className="px-3 pb-1 pt-5 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Comunicação de perícias</p>
-        <NavLink to="/templates" onClick={onNavigate} className={linkClass}>
-          <MessageSquareText className="h-5 w-5" /> Templates
-        </NavLink>
-
-        {itemsDepoisTemplates.slice(0, 2).map(({ to, label, icon: Icon }) => (
-          <NavLink key={to} to={to} onClick={onNavigate} className={linkClass}>
-            <Icon className="h-5 w-5" />
-            {label}
-          </NavLink>
-        ))}
-
-        </>}
-        <p className="px-3 pb-1 pt-5 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Sistema</p>
-        {itemsDepoisTemplates.slice(active === "processos" ? 3 : 2).map(({ to, label, icon: Icon }) => (
-          <NavLink key={to} to={to} onClick={onNavigate} className={linkClass}>
-            <Icon className="h-5 w-5" />
-            {label}
-          </NavLink>
+      <nav
+        aria-label="Menu principal"
+        className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-3 py-2"
+      >
+        {(
+          [
+            { group: active, label: "Área de trabalho" },
+            { group: "compartilhado", label: "Clientes" },
+            { group: "sistema", label: "Preferências" },
+          ] as const
+        ).map(({ group, label }) => (
+          <div key={group} className="mb-5">
+            <p className="sidebar-section-label">{label}</p>
+            <div className="space-y-1">
+              {navigation
+                .filter((item) => item.group === group)
+                .map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      end={"end" in item ? item.end : undefined}
+                      onClick={onNavigate}
+                      title={item.label}
+                      className={({ isActive }) =>
+                        cn("sidebar-link", isActive && "is-active")
+                      }
+                    >
+                      <Icon
+                        className="h-[19px] w-[19px] shrink-0"
+                        strokeWidth={1.7}
+                      />
+                      <span className="sidebar-copy">{item.label}</span>
+                    </NavLink>
+                  );
+                })}
+            </div>
+          </div>
         ))}
       </nav>
-
-      <div className="border-t border-zinc-200 px-5 py-4 text-xs text-zinc-400 dark:border-zinc-800">
-        <p className="mb-1 leading-relaxed text-zinc-500 dark:text-zinc-400">{active === "processos" ? "Publicações e acompanhamento DJEN" : "Controle de perícias e avisos"}</p>
-        <p className="text-[10px]">DisparaZap · v{APP_VERSION}</p>
+      <div className="sidebar-footer">
+        <div className="sidebar-copy flex min-w-0 items-center gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-xs font-semibold text-violet-200">
+            SA
+          </span>
+          <div>
+            <p className="text-xs font-medium text-slate-200">
+              Seu espaço de trabalho
+            </p>
+            <p className="mt-1 text-[10px] text-slate-400">
+              DisparaZap · v{APP_VERSION}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onToggle}
+          className="sidebar-collapse"
+          aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
+          aria-expanded={!collapsed}
+          title={collapsed ? "Expandir menu" : "Recolher menu"}
+        >
+          {collapsed ? (
+            <PanelLeftOpen className="h-[18px] w-[18px]" />
+          ) : (
+            <PanelLeftClose className="h-[18px] w-[18px]" />
+          )}
+        </button>
       </div>
     </aside>
   );

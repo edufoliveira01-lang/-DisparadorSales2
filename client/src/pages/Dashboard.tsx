@@ -822,12 +822,12 @@ export function Dashboard() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Dashboard"
-        description="Acompanhe os compromissos e pendências do dia, revise os dados do Trello e envie mensagens com segurança."
+        title="Visão geral"
+        description="Sua rotina em um só lugar: compromissos, avisos e clientes aguardando retorno."
         actions={<>
           <Badge tone={whatsapp.status === "conectado" ? "success" : "warning"} className="sm:hidden">
             {whatsapp.status === "conectado" ? (
-              <><span className="h-2 w-2 rounded-full bg-accent-500" /> WhatsApp conectado</>
+              <><span className="h-2 w-2 rounded-full bg-emerald-500" /> WhatsApp conectado</>
             ) : (
               <><WifiOff className="h-3.5 w-3.5" /> WhatsApp desconectado</>
             )}
@@ -846,13 +846,21 @@ export function Dashboard() {
       />
 
 
+      <section className="welcome-panel" aria-label="Resumo do dia">
+        <div className="relative z-10 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-violet-200">Seu dia, organizado</p><h2 className="mt-2 text-xl font-semibold tracking-tight sm:text-2xl">Tudo pronto para o próximo passo.</h2><p className="mt-2 max-w-xl text-[13px] leading-relaxed text-violet-100">Confira os compromissos e mantenha seus clientes informados.</p></div>
+          <Button variant="outline" className="self-start border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white dark:border-white/25 dark:bg-white/10 dark:text-white dark:hover:bg-white/20 sm:self-center" onClick={() => navigate("/calendario")}><CalendarDays className="h-4 w-4" /> Abrir calendário <ArrowRight className="h-4 w-4" /></Button>
+        </div>
+        <div className="relative z-10 mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-white/15 pt-4 text-xs text-violet-100"><span className="flex items-center gap-2"><CalendarDays className="h-4 w-4" />{panorama === null ? "Carregando agenda…" : `${visaoGeral.hoje.length} ${visaoGeral.hoje.length === 1 ? "compromisso" : "compromissos"} hoje`}</span><button type="button" onClick={() => navigate("/pendentes")} className="flex items-center gap-2 rounded-md hover:text-white"><MessageSquareReply className="h-4 w-4" />{panorama === null ? "Carregando retornos…" : `${visaoGeral.aguardandoResposta} aguardando resposta`}<ArrowRight className="h-3.5 w-3.5" /></button></div>
+      </section>
+
       <div className="grid grid-cols-3 gap-[13px]">
         <StatCard layout="inline" icon={<Clock3 />} label="Pendentes" value={resumo.pendentes} tone="warning" helper="Ainda não enviados" />
         <StatCard layout="inline" icon={<ShieldCheck />} label="Prontos" value={resumo.prontos} tone="accent" helper="Contato e compromisso conferidos" />
         <StatCard layout="inline" icon={<CheckCheck />} label="Enviados" value={resumo.enviados} tone="info" helper="Envios concluídos" />
       </div>
 
-      <section className="grid gap-[15px] min-[1100px]:grid-cols-3" aria-label="Compromissos e lembretes">
+      <section className="grid gap-5 min-[1100px]:grid-cols-3" aria-label="Compromissos e lembretes">
         <PainelEventosDashboard
           titulo="Agenda de hoje"
           descricao={`${visaoGeral.hoje.length} ${visaoGeral.hoje.length === 1 ? "compromisso" : "compromissos"} para hoje`}
@@ -923,12 +931,12 @@ export function Dashboard() {
 
       {erro ? <EmptyState icon={Inbox} title="Não foi possível carregar os cards" description={erro} action={<Button variant="outline" onClick={() => navigate("/configuracoes")}>Ir para Configurações</Button>} /> : (
         <WorkspacePanel title="Avisos aos clientes" description="Revise os compromissos e prepare a mensagem de cada cliente."
-          aside={<span className="text-xs text-zinc-500 dark:text-zinc-400">{cardsFiltrados.length} de {cards?.length ?? 0} cards</span>}
+          aside={<span className="text-xs text-zinc-500 dark:text-zinc-400">{cardsFiltrados.length} de {cards?.length ?? 0} avisos</span>}
           toolbar={<div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_190px_230px]">
               <div className="relative sm:col-span-2 xl:col-span-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" /><Input aria-label="Buscar avisos" placeholder="Buscar cliente, processo ou perito…" className="pl-9" value={busca} onChange={e => setBusca(e.target.value)} /></div>
               <Select aria-label="Tipo de compromisso" value={filtroTipo} onChange={e => setFiltroTipo(e.target.value as FiltroTipo)}><option value="todos">Todos os tipos</option><option value="medica">Perícia médica</option><option value="social">Perícia social</option><option value="audiencia">Audiência</option></Select>
-              <Select aria-label="Template de envio" value={templateId ?? ""} onChange={e => setTemplateId(Number(e.target.value))}>{templates.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}</Select>
+              <Select aria-label="Modelo de mensagem" value={templateId ?? ""} onChange={e => setTemplateId(Number(e.target.value))}>{templates.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}</Select>
             </div>
             <FiltroRapido label="Situação" options={STATUS_OPTIONS} value={filtroStatus} onChange={value => setFiltroStatus(value as FiltroStatus)} />
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800">
@@ -938,8 +946,8 @@ export function Dashboard() {
           </div>}
           footer="Os avisos usam os dados do Trello e os contatos deste serviço. Confira as informações antes de confirmar o envio."
         >
-          {cards === null ? <div className="grid gap-4 p-4 lg:grid-cols-2">{Array.from({length: 4}).map((_, index) => <Skeleton key={index} className="h-64" />)}</div> : cardsFiltrados.length === 0 ? <EmptyState icon={Inbox} title={cards.length === 0 ? "Nenhum card encontrado na lista" : "Nenhum card corresponde aos filtros"} description={cards.length === 0 ? "Confira a lista do Trello em Configurações." : "Tente ajustar a busca ou os filtros."} /> : (
-            <div className="grid items-stretch gap-[15px] p-[17px] min-[1100px]:grid-cols-2">
+          {cards === null ? <div className="grid gap-4 p-4 lg:grid-cols-2">{Array.from({length: 4}).map((_, index) => <Skeleton key={index} className="h-64" />)}</div> : cardsFiltrados.length === 0 ? <EmptyState icon={Inbox} title={cards.length === 0 ? "Nenhum aviso para preparar" : "Nenhum aviso corresponde aos filtros"} description={cards.length === 0 ? "Confira a lista do Trello em Configurações." : "Tente ajustar a busca ou os filtros."} /> : (
+            <div className="grid items-stretch gap-5 p-[17px] min-[1100px]:grid-cols-2">
               {cardsFiltrados.map((card) => (
                 <DispatchCard
                   key={card.cardId}
@@ -1392,7 +1400,7 @@ function PainelEventosDashboard({
     expandirLocalmente && expandido ? eventos : eventos.slice(0, limiteInicial);
 
   return (
-    <section className="surface-panel h-full p-[18px]">
+    <section className="surface-panel h-full p-5">
       <div className="flex h-5 items-center justify-between gap-2">
         <h2 className="flex min-w-0 items-center gap-2 text-[13px] font-semibold leading-[20.15px] text-zinc-900 dark:text-zinc-100">
           <CalendarDays className="h-4 w-4 shrink-0 text-accent-600 dark:text-accent-300" />
@@ -1409,7 +1417,7 @@ function PainelEventosDashboard({
           <ArrowRight className="h-3.5 w-3.5" />
         </Button>
       </div>
-      <p className="mt-[5px] text-[10px] font-normal leading-[15.5px] text-zinc-400 dark:text-zinc-400">
+      <p className="mt-[5px] text-xs leading-relaxed text-zinc-400 dark:text-zinc-400">
         {descricao}
       </p>
 
@@ -1455,7 +1463,7 @@ function PainelEventosDashboard({
                     {evento.nome}
                   </p>
                 </div>
-                <div className="mb-[9px] mt-1 flex flex-wrap items-center gap-x-1 gap-y-1 text-[10px] font-normal leading-[15.5px] text-zinc-400 dark:text-zinc-400">
+                <div className="mb-[9px] mt-1 flex flex-wrap items-center gap-x-1 gap-y-1 text-xs leading-relaxed text-zinc-400 dark:text-zinc-400">
                   <span>
                     {tipo.rotulo} · {evento.data}
                     {evento.horario ? ` · ${evento.horario}` : " · Sem horário"}
@@ -1527,7 +1535,7 @@ function PainelEventosDashboard({
           )}
         </div>
       )}
-      {onEnviarTodos && (
+      {onEnviarTodos && eventos.length > 0 && (
         <Button
           variant="outline"
           className="mt-[13px]"
@@ -1577,3 +1585,4 @@ function PanoramaItem({
     </div>
   );
 }
+

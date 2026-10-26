@@ -283,7 +283,7 @@ export function PendentesResposta() {
   return (
     <div className="space-y-5 md:space-y-6">
       <PageHeader
-        title="Pendentes de Resposta"
+        title="Aguardando resposta"
         description="Acompanhe quem recebeu a mensagem, cobre um retorno ou conclua o atendimento manualmente."
         actions={<Button variant="outline" onClick={carregar}>
           <RefreshCw className="h-4 w-4" /> Atualizar
@@ -454,3 +454,4 @@ export function PendentesResposta() {
     </div>
   );
 }
+

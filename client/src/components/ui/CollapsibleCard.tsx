@@ -53,10 +53,10 @@ export function CollapsibleCard({ icon, title, headerExtra, storageKey, children
       <Header
         type={alwaysOpen ? undefined : "button"}
         onClick={alwaysOpen ? undefined : alternar}
-        className="flex w-full items-center justify-between gap-4 p-5 pb-3 text-left"
+        className="flex w-full items-center justify-between gap-4 p-5 text-left sm:p-6"
       >
-        <span className="flex items-center gap-2 text-base font-semibold text-zinc-900 dark:text-zinc-100">
-          {icon}
+        <span className="flex items-center gap-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+          {icon && <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent-50 text-accent-600 dark:bg-accent-900/30 dark:text-accent-300 [&>svg]:h-[18px] [&>svg]:w-[18px]">{icon}</span>}
           {title}
         </span>
         <span className="flex shrink-0 items-center gap-2">
@@ -64,7 +64,8 @@ export function CollapsibleCard({ icon, title, headerExtra, storageKey, children
           {!alwaysOpen && (open ? <ChevronUp className="h-4 w-4 text-zinc-400" /> : <ChevronDown className="h-4 w-4 text-zinc-400" />)}
         </span>
       </Header>
-      {(alwaysOpen || open) && <CardContent className="space-y-4">{children}</CardContent>}
+      {(alwaysOpen || open) && <CardContent className="space-y-4 animate-fade-in">{children}</CardContent>}
     </Card>
   );
 }
+

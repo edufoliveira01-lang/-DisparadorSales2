@@ -456,7 +456,7 @@ export function Configuracoes() {
     <div className="space-y-6">
       <PageHeader
         title="Configurações"
-        description="Gerencie aparência, acesso, integrações, notificações e segurança do serviço de perícias e avisos."
+        description="Personalize seu espaço de trabalho e gerencie conexões, avisos e acesso."
         actions={<Button variant="outline" onClick={handleLogout} className="danger-action">
           <LogOut className="h-4 w-4" /> Sair do sistema
         </Button>}
@@ -1037,3 +1037,4 @@ export function Configuracoes() {
     </div>
   );
 }
+

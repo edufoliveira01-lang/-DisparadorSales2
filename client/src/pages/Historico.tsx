@@ -541,7 +541,7 @@ export function Historico() {
   return (
     <div className="min-w-0 max-w-full space-y-5 [overflow-wrap:anywhere] md:space-y-6">
       <PageHeader
-        title="Histórico"
+        title="Histórico de envios"
         description="Consulte mensagens enviadas, dados utilizados, confirmações de entrega e respostas dos clientes."
         actions={<Button variant="outline" onClick={carregar}>
             <RefreshCw className="h-4 w-4" /> Atualizar
@@ -729,3 +729,4 @@ export function Historico() {
     </div>
   );
 }
+

@@ -70,17 +70,17 @@ export function Login() {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-zinc-50 px-4 py-10 dark:bg-zinc-950">
-      <div className="relative w-full max-w-md space-y-8">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-zinc-50 login-screen px-4 py-10 dark:bg-zinc-950">
+      <div className="relative w-full max-w-md space-y-8 animate-slide-up">
         <div className="flex flex-col items-center text-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-500 text-white shadow-soft">
-            <span className="font-serif text-3xl">S</span>
+            <LogIn className="h-7 w-7" />
           </div>
           <h2 className="mt-5 text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
-            Sales &amp; Associados
+            DisparaZap <span className="text-accent-600 dark:text-accent-300">2</span>
           </h2>
           <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-            {modo === "login" ? "Acesse o serviço de perícias e avisos." :
+            {modo === "login" ? "Seu espaço de trabalho na Sales & Associados." :
              modo === "esqueci" ? "Recupere seu acesso ao sistema." : "Defina sua nova senha."}
           </p>
         </div>
@@ -89,7 +89,7 @@ export function Login() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
               {modo === "login" ? (
-                <><LogIn className="h-5 w-5 text-accent-500" /> Identificação</>
+                <><LogIn className="h-5 w-5 text-accent-500" /> Bem-vindo de volta</>
               ) : modo === "esqueci" ? (
                 <><Mail className="h-5 w-5 text-accent-500" /> Recuperação</>
               ) : (
@@ -204,3 +204,4 @@ export function Login() {
     </div>
   );
 }
+

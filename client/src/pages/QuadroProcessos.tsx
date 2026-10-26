@@ -84,10 +84,10 @@ export function QuadroProcessos() {
     (filtro === "todos" || (filtro === "prazos" && c.prazos_abertos > 0) || (filtro === "nao_lidos" && c.publicacoes_nao_lidas > 0)),
   ) || [];
   return <div className="space-y-5">
-    <PageHeader title="Quadro dos processos" description="Os cartões são posicionados automaticamente pelo histórico das publicações do DJEN. Quando um fato não é comprovado, o processo aguarda identificação."
+    <PageHeader title="Quadro de processos" description="Acompanhe cada processo por etapa. Os cartões se organizam com base nas publicações do DJEN."
       actions={<><Button variant="outline" onClick={() => navigate("/processos")}><ArrowLeft className="h-4 w-4" /> Publicações</Button><Button variant="outline" onClick={() => void carregar()}><RefreshCw className="h-4 w-4" /> Atualizar</Button></>} />
     <div className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
-      <div className="relative min-w-[220px] flex-1"><Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-zinc-400" />
+      <div className="relative min-w-[220px] flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
         <Input aria-label="Buscar processos no quadro" placeholder="Buscar cliente, processo ou andamento…" className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
       </div>
       <Select aria-label="Filtrar cartões" className="w-auto min-w-[180px]" value={filtro} onChange={(e) => setFiltro(e.target.value)}>
@@ -103,7 +103,7 @@ export function QuadroProcessos() {
           const cartoes = filtrados.filter((c) => c.lista_id === lista.id);
           const totalNaLista = quadro.cartoes.filter((c) => c.lista_id === lista.id).length;
           return <section key={lista.id} aria-label={`${lista.nome}: ${cartoes.length} processos`}
-            className="w-[292px] shrink-0 rounded-2xl border border-zinc-200 bg-zinc-100/70 p-3 dark:border-zinc-800 dark:bg-zinc-900">
+            className="w-[310px] shrink-0 rounded-2xl border border-zinc-200/80 bg-zinc-100/70 p-3 dark:border-zinc-800 dark:bg-zinc-900">
             {editando === lista.id ? <form className="space-y-2" onSubmit={(e) => {
               e.preventDefault(); void acao(async () => {
                 await api.put(`/djen/kanban/listas/${lista.id}`, { nome: nomeEdicao, contar_dias: contarEdicao, regra_categoria: regraEdicao });
@@ -133,7 +133,7 @@ export function QuadroProcessos() {
             {!lista.codigo && !lista.regra_categoria && editando !== lista.id && <p className="mb-2 rounded-lg bg-amber-50 p-2 text-[11px] text-amber-800">Escolha uma categoria do DJEN em Editar lista para ativar a movimentação automática.</p>}
             <div className="scrollbar-thin max-h-[min(68vh,780px)] min-h-24 space-y-2 overflow-y-auto pr-1">
               {cartoes.map((card) => <article key={card.processo_chave}
-                className={`rounded-xl border bg-white p-3 shadow-sm transition hover:border-accent-400 dark:bg-zinc-950 ${card.publicacoes_nao_lidas ? "border-l-4 border-l-accent-600 dark:border-zinc-800" : "border-zinc-200 dark:border-zinc-800"}`}>
+                className={`rounded-xl border bg-white p-4 shadow-soft transition-[border-color,box-shadow] hover:shadow-card hover:border-accent-400 dark:bg-zinc-950 ${card.publicacoes_nao_lidas ? "border-l-4 border-l-accent-600 dark:border-zinc-800" : "border-zinc-200 dark:border-zinc-800"}`}>
                 <button type="button" onClick={() => navigate(`/processos?abrir=${card.publicacao_id}`)} className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500">
                   <span className="flex items-start justify-between gap-2"><strong className="line-clamp-2 text-xs leading-snug text-zinc-900 dark:text-zinc-100">{card.cliente_nome || "Nome a conferir"}</strong></span>
                   <span className="mt-1 block text-[11px] text-zinc-500">{card.numero}</span>
@@ -187,3 +187,4 @@ export function QuadroProcessos() {
     </Modal>
   </div>;
 }
+

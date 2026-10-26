@@ -22,13 +22,13 @@ export function PageHeader({
   return (
     <header
       className={cn(
-        "flex flex-col gap-4 pb-1 sm:flex-row sm:items-start sm:justify-between",
+        "page-heading",
         className,
       )}
     >
       <div className="min-w-0">
         {!compact && (
-          <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.14em] text-accent-600 dark:text-accent-300">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-accent-600 dark:text-accent-300">
             {active === "processos" ? "Acompanhamento processual" : "Perícias e avisos"}
           </p>
         )}
@@ -37,12 +37,12 @@ export function PageHeader({
             "text-zinc-900 dark:text-white",
             compact
               ? "text-lg font-semibold tracking-[-0.5px]"
-              : "text-2xl font-[650] leading-[1.25] tracking-[-1.05px] md:text-[27px]",
+              : "text-[26px] font-semibold leading-[1.25] tracking-[-0.9px] md:text-[30px]",
           )}
         >
           {title}
         </Heading>
-        <div className="mt-2 max-w-3xl text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+        <div className="mt-2 max-w-3xl text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">
           {description}
         </div>
       </div>
@@ -54,3 +54,4 @@ export function PageHeader({
     </header>
   );
 }
+

@@ -23,11 +23,11 @@ export function WorkspacePanel({
       {(title || aside) && (
         <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-5 sm:px-6">
           <div>
-            <h2 className="text-[13px] font-medium text-zinc-900 dark:text-zinc-100">
+            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
               {title}
             </h2>
             {description && (
-              <div className="mt-1 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+              <div className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                 {description}
               </div>
             )}
@@ -70,8 +70,8 @@ export function WorkspaceRow({
   return (
     <article
       className={cn(
-        "border-b border-zinc-200 [overflow-wrap:anywhere] last:border-b-0 dark:border-zinc-800",
-        selected && "bg-accent-50/40 dark:bg-accent-900/10",
+        "workspace-row [overflow-wrap:anywhere]",
+        selected && "is-selected",
       )}
     >
       <div className="flex items-start gap-3 px-5 py-5 sm:px-6">
@@ -99,3 +99,4 @@ export function WorkspaceRow({
     </article>
   );
 }
+

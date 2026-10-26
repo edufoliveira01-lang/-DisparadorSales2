@@ -241,7 +241,7 @@ export function Agenda() {
   return (
     <div className="space-y-5 md:space-y-6">
       <PageHeader
-        title="Agenda"
+        title="Contatos"
         description="Contatos usados para identificar cada cliente com segurança pelo nome completo e número do processo."
         actions={<div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
           <input
@@ -263,7 +263,7 @@ export function Agenda() {
         </div>}
       />
 
-      <WorkspacePanel title="Contatos de perícias" description="Dados usados na identificação e nos avisos aos clientes."
+      <WorkspacePanel title="Seus contatos" description="Dados usados na identificação e nos avisos aos clientes."
         aside={<span className="text-xs text-zinc-500 dark:text-zinc-400">{resumo.total} contatos · {resumo.comProcesso} com processo · {resumo.semProcesso} sem processo</span>}
         toolbar={<div className="space-y-4">
           <div className="relative max-w-xl"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" /><Input aria-label="Buscar contatos" placeholder="Buscar nome, telefone ou processo…" className="pl-9" value={busca} onChange={e => setBusca(e.target.value)} /></div>
@@ -358,3 +358,4 @@ export function Agenda() {
     </div>
   );
 }
+

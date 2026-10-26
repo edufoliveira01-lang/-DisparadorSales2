@@ -38,10 +38,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={{ show }}>
       {children}
       {createPortal(
-        <div className="fixed bottom-4 right-4 z-[100] flex w-full max-w-sm flex-col gap-2">
+        <div className="fixed bottom-4 right-4 z-[100] flex w-[calc(100%-2rem)] max-w-sm flex-col gap-2">
           {toasts.map((toast) => (
             <div
               key={toast.id}
+              role={toast.type === "error" ? "alert" : "status"}
               className={cn(
                 "flex animate-slide-up items-start gap-3 rounded-xl border bg-white p-4 shadow-xl dark:bg-zinc-900",
                 toast.type === "error" ? "border-red-200 dark:border-red-900" : "border-zinc-200 dark:border-zinc-800"
@@ -49,7 +50,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             >
               {icons[toast.type]}
               <p className="flex-1 text-sm text-zinc-700 dark:text-zinc-200">{toast.message}</p>
-              <button onClick={() => dismiss(toast.id)} className="text-zinc-400 hover:text-zinc-600">
+              <button onClick={() => dismiss(toast.id)} aria-label="Fechar notificação" className="text-zinc-400 hover:text-zinc-600">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -66,3 +67,4 @@ export function useToast(): ToastContextValue {
   if (!ctx) throw new Error("useToast deve ser usado dentro de <ToastProvider>");
   return ctx;
 }
+

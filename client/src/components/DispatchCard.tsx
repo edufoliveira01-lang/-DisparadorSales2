@@ -37,7 +37,7 @@ export function DispatchCard(props: CardItemProps) {
     ),
   );
   const modoLabel = {
-    template: "Template de perícia",
+    template: "Modelo de perícia",
     audiencia_presencial: "Audiência presencial",
     audiencia_online: "Audiência online",
     audiencia_hibrida: "Audiência híbrida",
@@ -50,7 +50,7 @@ export function DispatchCard(props: CardItemProps) {
     <>
       <article
         className={cn(
-          "flex min-w-0 flex-col rounded-xl border bg-white [overflow-wrap:anywhere] p-[18px] dark:bg-zinc-900",
+          "flex min-w-0 flex-col rounded-2xl border bg-white shadow-soft transition-[border-color,box-shadow] duration-200 hover:shadow-card [overflow-wrap:anywhere] p-5 dark:bg-zinc-900",
           selecionado
             ? "border-accent-400 ring-1 ring-accent-200 dark:ring-accent-800"
             : "border-zinc-200 dark:border-zinc-800",
@@ -66,7 +66,7 @@ export function DispatchCard(props: CardItemProps) {
             <h3 className="break-words text-sm font-semibold text-zinc-900 dark:text-zinc-100">
               {card.nomeCliente}
             </h3>
-            <p className="mt-[6px] break-all text-[10px] leading-relaxed text-[#a0ada2] dark:text-zinc-400">
+            <p className="mt-[6px] break-all text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
               {processos.join(" · ") ||
                 contato?.processo ||
                 "Processo não informado"}
@@ -96,10 +96,10 @@ export function DispatchCard(props: CardItemProps) {
             return (
               <section
                 key={index}
-                className="rounded-[7px] border border-[#eaf0e5] bg-[#f7faf5] px-3 py-[11px] text-[11px] leading-[1.9] text-[#7e9687] dark:border-zinc-800 dark:bg-zinc-800/30 dark:text-zinc-400"
+                className="rounded-xl border border-zinc-200/70 bg-zinc-50 px-3 py-[11px] text-xs leading-[1.9] text-zinc-600 dark:border-zinc-800 dark:bg-zinc-800/30 dark:text-zinc-400"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <span className="font-medium text-[#67836e] dark:text-accent-300">
+                  <span className="font-medium text-zinc-700 dark:text-accent-300">
                     {formatPlaceholder(p.tipo) || "Tipo não identificado"}
                   </span>
                   <button
@@ -130,7 +130,7 @@ export function DispatchCard(props: CardItemProps) {
                   <p className="mt-1">Profissional: {p.profissionalPerito}</p>
                 )}
                 {p.remarcacao && (
-                  <p className="mt-1 flex items-start gap-1.5 text-[10px] text-[#b39153] dark:text-amber-300">
+                  <p className="mt-1 flex items-start gap-1.5 text-[10px] text-amber-700 dark:text-amber-300">
                     <RefreshCw className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     <span>
                       Remarcação: de {p.remarcacao.data_anterior}{" "}
@@ -257,3 +257,4 @@ export function DispatchCard(props: CardItemProps) {
     </>
   );
 }
+

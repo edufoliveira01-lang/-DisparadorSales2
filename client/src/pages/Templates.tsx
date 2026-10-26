@@ -36,9 +36,9 @@ export function Templates() {
   const dirtyEditor = useRef(false);
   const category = CATEGORIES.find(c => c.path === pathname) || CATEGORIES[0];
   return <div className="space-y-6">
-    <PageHeader title="Templates" description="Modelos de mensagens do serviço de perícias e avisos. Escolha a categoria para editar." />
+    <PageHeader title="Modelos de mensagens" description="Modelos de mensagens do serviço de perícias e avisos. Escolha a categoria para editar." />
     <div className="surface-panel px-4 pt-4">
-      <nav aria-label="Categorias de templates" className="flex gap-2 overflow-x-auto border-b border-zinc-200 pb-3 dark:border-zinc-800">
+      <nav aria-label="Categorias de mensagens" className="flex gap-2 overflow-x-auto border-b border-zinc-200 pb-3 dark:border-zinc-800">
         {CATEGORIES.map(c => <NavLink key={c.key} to={c.path} end onClick={event => { if (pathname !== c.path && dirtyEditor.current && !window.confirm("Descartar as alterações não salvas?")) event.preventDefault(); else if (pathname !== c.path) dirtyEditor.current = false; }} className={({ isActive }) => cn("shrink-0 rounded-xl px-4 py-2 text-sm font-medium transition-colors", isActive ? "bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300" : "text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800")}>{c.label}</NavLink>)}
       </nav>
     </div>
@@ -75,7 +75,7 @@ function MessageTemplateEditor({ category, label, onDirty }: { category: string;
     if (model) choose(model);
   }
   useEffect(() => {
-    load().catch(error => show(error instanceof ApiError ? error.message : "Erro ao carregar templates.", "error")).finally(() => setLoading(false));
+    load().catch(error => show(error instanceof ApiError ? error.message : "Erro ao carregar modelos.", "error")).finally(() => setLoading(false));
   }, []);
   useEffect(() => {
     const listener = (event: BeforeUnloadEvent) => { if (dirty.current) { event.preventDefault(); event.returnValue = ""; } };
@@ -98,7 +98,7 @@ function MessageTemplateEditor({ category, label, onDirty }: { category: string;
     if (!allowChange()) return;
     const scope = form.escopo || Object.keys(scopes)[0];
     setSelected(null);
-    setForm({ categoria: category, escopo: scope, nome: "Novo template", mensagem: scopes[scope].content, padrao: 0 });
+    setForm({ categoria: category, escopo: scope, nome: "Novo modelo", mensagem: scopes[scope].content, padrao: 0 });
     dirty.current = false;
     onDirty(false);
   }
@@ -116,21 +116,21 @@ function MessageTemplateEditor({ category, label, onDirty }: { category: string;
     try {
       const model = selected ? await api.put<Model>(`/message-templates/${selected}`, form) : await api.post<Model>("/message-templates", form);
       await load(model.id);
-      show("Template salvo.", "success");
-    } catch (error) { show(error instanceof ApiError ? error.message : "Erro ao salvar template.", "error"); }
+      show("Modelo salvo.", "success");
+    } catch (error) { show(error instanceof ApiError ? error.message : "Erro ao salvar modelo.", "error"); }
     finally { setBusy(false); }
   }
   async function remove() {
-    if (!selected || !window.confirm(`Excluir o template “${form.nome}”?`)) return;
+    if (!selected || !window.confirm(`Excluir o modelo “${form.nome}”?`)) return;
     setBusy(true);
-    try { await api.delete(`/message-templates/${selected}`); await load(); show("Template excluído.", "success"); }
-    catch (error) { show(error instanceof ApiError ? error.message : "Erro ao excluir template.", "error"); }
+    try { await api.delete(`/message-templates/${selected}`); await load(); show("Modelo excluído.", "success"); }
+    catch (error) { show(error instanceof ApiError ? error.message : "Erro ao excluir modelo.", "error"); }
     finally { setBusy(false); }
   }
 
   return <div className="space-y-6">
-    <PageHeader compact title={`Mensagens de ${label}`} description={category === "remarcacao" ? "Configure as mensagens enviadas quando uma perícia ou audiência for remarcada." : "Crie modelos e defina a mensagem padrão de cada aplicação."} actions={<Button onClick={newModel} disabled={loading || busy || !Object.keys(scopes).length}><Plus className="h-4 w-4" /> Novo template</Button>} />
-    {loading ? <p className="text-sm text-zinc-500">Carregando templates…</p> : <div className="space-y-4">
+    <PageHeader compact title={`Mensagens de ${label}`} description={category === "remarcacao" ? "Configure as mensagens enviadas quando uma perícia ou audiência for remarcada." : "Crie modelos e defina a mensagem padrão de cada aplicação."} actions={<Button onClick={newModel} disabled={loading || busy || !Object.keys(scopes).length}><Plus className="h-4 w-4" /> Novo modelo</Button>} />
+    {loading ? <p className="text-sm text-zinc-500">Carregando modelos…</p> : <div className="space-y-4">
       <div className="surface-panel flex flex-wrap gap-4 p-4">
         {Object.entries(scopes).map(([scope, config]) => {
           const group = models.filter(m => m.escopo === scope);
@@ -141,14 +141,15 @@ function MessageTemplateEditor({ category, label, onDirty }: { category: string;
         })}
       </div>
       <div className="grid items-start gap-5 xl:grid-cols-2"><Card><CardContent className="space-y-4 pt-5">
-        <div className="grid gap-4 sm:grid-cols-2"><div><Label>Nome do template</Label><Input value={form.nome} disabled={busy} onChange={event => edit({ nome: event.target.value })} /></div><div><Label>Aplicar para</Label><Select value={form.escopo} disabled={selected !== null || busy} onChange={event => edit({ escopo: event.target.value })}>{Object.entries(scopes).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}</Select></div></div>
+        <div className="grid gap-4 sm:grid-cols-2"><div><Label>Nome do modelo</Label><Input value={form.nome} disabled={busy} onChange={event => edit({ nome: event.target.value })} /></div><div><Label>Aplicar para</Label><Select value={form.escopo} disabled={selected !== null || busy} onChange={event => edit({ escopo: event.target.value })}>{Object.entries(scopes).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}</Select></div></div>
         <label className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-300"><input type="checkbox" checked={form.padrao === 1} disabled={busy || models.find(m => m.id === selected)?.padrao === 1} onChange={event => edit({ padrao: event.target.checked ? 1 : 0 })} /> Usar como padrão para esta aplicação</label>
         <p className="text-xs text-zinc-500">{category === "remarcacao" ? "O padrão específico tem prioridade. O modelo de Todos é usado quando não houver um padrão específico." : "O sistema usa o modelo padrão automaticamente. Marque outro modelo e salve para trocar o padrão."}</p>
         <div className="flex flex-wrap gap-1.5">{variables.map(variable => <button key={variable} disabled={busy} onClick={() => insert(variable)} className="rounded-md bg-zinc-100 px-2 py-1 font-mono text-xs text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300">{`{{${variable}}}`}</button>)}</div>
         <div><Label>Mensagem</Label><Textarea ref={textarea} rows={10} value={form.mensagem} disabled={busy} onChange={event => edit({ mensagem: event.target.value })} className="font-mono text-[13px]" /></div>
 
-        <div className="flex justify-between gap-3"><Button variant="ghost" disabled={!selected || busy} onClick={remove}><Trash2 className="h-4 w-4" /> Excluir</Button><Button loading={busy} disabled={!form.escopo} onClick={save}><Save className="h-4 w-4" /> Salvar template</Button></div>
+        <div className="flex justify-between gap-3"><Button variant="ghost" disabled={!selected || busy} onClick={remove}><Trash2 className="h-4 w-4" /> Excluir</Button><Button loading={busy} disabled={!form.escopo} onClick={save}><Save className="h-4 w-4" /> Salvar modelo</Button></div>
       </CardContent></Card><aside className="xl:sticky xl:top-24"><Card><CardContent className="pt-5">        <div><p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">Pré-visualização</p>{previewError ? <p role="alert" className="text-sm text-red-600">{previewError}</p> : <div className="whitespace-pre-wrap rounded-2xl rounded-tl-none bg-accent-50 px-4 py-3 text-sm text-zinc-800 dark:bg-accent-900/20 dark:text-zinc-200">{preview || "…"}</div>}</div></CardContent></Card></aside></div>
     </div>}
   </div>;
 }
+

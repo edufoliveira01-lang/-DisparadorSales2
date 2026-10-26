@@ -501,20 +501,20 @@ export function Calendario() {
   return (
     <div className="space-y-4 md:space-y-6">
       <PageHeader
-        title="Calendário de Perícias"
+        title="Calendário"
         description={<>
           <span className="md:hidden">Consulte perícias e audiências agendadas ou importadas.</span>
           <span className="hidden md:inline">Acompanhe compromissos criados manualmente, comunicados por WhatsApp ou importados do Trello.</span>
         </>}
         actions={
           <Button onClick={() => abrirNovoEvento()}>
-            <CalendarPlus className="h-4 w-4" /> Adicionar evento
+            <CalendarPlus className="h-4 w-4" /> Novo compromisso
           </Button>
         }
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex rounded-lg border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-900" aria-label="Visualização do calendário">
+        <div className="page-tabs" aria-label="Visualização do calendário">
           {(["semana", "mes"] as const).map(valor => <button key={valor} type="button" aria-pressed={visualizacao === valor} onClick={() => escolherVisualizacao(valor)} className={cn("rounded-md px-4 py-2 text-xs font-medium", visualizacao === valor ? "bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300" : "text-zinc-500 dark:text-zinc-400")}>{valor === "semana" ? "Semana" : "Mês"}</button>)}
         </div>
         <p className="text-xs text-zinc-500 dark:text-zinc-400">{resumo.todos.total} agendamentos · {resumo.hojeEFuturos.total} de hoje em diante</p>
@@ -881,7 +881,7 @@ export function Calendario() {
       <Modal
         open={edicao !== null}
         onClose={() => !salvandoEdicao && setEdicao(null)}
-        title={edicao?.id === null ? "Adicionar evento" : "Editar evento"}
+        title={edicao?.id === null ? "Novo compromisso" : "Editar evento"}
         description={
           edicao?.id === null
             ? "Preencha os dados do novo compromisso. Ele ficará disponível no calendário e nos lembretes."
@@ -899,7 +899,7 @@ export function Calendario() {
               disabled={!edicao?.tipo.trim() || !edicao?.nome.trim() || !edicao?.data}
             >
               {edicao?.id === null ? <CalendarPlus className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-              {edicao?.id === null ? "Adicionar evento" : "Salvar alterações"}
+              {edicao?.id === null ? "Novo compromisso" : "Salvar alterações"}
             </Button>
           </>
         }
@@ -1203,3 +1203,4 @@ function PericiaLinha({
     </div>
   );
 }
+

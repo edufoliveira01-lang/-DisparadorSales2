@@ -20,7 +20,7 @@ type TemplateForm = Omit<Template, "id" | "created_at" | "conteudo_pericia_medic
 
 function novoTemplateVazio(): TemplateForm {
   return {
-    nome: "Novo template",
+    nome: "Novo modelo",
     conteudo_1_pericia: "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n⚖️ Processo: {{PROCESSO}}\n👤 Profissional/Perito: {{PROFISSIONAL_PERITO}}\n\nQualquer dúvida, estou à disposição!",
     conteudo_2_pericias: "Olá {{NOME}}, tudo bem?\n\nVocê tem as seguintes perícias agendadas:\n\n{{#each PERICIAS}}\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n⚖️ Processo: {{PROCESSO}}\n👤 Profissional/Perito: {{PROFISSIONAL_PERITO}}\n\n{{/each}}\nQualquer dúvida, estou à disposição!",
     conteudo_pericia_medica: "Olá {{NOME}}, tudo bem?\n\nVocê tem uma perícia MÉDICA agendada:\n\n📌 {{TIPO_PERICIA}}\n🗓 Data: {{DATA}}\n🕐 Horário: {{HORARIO}}\n📍 Local: {{LOCAL}}\n⚖️ Processo: {{PROCESSO}}\n👤 Profissional/Perito: {{PROFISSIONAL_PERITO}}\n\nQualquer dúvida, estou à disposição!",
@@ -86,7 +86,7 @@ export function TemplatesPericia() {
       }
       carregar();
     } catch (err) {
-      show(err instanceof ApiError ? err.message : "Erro ao salvar template.", "error");
+      show(err instanceof ApiError ? err.message : "Erro ao salvar modelo.", "error");
     } finally {
       setSalvando(false);
     }
@@ -167,7 +167,7 @@ export function TemplatesPericia() {
         title="Mensagens de Perícia"
         description="Edite os textos, variáveis e formatos usados nas mensagens de agendamento."
         actions={<Button onClick={novoTemplate}>
-          <Plus className="h-4 w-4" /> Novo template
+          <Plus className="h-4 w-4" /> Novo modelo
         </Button>}
       />
 
@@ -192,7 +192,7 @@ export function TemplatesPericia() {
             <CardContent className="space-y-4 pt-5">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
                 <div className="flex-1">
-                  <Label>Nome do template</Label>
+                  <Label>Nome do modelo</Label>
                   <Input value={form.nome} onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))} />
                 </div>
                 <div className="sm:w-56">
@@ -320,7 +320,7 @@ export function TemplatesPericia() {
                   </Button>
                 )}
                 <Button onClick={salvar} loading={salvando}>
-                  <Save className="h-4 w-4" /> Salvar template
+                  <Save className="h-4 w-4" /> Salvar modelo
                 </Button>
               </div>
             </CardContent>
@@ -344,3 +344,4 @@ export function TemplatesPericia() {
     </div>
   );
 }
+

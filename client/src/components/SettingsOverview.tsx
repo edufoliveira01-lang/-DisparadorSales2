@@ -74,7 +74,7 @@ export function SettingsOverview({
 }) {
   return (
     <div
-      className="grid gap-4 md:grid-cols-2"
+      className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3"
       aria-label="Ferramentas e configurações"
     >
       {sections.map(({ key, title, description, icon: Icon }) => (
@@ -83,7 +83,7 @@ export function SettingsOverview({
           type="button"
           aria-label={`Configurar ${title}`}
           onClick={() => onOpen(key)}
-          className="group rounded-xl border border-zinc-200 bg-white p-5 text-left transition-colors hover:border-accent-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-accent-700 sm:p-6"
+          className="group settings-tile"
         >
           <div className="flex items-center justify-between gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-50 text-accent-600 dark:bg-accent-900/30 dark:text-accent-300">
@@ -110,3 +110,4 @@ export function SettingsOverview({
     </div>
   );
 }
+

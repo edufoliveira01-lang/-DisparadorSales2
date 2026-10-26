@@ -286,7 +286,7 @@ export function Logs() {
   return (
     <div className="space-y-4 md:space-y-6">
       <PageHeader
-        title="Logs"
+        title="Atividade do sistema"
         description="Auditoria de notificações automáticas e erros do sistema, com horários, origem, registros envolvidos e resultado por canal."
         actions={<Button variant="outline" onClick={() => void carregar()} loading={carregando}><RefreshCw className="h-4 w-4" /> Atualizar</Button>}
       />
@@ -341,3 +341,4 @@ export function Logs() {
     </div>
   );
 }
+

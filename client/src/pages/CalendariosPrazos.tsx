@@ -8,7 +8,7 @@ export function CalendariosPrazos() {
       <PageHeader
         title="Calendários de prazos"
         description="Acompanhe a importação de feriados e suspensões por tribunal e unidade. Confira a cobertura antes de calcular prazos."
-        actions={<Link to="/configuracoes?prazos=1&manual=1#calendario-manual" className="inline-flex h-[42px] items-center rounded-lg border border-zinc-200 bg-white px-[14px] text-[13px] text-[#607c68] hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">Calendário manual</Link>}
+        actions={<Link to="/configuracoes?prazos=1&manual=1#calendario-manual" className="inline-flex h-[42px] items-center rounded-lg border border-zinc-200 bg-white px-[14px] text-[13px] text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">Calendário manual</Link>}
       />
       <section className="surface-panel p-5">
         <AutomaticCalendars />
@@ -16,3 +16,4 @@ export function CalendariosPrazos() {
     </div>
   );
 }
+
