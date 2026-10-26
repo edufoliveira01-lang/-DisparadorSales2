@@ -1,0 +1,88 @@
+name: Atualizar Ubuntu
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-disparazap
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, X64, disparazap]
+    timeout-minutes: 45
+
+    steps:
+      - name: Preparar e publicar atualização
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+
+          APP=/home/dropsales/disparador-sales2
+          BACKUPS=/home/dropsales/disparazap-backups
+          export PM2_HOME=/home/dropsales/.pm2
+
+          exec 9>/home/dropsales/.disparazap-deploy.lock
+          flock -n 9
+
+          cd "$APP"
+          test -z "$(git status --porcelain)"
+          git fetch origin main
+          git merge-base --is-ancestor HEAD "$GITHUB_SHA"
+          git cat-file -e "$GITHUB_SHA^{commit}"
+
+          STAGE=$(mktemp -d /home/dropsales/disparazap-build-XXXXXX)
+          trap 'rm -rf -- "$STAGE"' EXIT
+
+          git archive "$GITHUB_SHA" | tar -x -C "$STAGE"
+          cd "$STAGE"
+          npm run install:all
+          npm run build --prefix server
+          npm run build --prefix client
+
+          test -f server/dist/index.js
+          test -f client/dist/index.html
+
+          mkdir -p "$BACKUPS"
+          chmod 700 "$BACKUPS"
+          BACKUP="$BACKUPS/deploy-$(date +%Y%m%d-%H%M%S)-$GITHUB_RUN_ID"
+          mkdir -m 700 "$BACKUP"
+
+          cd "$APP"
+          git rev-parse HEAD > "$BACKUP/commit-anterior.txt"
+          pm2 stop disparador-backend
+          trap 'pm2 restart disparador-backend || true; rm -rf -- "$STAGE"' EXIT
+
+          tar -czf "$BACKUP/servidor.tar.gz" server
+          tar -czf "$BACKUP/interface.tar.gz" -C /var/www disparazap
+
+          git merge --ff-only "$GITHUB_SHA"
+
+          mv server/dist "$BACKUP/dist-anterior"
+          mv server/node_modules "$BACKUP/node_modules-anterior"
+          cp -a "$STAGE/server/dist" server/dist
+          cp -a "$STAGE/server/node_modules" server/node_modules
+
+          cp -r "$STAGE/client/dist/." /var/www/disparazap/
+          chmod -R a+rX /var/www/disparazap
+
+          pm2 restart disparador-backend --update-env
+          trap 'rm -rf -- "$STAGE"' EXIT
+
+          for tentativa in {1..30}; do
+            if curl -fsS http://127.0.0.1:8081/api/health; then
+              echo
+              echo "Atualização concluída."
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "A atualização terminou, mas a API não respondeu. Verifique o PM2."
+          exit 1
