@@ -57,7 +57,23 @@ jobs:
           cd "$APP"
           git rev-parse HEAD > "$BACKUP/commit-anterior.txt"
           pm2 stop disparador-backend
-          trap 'pm2 restart disparador-backend || true; rm -rf -- "$STAGE"' EXIT
+          trap 'RUNNER_TRACKING_ID="" pm2 restart disparador-backend --update-env || true; rm -rf -- "$STAGE"' EXIT
+
+          # Encerra somente Chromium que usa o perfil deste sistema.
+          CHROME_PATTERN='^/home/dropsales/\.cache/puppeteer/chrome/.*--user-data-dir=/home/dropsales/disparador-sales2/server/data/wwebjs_auth/session( |$)'
+          if pgrep -u "$(id -u)" -f "$CHROME_PATTERN" >/dev/null; then
+            pkill -TERM -u "$(id -u)" -f "$CHROME_PATTERN" || true
+          fi
+          for tentativa in {1..20}; do
+            if ! pgrep -u "$(id -u)" -f "$CHROME_PATTERN" >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          if pgrep -u "$(id -u)" -f "$CHROME_PATTERN" >/dev/null; then
+            echo "Chromium ainda usa a sessão; publicação interrompida."
+            exit 1
+          fi
 
           tar -czf "$BACKUP/servidor.tar.gz" server
           tar -czf "$BACKUP/interface.tar.gz" -C /var/www disparazap
@@ -72,7 +88,7 @@ jobs:
           cp -r "$STAGE/client/dist/." /var/www/disparazap/
           chmod -R a+rX /var/www/disparazap
 
-          pm2 restart disparador-backend --update-env
+          RUNNER_TRACKING_ID="" pm2 restart disparador-backend --update-env
           trap 'rm -rf -- "$STAGE"' EXIT
 
           for tentativa in {1..30}; do
