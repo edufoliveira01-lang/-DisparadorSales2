@@ -91,6 +91,31 @@ const updateAckStmt = db.prepare(`
 `);
 const deleteStmt = db.prepare("DELETE FROM send_logs WHERE id = ?");
 
+export interface LogAguardandoConfirmacao {
+  id: number;
+  whatsapp_message_id: string;
+  telefone: string | null;
+  whatsapp_chat_id: string | null;
+}
+
+/** Percorre envios recentes por ID para que registros antigos sem confirmação não bloqueiem os novos. */
+export function listLogsAguardandoConfirmacao(depoisDoId: number, limite: number): LogAguardandoConfirmacao[] {
+  return db.prepare(`
+    SELECT send_logs.id, send_logs.whatsapp_message_id, send_logs.telefone,
+      (SELECT whatsapp_chat_id FROM pending_replies
+       WHERE send_log_id = send_logs.id ORDER BY id DESC LIMIT 1) AS whatsapp_chat_id
+    FROM send_logs
+    WHERE send_logs.id > ? AND send_logs.status = 'sucesso'
+      AND send_logs.whatsapp_message_id IS NOT NULL
+      AND send_logs.created_at >= datetime('now', '-3 days')
+      AND (send_logs.ack IS NULL OR send_logs.ack < 2 OR EXISTS (
+        SELECT 1 FROM pending_replies
+        WHERE send_log_id = send_logs.id AND (ack IS NULL OR ack < 2)
+      ))
+    ORDER BY send_logs.id ASC LIMIT ?
+  `).all(depoisDoId, limite) as LogAguardandoConfirmacao[];
+}
+
 export function createLog(entry: NewSendLog): SendLog {
   const info = insertStmt.run({
     ...entry,
