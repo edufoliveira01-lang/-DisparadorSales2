@@ -55,11 +55,28 @@ async function main() {
     } while (pageToken);
     const stats = {destination:d.destination,timing:d.timingMode,eventMode:d.eventMode,appointments:rows.length,events:events.length,exactTitles:0,manual:0,sameId:0,staleId:0,otherActiveId:0,wrongDestination:0,outsideWindow:0,duplicateTitles:0};
     const samples = [];
+    const duplicateDetails = [];
     for (const p of rows) {
       const values = {tipo:p.tipo,data:p.data,horario:p.horario,nome:p.nome,telefone:(p.telefone || '').replace(/\s*-\s*(?=\d{4}\s*$)/,' - '),processo:p.processo,local:p.local,whatsapp:p.whatsapp,profissional:p.profissional_perito};
       const title = norm((d.titleTemplate || '{tipo} - {data} - {horario} - {nome} - {telefone} - {processo}').replace(/\{(\w+)\}/g,(_,key)=>values[key] || ''));
       const matches = events.filter(e => norm(e.summary) === title);
-      if (matches.length > 1) stats.duplicateTitles++;
+      if (matches.length > 1) {
+        stats.duplicateTitles++;
+        const generated = crypto.createHash('sha256').update(`${d.calendarId}:${p.id}:${d.destination}`).digest('hex').slice(0,48);
+        const link = db.prepare('SELECT google_event_id FROM google_calendar_event_links WHERE pericia_id = ? AND destination = ? AND calendar_id = ?').get(p.id,d.destination,d.calendarId);
+        if (duplicateDetails.length < 20) duplicateDetails.push({
+          fingerprint: crypto.createHash('sha256').update((p.processo || '').replace(/\D/g,'') + '|' + p.data).digest('hex').slice(0,12),
+          hasLocalLink: !!link,
+          events: matches.map(e => ({
+            generated: e.id === generated,
+            linked: e.id === link?.google_event_id,
+            sameAppointment: e.extendedProperties?.private?.disparazapId === String(p.id),
+            marked: !!e.extendedProperties?.private?.disparazapId,
+            sameDestination: e.extendedProperties?.private?.disparazapDestination === String(d.destination),
+            allDay: !!e.start?.date,
+          }))
+        });
+      }
       for (const e of matches) {
         stats.exactTitles++;
         const props = e.extendedProperties?.private || {};
@@ -78,7 +95,7 @@ async function main() {
         if (samples.length < 12) samples.push({category,wrongDestination,allDay:!!e.start?.date,startDaysFromAppointment:distance,endDaysFromAppointment:endDistance});
       }
     }
-    console.log('[Google diagnóstico]', JSON.stringify({stats,samples}));
+    console.log('[Google diagnóstico]', JSON.stringify({stats,samples,duplicateDetails}));
   }
 }
 main().catch(e => { console.log('[Google diagnóstico] falhou', /^(oauth|calendar)_http_\d+$/.test(e.message) ? e.message : e.code || e.name); process.exitCode = 1; }).finally(()=>db?.close());

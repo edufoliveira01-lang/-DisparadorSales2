@@ -86,7 +86,7 @@ jobs:
           }
           classify() {
             case "$1" in
-              .github/*|docs/*|*.md|LICENSE|LICENSE.*|server/tests/*|client/tests/*) ;;
+              .github/*|docs/*|*.md|LICENSE|LICENSE.*|server/tests/*|client/tests/*|server/scripts/diagnose-*.cjs) ;;
               package.json|package-lock.json|npm-shrinkwrap.json)
                 if [ "$1" = package.json ]; then SERVER=true; CLIENT=true; fi
                 if [ "$(deps_changed "$1")" = true ]; then
