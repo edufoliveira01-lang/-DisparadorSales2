@@ -92,6 +92,18 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 describe("pareamento por QR e sincronização do WhatsApp", () => {
+  it("cada nova tentativa recebe dois minutos completos para iniciar", async () => {
+    await vi.advanceTimersByTimeAsync(90000);
+    client.rejectInitialize(new Error("Waiting failed: 90000ms exceeded"));
+    await vi.advanceTimersByTimeAsync(5001);
+    const nextClient = mocks.clients.at(-1) as FakeClient;
+    expect(nextClient).not.toBe(client);
+    manager.tentativa = 6;
+    await vi.advanceTimersByTimeAsync(45000);
+    expect(nextClient.destroy).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(75001);
+    expect(nextClient.destroy).toHaveBeenCalledOnce();
+  });
   it("o fluxo manual renova o perfil uma única vez quando trava antes do QR", async () => {
     const backup = vi.spyOn(profile, "backupWhatsappProfile").mockReturnValue(null);
     manager.recuperarPerfilNaFalha = true;

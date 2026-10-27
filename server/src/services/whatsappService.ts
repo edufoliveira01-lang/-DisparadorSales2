@@ -856,6 +856,9 @@ class WhatsappManager {
     if (minhaGeracao !== this.geracao) return; // uma chamada mais recente (connect/disconnect) já assumiu
 
     this.limparMonitorPareamento();
+    // A nova tentativa recebe o prazo completo; o timer da anterior não pode
+    // interromper o navegador recém-criado durante uma recuperação automática.
+    if (this.inicioTimer) { clearTimeout(this.inicioTimer); this.inicioTimer = null; }
     clearStaleChromiumLocks();
     // A sessão fica em Local Storage/IndexedDB e não é apagada aqui. Limpamos somente caches
     // descartáveis para impedir que um bundle antigo do WhatsApp Web derrube a conexão.
