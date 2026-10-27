@@ -43,6 +43,14 @@ jobs:
             rm -f -- "$DIAGNOSTIC"
           fi
           
+          # Compara eventos sem escrever nas agendas nem expor títulos ou credenciais.
+          if git cat-file -e "$GITHUB_SHA:server/scripts/diagnose-google-calendar.cjs" 2>/dev/null && ! git diff --quiet HEAD "$GITHUB_SHA" -- server/scripts/diagnose-google-calendar.cjs; then
+            CALENDAR_DIAGNOSTIC=$(mktemp /tmp/disparazap-calendar-diagnostic-XXXXXX.cjs)
+            git show "$GITHUB_SHA:server/scripts/diagnose-google-calendar.cjs" > "$CALENDAR_DIAGNOSTIC"
+            timeout 90s node "$CALENDAR_DIAGNOSTIC" "$APP" || true
+            rm -f -- "$CALENDAR_DIAGNOSTIC"
+          fi
+
           SERVER=false
           CLIENT=false
           ROOT_DEPS=false
