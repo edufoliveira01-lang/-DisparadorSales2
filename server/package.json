@@ -1,6 +1,6 @@
 {
   "name": "disparador-pericias-server",
-  "version": "2.50.4",
+  "version": "2.50.5",
   "description": "Backend do Disparador de Perícias — API Trello + WhatsApp + SQLite",
   "main": "dist/index.js",
   "type": "commonjs",
@@ -25,7 +25,7 @@
     "qrcode": "^1.5.4",
     "socket.io": "^4.8.1",
     "string-similarity": "^4.0.4",
-    "whatsapp-web.js": "https://codeload.github.com/wwebjs/whatsapp-web.js/tar.gz/1780711a1c86dfeca7c5ba6a66f950eac93dde28"
+    "whatsapp-web.js": "https://codeload.github.com/wwebjs/whatsapp-web.js/tar.gz/064a3d5a5a3dce1281a6a12740b5a7051339d154"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",

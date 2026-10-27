@@ -14,6 +14,7 @@ import { listLogsAguardandoConfirmacao, updateLogAckByMessageId } from "./logsSe
 import { reconciliarConfirmacaoDeEnvio } from "./deliveryAckReconciliation";
 import { sendConfirmedWhatsappMessage, type ConfirmedWhatsappSend } from "./confirmedWhatsappSend";
 import { prepareWhatsappVersion, configureWhatsappStartupPage } from "./whatsappStartup";
+import { backupWhatsappProfile, WhatsappSessionRecoveryError } from "./whatsappProfile";
 import {
   atrasoRetryConexaoMs,
   deveInvalidarSessao,
@@ -497,6 +498,7 @@ class WhatsappManager {
   private falhaInicializacao: ((message: string) => void) | null = null;
   private faseInicializacao: string | null = null;
   private usarVersaoAtual = false;
+  private recriacao: Promise<void> | null = null;
   private encerramento: Promise<void> | null = null;
   private cancelarMonitorPareamento: (() => void) | null = null;
   private estabilidadeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -803,7 +805,7 @@ class WhatsappManager {
     });
   }
 
-  connect(): boolean {
+  connect(preferCurrentVersion = true): boolean {
     if (this.encerramento) return false;
     if (this.client || this.status === "inicializando") return true;
     if (this.retomadaTimer) clearTimeout(this.retomadaTimer);
@@ -821,7 +823,8 @@ class WhatsappManager {
     clearLegacyWebVersionCache();
     this.geracao++;
     this.tentativa = 0;
-    this.usarVersaoAtual = false;
+    // A biblioteca atual normaliza os IDs da versão corrente; a versão arquivada é fallback.
+    this.usarVersaoAtual = preferCurrentVersion;
     this.limparEstabilidadeTimer();
     this.desconexaoManual = false;
     this.syncProgress = null;
@@ -1358,6 +1361,23 @@ class WhatsappManager {
   }
   async stop(): Promise<void> {
     await this.encerrar();
+  }
+  recreateSession(): Promise<void> {
+    if (this.recriacao) return this.recriacao;
+    const operation = (async () => {
+      await this.stop();
+      if (!adquirirLockDaInstancia()) throw new WhatsappSessionRecoveryError("Outra instância está usando esta sessão. Não foi possível recriar o vínculo.");
+      try {
+        backupWhatsappProfile(dataDir, chromiumDoProfileEstaAtivo);
+      } finally {
+        liberarLockDaInstancia();
+      }
+      recordSystemLog({ nivel: "info", categoria: "whatsapp", evento: "sessao_recriada", titulo: "Preparando uma nova sessão do WhatsApp", mensagem: "O perfil anterior foi preservado em backup. Um novo vínculo será solicitado pelo QR Code.", origem: "usuario" });
+      if (!this.connect()) throw new WhatsappSessionRecoveryError("Não foi possível iniciar a nova sessão. Tente conectar novamente.");
+    })();
+    this.recriacao = operation;
+    void operation.finally(() => { if (this.recriacao === operation) this.recriacao = null; }).catch(() => {});
+    return operation;
   }
   async disconnect(): Promise<void> {
     await this.encerrar(true);

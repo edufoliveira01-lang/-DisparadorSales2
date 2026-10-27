@@ -34,7 +34,9 @@ jobs:
           git merge-base --is-ancestor HEAD "$GITHUB_SHA"
           # Executa a sonda somente quando seu próprio arquivo muda. A leitura ocorre antes
           # de parar o backend e não expõe QR, conta, endpoint DevTools ou conversas.
-          if ! git diff --quiet HEAD "$GITHUB_SHA" -- server/scripts/diagnose-whatsapp.cjs; then
+          RUN_WHATSAPP_DIAGNOSTIC=false
+          if git cat-file -e "$GITHUB_SHA:server/scripts/diagnose-whatsapp.cjs" 2>/dev/null && ! git diff --quiet HEAD "$GITHUB_SHA" -- server/scripts/diagnose-whatsapp.cjs; then
+            RUN_WHATSAPP_DIAGNOSTIC=true
             DIAGNOSTIC=$(mktemp /tmp/disparazap-whatsapp-diagnostic-XXXXXX.cjs)
             git show "$GITHUB_SHA:server/scripts/diagnose-whatsapp.cjs" > "$DIAGNOSTIC"
             timeout 30s node "$DIAGNOSTIC" "$APP" || true
@@ -236,6 +238,9 @@ jobs:
             if curl --max-time 5 -fsS http://127.0.0.1:8081/api/health; then
               echo
               echo "Atualização seletiva concluída."
+              if [ "$RUN_WHATSAPP_DIAGNOSTIC" = true ]; then
+                timeout 90s node "$APP/server/scripts/diagnose-whatsapp.cjs" "$APP" --fresh || true
+              fi
               exit 0
             fi
             sleep 2

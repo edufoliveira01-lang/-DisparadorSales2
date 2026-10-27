@@ -16,6 +16,7 @@ interface WhatsappContextValue extends WhatsappState {
   conectar: () => Promise<void>;
   parar: () => Promise<void>;
   desconectar: () => Promise<void>;
+  recriarSessao: () => Promise<void>;
 }
 
 const ESTADO_INICIAL: WhatsappState = {
@@ -102,6 +103,17 @@ export function WhatsappProvider({ children }: { children: ReactNode }) {
     if (atual === operacao.current) aplicar(novoEstado);
   }
 
+  async function recriarSessao() {
+    const atual = ++operacao.current;
+    setConectando(true);
+    try {
+      const novoEstado = await api.post<WhatsappState>("/whatsapp/recreate-session");
+      if (atual === operacao.current) aplicar(novoEstado);
+    } finally {
+      if (atual === operacao.current) setConectando(false);
+    }
+  }
+
   async function desconectar() {
     const atual = ++operacao.current;
     setConectando(false);
@@ -111,7 +123,7 @@ export function WhatsappProvider({ children }: { children: ReactNode }) {
 
   return (
     <WhatsappContext.Provider
-      value={{ ...state, carregado, conectando, conectar, parar, desconectar }}
+      value={{ ...state, carregado, conectando, conectar, parar, desconectar, recriarSessao }}
     >
       {children}
     </WhatsappContext.Provider>

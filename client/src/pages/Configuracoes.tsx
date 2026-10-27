@@ -792,7 +792,7 @@ export function Configuracoes() {
             </div>
           )}
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {whatsapp.status === "conectado" ? (
               <Button variant="danger" onClick={handleDesconectarWhatsapp}>
                 <Unplug className="h-4 w-4" /> Desconectar / trocar de sessão
@@ -809,13 +809,22 @@ export function Configuracoes() {
                 </Button>
 
                 {["inicializando", "aguardando_qr", "pareando", "autenticado"].includes(whatsapp.status) && (
-                  <Button variant="outline" onClick={handlePararWhatsapp}>
+                  <Button variant="outline" disabled={whatsapp.conectando} onClick={handlePararWhatsapp}>
                     <Square className="h-4 w-4" /> Parar
                   </Button>
                 )}
               </>
             )}
           </div>
+          {whatsapp.carregado && ["desconectado", "falha", "inicializando"].includes(whatsapp.status) && (
+            <div className="mt-4 rounded-xl border border-zinc-200 p-3 dark:border-zinc-700">
+              <p className="mb-3 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">Se o vínculo ficar travado, gere um novo QR Code. O perfil atual será guardado em backup; será necessário escanear o código no celular.</p>
+              <Button variant="outline" disabled={whatsapp.conectando} onClick={async () => {
+                try { await whatsapp.recriarSessao(); show("Preparando uma nova sessão. Aguarde o QR Code.", "info"); }
+                catch (error) { show(error instanceof ApiError ? error.message : "Não foi possível recriar a sessão do WhatsApp.", "error"); }
+              }}><QrCode className="h-4 w-4" /> Gerar novo QR Code</Button>
+            </div>
+          )}
       </CollapsibleCard></section>
 
       <section hidden={configSection !== "notificacoes"}><CollapsibleCard alwaysOpen

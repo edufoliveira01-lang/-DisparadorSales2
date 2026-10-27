@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { whatsappManager } from "../services/whatsappService";
+import { WhatsappSessionRecoveryError } from "../services/whatsappProfile";
 
 export const whatsappRouter = Router();
 
@@ -15,6 +16,16 @@ whatsappRouter.post("/connect", (_req, res) => {
 whatsappRouter.post("/stop", async (_req, res) => {
   await whatsappManager.stop();
   res.json(whatsappManager.getState());
+});
+
+whatsappRouter.post("/recreate-session", async (_req, res, next) => {
+  try {
+    await whatsappManager.recreateSession();
+    res.json(whatsappManager.getState());
+  } catch (error) {
+    if (error instanceof WhatsappSessionRecoveryError) { res.status(409).json({ error: error.message }); return; }
+    next(error);
+  }
 });
 
 whatsappRouter.post("/disconnect", async (_req, res) => {
