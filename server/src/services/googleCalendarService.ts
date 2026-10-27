@@ -54,6 +54,7 @@ export interface GoogleCalendarListItem {
 }
 
 interface GoogleCalendarEvent {
+  etag?: string;
   id?: string;
   status?: string;
   summary?: string;
@@ -95,6 +96,7 @@ export interface GoogleCalendarConflictCandidate {
 }
 
 export interface GoogleCalendarConflictItem {
+  duplicate?: boolean;
   periciaId: number;
   nome: string;
   data: string;
@@ -779,6 +781,29 @@ function manualCandidates(
   });
 }
 
+function linkedDuplicateCandidates(
+  pericia: PericiaAgendada,
+  destination: GoogleCalendarDestinationConfig,
+  events: GoogleCalendarEvent[],
+  usedIds: Set<string>,
+  link: GoogleEventLink
+): GoogleCalendarEvent[] {
+  const linked = events.find(event => event.id === link.google_event_id);
+  const properties = linked?.extendedProperties?.private;
+  if (!linked || properties?.disparazapId !== String(pericia.id)
+    || (properties.disparazapDestination && properties.disparazapDestination !== String(destination.destination))) return [];
+  const title = normalizeText(linked.summary);
+  if (!title) return [];
+  const candidates = manualCandidates(pericia, destination, events, usedIds);
+  const generatedId = deterministicGoogleEventId(destination.calendarId, pericia.id, destination.destination);
+  const copy = events.find(event => event.id === generatedId && event.id !== linked.id
+    && event.extendedProperties?.private?.disparazapId === String(pericia.id)
+    && event.extendedProperties?.private?.disparazapDestination === String(destination.destination));
+  if (copy) candidates.push(copy);
+  const others = candidates.filter(event => event.id !== linked.id && normalizeText(event.summary) === title);
+  return others.length ? [linked, ...others] : [];
+}
+
 function conflictCandidate(event: GoogleCalendarEvent): GoogleCalendarConflictCandidate {
   return {
     eventId: event.id || "",
@@ -965,7 +990,7 @@ async function adoptManualEvent(
 
   const updated = await googleRequest<GoogleCalendarEvent>(
     `/calendars/${encodeURIComponent(destination.calendarId)}/events/${encodeURIComponent(event.id)}`,
-    { method: "PATCH", body: JSON.stringify(buildGoogleEvent(pericia, destination, event.description)) }
+    { method: "PATCH", headers: event.etag ? { "If-Match": event.etag } : undefined, body: JSON.stringify(buildGoogleEvent(pericia, destination, event.description)) }
   );
   let deletedGeneratedCopy = false;
   const generatedId = deterministicGoogleEventId(destination.calendarId, pericia.id, destination.destination);
@@ -1002,9 +1027,19 @@ async function syncPericiaToDestination(
     deleteLinkStmt.run(link.pericia_id, link.destination);
     link = undefined;
   }
-  if (link && link.google_event_id === generatedId && !skipExistingLookup && allowManualMatch) {
+  if (link && !skipExistingLookup && allowManualMatch) {
     const window = eventSearchWindow(pericia, destination, true);
     const events = await listGoogleEvents(destination.calendarId, window.timeMin, window.timeMax);
+    if (link.google_event_id !== generatedId) {
+      const duplicates = linkedDuplicateCandidates(pericia, destination, events, new Set(), link);
+      if (duplicates.length > 1) {
+        if (duplicates.length === 2 && duplicates[1].id === generatedId) {
+          await adoptManualEvent(pericia, destination, duplicates[0], undefined, true);
+          return "updated";
+        }
+        return "conflict";
+      }
+    }
     const match = findExistingEvent(pericia, destination, events, new Set(), true);
     if (match.conflict) return "conflict";
     if (match.event?.id && match.event.id !== link.google_event_id) {
@@ -1184,6 +1219,15 @@ export async function analyzeGoogleCalendar(): Promise<GoogleCalendarAnalysis> {
             continue;
           }
         }
+        const duplicates = linkedDuplicateCandidates(pericia, destination, events, used, link);
+        if (duplicates.length > 1) {
+          summary.conflicts += 1;
+          summary.conflictItems.push({
+            periciaId: pericia.id, nome: pericia.nome, data: pericia.data, horario: pericia.horario,
+            duplicate: true, candidates: duplicates.map(conflictCandidate),
+          });
+          continue;
+        }
         summary.linked += 1;
         continue;
       }
@@ -1212,7 +1256,8 @@ export async function analyzeGoogleCalendar(): Promise<GoogleCalendarAnalysis> {
 export async function resolveGoogleCalendarConflict(
   periciaId: number,
   destinationId: number,
-  googleEventId: string
+  googleEventId: string,
+  removeDuplicates = false
 ): Promise<GoogleCalendarSyncResult> {
   if (!getSetting("google_refresh_token")) throw new GoogleCalendarError("Conecte sua conta Google primeiro.", 400);
   const config = getGoogleCalendarConfig();
@@ -1224,16 +1269,42 @@ export async function resolveGoogleCalendarConflict(
 
   const currentLink = getLinkStmt.get(pericia.id, destination.destination) as GoogleEventLink | undefined;
   const generatedId = deterministicGoogleEventId(destination.calendarId, pericia.id, destination.destination);
-  if (currentLink && currentLink.calendar_id === destination.calendarId && currentLink.google_event_id !== generatedId) {
-    throw new GoogleCalendarError("Este compromisso já está vinculado a um evento manual.", 409);
-  }
-
   const window = eventSearchWindow(pericia, destination, true);
   const events = await listGoogleEvents(destination.calendarId, window.timeMin, window.timeMax);
   const linkedIds = db.prepare(
     "SELECT google_event_id FROM google_calendar_event_links WHERE calendar_id = ? AND NOT (pericia_id = ? AND destination = ?)"
   ).all(destination.calendarId, pericia.id, destination.destination) as Array<{ google_event_id: string }>;
-  const candidates = manualCandidates(pericia, destination, events, new Set(linkedIds.map((item) => item.google_event_id)));
+  const used = new Set(linkedIds.map(item => item.google_event_id));
+  if (currentLink?.calendar_id === destination.calendarId && currentLink.google_event_id !== generatedId) {
+    const duplicates = linkedDuplicateCandidates(pericia, destination, events, used, currentLink);
+    if (!removeDuplicates || duplicates.length < 2) {
+      throw new GoogleCalendarError("Analise as agendas e confirme qual evento deseja manter para resolver a duplicidade.", 409);
+    }
+    const selected = duplicates.find(event => event.id === googleEventId);
+    if (!selected || duplicates.some(event => !event.etag)) {
+      throw new GoogleCalendarError("A duplicidade mudou. Analise as agendas novamente antes de confirmar.", 409);
+    }
+    await adoptManualEvent(pericia, destination, selected);
+    let deleted = 0;
+    for (const duplicate of duplicates) {
+      if (duplicate.id === selected.id) continue;
+      try {
+        await googleRequest<Record<string, never>>(
+          `/calendars/${encodeURIComponent(destination.calendarId)}/events/${encodeURIComponent(duplicate.id!)}`,
+          { method: "DELETE", headers: { "If-Match": duplicate.etag! } }
+        );
+        deleted += 1;
+      } catch (err) {
+        if (!(err instanceof GoogleCalendarError) || (err.status !== 404 && err.status !== 410)) throw err;
+      }
+    }
+    recordSystemLog({ nivel: "info", categoria: "google_calendar", evento: "duplicidade_resolvida",
+      titulo: "Duplicidade no Google Agenda resolvida", origem: "usuario",
+      detalhes: { periciaId, destino: destination.destination, removidos: deleted },
+    });
+    return { total: 1, linked: 1, created: 0, updated: 0, deleted, skipped: 0, conflicts: 0, errors: 0 };
+  }
+  const candidates = manualCandidates(pericia, destination, events, used);
   const selected = candidates.find((event) => event.id === googleEventId);
   if (!selected) {
     throw new GoogleCalendarError("O evento escolhido não está mais disponível ou não corresponde ao compromisso.", 409);
@@ -1320,6 +1391,15 @@ export async function syncAllGoogleCalendar(): Promise<GoogleCalendarSyncResult>
               if (adoption.deletedGeneratedCopy) result.deleted += 1;
               continue;
             }
+          }
+          const duplicates = linkedDuplicateCandidates(pericia, destination, events, usedIds, currentLink);
+          if (duplicates.length > 1) {
+            if (duplicates.length === 2 && duplicates[1].id === generatedId) {
+              const adoption = await adoptManualEvent(pericia, destination, duplicates[0], undefined, true);
+              result.updated += 1;
+              if (adoption.deletedGeneratedCopy) result.deleted += 1;
+            } else result.conflicts += 1;
+            continue;
           }
           const action = await syncPericiaToDestination(
             pericia,

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../src/db';
 import { deleteSetting, setSetting } from '../src/services/settingsService';
 import { buildGoogleEvent, DEFAULT_GOOGLE_CALENDAR_CONFIG, findExistingEvent, saveGoogleCalendarConfig,
-  syncAllGoogleCalendar, syncGoogleCalendarPericia, type GoogleCalendarDestinationConfig } from '../src/services/googleCalendarService';
+  syncAllGoogleCalendar, syncGoogleCalendarPericia, analyzeGoogleCalendar, resolveGoogleCalendarConflict, type GoogleCalendarDestinationConfig } from '../src/services/googleCalendarService';
 import type { PericiaAgendada } from '../src/services/periciasAgendadasService';
 const id = 999_981;
 const p = { id, card_id:'manual:google-regression', tipo:'Perícia médica', origem:'medica', nome:'CLIENTE TESTE',
@@ -20,7 +20,7 @@ function dest(overrides: Partial<GoogleCalendarDestinationConfig> = {}): GoogleC
   return {...DEFAULT_GOOGLE_CALENDAR_CONFIG.destinations[0],enabled:true,calendarId:'agenda-periodo',calendarName:'PERÍCIA MÉDICA ADM E JUDICIAL',eventMode:'reuse_manual',...overrides};
 }
 function original(d = dest(), overrides = {}) {
-  return {...buildGoogleEvent(p,d),id:'evento-original',extendedProperties:{private:{disparazapId:'999989',disparazapDestination:String(d.destination)}},...overrides};
+  return {...buildGoogleEvent(p,d),id:'evento-original',etag:'"versao-original"',extendedProperties:{private:{disparazapId:'999989',disparazapDestination:String(d.destination)}},...overrides};
 }
 function setup(destinations = [dest()]) { saveGoogleCalendarConfig({syncEnabled:true,destinations}); }
 function generated(d = dest()) { return crypto.createHash('sha256').update(`${d.calendarId}:${id}:${d.destination}`).digest('hex').slice(0,48); }
@@ -35,8 +35,14 @@ function mockGoogle(events: Record<string, any[]>, failPatch = false) {
     const calendar=decodeURIComponent(match[1]), eventId=match[2], method=init.method || 'GET';
     calls.push({method,calendar,eventId});
     if(method==='GET') return Response.json(eventId ? (events[calendar] || []).find(e=>e.id===eventId) || {id:eventId} : {items:events[calendar] || []});
-    if(method==='PATCH') return failPatch ? Response.json({error:{message:'Indisponível'}},{status:503}) : Response.json({...JSON.parse(String(init.body)),id:eventId});
-    if(method==='DELETE') return new Response(null,{status:204});
+    if(method==='PATCH') {
+      if(failPatch) return Response.json({error:{message:'Indisponível'}},{status:503});
+      const next={...JSON.parse(String(init.body)),id:eventId,etag:'"versao-atualizada"'};
+      const index=(events[calendar] || []).findIndex(e=>e.id===eventId);
+      if(index>=0) events[calendar][index]=next;
+      return Response.json(next);
+    }
+    if(method==='DELETE') { events[calendar]=(events[calendar] || []).filter(e=>e.id!==eventId); return new Response(null,{status:204}); }
     throw new Error('Não deve criar evento');
   }));
   return calls;
@@ -64,6 +70,58 @@ describe('reconciliação de eventos existentes',()=>{
     expect(calls.filter(c=>c.method!=='GET')).toEqual([{method:'PATCH',calendar:d.calendarId,eventId:'evento-original'},{method:'DELETE',calendar:d.calendarId,eventId:generated()}]);
     expect(db.prepare('SELECT google_event_id FROM google_calendar_event_links WHERE pericia_id = ?').get(id)).toEqual({google_event_id:'evento-original'});
   });
+  it('remove cópia determinística remanescente quando o vínculo já aponta ao original', async()=>{
+    const d=dest(); setup(); link('evento-original');
+    const event=original(d,{extendedProperties:{private:{disparazapId:String(id),disparazapDestination:'1'}}});
+    const calls=mockGoogle({[d.calendarId]:[event,{...buildGoogleEvent(p,d),id:generated()}]});
+    await syncAllGoogleCalendar();
+    expect(calls.filter(c=>c.method==='DELETE')).toEqual([{method:'DELETE',calendar:d.calendarId,eventId:generated()}]);
+    expect(calls.some(c=>c.method==='POST')).toBe(false);
+  });
+  it('exibe duplicidade mesmo com vínculo manual já salvo e pausa as duas sincronizações', async()=>{
+    const d=dest(); setup(); link('evento-vinculado');
+    const linked=original(d,{id:'evento-vinculado',extendedProperties:{private:{disparazapId:String(id),disparazapDestination:'1'}}});
+    const unlinked=original(d,{id:'evento-manual',extendedProperties:undefined});
+    const calls=mockGoogle({[d.calendarId]:[linked,unlinked]});
+    const analysis=await analyzeGoogleCalendar();
+    expect(analysis.destinations[0]).toMatchObject({linked:0,conflicts:1,conflictItems:[{duplicate:true,candidates:[{eventId:'evento-vinculado'},{eventId:'evento-manual'}]}]});
+    expect(await syncGoogleCalendarPericia(id)).toMatchObject({conflicts:1,created:0});
+    expect(await syncAllGoogleCalendar()).toMatchObject({conflicts:1,created:0});
+    expect(calls.every(c=>c.method==='GET')).toBe(true);
+  });
+
+  it.each(['evento-vinculado','evento-manual'])('mantém %s após escolha explícita e não repete na sincronização seguinte',async selected=>{
+    const d=dest();setup();link('evento-vinculado');
+    const linked=original(d,{id:'evento-vinculado',extendedProperties:{private:{disparazapId:String(id),disparazapDestination:'1'}}});
+    const manual=original(d,{id:'evento-manual',extendedProperties:undefined});
+    const calls=mockGoogle({[d.calendarId]:[linked,manual]});
+    expect(await resolveGoogleCalendarConflict(id,1,selected,true)).toMatchObject({linked:1,deleted:1,created:0});
+    const other=selected==='evento-vinculado'?'evento-manual':'evento-vinculado';
+    expect(calls.filter(c=>c.method==='DELETE')).toEqual([{method:'DELETE',calendar:d.calendarId,eventId:other}]);
+    const deleteRequest=vi.mocked(fetch).mock.calls.find(([,init])=>init?.method==='DELETE');
+    expect(new Headers(deleteRequest?.[1]?.headers).has('If-Match')).toBe(true);
+    expect((await analyzeGoogleCalendar()).destinations[0]).toMatchObject({linked:1,conflicts:0});
+    expect(await syncGoogleCalendarPericia(id)).toMatchObject({updated:1,created:0,conflicts:0});
+    expect(calls.some(c=>c.method==='POST')).toBe(false);
+  });
+
+  it('não remove duplicidades sem confirmação nem aceita um ID fora dos candidatos',async()=>{
+    const d=dest();setup();link('evento-vinculado');
+    const linked=original(d,{id:'evento-vinculado',extendedProperties:{private:{disparazapId:String(id),disparazapDestination:'1'}}});
+    const calls=mockGoogle({[d.calendarId]:[linked,original(d,{extendedProperties:undefined})]});
+    await expect(resolveGoogleCalendarConflict(id,1,'evento-original')).rejects.toThrow(/confirme/);
+    await expect(resolveGoogleCalendarConflict(id,1,'evento-nao-listado',true)).rejects.toThrow(/duplicidade mudou/);
+    expect(calls.every(c=>c.method==='GET')).toBe(true);
+  });
+
+  it('não remove cópias se a atualização do evento escolhido falhar',async()=>{
+    const d=dest();setup();link('evento-vinculado');
+    const linked=original(d,{id:'evento-vinculado',extendedProperties:{private:{disparazapId:String(id),disparazapDestination:'1'}}});
+    const calls=mockGoogle({[d.calendarId]:[linked,original(d,{extendedProperties:undefined})]},true);
+    await expect(resolveGoogleCalendarConflict(id,1,'evento-original',true)).rejects.toThrow();
+    expect(calls.some(c=>c.method==='DELETE')).toBe(false);
+  });
+
   it('sinaliza dois originais possíveis sem criar ou excluir',async()=>{
     setup();const calls=mockGoogle({[dest().calendarId]:[original(),original(dest(),{id:'outro-original'})]});
     expect(await syncGoogleCalendarPericia(id)).toMatchObject({conflicts:1,created:0,linked:0});expect(calls.every(c=>c.method==='GET')).toBe(true);

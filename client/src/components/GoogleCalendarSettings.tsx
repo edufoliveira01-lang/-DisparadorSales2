@@ -14,6 +14,7 @@ import type {
   GoogleCalendarSyncResult,
 } from "@/lib/types";
 import { useToast } from "@/components/ui/Toast";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { CollapsibleCard } from "@/components/ui/CollapsibleCard";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -358,6 +359,9 @@ export function GoogleCalendarSettings({ alwaysOpen = false }: { alwaysOpen?: bo
   const [syncing, setSyncing] = useState(false);
   const [resolvingConflict, setResolvingConflict] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [duplicateChoice, setDuplicateChoice] = useState<{
+    destination: number; periciaId: number; eventId: string; title: string; start: string; removeCount: number;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -475,14 +479,15 @@ export function GoogleCalendarSettings({ alwaysOpen = false }: { alwaysOpen?: bo
     }
   }
 
-  async function resolveConflict(destination: number, periciaId: number, googleEventId: string) {
+  async function resolveConflict(destination: number, periciaId: number, googleEventId: string, removeDuplicates = false) {
     const key = `${destination}:${periciaId}:${googleEventId}`;
     setResolvingConflict(key);
     try {
-      await api.post("/google-calendar/conflicts/resolve", { destination, periciaId, googleEventId });
+      await api.post("/google-calendar/conflicts/resolve", { destination, periciaId, googleEventId, removeDuplicates });
       const nextAnalysis = await api.post<GoogleCalendarAnalysis>("/google-calendar/analyze");
       setAnalysis(nextAnalysis);
-      show("Evento selecionado, vinculado e sincronizado. O sistema continuará usando esse mesmo evento.", "success");
+      setDuplicateChoice(null);
+      show(removeDuplicates ? "Duplicidade resolvida. O evento escolhido será reutilizado nas próximas sincronizações." : "Evento selecionado, vinculado e sincronizado. O sistema continuará usando esse mesmo evento.", "success");
       await load();
     } catch (err) {
       show(err instanceof ApiError ? err.message : "Não foi possível vincular o evento escolhido.", "error");
@@ -506,6 +511,7 @@ export function GoogleCalendarSettings({ alwaysOpen = false }: { alwaysOpen?: bo
   }
 
   return (
+    <>
     <CollapsibleCard alwaysOpen={alwaysOpen}
       icon={<CalendarSync className="h-4 w-4 text-blue-500" />}
       title="Integração com o Google Agenda"
@@ -606,6 +612,7 @@ export function GoogleCalendarSettings({ alwaysOpen = false }: { alwaysOpen?: bo
                         <div className="mt-3 space-y-3">
                           {item.conflictItems.map((conflict) => (
                             <div key={conflict.periciaId} className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                              {conflict.duplicate && <p className="mb-2 font-semibold">Eventos repetidos — escolha qual manter</p>}
                               <p className="font-medium">Escolha o evento de #{conflict.periciaId} · {conflict.nome} · {conflict.data} {conflict.horario || ""}</p>
                               <div className="mt-2 space-y-2">
                                 {conflict.candidates.map((candidate) => {
@@ -615,15 +622,17 @@ export function GoogleCalendarSettings({ alwaysOpen = false }: { alwaysOpen?: bo
                                       key={candidate.eventId}
                                       type="button"
                                       disabled={Boolean(resolvingConflict)}
-                                      onClick={() => resolveConflict(item.destination, conflict.periciaId, candidate.eventId)}
+                                      onClick={() => conflict.duplicate
+                                        ? setDuplicateChoice({destination:item.destination,periciaId:conflict.periciaId,eventId:candidate.eventId,title:candidate.title,start:candidate.start,removeCount:conflict.candidates.length-1})
+                                        : resolveConflict(item.destination, conflict.periciaId, candidate.eventId)}
                                       className="block w-full rounded-md border border-amber-200 bg-white p-2 text-left transition hover:border-blue-400 hover:bg-blue-50 disabled:cursor-wait disabled:opacity-60 dark:border-amber-900 dark:bg-zinc-950 dark:hover:border-blue-700 dark:hover:bg-blue-950/30"
                                     >
                                       <span className="block font-medium text-zinc-900 dark:text-zinc-100">{candidate.title}</span>
                                       <span className="mt-1 block text-zinc-500 dark:text-zinc-400">
-                                        {formatCandidateMoment(candidate.start)}{candidate.location ? ` · ${candidate.location}` : ""}
+                                        {formatCandidateMoment(candidate.start)}{candidate.end ? ` · Fim: ${formatCandidateMoment(candidate.end)}` : ""}{candidate.location ? ` · ${candidate.location}` : ""}
                                       </span>
                                       <span className="mt-1 block font-medium text-blue-600 dark:text-blue-400">
-                                        {resolvingConflict === key ? "Vinculando…" : "Usar este evento"}
+                                        {resolvingConflict === key ? "Vinculando…" : conflict.duplicate ? "Manter este e remover as outras cópias" : "Usar este evento"}
                                       </span>
                                     </button>
                                   );
@@ -653,5 +662,16 @@ export function GoogleCalendarSettings({ alwaysOpen = false }: { alwaysOpen?: bo
         </div>
       )}
     </CollapsibleCard>
+    <ConfirmDialog
+      open={Boolean(duplicateChoice)}
+      title="Resolver eventos repetidos?"
+      message={`Manter “${duplicateChoice?.title || ""}”, com início em ${formatCandidateMoment(duplicateChoice?.start || "")}, e remover ${duplicateChoice?.removeCount || 0} outra(s) cópia(s) desta agenda? As próximas sincronizações usarão o evento escolhido.`}
+      confirmLabel="Manter e remover cópias"
+      loading={Boolean(resolvingConflict)}
+      onCancel={() => { if (!resolvingConflict) setDuplicateChoice(null); }}
+      onConfirm={() => { if (duplicateChoice) void resolveConflict(duplicateChoice.destination, duplicateChoice.periciaId, duplicateChoice.eventId, true); }}
+    />
+    </>
   );
 }
+

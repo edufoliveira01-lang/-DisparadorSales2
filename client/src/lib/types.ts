@@ -204,6 +204,7 @@ export interface GoogleCalendarAnalysisDestination {
   missing: number;
   conflicts: number;
   conflictItems: Array<{
+    duplicate?: boolean;
     periciaId: number;
     nome: string;
     data: string;

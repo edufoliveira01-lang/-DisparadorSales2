@@ -130,7 +130,7 @@ googleCalendarRouter.post("/conflicts/resolve", async (req, res) => {
     if (!Number.isInteger(periciaId) || periciaId < 1 || !Number.isInteger(destination) || destination < 1 || !googleEventId) {
       throw new GoogleCalendarError("Informe o compromisso, o destino e o evento escolhidos.", 400);
     }
-    res.json({ ok: true, result: await resolveGoogleCalendarConflict(periciaId, destination, googleEventId) });
+    res.json({ ok: true, result: await resolveGoogleCalendarConflict(periciaId, destination, googleEventId, req.body?.removeDuplicates === true) });
   } catch (err) {
     sendGoogleError(res, err);
   }
@@ -157,3 +157,4 @@ googleCalendarRouter.post("/disconnect", async (_req, res) => {
     sendGoogleError(res, err);
   }
 });
+
