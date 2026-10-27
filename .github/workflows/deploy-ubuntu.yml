@@ -32,6 +32,14 @@ jobs:
           git fetch origin main
           git cat-file -e "$GITHUB_SHA^{commit}"
           git merge-base --is-ancestor HEAD "$GITHUB_SHA"
+          # Executa a sonda somente quando seu próprio arquivo muda. A leitura ocorre antes
+          # de parar o backend e não expõe QR, conta, endpoint DevTools ou conversas.
+          if ! git diff --quiet HEAD "$GITHUB_SHA" -- server/scripts/diagnose-whatsapp.cjs; then
+            DIAGNOSTIC=$(mktemp /tmp/disparazap-whatsapp-diagnostic-XXXXXX.cjs)
+            git show "$GITHUB_SHA:server/scripts/diagnose-whatsapp.cjs" > "$DIAGNOSTIC"
+            timeout 30s node "$DIAGNOSTIC" "$APP" || true
+            rm -f -- "$DIAGNOSTIC"
+          fi
           
           SERVER=false
           CLIENT=false
@@ -234,3 +242,4 @@ jobs:
           done
           echo "A API não respondeu; verifique o PM2."
           exit 1
+
