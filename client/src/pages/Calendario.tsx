@@ -1,3 +1,5 @@
+import { CalendarReminderButton } from "@/components/CalendarReminderButton";
+import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 import { calendarWeek, shiftCalendarDate } from "@/lib/calendarWeek";
 import { WorkspacePanel } from "@/components/ui/Workspace";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
@@ -18,6 +20,8 @@ import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
+
+const CALENDAR_EVENTS = ["lembrete:update", "lembrete:batch-completed", "dashboard:changed"] as const;
 
 const NOMES_MES = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -307,6 +311,8 @@ export function Calendario() {
   useEffect(() => {
     carregar();
   }, [carregar]);
+
+  useRealtimeRefresh(carregar, CALENDAR_EVENTS);
 
   async function confirmarApagar() {
     if (!apagarAlvo) return;
@@ -681,7 +687,7 @@ export function Calendario() {
                           key={p.id}
                           pericia={p}
                           substituidaPor={p.substituida_por_id ? porId.get(p.substituida_por_id) ?? null : null}
-                          onEditar={() => abrirEdicao(p)}
+                          onReminderSent={() => void carregar()} onEditar={() => abrirEdicao(p)}
                           onExcluir={() => setApagarAlvo(p)}
                           excluindo={apagando === p.id}
                         />
@@ -709,8 +715,8 @@ export function Calendario() {
               })}
             </div></div>
           </section>
-          <WorkspacePanel title="Compromissos da semana" description="Abra os dados para consultar, editar ou remover um agendamento." aside={<span className="text-xs text-zinc-500 dark:text-zinc-400">{eventosDaSemana.length} eventos</span>}>
-            {eventosDaSemana.length ? eventosDaSemana.map(pericia => <ResultadoBuscaLinha key={pericia.id} showDate pericia={pericia} substituidaPor={pericia.substituida_por_id ? porId.get(pericia.substituida_por_id) ?? null : null} onEditar={() => abrirEdicao(pericia)} onExcluir={() => setApagarAlvo(pericia)} excluindo={apagando === pericia.id} />) : <p className="px-6 py-10 text-center text-sm text-zinc-500 dark:text-zinc-400">Nenhum compromisso nesta semana com os filtros atuais.</p>}
+          <WorkspacePanel title="Compromissos da semana" description="Envie lembretes de qualquer compromisso, inclusive os que não aparecem na página inicial." aside={<span className="text-xs text-zinc-500 dark:text-zinc-400">{eventosDaSemana.length} eventos</span>}>
+            {eventosDaSemana.length ? eventosDaSemana.map(pericia => <ResultadoBuscaLinha key={pericia.id} showDate pericia={pericia} substituidaPor={pericia.substituida_por_id ? porId.get(pericia.substituida_por_id) ?? null : null} onReminderSent={() => void carregar()} onEditar={() => abrirEdicao(pericia)} onExcluir={() => setApagarAlvo(pericia)} excluindo={apagando === pericia.id} />) : <p className="px-6 py-10 text-center text-sm text-zinc-500 dark:text-zinc-400">Nenhum compromisso nesta semana com os filtros atuais.</p>}
           </WorkspacePanel>
         </>
       ) : (
@@ -819,7 +825,7 @@ export function Calendario() {
                           <PericiaLinha
                             key={p.id}
                             pericia={p}
-                            onEditar={() => abrirEdicao(p)}
+                            onReminderSent={() => void carregar()} onEditar={() => abrirEdicao(p)}
                             onExcluir={() => setApagarAlvo(p)}
                             excluindo={apagando === p.id}
                           />
@@ -863,7 +869,7 @@ export function Calendario() {
                 key={p.id}
                 pericia={p}
                 substituidaPor={p.substituida_por_id ? porId.get(p.substituida_por_id) ?? null : null}
-                onEditar={() => abrirEdicao(p)}
+                onReminderSent={() => void carregar()} onEditar={() => abrirEdicao(p)}
                 onExcluir={() => setApagarAlvo(p)}
                 excluindo={apagando === p.id}
               />
@@ -1066,11 +1072,13 @@ function ResultadoBuscaLinha({
   pericia,
   showDate = false,
   substituidaPor,
+  onReminderSent,
   onEditar,
   onExcluir,
   excluindo,
 }: {
   pericia: PericiaAgendada;
+  onReminderSent: () => void;
   showDate?: boolean;
   substituidaPor?: PericiaAgendada | null;
   onEditar: () => void;
@@ -1087,7 +1095,7 @@ function ResultadoBuscaLinha({
           : classesResultadoTipo(tipo.categoria)
       )}
     >
-      <div className="flex items-start gap-3">
+      <div className="calendar-result-body">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
@@ -1121,7 +1129,8 @@ function ResultadoBuscaLinha({
             </p>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+          <CalendarReminderButton pericia={pericia} onSent={onReminderSent} />
           <Button variant="ghost" size="icon" title="Editar evento" aria-label="Editar evento" onClick={onEditar}>
             <Pencil className="h-4 w-4" />
           </Button>
@@ -1137,11 +1146,13 @@ function ResultadoBuscaLinha({
 function PericiaLinha({
   pericia,
   substituidaPor,
+  onReminderSent,
   onEditar,
   onExcluir,
   excluindo,
 }: {
   pericia: PericiaAgendada;
+  onReminderSent: () => void;
   substituidaPor?: PericiaAgendada | null;
   onEditar?: () => void;
   onExcluir?: () => void;
@@ -1174,6 +1185,7 @@ function PericiaLinha({
           {pericia.card_id.startsWith("manual:") && <Badge tone="accent">Manual</Badge>}
           {pericia.fonte === "trello_sync" && <Badge tone="neutral">Importado</Badge>}
           {pericia.status === "substituida" && <Badge tone="neutral">Substituída</Badge>}
+          <CalendarReminderButton pericia={pericia} onSent={onReminderSent} />
           {(onEditar || onExcluir) && (
             <div className="ml-auto flex items-center gap-1 md:ml-0">
               {onEditar && (

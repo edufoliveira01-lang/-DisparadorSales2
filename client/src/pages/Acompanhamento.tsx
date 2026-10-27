@@ -850,7 +850,7 @@ export function Acompanhamento() {
         </div>
       )}
       {secao === "publicacoes" && (
-        <div className="process-workbench"><aside className="process-filter-rail">
+        <><div className="process-summary">
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             {[
               { label: "Processos na lista", value: total, Icon: FolderOpen, action: () => filtrar("categoria", "") },
@@ -863,9 +863,9 @@ export function Acompanhamento() {
                 <strong className="mt-3 block text-2xl font-semibold text-zinc-900 dark:text-zinc-100">{value}</strong>
               </button>
             ))}
-          </div>
-          <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          </div></div><div className="process-workbench"><aside className="process-filter-rail">
+          <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"><div className="process-filter-heading"><h2 className="text-sm font-semibold">Filtrar publicações</h2><button type="button" className="text-xs text-accent-600 dark:text-accent-300" onClick={() => { setBuscaTexto(""); setFiltro({categoria:"",resultado:"",advogado_id:"",situacao:"",arquivo:"ativos",busca:"",pagina:1}); }}>Limpar filtros</button></div>
+            <div className="process-filter-search">
               <div className="relative flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
                 <Input className="pl-9" aria-label="Buscar publicações" placeholder="Buscar cliente, processo ou trecho…" value={buscaTexto} onChange={(e) => setBuscaTexto(e.target.value)} />
@@ -876,24 +876,7 @@ export function Acompanhamento() {
                 <option value="todos">Todos</option>
               </Select>
             </div>
-              <details className="mt-3 rounded-xl border border-zinc-200 px-3 py-2 text-xs dark:border-zinc-700">
-                <summary className="flex cursor-pointer items-center gap-2 font-medium"><ListFilter className="h-4 w-4" /> Mais filtros</summary>
-                <div className="mt-4 grid gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-700 sm:grid-cols-2 xl:grid-cols-4">
-                  <MultiSelect label="Categorias (múltiplas)" placeholder="Todas as categorias" value={filtro.categoria.split(",").filter(Boolean)} options={Object.entries(FILTROS).map(([value, label]) => ({ value, label }))} onChange={(v) => filtrar("categoria", v.join(","))} />
-                  <MultiSelect label="Resultado da sentença" placeholder="Todos os resultados" value={filtro.resultado.split(",").filter(Boolean)} options={Object.entries(RESULTADOS).map(([value, label]) => ({ value, label }))} onChange={(v) => filtrar("resultado", v.join(","))} />
-                  <MultiSelect label="Advogado" placeholder="Todos os advogados" value={filtro.advogado_id.split(",").filter(Boolean)} options={(status?.advogados || []).map((a) => ({ value: String(a.id), label: `${a.nome} · ${a.uf_oab} ${a.numero_oab}` }))} onChange={(v) => filtrar("advogado_id", v.join(","))} />
-                  <MultiSelect label="Situação" placeholder="Todas as situações" value={filtro.situacao.split(",").filter(Boolean)} options={[{ value: "nao_lidas", label: "Não lidas" }, { value: "lidas", label: "Lidas" }, { value: "revisar", label: "A revisar" }, { value: "com_prazo", label: "Com prazo em aberto" }]} onChange={(v) => filtrar("situacao", v.join(","))} />
-                </div>
-              </details>
-            <div className="mt-4 flex gap-2 overflow-x-auto pb-1" aria-label="Tipos de andamento">
-              {([ ["", "Todos"], ["sentenca", "Sentenças"], ["acordao", "Acórdãos"], ["pericia", "Perícias"], ["laudo_juntado", "Laudos"], ["outros", "Outros"] ] as const).map(([value, label]) => (
-                <button key={label} type="button" onClick={() => filtrar("categoria", value)} aria-pressed={filtro.categoria === value}
-                  className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition ${filtro.categoria === value ? "bg-accent-600 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300"}`}>
-                  {label}{value && status?.resumo[value] !== undefined ? ` · ${status.resumo[value]}` : ""}
-                </button>
-              ))}
-            </div>
-          </section>
+<div className="process-filter-fields"><div><span className="process-filter-label">Categorias de andamento</span><MultiSelect inline label="Categorias (múltiplas)" placeholder="Todas as categorias" value={filtro.categoria.split(",").filter(Boolean)} options={Object.entries(FILTROS).map(([value, label]) => ({ value, label }))} onChange={(v) => filtrar("categoria", v.join(","))} /></div><div><span className="process-filter-label">Resultado da sentença</span><MultiSelect inline label="Resultado da sentença" placeholder="Todos os resultados" value={filtro.resultado.split(",").filter(Boolean)} options={Object.entries(RESULTADOS).map(([value, label]) => ({ value, label }))} onChange={(v) => filtrar("resultado", v.join(","))} /></div><div><span className="process-filter-label">Advogado</span><MultiSelect inline label="Advogado" placeholder="Todos os advogados" value={filtro.advogado_id.split(",").filter(Boolean)} options={(status?.advogados || []).map((a) => ({ value: String(a.id), label: `${a.nome} · ${a.uf_oab} ${a.numero_oab}` }))} onChange={(v) => filtrar("advogado_id", v.join(","))} /></div><div><span className="process-filter-label">Leitura e pendências</span><MultiSelect inline label="Situação" placeholder="Todas as situações" value={filtro.situacao.split(",").filter(Boolean)} options={[{ value: "nao_lidas", label: "Não lidas" }, { value: "lidas", label: "Lidas" }, { value: "revisar", label: "A revisar" }, { value: "com_prazo", label: "Com prazo em aberto" }]} onChange={(v) => filtrar("situacao", v.join(","))} /></div></div>          </section>
           </aside><div className="process-results">
           <p className="flex items-center gap-2 text-[11px] text-zinc-500"><Sparkles className="h-3.5 w-3.5" />{status?.codex.pausa ? `Análise pausada: ${status.codex.pausa}` : `${status?.codex.pendentes ?? 0} publicação(ões) aguardando classificação pelo Codex`}. Classificações pendentes aparecem em Outros até a análise.</p>
           <div
@@ -1152,7 +1135,7 @@ export function Acompanhamento() {
                 ?.scrollIntoView({ block: "start", behavior: "smooth" });
             }}
           />
-        </div></div>
+        </div></div></>
       )}
       {secao === "advogados" && (
         <section className="surface-panel overflow-hidden">

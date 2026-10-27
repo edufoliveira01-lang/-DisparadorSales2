@@ -847,6 +847,7 @@ export function Dashboard() {
       />
 
 
+          <button type="button" className="return-bubble dashboard-return" onClick={()=>navigate("/pendentes")}><span className="return-bubble-icon"><MessageSquareReply className="h-6 w-6" /></span><span><strong>{visaoGeral.aguardandoResposta}</strong><span>clientes aguardando retorno</span></span><ArrowRight className="h-5 w-5" /></button>
       <div className="overview-layout">
         <div className="overview-work">
           <section className="work-intro">
@@ -943,7 +944,7 @@ export function Dashboard() {
           enviandoBatch={Boolean(lembreteBatchProgress)}
           expandirLocalmente={false}
         />)}</div>
-          <button type="button" className="return-bubble" onClick={()=>navigate("/pendentes")}><span className="return-bubble-icon"><MessageSquareReply className="h-6 w-6" /></span><span><strong>{visaoGeral.aguardandoResposta}</strong><span>clientes aguardando retorno</span></span><ArrowRight className="h-5 w-5" /></button>
+
           <div className="rail-note"><span className="eyebrow">Últimos sete dias</span><div><span>Mensagens enviadas</span><strong>{visaoGeral.enviosRecentes}</strong></div><div><span>Falhas para revisar</span><strong>{visaoGeral.falhasRecentes}</strong></div><div><span>Entregues sem retorno</span><strong>{visaoGeral.entreguesAguardando}</strong></div></div>
         </aside>
       </div>

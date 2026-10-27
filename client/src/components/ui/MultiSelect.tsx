@@ -2,12 +2,14 @@ import { useEffect, useId, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { Checkbox } from "./Checkbox";
 export function MultiSelect({
+  inline = false,
   label,
   placeholder,
   value,
   options,
   onChange,
 }: {
+  inline?: boolean;
   label: string;
   placeholder: string;
   value: string[];
@@ -20,7 +22,7 @@ export function MultiSelect({
     id = useId();
   useEffect(() => {
     if (!open) return;
-    const close = (e: PointerEvent) => {
+    const close = (e: Event) => {
       if (!root.current?.contains(e.target as Node)) setOpen(false);
     };
     const key = (e: KeyboardEvent) => {
@@ -29,13 +31,14 @@ export function MultiSelect({
         button.current?.focus();
       }
     };
-    document.addEventListener("pointerdown", close);
+    const outsideEvent = inline ? "click" : "pointerdown";
+    document.addEventListener(outsideEvent, close);
     document.addEventListener("keydown", key);
     return () => {
-      document.removeEventListener("pointerdown", close);
+      document.removeEventListener(outsideEvent, close);
       document.removeEventListener("keydown", key);
     };
-  }, [open]);
+  }, [open, inline]);
   const text = value.length
     ? options
         .filter((o) => value.includes(o.value))
@@ -93,3 +96,4 @@ export function MultiSelect({
     </div>
   );
 }
+
