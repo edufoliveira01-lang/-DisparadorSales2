@@ -723,6 +723,7 @@ function eventCoversAppointmentDate(event: GoogleCalendarEvent, appointmentDate:
 
 function manualCandidates(
   pericia: PericiaAgendada,
+  destination: GoogleCalendarDestinationConfig,
   events: GoogleCalendarEvent[],
   usedIds: Set<string>
 ): GoogleCalendarEvent[] {
@@ -733,7 +734,7 @@ function manualCandidates(
   const date = normalizeText(pericia.data);
 
   return events.filter((event) => {
-    if (!event.id || usedIds.has(event.id) || event.extendedProperties?.private?.disparazapId) return false;
+    if (!event.id || usedIds.has(event.id)) return false;
     if (!eventIsInsideManualMatchWindow(event, appointmentDate)) return false;
 
     const text = eventSearchText(event);
@@ -749,9 +750,32 @@ function manualCandidates(
 
     // Com processo no evento, exigimos o mesmo número e mais dois campos. Se o evento
     // manual não informa processo, exigimos nome completo, tipo e data juntos.
-    return process
+    const matches = process
       ? (processMatches && secondaryMatches >= 2) || (eventProcesses.length === 0 && nameMatches && typeMatches && dateMatches)
       : nameMatches && typeMatches && dateMatches;
+    if (!matches) return false;
+
+    // Um vínculo antigo pode sobreviver à deduplicação/reimportação local ou à troca
+    // de configuração. Não o descarte apenas por conter metadados do DisparaZap.
+    const properties = event.extendedProperties?.private;
+    if (properties?.disparazapId) {
+      const sameAppointment = properties.disparazapId === String(pericia.id);
+      if (sameAppointment && (!properties.disparazapDestination
+        || properties.disparazapDestination === String(destination.destination))) return false;
+      if (!sameAppointment && db.prepare(
+        "SELECT 1 FROM pericias_agendadas WHERE id = ? AND status = 'ativa'"
+      ).get(properties.disparazapId)) return false;
+      // Recuperar metadados antigos exige todos os campos de identidade, inclusive
+      // a data, em vez da tolerância usada para eventos criados manualmente.
+      if (!nameMatches || !typeMatches || !dateMatches || (process && !processMatches)) return false;
+    }
+    // Também protege eventos manuais já vinculados por outra sincronização.
+    return !db.prepare(`
+      SELECT 1 FROM google_calendar_event_links l
+      JOIN pericias_agendadas p ON p.id = l.pericia_id
+      WHERE l.calendar_id = ? AND l.google_event_id = ?
+        AND p.status = 'ativa' AND p.id <> ?
+    `).get(destination.calendarId, event.id, pericia.id);
   });
 }
 
@@ -795,7 +819,7 @@ export function findExistingEvent(
     return { event: null, conflict: false, candidates: [] };
   }
 
-  const candidates = manualCandidates(pericia, events, usedIds);
+  const candidates = manualCandidates(pericia, destination, events, usedIds);
   if (candidates.length > 1) return { event: null, conflict: true, candidates };
   if (candidates.length === 1) return { event: candidates[0], conflict: false, candidates };
 
@@ -939,6 +963,10 @@ async function adoptManualEvent(
 ): Promise<{ deletedGeneratedCopy: boolean }> {
   if (!event.id) throw new GoogleCalendarError("O evento selecionado não possui um identificador válido.", 409);
 
+  const updated = await googleRequest<GoogleCalendarEvent>(
+    `/calendars/${encodeURIComponent(destination.calendarId)}/events/${encodeURIComponent(event.id)}`,
+    { method: "PATCH", body: JSON.stringify(buildGoogleEvent(pericia, destination, event.description)) }
+  );
   let deletedGeneratedCopy = false;
   const generatedId = deterministicGoogleEventId(destination.calendarId, pericia.id, destination.destination);
   if ((previousLink?.google_event_id === generatedId || generatedCopyPresent) && generatedId !== event.id) {
@@ -954,10 +982,6 @@ async function adoptManualEvent(
     }
   }
 
-  const updated = await googleRequest<GoogleCalendarEvent>(
-    `/calendars/${encodeURIComponent(destination.calendarId)}/events/${encodeURIComponent(event.id)}`,
-    { method: "PATCH", body: JSON.stringify(buildGoogleEvent(pericia, destination, event.description)) }
-  );
   saveLink(pericia.id, destination.destination, destination.calendarId, updated.id || event.id);
   return { deletedGeneratedCopy };
 }
@@ -977,6 +1001,16 @@ async function syncPericiaToDestination(
     // destino, removemos somente o vínculo local para nunca apagar esse evento por engano.
     deleteLinkStmt.run(link.pericia_id, link.destination);
     link = undefined;
+  }
+  if (link && link.google_event_id === generatedId && !skipExistingLookup && allowManualMatch) {
+    const window = eventSearchWindow(pericia, destination, true);
+    const events = await listGoogleEvents(destination.calendarId, window.timeMin, window.timeMax);
+    const match = findExistingEvent(pericia, destination, events, new Set(), true);
+    if (match.conflict) return "conflict";
+    if (match.event?.id && match.event.id !== link.google_event_id) {
+      await adoptManualEvent(pericia, destination, match.event, link);
+      return "linked";
+    }
   }
   if (link) {
     try {
@@ -1132,7 +1166,7 @@ export async function analyzeGoogleCalendar(): Promise<GoogleCalendarAnalysis> {
         // configurados para criação. A análise agora encontra a opção manual também nesses
         // destinos, permitindo que a sincronização seguinte adote a original e remova a cópia.
         if (link.google_event_id === generatedId) {
-          const candidates = manualCandidates(pericia, events, used);
+          const candidates = manualCandidates(pericia, destination, events, used);
           if (candidates.length === 1) {
             summary.matched += 1;
             used.add(candidates[0].id || "");
@@ -1199,7 +1233,7 @@ export async function resolveGoogleCalendarConflict(
   const linkedIds = db.prepare(
     "SELECT google_event_id FROM google_calendar_event_links WHERE calendar_id = ? AND NOT (pericia_id = ? AND destination = ?)"
   ).all(destination.calendarId, pericia.id, destination.destination) as Array<{ google_event_id: string }>;
-  const candidates = manualCandidates(pericia, events, new Set(linkedIds.map((item) => item.google_event_id)));
+  const candidates = manualCandidates(pericia, destination, events, new Set(linkedIds.map((item) => item.google_event_id)));
   const selected = candidates.find((event) => event.id === googleEventId);
   if (!selected) {
     throw new GoogleCalendarError("O evento escolhido não está mais disponível ou não corresponde ao compromisso.", 409);
@@ -1272,7 +1306,7 @@ export async function syncAllGoogleCalendar(): Promise<GoogleCalendarSyncResult>
           // determinística do DisparaZap e agora encontramos o evento manual, adotamos o manual
           // e apagamos somente a cópia que o próprio sistema criou.
           if (currentLink.google_event_id === generatedId) {
-            const candidates = manualCandidates(pericia, events, usedIds);
+            const candidates = manualCandidates(pericia, destination, events, usedIds);
             if (candidates.length > 1) {
               result.conflicts += 1;
               continue;

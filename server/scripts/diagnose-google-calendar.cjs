@@ -3,9 +3,20 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const app = path.resolve(process.argv[2] || path.join(__dirname, '../..'));
 const fromServer = (name) => require(require.resolve(name, { paths: [path.join(app, 'server')] }));
-fromServer('dotenv').config({ path: path.join(app, 'server/.env'), quiet: true });
+const fs = require('node:fs');
+const envFile = [path.join(app, '.env'), path.join(app, 'server/.env')].find(f => fs.existsSync(f));
+if (envFile) fromServer('dotenv').config({ path: envFile, quiet: true });
 const Database = fromServer('better-sqlite3');
-const db = new Database(path.join(process.env.DATA_DIR || path.join(app, 'server/data'), 'disparador.sqlite3'), { readonly: true, fileMustExist: true });
+let runtime = {};
+try {
+  const { execFileSync } = require('node:child_process');
+  runtime = JSON.parse(execFileSync('pm2', ['jlist'], { encoding:'utf8', stdio:['ignore','pipe','ignore'], timeout:10000 }))
+    .find(p => p.name === 'disparador-backend')?.pm2_env || {};
+} catch { /* A sonda também pode ser executada fora do PM2. */ }
+const cwd = runtime.pm_cwd || path.join(app, 'server');
+const configuredData = runtime.DATA_DIR || process.env.DATA_DIR;
+const dataDirectory = configuredData ? path.resolve(cwd, configuredData) : path.join(app, 'server/data');
+let db;
 const setting = (key) => db.prepare('SELECT valor FROM settings WHERE chave = ?').get(key)?.valor;
 const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 function decrypt(value, secret) {
@@ -15,6 +26,7 @@ function decrypt(value, secret) {
   return Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString('utf8');
 }
 async function main() {
+  db = new Database(path.join(dataDirectory, 'disparador.sqlite3'), { readonly: true, fileMustExist: true });
   const config = JSON.parse(setting('google_calendar_config') || '{}');
   const encrypted = setting('google_refresh_token');
   if (!encrypted) return console.log('[Google diagnóstico] conta não conectada');
@@ -69,4 +81,4 @@ async function main() {
     console.log('[Google diagnóstico]', JSON.stringify({stats,samples}));
   }
 }
-main().catch(e => { console.log('[Google diagnóstico] falhou', /^(oauth|calendar)_http_\d+$/.test(e.message) ? e.message : e.code || e.name); process.exitCode = 1; }).finally(()=>db.close());
+main().catch(e => { console.log('[Google diagnóstico] falhou', /^(oauth|calendar)_http_\d+$/.test(e.message) ? e.message : e.code || e.name); process.exitCode = 1; }).finally(()=>db?.close());

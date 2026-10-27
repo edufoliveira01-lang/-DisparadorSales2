@@ -278,6 +278,30 @@ describe("integração com o Google Agenda", () => {
     });
   });
 
+  it.each(["all_day", "fixed_time"] as const)("reconhece título completo idêntico no destino %s", (timingMode) => {
+    const compromisso = pericia({ data: "02/12/2026", horario: "15:00" });
+    const destino = destination({ timingMode, startDaysBefore: 5, eventMode: "reuse_manual" });
+    const evento = {
+      id: "evento-titulo-completo",
+      summary: buildGoogleEvent(compromisso, destino).summary,
+      ...(timingMode === "all_day"
+        ? { start: { date: "2026-11-27" }, end: { date: "2026-12-03" } }
+        : { start: { dateTime: "2026-12-02T23:00:00-03:00" }, end: { dateTime: "2026-12-03T00:00:00-03:00" } }),
+    };
+    expect(findExistingEvent(compromisso, destino, [evento], new Set()).event).toEqual(evento);
+  });
+
+  it("reconcilia evento idêntico que guarda identificador local removido", () => {
+    const compromisso = pericia();
+    const destino = destination({ timingMode: "all_day", startDaysBefore: 5, eventMode: "reuse_manual" });
+    const evento = {
+      ...buildGoogleEvent(compromisso, destino),
+      id: "evento-com-vinculo-antigo",
+      extendedProperties: { private: { disparazapId: "999999999", disparazapDestination: "1" } },
+    };
+    expect(findExistingEvent(compromisso, destino, [evento], new Set()).event).toEqual(evento);
+  });
+
   it("bloqueia destinos ativos apontando para a mesma agenda", () => {
     expect(() => saveGoogleCalendarConfig({
       syncEnabled: true,
@@ -356,3 +380,4 @@ describe("integração com o Google Agenda", () => {
     expect(() => startGoogleCalendarSyncJob()).toThrow(GoogleCalendarError);
   });
 });
+
