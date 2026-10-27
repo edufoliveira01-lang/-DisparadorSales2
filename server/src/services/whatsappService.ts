@@ -13,6 +13,7 @@ import { moveCard } from "./trelloService";
 import { listLogsAguardandoConfirmacao, updateLogAckByMessageId } from "./logsService";
 import { reconciliarConfirmacaoDeEnvio } from "./deliveryAckReconciliation";
 import { sendConfirmedWhatsappMessage, type ConfirmedWhatsappSend } from "./confirmedWhatsappSend";
+import { prepareWhatsappVersion, configureWhatsappStartupPage } from "./whatsappStartup";
 import {
   atrasoRetryConexaoMs,
   deveInvalidarSessao,
@@ -300,14 +301,13 @@ async function resolveWaVersionCache(): Promise<WaVersionCache> {
     return waVersionCacheResolvida.valor;
   }
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
     const res = await fetch(WA_VERSION_REPO_API, {
       signal: controller.signal,
       headers: { "User-Agent": "disparazap", Accept: "application/vnd.github+json" },
     });
-    clearTimeout(timeout);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     const arquivos = (await res.json()) as { name: string }[];
@@ -332,6 +332,8 @@ async function resolveWaVersionCache(): Promise<WaVersionCache> {
     }
     console.error("[WhatsApp] Não foi possível resolver versão fixa do WhatsApp Web, usando a mais recente:", err);
     return { type: "none" };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -492,6 +494,9 @@ class WhatsappManager {
   private syncProgress: number | null = null;
   private tentativa = 0;
   private inicioTimer: ReturnType<typeof setTimeout> | null = null;
+  private falhaInicializacao: ((message: string) => void) | null = null;
+  private faseInicializacao: string | null = null;
+  private usarVersaoAtual = false;
   private encerramento: Promise<void> | null = null;
   private cancelarMonitorPareamento: (() => void) | null = null;
   private estabilidadeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -533,6 +538,7 @@ class WhatsappManager {
       lastError: this.lastError,
       syncProgress: this.syncProgress,
       sessionSaved: possuiMarcadorDeSessao(),
+      faseInicializacao: this.faseInicializacao,
     };
   }
 
@@ -546,9 +552,11 @@ class WhatsappManager {
       qrDataUrl: string | null;
       lastError: string | null;
       syncProgress: number | null;
+      faseInicializacao: string | null;
     }>,
   ) {
     Object.assign(this, partial);
+    if (partial.status && partial.status !== "inicializando") this.faseInicializacao = null;
     if (
       partial.status &&
       partial.status !== "inicializando" &&
@@ -562,13 +570,18 @@ class WhatsappManager {
       this.inicioTimer = setTimeout(() => {
         this.inicioTimer = null;
         if (geracao !== this.geracao || this.status !== "inicializando") return;
+        const message = `O WhatsApp excedeu 2 minutos ao iniciar. Etapa: ${this.faseInicializacao || "preparação da conexão"}. A sessão foi preservada.`;
+        if (this.falhaInicializacao) {
+          this.falhaInicializacao(message);
+          return;
+        }
         void this.stop().then(() => {
           if (this.geracao === geracao + 1) {
             this.desconexaoManual = false;
             this.setState({
               status: "falha",
               lastError:
-                "O WhatsApp excedeu 2 minutos ao iniciar. A tentativa foi encerrada. Clique em Conectar para tentar novamente; a sessão foi preservada.",
+                message,
             });
             this.agendarRetomada();
           }
@@ -808,6 +821,7 @@ class WhatsappManager {
     clearLegacyWebVersionCache();
     this.geracao++;
     this.tentativa = 0;
+    this.usarVersaoAtual = false;
     this.limparEstabilidadeTimer();
     this.desconexaoManual = false;
     this.syncProgress = null;
@@ -829,7 +843,12 @@ class WhatsappManager {
     // A sessão fica em Local Storage/IndexedDB e não é apagada aqui. Limpamos somente caches
     // descartáveis para impedir que um bundle antigo do WhatsApp Web derrube a conexão.
     clearStaleServiceWorkerCache();
-    this.setState({ status: "inicializando", lastError: null, qrDataUrl: null, syncProgress: null });
+    this.falhaInicializacao = null;
+    this.setState({ status: "inicializando", lastError: null, qrDataUrl: null, syncProgress: null, faseInicializacao: "Preparando o navegador" });
+    let clientDaTentativa: Client | null = null;
+    const informarEtapa = (description: string) => {
+      if (minhaGeracao === this.geracao && this.status === "inicializando" && (!clientDaTentativa || this.client === clientDaTentativa)) this.setState({ faseInicializacao: description });
+    };
 
     // O commit do whatsapp-web.js fixado no package.json contém a correção oficial para
     // reinjeções concorrentes e listeners duplicados quando o WhatsApp Web recarrega como SPA.
@@ -860,13 +879,18 @@ class WhatsappManager {
     // conexão via resolveWaVersionCache(): consultamos a listagem atual do repositório e
     // escolhemos uma versão recente já estabilizada, deixando de fora as últimas builds. Se a consulta falhar por
     // qualquer motivo, caímos no comportamento anterior (mais recente) em vez de travar.
-    const webVersionCache = await resolveWaVersionCache();
+    informarEtapa("Selecionando versão do WhatsApp Web");
+    const source = this.usarVersaoAtual ? { type: "none" as const } : await resolveWaVersionCache();
+    const version = await prepareWhatsappVersion(source, path.join(dataDir, "whatsapp-web-cache"), informarEtapa);
     if (minhaGeracao !== this.geracao) return; // connect()/disconnect() aconteceu enquanto resolvíamos a versão
 
+    const authStrategy = new LocalAuth({ dataPath: AUTH_DATA_PATH });
+    const afterBrowserInitialized = authStrategy.afterBrowserInitialized?.bind(authStrategy);
     const client = new Client({
-      authStrategy: new LocalAuth({ dataPath: AUTH_DATA_PATH }),
+      authStrategy,
       puppeteer: {
         headless: true,
+        timeout: 20000,
         // Além de impedir throttling em segundo plano, usamos /tmp em vez do /dev/shm. Em
         // instâncias pequenas ou containers, o /dev/shm costuma ter só 64 MB; quando ele enche,
         // o Chromium fica instável justamente durante a sincronização inicial do WhatsApp.
@@ -884,7 +908,7 @@ class WhatsappManager {
         // envio e consulta usamos watchdogs menores, que reiniciam o browser automaticamente.
         protocolTimeout: 600000,
       },
-      webVersionCache,
+      ...version,
       // Quantas vezes o QR Code pode ser renovado (o WhatsApp Web troca a imagem sozinho a
       // cada ~20-30s) antes do whatsapp-web.js desistir e desconectar. Um valor generoso dá
       // mais tempo real para escanear em celulares mais lentos, sem travar para sempre — depois
@@ -893,6 +917,13 @@ class WhatsappManager {
       authTimeoutMs: 90000,
     });
     this.client = client;
+    clientDaTentativa = client;
+    informarEtapa("Iniciando navegador do WhatsApp");
+    authStrategy.afterBrowserInitialized = async () => {
+      await afterBrowserInitialized?.();
+      if (minhaGeracao !== this.geracao || this.client !== client || !client.pupPage) return;
+      configureWhatsappStartupPage(client.pupPage, informarEtapa);
+    };
 
     let pronto = false;
     let encerrandoTentativa = false;
@@ -940,15 +971,24 @@ class WhatsappManager {
       // desconexão acontece DEPOIS de já estar conectado (ex: logout pelo celular), que é uma
       // desconexão real.
       const statusAntesDaFalha = this.status;
+      const etapaDaFalha = this.faseInicializacao;
       const aindaNaoConectouNestaTentativa = statusAntesDaFalha !== "conectado";
       const falhaLogoAposEscanear = statusAntesDaFalha === "autenticado" || statusAntesDaFalha === "pareando";
       const motivoNormalizado = normalizarMotivoDesconexao(message);
+      if (statusAntesDaFalha === "inicializando") this.usarVersaoAtual = !this.usarVersaoAtual;
+      recordSystemLog({
+        nivel: "erro", categoria: "whatsapp", evento: "falha_conexao",
+        titulo: "Não foi possível concluir a conexão do WhatsApp",
+        mensagem: etapaDaFalha ? `${message} Etapa: ${etapaDaFalha}.` : message,
+        origem: "sistema", detalhes: { etapa: etapaDaFalha, tentativa: this.tentativa, versao: version.webVersion ?? "atual" },
+      });
 
       if (motivoNormalizado === "DEPRECATED_VERSION") invalidarWaVersionCache();
 
       await encerrarWhatsappClient(client);
       if (this.client !== client || minhaGeracao !== this.geracao) return; // tentativa antiga
       this.client = null;
+      this.falhaInicializacao = null;
       if (invalidarSessao) removerSessaoPersistida();
 
       const deveTentarNovamente =
@@ -983,6 +1023,7 @@ class WhatsappManager {
       this.setState({ status, lastError: message, qrDataUrl: null, syncProgress: null });
       if (!motivoImpedeRetryAutomatico(motivoNormalizado)) this.agendarRetomada();
     };
+    this.falhaInicializacao = message => { void failAndCleanUp("falha", message); };
 
     const reconhecerPareamento = () => {
       if (!tentativaAtiva() || pronto || this.status === "autenticado") return;
@@ -1296,6 +1337,7 @@ class WhatsappManager {
     this.limparMonitorPareamento();
     const client = this.client;
     this.client = null;
+    this.falhaInicializacao = null;
     this.setState({
       status: "desconectado",
       qrDataUrl: null,

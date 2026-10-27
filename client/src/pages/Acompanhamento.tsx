@@ -64,6 +64,16 @@ const TIPOS = {
   intimacao: "Intimação",
 };
 const FILTROS = { ...TIPOS, outros: "Outros" };
+const FILTROS_RAPIDOS = [
+  ["sentenca", "Sentença"],
+  ["acordao", "Acórdão"],
+  ["pericia", "Perícia agendada"],
+  ["laudo_juntado", "Laudo juntado"],
+  ["proposta_acordo", "Proposta de acordo"],
+  ["homologacao_acordo", "Acordo homologado"],
+  ["rpv", "RPV"],
+  ["levantamento_valores", "Levantamento de valores"],
+] as const;
 type Categoria = keyof typeof TIPOS;
 const RESULTADOS = {
   nao_identificado: "Resultado não identificado",
@@ -835,6 +845,15 @@ export function Acompanhamento({ detailId, onCloseDetail }: { detailId?: number;
           )
         }
       />
+      {secao === "publicacoes" && (
+        <nav className="process-quick-filters" aria-label="Filtros rápidos de publicações">
+          <button type="button" aria-pressed={!filtro.categoria} onClick={() => filtrar("categoria", "")}>Todos</button>
+          {FILTROS_RAPIDOS.map(([categoria, label]) => (
+            <button key={categoria} type="button" aria-pressed={filtro.categoria.split(",").includes(categoria)}
+              onClick={() => filtrar("categoria", filtro.categoria === categoria ? "" : categoria)}>{label}</button>
+          ))}
+        </nav>
+      )}
       {falha && (
         <p
           role="alert"

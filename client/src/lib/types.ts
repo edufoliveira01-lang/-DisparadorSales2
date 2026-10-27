@@ -106,6 +106,7 @@ export interface WhatsappState {
   lastError: string | null;
   syncProgress?: number | null;
   sessionSaved?: boolean;
+  faseInicializacao?: string | null;
 }
 
 export interface Settings {
@@ -284,4 +285,5 @@ export interface PendingReply {
   created_at: string;
   resolved_at: string | null;
 }
+
 

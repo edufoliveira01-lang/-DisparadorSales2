@@ -50,6 +50,7 @@ const manager = whatsappManager as unknown as {
   iniciarTentativaSegura: (g: number) => void;
   reconciliarPendentesAoReconectar: () => Promise<void>;
   recuperarBrowserTravado: (motivo: string) => Promise<void>;
+  usarVersaoAtual: boolean;
 };
 const deferred = <T>() => {
   let resolve!: (v: T) => void;
@@ -88,6 +89,18 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 describe("pareamento por QR e sincronização do WhatsApp", () => {
+  it("recupera a inicialização travada com outra fonte de versão, sem apagar a sessão", async () => {
+    const iniciar = vi.spyOn(manager, "iniciarTentativaSegura").mockImplementation(() => {});
+    const initialMode = manager.usarVersaoAtual;
+    await vi.advanceTimersByTimeAsync(120001);
+    expect(client.destroy).toHaveBeenCalledOnce();
+    expect(client.logout).not.toHaveBeenCalled();
+    expect(manager.usarVersaoAtual).toBe(!initialMode);
+    expect(whatsappManager.getState().status).toBe("inicializando");
+    expect(whatsappManager.getState().lastError).toMatch(/2 minutos.*Etapa/);
+    await vi.advanceTimersByTimeAsync(5001);
+    expect(iniciar).toHaveBeenCalledOnce();
+  });
   it("não encerra pelo limite de inicialização quando o carregamento já começou sem authenticated", async () => {
     client.getState.mockRejectedValue(new Error("Execution context was destroyed"));
     await vi.advanceTimersByTimeAsync(100000);

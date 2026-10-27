@@ -732,6 +732,11 @@ export function Configuracoes() {
         storageKey="whatsapp"
         headerExtra={<Badge tone={whatsappTone as "success" | "danger" | "warning"}>{whatsapp.carregado ? STATUS_LABEL[whatsapp.status] : "Verificando conexão"}</Badge>}
       >
+          {whatsapp.status === "inicializando" && whatsapp.faseInicializacao && (
+            <p role="status" className="mb-3 flex items-center gap-2 text-sm text-accent-600 dark:text-accent-300">
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> {whatsapp.faseInicializacao}…
+            </p>
+          )}
           {whatsapp.status === "aguardando_qr" && whatsapp.qrDataUrl && (
             <div className="flex flex-col items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-6 dark:border-zinc-800 dark:bg-zinc-800/40">
               <img src={whatsapp.qrDataUrl} alt="QR Code do WhatsApp" className="h-56 w-56 rounded-lg bg-white p-2" />
