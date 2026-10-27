@@ -488,3 +488,8 @@
 .process-filter-fields [role="group"] { position:static; margin-top:8px; box-shadow:none; }
 .process-filter-rail:has([aria-expanded="true"]) { position:relative; top:auto; }
 .process-filter-rail { z-index:1; }
+
+@media(min-width:1024px) {
+ .process-filter-rail .process-summary > div { display:grid; grid-template-columns:minmax(0,1fr); gap:10px; }
+ .process-filter-rail .process-summary > div > button { width:100%; }
+}

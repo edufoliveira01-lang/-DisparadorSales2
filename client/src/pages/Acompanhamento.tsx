@@ -845,7 +845,7 @@ export function Acompanhamento({ detailId, onCloseDetail }: { detailId?: number;
       )}
       {secao === "aguardando" && conteudoAguardando}
       {secao === "publicacoes" && (
-        <><div className="process-summary">
+        <div className="process-workbench"><aside className="process-filter-rail"><div className="process-summary">
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             {[
               { label: "Processos na lista", value: total, Icon: FolderOpen, action: () => filtrar("categoria", "") },
@@ -858,7 +858,7 @@ export function Acompanhamento({ detailId, onCloseDetail }: { detailId?: number;
                 <strong className="mt-3 block text-2xl font-semibold text-zinc-900 dark:text-zinc-100">{value}</strong>
               </button>
             ))}
-          </div></div><div className="process-workbench"><aside className="process-filter-rail">
+          </div></div>
           <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"><div className="process-filter-heading"><h2 className="text-sm font-semibold">Filtrar publicações</h2><button type="button" className="text-xs text-accent-600 dark:text-accent-300" onClick={() => { setBuscaTexto(""); setFiltro({categoria:"",resultado:"",advogado_id:"",situacao:"",arquivo:"ativos",busca:"",pagina:1}); }}>Limpar filtros</button></div>
             <div className="process-filter-search">
               <div className="relative flex-1">
@@ -1130,7 +1130,7 @@ export function Acompanhamento({ detailId, onCloseDetail }: { detailId?: number;
                 ?.scrollIntoView({ block: "start", behavior: "smooth" });
             }}
           />
-        </div></div></>
+        </div></div>
       )}
       {secao === "advogados" && (
         <section className="surface-panel overflow-hidden">
