@@ -35,6 +35,7 @@ vi.mock("whatsapp-web.js", async () => {
   };
 });
 import { whatsappManager } from "../src/services/whatsappService";
+import * as profile from "../src/services/whatsappProfile";
 interface FakeClient extends EventEmitter {
   getState: ReturnType<typeof vi.fn>;
   destroy: ReturnType<typeof vi.fn>;
@@ -51,6 +52,8 @@ const manager = whatsappManager as unknown as {
   reconciliarPendentesAoReconectar: () => Promise<void>;
   recuperarBrowserTravado: (motivo: string) => Promise<void>;
   usarVersaoAtual: boolean;
+  recuperarPerfilNaFalha: boolean;
+  setState: (state: { faseInicializacao: string }) => void;
 };
 const deferred = <T>() => {
   let resolve!: (v: T) => void;
@@ -89,6 +92,38 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 describe("pareamento por QR e sincronização do WhatsApp", () => {
+  it("o fluxo manual renova o perfil uma única vez quando trava antes do QR", async () => {
+    const backup = vi.spyOn(profile, "backupWhatsappProfile").mockReturnValue(null);
+    manager.recuperarPerfilNaFalha = true;
+    manager.setState({ faseInicializacao: "Preparando o vínculo e o QR Code" });
+    client.rejectInitialize(new Error("Waiting failed: 90000ms exceeded"));
+    await vi.advanceTimersByTimeAsync(1);
+    expect(backup).toHaveBeenCalledOnce();
+    expect(client.destroy).toHaveBeenCalledOnce();
+    expect(client.logout).not.toHaveBeenCalled();
+    expect(whatsappManager.getState().lastError).toMatch(/Preparando um novo QR Code/);
+    await vi.advanceTimersByTimeAsync(5001);
+    const nextClient = mocks.clients.at(-1) as FakeClient;
+    manager.setState({ faseInicializacao: "Preparando o vínculo e o QR Code" });
+    nextClient.rejectInitialize(new Error("Waiting failed: 90000ms exceeded"));
+    await vi.advanceTimersByTimeAsync(1);
+    expect(backup).toHaveBeenCalledOnce();
+  });
+  it("uma restauração em segundo plano preserva o perfil em caso de demora", async () => {
+    const backup = vi.spyOn(profile, "backupWhatsappProfile").mockReturnValue(null);
+    manager.setState({ faseInicializacao: "Preparando o vínculo e o QR Code" });
+    client.rejectInitialize(new Error("Waiting failed: 90000ms exceeded"));
+    await vi.advanceTimersByTimeAsync(1);
+    expect(backup).not.toHaveBeenCalled();
+  });
+  it("a demora depois da autenticação não renova o perfil", async () => {
+    const backup = vi.spyOn(profile, "backupWhatsappProfile").mockReturnValue(null);
+    manager.recuperarPerfilNaFalha = true;
+    client.emit("authenticated");
+    client.rejectInitialize(new Error("Waiting failed: 90000ms exceeded"));
+    await vi.advanceTimersByTimeAsync(1);
+    expect(backup).not.toHaveBeenCalled();
+  });
   it("recupera a inicialização travada com outra fonte de versão, sem apagar a sessão", async () => {
     const iniciar = vi.spyOn(manager, "iniciarTentativaSegura").mockImplementation(() => {});
     const initialMode = manager.usarVersaoAtual;

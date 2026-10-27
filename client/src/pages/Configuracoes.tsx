@@ -288,7 +288,7 @@ export function Configuracoes() {
   async function handlePararWhatsapp() {
     try {
       await whatsapp.parar();
-      show("Geração de QR Code cancelada.", "info");
+      show("Tentativa de conexão cancelada.", "info");
     } catch (err) {
       show(err instanceof ApiError ? err.message : "Erro ao parar WhatsApp.", "error");
     }
@@ -786,8 +786,7 @@ export function Configuracoes() {
             <div className="space-y-1 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-400">
               <p>{whatsapp.lastError}</p>
               <p className="text-xs opacity-80">
-                Confira o motivo acima antes de tentar novamente. O botão "Parar" preserva a sessão;
-                "Desconectar" encerra o vínculo com o celular.
+                Clique em "Conectar WhatsApp" para recuperar a conexão. Se necessário, o sistema exibirá um novo QR Code.
               </p>
             </div>
           )}
@@ -795,36 +794,24 @@ export function Configuracoes() {
           <div className="flex flex-wrap gap-2">
             {whatsapp.status === "conectado" ? (
               <Button variant="danger" onClick={handleDesconectarWhatsapp}>
-                <Unplug className="h-4 w-4" /> Desconectar / trocar de sessão
+                <Unplug className="h-4 w-4" /> Desconectar WhatsApp
+              </Button>
+            ) : whatsapp.conectando || ["inicializando", "aguardando_qr", "pareando", "autenticado"].includes(whatsapp.status) ? (
+              <Button variant="outline" disabled={whatsapp.conectando} onClick={handlePararWhatsapp}>
+                {whatsapp.conectando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4" />}
+                {whatsapp.conectando ? "Preparando conexão…" : "Cancelar conexão"}
               </Button>
             ) : (
-              <>
                 <Button
                   onClick={handleConectarWhatsapp}
-                  loading={whatsapp.conectando || whatsapp.status === "inicializando"}
-                  disabled={!whatsapp.carregado || whatsapp.status === "aguardando_qr" || whatsapp.status === "pareando" || whatsapp.status === "autenticado"}
+                  disabled={!whatsapp.carregado}
                 >
-                  {whatsapp.status === "aguardando_qr" ? <Loader2 className="h-4 w-4 animate-spin" /> : <WifiOff className="h-4 w-4" />}
+                  <WifiOff className="h-4 w-4" />
                   Conectar WhatsApp
                 </Button>
-
-                {["inicializando", "aguardando_qr", "pareando", "autenticado"].includes(whatsapp.status) && (
-                  <Button variant="outline" disabled={whatsapp.conectando} onClick={handlePararWhatsapp}>
-                    <Square className="h-4 w-4" /> Parar
-                  </Button>
-                )}
-              </>
             )}
           </div>
-          {whatsapp.carregado && ["desconectado", "falha", "inicializando"].includes(whatsapp.status) && (
-            <div className="mt-4 rounded-xl border border-zinc-200 p-3 dark:border-zinc-700">
-              <p className="mb-3 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">Se o vínculo ficar travado, gere um novo QR Code. O perfil atual será guardado em backup; será necessário escanear o código no celular.</p>
-              <Button variant="outline" disabled={whatsapp.conectando} onClick={async () => {
-                try { await whatsapp.recriarSessao(); show("Preparando uma nova sessão. Aguarde o QR Code.", "info"); }
-                catch (error) { show(error instanceof ApiError ? error.message : "Não foi possível recriar a sessão do WhatsApp.", "error"); }
-              }}><QrCode className="h-4 w-4" /> Gerar novo QR Code</Button>
-            </div>
-          )}
+          {whatsapp.status !== "conectado" && <p className="mt-3 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">O sistema recupera a sessão automaticamente. Quando um novo vínculo for necessário, escaneie o QR Code exibido acima.</p>}
       </CollapsibleCard></section>
 
       <section hidden={configSection !== "notificacoes"}><CollapsibleCard alwaysOpen

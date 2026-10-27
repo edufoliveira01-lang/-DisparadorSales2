@@ -8,9 +8,14 @@ whatsappRouter.get("/status", (_req, res) => {
   res.json(whatsappManager.getState());
 });
 
-whatsappRouter.post("/connect", (_req, res) => {
-  whatsappManager.connect();
-  res.json(whatsappManager.getState());
+whatsappRouter.post("/connect", async (_req, res, next) => {
+  try {
+    await whatsappManager.connectWithRecovery();
+    res.json(whatsappManager.getState());
+  } catch (error) {
+    if (error instanceof WhatsappSessionRecoveryError) { res.status(409).json({ error: error.message }); return; }
+    next(error);
+  }
 });
 
 whatsappRouter.post("/stop", async (_req, res) => {

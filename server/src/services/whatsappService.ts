@@ -499,6 +499,8 @@ class WhatsappManager {
   private faseInicializacao: string | null = null;
   private usarVersaoAtual = false;
   private recriacao: Promise<void> | null = null;
+  private recuperarPerfilNaFalha = false;
+  private perfilRecuperado = false;
   private encerramento: Promise<void> | null = null;
   private cancelarMonitorPareamento: (() => void) | null = null;
   private estabilidadeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -823,6 +825,8 @@ class WhatsappManager {
     clearLegacyWebVersionCache();
     this.geracao++;
     this.tentativa = 0;
+    this.recuperarPerfilNaFalha = false;
+    this.perfilRecuperado = false;
     // A biblioteca atual normaliza os IDs da versão corrente; a versão arquivada é fallback.
     this.usarVersaoAtual = preferCurrentVersion;
     this.limparEstabilidadeTimer();
@@ -830,6 +834,16 @@ class WhatsappManager {
     this.syncProgress = null;
     this.iniciarTentativaSegura(this.geracao);
     return true;
+  }
+
+  /** One user action restores the saved session or prepares a fresh QR when needed. */
+  async connectWithRecovery(): Promise<void> {
+    if (this.client || this.status === "inicializando" || this.encerramento) return;
+    const renovar = !possuiMarcadorDeSessao() && fs.existsSync(AUTH_SESSION_DIR);
+    if (renovar) await this.recreateSession();
+    else this.connect();
+    this.perfilRecuperado = renovar;
+    this.recuperarPerfilNaFalha = true;
   }
 
   /** Restaura automaticamente apenas quando já existe uma sessão autenticada no disco. */
@@ -994,6 +1008,23 @@ class WhatsappManager {
       this.falhaInicializacao = null;
       if (invalidarSessao) removerSessaoPersistida();
 
+      // A manual connection can renew a profile once if the page loaded but the
+      // library never reached QR/authentication. Background restores preserve it.
+      let renovouPerfil = false;
+      if (this.recuperarPerfilNaFalha && !this.perfilRecuperado && !invalidarSessao &&
+          statusAntesDaFalha === "inicializando" && etapaDaFalha === "Preparando o vínculo e o QR Code" &&
+          /waiting failed|waiting for function|auth timeout|excedeu 2 minutos/i.test(message)) {
+        this.perfilRecuperado = true;
+        try {
+          backupWhatsappProfile(dataDir, chromiumDoProfileEstaAtivo);
+          renovouPerfil = true;
+          this.usarVersaoAtual = true;
+          recordSystemLog({ nivel: "aviso", categoria: "whatsapp", evento: "recuperacao_automatica_perfil", titulo: "Renovando vínculo do WhatsApp", mensagem: "A inicialização travou antes do QR. O perfil anterior foi guardado em backup para preparar uma nova sessão.", origem: "sistema" });
+        } catch (error) {
+          recordSystemLog({ nivel: "erro", categoria: "whatsapp", evento: "falha_recuperacao_perfil", titulo: "Não foi possível renovar o vínculo", mensagem: error instanceof Error ? error.message : String(error), origem: "sistema" });
+        }
+      }
+
       const deveTentarNovamente =
         minhaGeracao === this.geracao &&
         this.tentativa < MAX_TENTATIVAS_CONEXAO &&
@@ -1004,7 +1035,7 @@ class WhatsappManager {
         this.tentativa++;
         this.setState({
           status: "inicializando",
-          lastError: falhaLogoAposEscanear
+          lastError: renovouPerfil ? "A sessão não respondeu. Preparando um novo QR Code para conectar…" : falhaLogoAposEscanear
             ? `O WhatsApp não concluiu a sincronização (${this.tentativa}/${MAX_TENTATIVAS_CONEXAO}). Retomando a conexão com a sessão preservada…`
             : `Falha temporária ao conectar (${message}), tentando novamente (${this.tentativa}/${MAX_TENTATIVAS_CONEXAO})…`,
           qrDataUrl: null,
@@ -1326,6 +1357,8 @@ class WhatsappManager {
   }
 
   private async encerrar(logout = false): Promise<void> {
+    this.recuperarPerfilNaFalha = false;
+    this.perfilRecuperado = false;
     if (this.encerramento) {
       await this.encerramento;
       if (logout) removerSessaoPersistida();
