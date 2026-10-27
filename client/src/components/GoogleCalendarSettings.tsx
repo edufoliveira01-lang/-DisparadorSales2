@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import "./GoogleCalendarSettings.css";
 import {
-  CalendarSync, CheckCircle2, ExternalLink, Link2, Plus,
-  RefreshCw, ShieldCheck, Trash2, Unplug,
+  CalendarSync, CalendarDays, CheckCircle2, ChevronDown, Clock3, ExternalLink, FileText, Link2, ListChecks, Plus,
+  RefreshCw, Settings2, ShieldCheck, SlidersHorizontal, Trash2, Unplug, Save,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type {
@@ -15,8 +16,6 @@ import type {
 } from "@/lib/types";
 import { useToast } from "@/components/ui/Toast";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { CollapsibleCard } from "@/components/ui/CollapsibleCard";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Input, Label, Textarea } from "@/components/ui/Input";
@@ -47,10 +46,10 @@ function ToggleLine({ checked, onChange, children }: {
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-300">
+    <label className="flex cursor-pointer items-center gap-2.5 text-sm text-zinc-600 dark:text-zinc-300">
       <Checkbox checked={checked} onChange={(event) => onChange(event.target.checked)} />
       <span>{children}</span>
-    </div>
+    </label>
   );
 }
 
@@ -84,9 +83,9 @@ function newDestination(destination: number): GoogleCalendarDestinationConfig {
 function titlePreview(config: GoogleCalendarDestinationConfig): string {
   const values: Record<string, string> = {
     tipo: "PERÍCIA MÉDICA",
-    data: "14/10/2026",
+    data: "02/12/2026",
     horario: "10:00",
-    nome: "MÁRCIA APARECIDA CARVALHO NEVES",
+    nome: "CLIENTE EXEMPLO",
     telefone: "(13) 99711-4872",
     whatsapp: "SIM",
     processo: "1003033-76.2025.8.26.0075",
@@ -94,7 +93,7 @@ function titlePreview(config: GoogleCalendarDestinationConfig): string {
     local: "LOCAL DA PERÍCIA",
   };
   const rendered = config.titleTemplate.replace(
-    /\{(tipo|data|horario|nome|telefone|processo|profissional|local)\}/gi,
+    /\{(tipo|data|horario|nome|telefone|whatsapp|processo|profissional|local)\}/gi,
     (_match, token: string) => values[token.toLowerCase()] || ""
   );
   return config.uppercaseTitle ? rendered.toLocaleUpperCase("pt-BR") : rendered;
@@ -103,13 +102,13 @@ function titlePreview(config: GoogleCalendarDestinationConfig): string {
 function descriptionPreview(config: GoogleCalendarDestinationConfig): string {
   const values: Record<string, string> = {
     tipo: "PERÍCIA MÉDICA",
-    data: "27/11/2026",
-    horario: "12:00",
+    data: "02/12/2026",
+    horario: "10:00",
     local: "Rua Marrey Júnior, s/nº (entrada lateral do Fórum Central) - Sala 9E - Santos/SP",
-    nome: "KARINA VIEIRA",
-    telefone: "(11) 98893 - 5160",
+    nome: "CLIENTE EXEMPLO",
+    telefone: "(13) 99711-4872",
     whatsapp: "SIM",
-    processo: "1016617-71.2025.8.26.0477",
+    processo: "1003033-76.2025.8.26.0075",
     profissional: "",
   };
   const rendered = config.descriptionTemplate.replace(
@@ -139,212 +138,130 @@ function formatCandidateMoment(value: string): string {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("pt-BR");
 }
 
+const TOKEN_LABELS: Record<string, string> = {
+  "{tipo}": "Tipo", "{data}": "Data", "{horario}": "Horário", "{local}": "Local",
+  "{nome}": "Nome", "{telefone}": "Telefone", "{whatsapp}": "WhatsApp",
+  "{processo}": "Processo", "{profissional}": "Profissional", "{descricao_original}": "Descrição original",
+};
+
+function timingSummary(config: GoogleCalendarDestinationConfig): string {
+  if (config.timingMode === "all_day") return `Dia inteiro · ${config.startDaysBefore} dia(s) antes`;
+  if (config.timingMode === "fixed_time") return `Às ${config.fixedTime} · ${config.durationMinutes} min`;
+  return `Horário da perícia · ${config.durationMinutes} min`;
+}
+
+function TemplateTokens({ description = false, preserve = false, onInsert }: {
+  description?: boolean; preserve?: boolean; onInsert: (token: string) => void;
+}) {
+  return <div className="ga-tokens" aria-label={`Inserir informação ${description ? "na descrição" : "no título"}`}>
+    <span>Inserir:</span>
+    {[...(preserve ? [ORIGINAL_DESCRIPTION_TOKEN] : []), ...TEMPLATE_TOKENS].map(token => (
+      <button key={token} type="button" title={token}
+        aria-label={`Inserir ${TOKEN_LABELS[token]} ${description ? "na descrição" : "no título"}`}
+        onClick={() => onInsert(token)}>{TOKEN_LABELS[token]}</button>
+    ))}
+  </div>;
+}
+
 function DestinationEditor({ config, calendars, onChange, onRemove }: {
   config: GoogleCalendarDestinationConfig;
   calendars: GoogleCalendarListItem[];
   onChange: (value: GoogleCalendarDestinationConfig) => void;
   onRemove: () => void;
 }) {
-  const update = <K extends keyof GoogleCalendarDestinationConfig>(key: K, value: GoogleCalendarDestinationConfig[K]) => {
-    onChange({ ...config, [key]: value });
-  };
-  const selected = calendars.find((calendar) => calendar.id === config.calendarId);
-
-  return (
-    <div className="space-y-4 rounded-xl border border-zinc-200 bg-zinc-50/60 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <Label>Nome da configuração</Label>
-          <Input value={config.name} onChange={(event) => update("name", event.target.value)} placeholder={`Destino ${config.destination}`} />
-        </div>
-        <div className="flex items-center gap-2 pt-7">
-          <ToggleLine checked={config.enabled} onChange={(checked) => update("enabled", checked)}>Ativo</ToggleLine>
-          <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-600" onClick={onRemove} title="Remover configuração">
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
-      <div>
-        <Label>Agenda do Google</Label>
-        <Select
-          value={config.calendarId}
-          onChange={(event) => {
-            const calendar = calendars.find((item) => item.id === event.target.value);
-            onChange({ ...config, calendarId: event.target.value, calendarName: calendar?.summary || "" });
-          }}
-        >
-          <option value="">Selecione uma agenda…</option>
-          {config.calendarId && !selected && <option value={config.calendarId}>{config.calendarName || "Agenda selecionada"}</option>}
-          {calendars.map((calendar) => (
-            <option key={calendar.id} value={calendar.id}>
-              {calendar.summary}{calendar.primary ? " (principal)" : ""}
-            </option>
-          ))}
-        </Select>
-      </div>
-
-      <div>
-        <Label>Origem do evento neste destino</Label>
-        <Select
-          value={config.eventMode}
-          onChange={(event) => update("eventMode", event.target.value as GoogleCalendarDestinationConfig["eventMode"])}
-        >
-          <option value="reuse_manual">Somente reaproveitar evento existente</option>
-          <option value="create_additional">Reaproveitar existente ou criar se não existir</option>
-        </Select>
-        <p className="mt-1 text-xs leading-5 text-zinc-400">
-          {config.eventMode === "reuse_manual"
-            ? "Procura por processo, nome, tipo e data. Se não encontrar, não cria uma cópia."
-            : "Procura primeiro por processo, nome, tipo e data. Só cria um evento quando não encontra nenhuma correspondência."}
-        </p>
-      </div>
-
-      <div>
-        <Label>Modelo do título</Label>
-        <Input value={config.titleTemplate} onChange={(event) => update("titleTemplate", event.target.value)} />
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {TEMPLATE_TOKENS.map((token) => (
-            <button
-              key={token}
-              type="button"
-              className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-500 hover:border-accent-400 hover:text-accent-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
-              onClick={() => update("titleTemplate", `${config.titleTemplate}${config.titleTemplate ? " " : ""}${token}`)}
-            >
-              {token}
-            </button>
-          ))}
-        </div>
-        <p className="mt-2 break-words rounded-lg bg-white px-3 py-2 text-xs text-zinc-500 dark:bg-zinc-950 dark:text-zinc-400">
-          Prévia: {titlePreview(config)}
-        </p>
-        <div className="mt-2">
-          <ToggleLine checked={config.uppercaseTitle} onChange={(checked) => update("uppercaseTitle", checked)}>Converter o título para maiúsculas</ToggleLine>
-        </div>
-      </div>
-
-      <div>
-        <Label>Quando o evento acontece</Label>
-        <Select value={config.timingMode} onChange={(event) => update("timingMode", event.target.value as GoogleCalendarDestinationConfig["timingMode"])}>
-          <option value="all_day">Dia inteiro — período configurável</option>
-          <option value="fixed_time">Horário fixo</option>
-          <option value="appointment_time">Data e horário da perícia</option>
-        </Select>
-      </div>
-
-      {config.timingMode === "all_day" ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div>
-            <Label>Iniciar quantos dias antes</Label>
-            <Input type="number" min={0} max={365} value={config.startDaysBefore} onChange={(event) => update("startDaysBefore", Number(event.target.value))} />
-          </div>
-          <div>
-            <Label>Terminar quantos dias depois</Label>
-            <Input type="number" min={0} max={365} value={config.endDaysAfter} onChange={(event) => update("endDaysAfter", Number(event.target.value))} />
-            <p className="mt-1 text-xs text-zinc-400">Use 0 para terminar no próprio dia da perícia.</p>
-          </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {config.timingMode === "fixed_time" && (
-            <div>
-              <Label>Horário fixo</Label>
-              <Input type="time" value={config.fixedTime} onChange={(event) => update("fixedTime", event.target.value)} />
-            </div>
-          )}
-          <div>
-            <Label>Duração em minutos</Label>
-            <Input type="number" min={5} max={1440} value={config.durationMinutes} onChange={(event) => update("durationMinutes", Number(event.target.value))} />
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div>
-          <Label>Disponibilidade</Label>
-          <Select value={config.transparency} onChange={(event) => update("transparency", event.target.value as "opaque" | "transparent")}>
-            <option value="opaque">Ocupado</option>
-            <option value="transparent">Livre</option>
-          </Select>
-        </div>
-        <div>
-          <Label>Privacidade</Label>
-          <Select value={config.visibility} onChange={(event) => update("visibility", event.target.value as "default" | "private")}>
-            <option value="default">Padrão da agenda</option>
-            <option value="private">Privado</option>
-          </Select>
-        </div>
-        <div>
-          <Label>Cor no Google (opcional)</Label>
-          <Select value={config.colorId} onChange={(event) => update("colorId", event.target.value)}>
-            <option value="">Padrão da agenda</option>
-            {Array.from({ length: 11 }, (_, index) => String(index + 1)).map((color) => (
-              <option key={color} value={color}>Cor {color}</option>
-            ))}
-          </Select>
-        </div>
-      </div>
-
-      <div>
-        <Label>Tratamento da descrição existente</Label>
-        <Select
-          value={config.descriptionMode}
-          onChange={(event) => update("descriptionMode", event.target.value as GoogleCalendarDestinationConfig["descriptionMode"])}
-        >
-          <option value="preserve">Preservar e complementar (recomendado)</option>
-          <option value="replace">Substituir pela descrição configurada</option>
-          <option value="keep_original">Manter somente a descrição original</option>
-        </Select>
-        <p className="mt-1 text-xs text-zinc-400">
-          No modo preservar, somente o bloco identificado do DisparaZap será atualizado nas próximas sincronizações.
-        </p>
-      </div>
-
-      <div>
-        <Label>Modelo da descrição</Label>
-        <Textarea
-          rows={10}
-          value={config.descriptionTemplate}
-          onChange={(event) => update("descriptionTemplate", event.target.value)}
-          className="font-mono text-xs leading-5"
-          disabled={config.descriptionMode === "keep_original"}
-        />
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {[...(config.descriptionMode === "preserve" ? [ORIGINAL_DESCRIPTION_TOKEN] : []), ...TEMPLATE_TOKENS].map((token) => (
-            <button
-              key={token}
-              type="button"
-              className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-500 hover:border-accent-400 hover:text-accent-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
-              onClick={() => update("descriptionTemplate", `${config.descriptionTemplate}${config.descriptionTemplate ? "\n" : ""}${token}`)}
-            >
-              {token}
-            </button>
-          ))}
-        </div>
-        <p className="mt-2 text-xs text-zinc-400">
-          {config.descriptionMode === "preserve"
-            ? `Use ${ORIGINAL_DESCRIPTION_TOKEN} para escolher onde o texto original aparecerá. Sem a variável, ele ficará no início.`
-            : config.descriptionMode === "replace"
-              ? "A descrição atual será substituída integralmente por este modelo."
-              : "A descrição do Google não será alterada pelo sistema."}
-        </p>
-        <pre className="mt-2 whitespace-pre-wrap break-words rounded-lg bg-white px-3 py-2 font-sans text-xs leading-5 text-zinc-500 dark:bg-zinc-950 dark:text-zinc-400">
-          {descriptionPreview(config)}
-        </pre>
-        <div className="mt-2">
-        <ToggleLine checked={config.includeLocation} onChange={(checked) => update("includeLocation", checked)}>Preencher também o campo “Local” do Google</ToggleLine>
-        </div>
-      </div>
-
-      <div className="rounded-lg border border-zinc-200 bg-white p-3 text-xs leading-5 dark:border-zinc-700 dark:bg-zinc-950">
-        <p className={config.eventMode === "reuse_manual" ? "text-blue-700 dark:text-blue-400" : "text-zinc-500 dark:text-zinc-400"}>
-          {config.eventMode === "reuse_manual"
-            ? "Este destino preserva o evento manual e passa a atualizá-lo depois da vinculação."
-            : "Este destino reaproveita o evento já existente; a criação é apenas o último recurso. Os lembretes do Google permanecem desativados."}
-        </p>
-      </div>
+  const [openSection, setOpenSection] = useState("agenda");
+  const update = <K extends keyof GoogleCalendarDestinationConfig>(key: K, value: GoogleCalendarDestinationConfig[K]) => onChange({ ...config, [key]: value });
+  const selected = calendars.find(calendar => calendar.id === config.calendarId);
+  const sections = [
+    { id: "agenda", title: "Agenda e vínculo", summary: config.calendarName || "Escolha a agenda de destino", icon: CalendarDays },
+    { id: "timing", title: "Data e horário", summary: timingSummary(config), icon: Clock3 },
+    { id: "content", title: "Título e descrição", summary: config.descriptionMode === "keep_original" ? "Título personalizado · descrição original" : "Personalize as informações do evento", icon: FileText },
+    { id: "options", title: "Aparência e privacidade", summary: `${config.transparency === "opaque" ? "Ocupado" : "Livre"} · ${config.visibility === "private" ? "Privado" : "Padrão da agenda"}`, icon: SlidersHorizontal },
+  ];
+  return <div className="ga-editor">
+    <div className="ga-editor-heading">
+      <div><span className="ga-eyebrow">CONFIGURAÇÃO DO DESTINO</span><h3>{config.name || `Destino ${config.destination}`}</h3></div>
+      <ToggleLine checked={config.enabled} onChange={checked => update("enabled", checked)}>Destino ativo</ToggleLine>
     </div>
-  );
+    <div className="ga-sections">
+      {sections.map(({ id, title, summary, icon: Icon }) => <section key={id} className={`ga-section ${openSection === id ? "is-open" : ""}`}>
+        <button type="button" className="ga-section-heading" aria-expanded={openSection === id}
+          aria-controls={`ga-${config.destination}-${id}`} onClick={() => setOpenSection(openSection === id ? "" : id)}>
+          <span className="ga-section-icon"><Icon size={18} /></span>
+          <span><strong>{title}</strong><small>{summary}</small></span><ChevronDown size={17} />
+        </button>
+        {openSection === id && <div id={`ga-${config.destination}-${id}`} className="ga-section-body">
+          {id === "agenda" && <>
+            <div className="ga-field-grid">
+              <div><Label htmlFor={`ga-name-${config.destination}`}>Nome deste destino</Label>
+                <Input id={`ga-name-${config.destination}`} value={config.name} onChange={event => update("name", event.target.value)} placeholder="Ex.: Período da perícia" /></div>
+              <div><Label htmlFor={`ga-calendar-${config.destination}`}>Agenda do Google</Label>
+                <Select id={`ga-calendar-${config.destination}`} value={config.calendarId} onChange={event => {
+                  const calendar = calendars.find(item => item.id === event.target.value);
+                  onChange({ ...config, calendarId: event.target.value, calendarName: calendar?.summary || "" });
+                }}>
+                  <option value="">Selecione uma agenda…</option>
+                  {config.calendarId && !selected && <option value={config.calendarId}>{config.calendarName || "Agenda selecionada"}</option>}
+                  {calendars.map(calendar => <option key={calendar.id} value={calendar.id}>{calendar.summary}{calendar.primary ? " (principal)" : ""}</option>)}
+                </Select></div>
+            </div>
+            <div><Label htmlFor={`ga-mode-${config.destination}`}>Se o evento ainda não estiver na agenda</Label>
+              <Select id={`ga-mode-${config.destination}`} value={config.eventMode} onChange={event => update("eventMode", event.target.value as GoogleCalendarDestinationConfig["eventMode"])}>
+                <option value="reuse_manual">Aguardar um evento existente</option><option value="create_additional">Criar somente se não encontrar um existente</option>
+              </Select>
+              <p className="ga-help">{config.eventMode === "reuse_manual" ? "Somente reaproveita eventos existentes. Se não encontrar, aguarda sem criar uma cópia." : "Primeiro procura um evento correspondente. A criação acontece apenas se nenhum for encontrado."}</p>
+            </div>
+            <div className="ga-note"><Link2 size={16} /><p>A vinculação usa processo, nome, tipo e data. Quando há mais de uma possibilidade, você escolhe o evento na análise.</p></div>
+          </>}
+          {id === "timing" && <>
+            <div><Label htmlFor={`ga-timing-${config.destination}`}>Como exibir a perícia na agenda</Label>
+              <Select id={`ga-timing-${config.destination}`} value={config.timingMode} onChange={event => update("timingMode", event.target.value as GoogleCalendarDestinationConfig["timingMode"])}>
+                <option value="all_day">Dia inteiro, com período configurável</option><option value="fixed_time">Em um horário fixo</option><option value="appointment_time">Na data e no horário da perícia</option>
+              </Select></div>
+            {config.timingMode === "all_day" ? <>
+              <div className="ga-field-grid">
+                <div><Label htmlFor={`ga-before-${config.destination}`}>Começar quantos dias antes?</Label><Input id={`ga-before-${config.destination}`} type="number" min={0} max={365} value={config.startDaysBefore} onChange={event => update("startDaysBefore", Number(event.target.value))} /></div>
+                <div><Label htmlFor={`ga-after-${config.destination}`}>Terminar quantos dias depois?</Label><Input id={`ga-after-${config.destination}`} type="number" min={0} max={365} value={config.endDaysAfter} onChange={event => update("endDaysAfter", Number(event.target.value))} /></div>
+              </div>
+              <div className="ga-period"><span>{config.startDaysBefore} dia(s) antes</span><i /><strong>Dia da perícia</strong><i /><span>{config.endDaysAfter ? `${config.endDaysAfter} dia(s) depois` : "Termina neste dia"}</span></div>
+              <p className="ga-help">O dia da perícia está incluído no período. Use zero para começar ou terminar nesse mesmo dia.</p>
+            </> : <div className="ga-field-grid">
+              {config.timingMode === "fixed_time" && <div><Label htmlFor={`ga-time-${config.destination}`}>Horário fixo</Label><Input id={`ga-time-${config.destination}`} type="time" value={config.fixedTime} onChange={event => update("fixedTime", event.target.value)} /></div>}
+              <div><Label htmlFor={`ga-duration-${config.destination}`}>Duração em minutos</Label><Input id={`ga-duration-${config.destination}`} type="number" min={5} max={1440} value={config.durationMinutes} onChange={event => update("durationMinutes", Number(event.target.value))} /></div>
+            </div>}
+          </>}
+          {id === "content" && <>
+            <div><Label htmlFor={`ga-title-${config.destination}`}>Modelo do título</Label>
+              <Input id={`ga-title-${config.destination}`} value={config.titleTemplate} onChange={event => update("titleTemplate", event.target.value)} />
+              <TemplateTokens onInsert={token => update("titleTemplate", `${config.titleTemplate}${config.titleTemplate ? " " : ""}${token}`)} />
+              <ToggleLine checked={config.uppercaseTitle} onChange={checked => update("uppercaseTitle", checked)}>Título em letras maiúsculas</ToggleLine>
+            </div>
+            <div><Label htmlFor={`ga-description-mode-${config.destination}`}>Como tratar a descrição que já existe</Label>
+              <Select id={`ga-description-mode-${config.destination}`} value={config.descriptionMode} onChange={event => update("descriptionMode", event.target.value as GoogleCalendarDestinationConfig["descriptionMode"])}>
+                <option value="preserve">Preservar e complementar</option><option value="replace">Substituir pelo modelo abaixo</option><option value="keep_original">Manter somente a descrição original</option>
+              </Select>
+              <p className="ga-help">{config.descriptionMode === "preserve" ? "Mantém as anotações originais e atualiza apenas o bloco do DisparaZap." : config.descriptionMode === "replace" ? "O conteúdo atual da descrição será substituído pelo seu modelo." : "A descrição que está no Google será mantida, sem alterações."}</p>
+            </div>
+            {config.descriptionMode !== "keep_original" && <div><Label htmlFor={`ga-description-${config.destination}`}>Modelo da descrição</Label>
+              <Textarea id={`ga-description-${config.destination}`} rows={6} value={config.descriptionTemplate} onChange={event => update("descriptionTemplate", event.target.value)} className="font-mono text-xs leading-5" />
+              <TemplateTokens description preserve={config.descriptionMode === "preserve"} onInsert={token => update("descriptionTemplate", `${config.descriptionTemplate}${config.descriptionTemplate ? "\n" : ""}${token}`)} />
+              {config.descriptionMode === "preserve" && <p className="ga-help">Insira “Descrição original” para definir onde as anotações existentes aparecerão.</p>}
+            </div>}
+            <div className="ga-preview"><span className="ga-eyebrow">PRÉVIA DO EVENTO · EXEMPLO</span><h4>{titlePreview(config)}</h4><pre>{descriptionPreview(config)}</pre></div>
+          </>}
+          {id === "options" && <>
+            <div className="ga-field-grid">
+              <div><Label htmlFor={`ga-availability-${config.destination}`}>Disponibilidade</Label><Select id={`ga-availability-${config.destination}`} value={config.transparency} onChange={event => update("transparency", event.target.value as "opaque" | "transparent")}><option value="opaque">Ocupado</option><option value="transparent">Livre</option></Select></div>
+              <div><Label htmlFor={`ga-privacy-${config.destination}`}>Privacidade</Label><Select id={`ga-privacy-${config.destination}`} value={config.visibility} onChange={event => update("visibility", event.target.value as "default" | "private")}><option value="default">Padrão da agenda</option><option value="private">Privado</option></Select></div>
+              <div><Label htmlFor={`ga-color-${config.destination}`}>Cor do evento no Google</Label><Select id={`ga-color-${config.destination}`} value={config.colorId} onChange={event => update("colorId", event.target.value)}><option value="">Padrão da agenda</option>{Array.from({ length:11 }, (_, index) => String(index+1)).map(color => <option key={color} value={color}>Cor {color}</option>)}</Select></div>
+            </div>
+            <ToggleLine checked={config.includeLocation} onChange={checked => update("includeLocation", checked)}>Preencher o campo “Local” com o endereço da perícia</ToggleLine>
+          </>}
+        </div>}
+      </section>)}
+    </div>
+    <div className="ga-editor-end"><span>As regras deste destino são independentes das outras agendas.</span><Button variant="ghost" size="sm" onClick={onRemove} className="text-red-500"><Trash2 size={14} /> Remover destino</Button></div>
+  </div>;
 }
 
 export function GoogleCalendarSettings({ alwaysOpen = false }: { alwaysOpen?: boolean }) {
@@ -359,6 +276,9 @@ export function GoogleCalendarSettings({ alwaysOpen = false }: { alwaysOpen?: bo
   const [syncing, setSyncing] = useState(false);
   const [resolvingConflict, setResolvingConflict] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [view, setView] = useState<"destinations" | "analysis">("destinations");
+  const [selectedDestination, setSelectedDestination] = useState<number | null>(null);
+  const [savedConfig, setSavedConfig] = useState<string | null>(null);
   const [duplicateChoice, setDuplicateChoice] = useState<{
     destination: number; periciaId: number; eventId: string; title: string; start: string; removeCount: number;
   } | null>(null);
@@ -369,6 +289,7 @@ export function GoogleCalendarSettings({ alwaysOpen = false }: { alwaysOpen?: bo
       const nextStatus = await api.get<GoogleCalendarStatus>("/google-calendar/status");
       setStatus(nextStatus);
       setConfig(nextStatus.config);
+      setSavedConfig(JSON.stringify(nextStatus.config));
       if (nextStatus.connected) {
         setCalendars(await api.get<GoogleCalendarListItem[]>("/google-calendar/calendars"));
       } else {
@@ -407,6 +328,8 @@ export function GoogleCalendarSettings({ alwaysOpen = false }: { alwaysOpen?: bo
     if (!config || config.destinations.length >= 50) return;
     const nextId = Math.max(0, ...config.destinations.map((item) => item.destination)) + 1;
     setConfig({ ...config, destinations: [...config.destinations, newDestination(nextId)] });
+    setSelectedDestination(nextId);
+    setView("destinations");
     setAnalysis(null);
   }
 
@@ -423,6 +346,7 @@ export function GoogleCalendarSettings({ alwaysOpen = false }: { alwaysOpen?: bo
     try {
       const response = await api.put<{ ok: true; config: GoogleCalendarConfig }>("/google-calendar/config", config);
       setConfig(response.config);
+      setSavedConfig(JSON.stringify(response.config));
       if (showSuccess) show("Configurações do Google Agenda salvas.", "success");
       return true;
     } catch (err) {
@@ -439,6 +363,7 @@ export function GoogleCalendarSettings({ alwaysOpen = false }: { alwaysOpen?: bo
     try {
       const result = await api.post<GoogleCalendarAnalysis>("/google-calendar/analyze");
       setAnalysis(result);
+      setView("analysis");
       show("Análise concluída. Nenhum evento foi alterado.", "success");
     } catch (err) {
       show(err instanceof ApiError ? err.message : "Não foi possível analisar as agendas.", "error");
@@ -467,6 +392,7 @@ export function GoogleCalendarSettings({ alwaysOpen = false }: { alwaysOpen?: bo
         nextAnalysis = await api.post<GoogleCalendarAnalysis>("/google-calendar/analyze");
       }
       setAnalysis(nextAnalysis);
+      setView(nextAnalysis ? "analysis" : "destinations");
       show(
         `Google Agenda atualizado: ${result.created} criado(s), ${result.linked} vinculado(s), ${result.updated} atualizado(s), ${result.skipped} não encontrado(s)${result.conflicts ? ` e ${result.conflicts} aguardando sua escolha` : ""}${result.errors ? ` e ${result.errors} erro(s)` : ""}.`,
         result.errors || result.conflicts ? "info" : "success"
@@ -510,111 +436,65 @@ export function GoogleCalendarSettings({ alwaysOpen = false }: { alwaysOpen?: bo
     }
   }
 
+  const activeIndex = config ? Math.max(0, config.destinations.findIndex(item => item.destination === selectedDestination)) : 0;
+  const activeDestination = config?.destinations[activeIndex];
+  const dirty = Boolean(config && savedConfig !== JSON.stringify(config));
+  const busy = saving || analyzing || syncing || Boolean(resolvingConflict);
+  const reviewCount = analysis?.destinations.reduce((total, item) => total + item.conflicts, 0) || 0;
+
   return (
-    <>
-    <CollapsibleCard alwaysOpen={alwaysOpen}
-      icon={<CalendarSync className="h-4 w-4 text-blue-500" />}
-      title="Integração com o Google Agenda"
-      storageKey="google-calendar"
-      headerExtra={status?.connected ? (
-        <Badge tone={status.config.syncEnabled ? "success" : "info"}>
-          <CheckCircle2 className="h-3.5 w-3.5" /> {status.config.syncEnabled ? "Sincronizando" : "Conectado"}
-        </Badge>
-      ) : undefined}
-    >
-      {loading || !status || !config ? (
-        <div className="flex items-center gap-2 py-4 text-sm text-zinc-500"><RefreshCw className="h-4 w-4 animate-spin" /> Carregando integração…</div>
-      ) : !status.serverConfigured ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
-          <p className="font-medium">Configuração única necessária no servidor</p>
-          <p className="mt-1">Cadastre GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI e uma ENCRYPTION_KEY segura no arquivo de ambiente para liberar o botão de conexão.</p>
-        </div>
-      ) : !status.connected ? (
-        <div className="space-y-4">
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            Conecte sua conta com autorização oficial do Google. O DisparaZap terá acesso somente às agendas autorizadas e armazenará o token de renovação criptografado.
-          </p>
-          <Button onClick={() => { window.location.href = "/api/google-calendar/connect"; }}>
-            <ExternalLink className="h-4 w-4" /> Conectar conta Google
-          </Button>
-        </div>
-      ) : (
-        <div className="space-y-5">
-          <div className="flex flex-col gap-3 rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 dark:border-emerald-900/60 dark:bg-emerald-950/20 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="flex items-center gap-2 font-medium text-emerald-800 dark:text-emerald-300"><ShieldCheck className="h-4 w-4" /> Conta conectada</p>
-              <p className="mt-1 text-sm text-emerald-700 dark:text-emerald-400">{status.accountEmail || "Conta Google autorizada"}</p>
-            </div>
-            <Button variant="outline" size="sm" onClick={disconnect} loading={disconnecting}><Unplug className="h-4 w-4" /> Desconectar</Button>
+    <section className="google-agenda" aria-label="Integração com o Google Agenda" data-always-open={alwaysOpen}>
+      <header className="ga-header">
+        <div className="ga-heading"><span className="ga-brand"><CalendarSync size={24} /></span><div><span className="ga-eyebrow">CONEXÕES</span><h2>Google Agenda</h2><p>Organize como suas perícias aparecem em cada agenda.</p></div></div>
+        {status?.connected && <span className="ga-status"><CheckCircle2 size={13} /> Conta conectada</span>}
+      </header>
+      {loading || !status || !config ? <div className="ga-loading" role="status"><RefreshCw size={19} className="animate-spin" /> Carregando suas agendas…</div>
+        : !status.serverConfigured ? <div className="ga-empty"><CalendarSync size={28} /><h3>Integração ainda não configurada</h3><p>A conexão com o Google precisa ser habilitada no servidor para disponibilizar suas agendas.</p></div>
+        : !status.connected ? <div className="ga-empty"><CalendarDays size={32} /><h3>Suas agendas, conectadas ao DisparaZap</h3><p>Autorize sua conta Google para vincular as perícias às agendas que você escolher.</p><Button onClick={() => { window.location.href = "/api/google-calendar/connect"; }}><ExternalLink size={16} /> Conectar conta Google</Button></div>
+        : <>
+          <div className="ga-account"><div><ShieldCheck size={17} /><span>{status.accountEmail || "Conta Google autorizada"}</span></div><Button variant="ghost" size="sm" onClick={disconnect} loading={disconnecting} disabled={busy}><Unplug size={14} /> Desconectar</Button></div>
+          <div className="ga-toolbar">
+            <div className="ga-toolbar-info"><strong>{config.destinations.filter(item => item.enabled && item.calendarId).length} destinos ativos</strong><span>{status.linkedEvents} eventos vinculados{status.syncErrors > 0 ? ` · ${status.syncErrors} com erro` : ""}</span></div>
+            <div className="ga-actions"><Button variant="outline" size="sm" onClick={analyze} loading={analyzing} disabled={busy}><ListChecks size={16} /> Analisar agendas</Button><Button size="sm" onClick={sync} loading={syncing} disabled={!config.syncEnabled || busy}><RefreshCw size={15} /> Sincronizar agora</Button></div>
           </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="font-medium text-zinc-900 dark:text-zinc-100">Destinos de sincronização</p>
-              <p className="text-xs text-zinc-500">Adicione ou remova quantas configurações precisar. Cada destino funciona de forma independente.</p>
-            </div>
-            <Button variant="outline" size="sm" onClick={addDestination} disabled={config.destinations.length >= 50}>
-              <Plus className="h-4 w-4" /> Adicionar destino
-            </Button>
+          <div className="ga-automation"><div><strong>Sincronização automática</strong><p>Acompanhar criações, edições, reagendamentos e exclusões.</p></div><ToggleLine checked={config.syncEnabled} onChange={checked => { setConfig({ ...config, syncEnabled: checked }); setAnalysis(null); }}>{config.syncEnabled ? "Ativada" : "Pausada"}</ToggleLine></div>
+          {syncing && <div className="ga-note" role="status"><RefreshCw size={17} className="animate-spin" /><p>Sincronizando no servidor. O resultado aparecerá assim que terminar.</p></div>}
+          <div className="ga-tabs" aria-label="Área do Google Agenda">
+            <button type="button" aria-pressed={view === "destinations"} onClick={() => setView("destinations")}><Settings2 size={16} /> Configurar destinos</button>
+            <button type="button" aria-pressed={view === "analysis"} onClick={() => setView("analysis")}><ListChecks size={16} /> Análise e revisão{reviewCount > 0 && <span>{reviewCount}</span>}</button>
           </div>
-
-          {syncing && (
-            <div className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50/60 p-3 text-sm text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/20 dark:text-blue-300">
-              <RefreshCw className="h-4 w-4 animate-spin" />
-              Sincronização em andamento no servidor. Esta tela mostrará o resultado assim que terminar.
-            </div>
-          )}
-
-          {config.destinations.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-500 dark:border-zinc-700">
-              Nenhum destino configurado. Clique em “Adicionar destino” para começar.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-              {config.destinations.map((destination, index) => (
-                <DestinationEditor
-                  key={destination.destination}
-                  config={destination}
-                  calendars={calendars}
-                  onChange={(value) => updateDestination(index, value)}
-                  onRemove={() => removeDestination(index)}
-                />
-              ))}
-            </div>
-          )}
-
-          <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-            <ToggleLine checked={config.syncEnabled} onChange={(checked) => { setConfig({ ...config, syncEnabled: checked }); setAnalysis(null); }}>
-              Sincronizar automaticamente criações, edições, reagendamentos e exclusões
-            </ToggleLine>
-          </div>
-
-          <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-4 text-sm text-blue-800 dark:border-blue-900/60 dark:bg-blue-950/20 dark:text-blue-300">
-            <p className="flex items-center gap-2 font-medium"><Link2 className="h-4 w-4" /> Vinculação segura, sem duplicidade</p>
-            <p className="mt-1 text-xs leading-5 text-blue-700 dark:text-blue-400">
-              Todos os destinos procuram primeiro o evento manual, usando principalmente o processo e confirmando nome, tipo e data em uma faixa de sete dias. A configuração decide apenas se um evento ausente deve aguardar ou ser criado. Casos ambíguos aguardam sua escolha e não geram cópias.
-            </p>
-          </div>
-
-          {analysis && (
-            <div className="space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-              <p className="font-medium text-zinc-900 dark:text-zinc-100">Resultado da análise — {analysis.totalEvents} compromisso(s) de hoje em diante</p>
-              <div className="grid gap-3 lg:grid-cols-2">
+          {view === "destinations" ? <div className="ga-destinations-view">
+            <div className="ga-destinations-heading"><div><h3>Para onde os eventos vão</h3><p>Selecione um destino para ajustar suas regras.</p></div><Button variant="ghost" size="sm" onClick={addDestination} disabled={config.destinations.length >= 50 || busy}><Plus size={16} /> Adicionar destino</Button></div>
+            {config.destinations.length === 0 ? <div className="ga-empty"><CalendarDays size={28} /><h3>Configure sua primeira agenda</h3><p>Adicione um destino para escolher a agenda e definir como os eventos aparecem.</p><Button variant="outline" onClick={addDestination}><Plus size={16} /> Adicionar primeiro destino</Button></div> : <>
+              <div className="ga-destination-picker" aria-label="Destinos de sincronização">
+                {config.destinations.map((item,index) => <button key={item.destination} type="button" className={`ga-destination ${activeIndex === index ? "is-selected" : ""}`} aria-pressed={activeIndex === index} onClick={() => setSelectedDestination(item.destination)}>
+                  <div className="ga-destination-top"><span>DESTINO {String(index+1).padStart(2,"0")}</span><small className={item.enabled ? "is-enabled" : ""}>{item.enabled ? "Ativo" : "Pausado"}</small></div>
+                  <strong>{item.name || `Destino ${item.destination}`}</strong><p><CalendarDays size={13} /><span>{item.calendarName || "Escolha uma agenda"}</span></p><footer><Clock3 size={12} />{timingSummary(item)}{activeIndex === index && <CheckCircle2 size={15} />}</footer>
+                </button>)}
+              </div>
+              {activeDestination && <DestinationEditor key={activeDestination.destination} config={activeDestination} calendars={calendars} onChange={value => updateDestination(activeIndex,value)} onRemove={() => removeDestination(activeIndex)} />}
+            </>}
+          </div> : <div className="ga-analysis-view">
+                      {analysis && (
+            <div className="ga-analysis-results">
+              <div className="ga-analysis-heading"><div><span className="ga-eyebrow">RESULTADO DA ANÁLISE</span><h3>{analysis.totalEvents} compromissos de hoje em diante</h3><p>Confira a situação em cada agenda e resolva os itens que precisam de escolha.</p></div></div>
+              <div className="ga-analysis-destinations">
                 {analysis.destinations.map((item) => {
                   const destination = config.destinations.find((candidate) => candidate.destination === item.destination);
                   return (
-                    <div key={item.destination} className="rounded-lg bg-zinc-50 p-3 text-sm dark:bg-zinc-900">
-                      <p className="font-medium">{item.name}: {item.calendarName}</p>
-                      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                        {item.linked} já vinculados · {item.matched} existentes encontrados · {item.missing} não encontrados {destination?.eventMode === "reuse_manual" ? "(aguardam evento manual)" : "(serão criados somente se continuarem ausentes)"} · {item.conflicts} para revisão
-                      </p>
+                    <div key={item.destination} className="ga-analysis-destination">
+                      <div className="ga-result-title"><CalendarDays size={18} /><div><h4>{item.name}</h4><p>{item.calendarName}</p></div>{item.conflicts > 0 && <span className="ga-status is-warning">Revisão necessária</span>}</div>
+                      <div className="ga-result-metrics">
+                        <div><strong>{item.linked}</strong><span>Vinculados</span></div><div><strong>{item.matched}</strong><span>Encontrados</span></div><div><strong>{item.missing}</strong><span>Não encontrados</span></div><div className={item.conflicts ? "needs-review" : ""}><strong>{item.conflicts}</strong><span>Para revisão</span></div>
+                      </div>
+                      {item.missing > 0 && <p className="ga-help">{destination?.eventMode === "reuse_manual" ? "Os não encontrados aguardam um evento existente na agenda." : "Os não encontrados serão criados na próxima sincronização, se continuarem ausentes."}</p>}
                       {item.conflictItems.length > 0 && (
                         <div className="mt-3 space-y-3">
                           {item.conflictItems.map((conflict) => (
                             <div key={conflict.periciaId} className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
                               {conflict.duplicate && <p className="mb-2 font-semibold">Eventos repetidos — escolha qual manter</p>}
                               <p className="font-medium">Escolha o evento de #{conflict.periciaId} · {conflict.nome} · {conflict.data} {conflict.horario || ""}</p>
-                              <div className="mt-2 space-y-2">
+                              <div className="ga-conflict-candidates">
                                 {conflict.candidates.map((candidate) => {
                                   const key = `${item.destination}:${conflict.periciaId}:${candidate.eventId}`;
                                   return (
@@ -625,7 +505,7 @@ export function GoogleCalendarSettings({ alwaysOpen = false }: { alwaysOpen?: bo
                                       onClick={() => conflict.duplicate
                                         ? setDuplicateChoice({destination:item.destination,periciaId:conflict.periciaId,eventId:candidate.eventId,title:candidate.title,start:candidate.start,removeCount:conflict.candidates.length-1})
                                         : resolveConflict(item.destination, conflict.periciaId, candidate.eventId)}
-                                      className="block w-full rounded-md border border-amber-200 bg-white p-2 text-left transition hover:border-blue-400 hover:bg-blue-50 disabled:cursor-wait disabled:opacity-60 dark:border-amber-900 dark:bg-zinc-950 dark:hover:border-blue-700 dark:hover:bg-blue-950/30"
+                                      className="ga-conflict-candidate"
                                     >
                                       <span className="block font-medium text-zinc-900 dark:text-zinc-100">{candidate.title}</span>
                                       <span className="mt-1 block text-zinc-500 dark:text-zinc-400">
@@ -649,20 +529,12 @@ export function GoogleCalendarSettings({ alwaysOpen = false }: { alwaysOpen?: bo
             </div>
           )}
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-zinc-400">
-              {status.linkedEvents} vínculo(s) salvo(s){status.syncErrors ? ` · ${status.syncErrors} com erro` : ""}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={() => saveConfig()} loading={saving}>Salvar</Button>
-              <Button variant="outline" onClick={analyze} loading={analyzing} disabled={saving}><RefreshCw className="h-4 w-4" /> Analisar agendas</Button>
-              <Button onClick={sync} loading={syncing} disabled={!config.syncEnabled || saving}><CalendarSync className="h-4 w-4" /> Sincronizar agora</Button>
-            </div>
-          </div>
-        </div>
-      )}
-    </CollapsibleCard>
-    <ConfirmDialog
+
+            {!analysis && <div className="ga-empty"><ListChecks size={30} /><h3>Veja o que já está nas suas agendas</h3><p>A análise identifica eventos existentes e mostra as opções que precisam da sua revisão.</p><Button variant="outline" onClick={analyze} loading={analyzing} disabled={busy}><ListChecks size={16} /> Analisar agora</Button><small>A análise não altera os eventos.</small></div>}
+          </div>}
+          <footer className="ga-savebar"><div><span className={`ga-save-indicator ${dirty ? "is-dirty" : ""}`} /><span><strong>{dirty ? "Alterações não salvas" : "Configurações salvas"}</strong><small>As configurações de todos os destinos são salvas juntas.</small></span></div><Button size="sm" onClick={() => saveConfig()} loading={saving} disabled={!dirty || busy}><Save size={15} /> Salvar alterações</Button></footer>
+        </>}
+          <ConfirmDialog
       open={Boolean(duplicateChoice)}
       title="Resolver eventos repetidos?"
       message={`Manter “${duplicateChoice?.title || ""}”, com início em ${formatCandidateMoment(duplicateChoice?.start || "")}, e remover ${duplicateChoice?.removeCount || 0} outra(s) cópia(s) desta agenda? As próximas sincronizações usarão o evento escolhido.`}
@@ -671,7 +543,6 @@ export function GoogleCalendarSettings({ alwaysOpen = false }: { alwaysOpen?: bo
       onCancel={() => { if (!resolvingConflict) setDuplicateChoice(null); }}
       onConfirm={() => { if (duplicateChoice) void resolveConflict(duplicateChoice.destination, duplicateChoice.periciaId, duplicateChoice.eventId, true); }}
     />
-    </>
+    </section>
   );
 }
-
