@@ -1,5 +1,6 @@
+import { Modal } from "@/components/ui/Modal";
+import { DeadlineSettings } from "./DeadlineSettings";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -331,7 +332,8 @@ function CalendarioCard({
   const pendentes = c.eventos.filter(
     (e) => e.tipo === "pendencia" && !c.ajustes.ignorar.includes(e.id),
   ).length;
-  const manual = `/configuracoes?${new URLSearchParams({ prazos: "1", manual: "1", tribunal: c.tribunal, orgao: c.orgao, ano: String(c.ano) })}#calendario-manual`;
+  const [manualAberto, setManualAberto] = useState(false);
+
   return (
     <details className="rounded-xl border bg-white/50 p-3 dark:bg-zinc-900/50">
       <summary className="cursor-pointer text-xs">
@@ -356,7 +358,7 @@ function CalendarioCard({
         </span>
       </summary>
       <div className="mt-4 space-y-3 text-xs">
-        {!suportado && <p className="rounded-lg bg-amber-50 p-3 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">Ainda não há importador automático validado para {c.tribunal}. A localidade, por si só, não habilita a importação. <Link className="font-semibold underline" to={manual}>Preencher calendário manual deste órgão</Link>.</p>}
+        {!suportado && <p className="rounded-lg bg-amber-50 p-3 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">Ainda não há importador automático validado para {c.tribunal}. A localidade, por si só, não habilita a importação. <button type="button" className="font-semibold underline" onClick={() => setManualAberto(true)}>Preencher calendário manual deste órgão</button>.</p>}
         {c.erro && (
           <p
             role="alert"
@@ -698,6 +700,8 @@ function CalendarioCard({
           </div>
         )}
       </div>
+    <Modal open={manualAberto} onClose={() => setManualAberto(false)} title="Calendário manual do órgão" maxWidth="max-w-3xl"><DeadlineSettings manualOnly initialCalendar={{tribunal:c.tribunal,orgao:c.orgao,ano:c.ano}} /></Modal>
     </details>
   );
 }
+

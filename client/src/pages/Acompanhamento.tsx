@@ -22,7 +22,6 @@ import {
   Settings2,
   AlertCircle,
   FolderOpen,
-  Columns3,
   Sparkles,
   Trash2,
   Clock3,
@@ -309,12 +308,14 @@ const UFS =
     " ",
   );
 
-export function Acompanhamento() {
+export function Acompanhamento({ detailId, onCloseDetail }: { detailId?: number; onCloseDetail?: () => void } = {}) {
+  const [consultaAberta, setConsultaAberta] = useState(false);
+  const [aguardandoAberto, setAguardandoAberto] = useState(false);
   const { pathname, search } = useLocation(),
     navigate = useNavigate(),
     { show } = useToast(),
     whatsapp = useWhatsapp();
-  const secao = pathname.endsWith("/advogados")
+  const secao = detailId ? "detalhes" : pathname.endsWith("/advogados")
     ? "advogados"
     : pathname.endsWith("/monitoramento")
       ? "monitoramento"
@@ -632,10 +633,12 @@ export function Acompanhamento() {
         observacoes: p.observacoes || "",
       });
       await api.post(`/djen/publicacoes/${id}/lida`);
-      void carregarLista();
+      if (!detailId) void carregarLista();
       void carregarStatus();
     } catch (e) {
+      if (current !== detailSeq.current) return;
       show(erro(e), "error");
+      if (detailId) onCloseDetail?.();
     }
   }
   async function compor() {
@@ -716,90 +719,13 @@ export function Acompanhamento() {
       setEnviando(false);
     }
   }
-  const titulo =
-    secao === "advogados"
-      ? "Advogados acompanhados"
-      : secao === "monitoramento"
-        ? "Monitoramento DJEN"
-        : secao === "aguardando"
-          ? "Aguardando retorno"
-        : "Publicações processuais";
-  return (
-    <div className="space-y-5">
-      <PageHeader
-        title={titulo}
-        description={
-          secao === "publicacoes"
-            ? "Decisões, acordos, pagamentos, perícias e demais andamentos dos processos."
-            : secao === "aguardando"
-              ? "Ordens pendentes do juízo, peritos, INSS e parte contrária para conferência."
-            : secao === "advogados"
-              ? "Cadastre um ou mais advogados pelo nome completo, número da OAB e UF."
-              : "Consulte o DJEN por período e acompanhe a execução de cada busca."
-        }
-        actions={
-          secao === "advogados" ? (
-            <Button
-              onClick={() =>
-                setFormAdv({
-                  nome: "",
-                  numero_oab: "",
-                  uf_oab: "SP",
-                  modo_busca: "ambos",
-                  ativo: true,
-                })
-              }
-            >
-              <Plus className="h-4 w-4" />
-              Adicionar advogado
-            </Button>
-          ) : (
-            <>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  void carregarStatus().catch((e) => show(erro(e), "error"));
-                  if (secao === "publicacoes") void carregarLista();
-                  if (secao === "aguardando") void carregarAguardando();
-                }}
-              >
-                <RefreshCw className="h-4 w-4" />
-                Atualizar
-              </Button>
-              {secao === "publicacoes" && (
-                <Button onClick={() => navigate("/processos/monitoramento")}>
-                  <Search className="h-4 w-4" /> Consultar DJEN
-                </Button>
-              )}
-            </>
-          )
-        }
-      />
-      <nav aria-label="Área processual" className="page-tabs">
-        {([
-          ["/processos", "Publicações", FolderOpen],
-          ["/processos/quadro", "Quadro", Columns3],
-          ["/processos/aguardando", `Aguardando${status?.aguardando_retorno ? ` · ${status.aguardando_retorno}` : ""}`, Clock3],
-          ["/processos/advogados", "Advogados", BriefcaseBusiness],
-          ["/processos/monitoramento", "Monitoramento", Settings2],
-          ["/processos/calendarios", "Calendários", CalendarDays],
-        ] as const).map(([url, label, Icon]) => (
-          <button key={url} type="button" onClick={() => navigate(url)}
-            aria-current={(url === "/processos" ? secao === "publicacoes" : pathname === url) ? "page" : undefined}
-            className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${(url === "/processos" ? secao === "publicacoes" : pathname === url) ? "bg-accent-600 text-white shadow-sm" : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"}`}>
-            <Icon className="h-4 w-4" />{label}
-          </button>
-        ))}
-      </nav>
-      {falha && (
-        <p
-          role="alert"
-          className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"
-        >
-          {falha}
-        </p>
-      )}
-      {secao === "aguardando" && (
+  useEffect(() => {
+    if (!detailId) return;
+    void abrir(detailId);
+    return () => { detailSeq.current++; };
+  }, [detailId]);
+  function fecharDetalhe() { if (!salvando) { detailSeq.current++; setDetalhe(null); onCloseDetail?.(); } }
+  const conteudoAguardando = (
         <div className="space-y-4">
           <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-5 dark:border-amber-900 dark:bg-amber-950/20">
             <p className="flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-200">
@@ -848,14 +774,83 @@ export function Acompanhamento() {
             </article>
           ))}
         </div>
+);
+  const titulo =
+    secao === "advogados"
+      ? "Advogados acompanhados"
+      : secao === "monitoramento"
+        ? "Monitoramento DJEN"
+        : secao === "aguardando"
+          ? "Aguardando retorno"
+        : "Publicações processuais";
+  return (
+    <div className="space-y-5">
+      <div hidden={Boolean(detailId)} className="space-y-5">
+      <PageHeader
+        title={titulo}
+        description={
+          secao === "publicacoes"
+            ? "Decisões, acordos, pagamentos, perícias e demais andamentos dos processos."
+            : secao === "aguardando"
+              ? "Ordens pendentes do juízo, peritos, INSS e parte contrária para conferência."
+            : secao === "advogados"
+              ? "Cadastre um ou mais advogados pelo nome completo, número da OAB e UF."
+              : "Consulte o DJEN por período e acompanhe a execução de cada busca."
+        }
+        actions={
+          secao === "advogados" ? (
+            <Button
+              onClick={() =>
+                setFormAdv({
+                  nome: "",
+                  numero_oab: "",
+                  uf_oab: "SP",
+                  modo_busca: "ambos",
+                  ativo: true,
+                })
+              }
+            >
+              <Plus className="h-4 w-4" />
+              Adicionar advogado
+            </Button>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  void carregarStatus().catch((e) => show(erro(e), "error"));
+                  if (secao === "publicacoes") void carregarLista();
+                  if (secao === "aguardando") void carregarAguardando();
+                }}
+              >
+                <RefreshCw className="h-4 w-4" />
+                Atualizar
+              </Button>
+              {(secao === "publicacoes" || secao === "monitoramento") && (
+                <Button onClick={() => setConsultaAberta(true)}>
+                  <Search className="h-4 w-4" /> Consultar DJEN
+                </Button>
+              )}
+            </>
+          )
+        }
+      />
+      {falha && (
+        <p
+          role="alert"
+          className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"
+        >
+          {falha}
+        </p>
       )}
+      {secao === "aguardando" && conteudoAguardando}
       {secao === "publicacoes" && (
         <><div className="process-summary">
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             {[
               { label: "Processos na lista", value: total, Icon: FolderOpen, action: () => filtrar("categoria", "") },
               { label: "Processos não lidos", value: status?.resumo.nao_lidas ?? 0, Icon: FileCheck2, action: () => filtrar("situacao", "nao_lidas") },
-              { label: "Aguardando retorno", value: status?.aguardando_retorno ?? 0, Icon: Clock3, action: () => navigate("/processos/aguardando") },
+              { label: "Aguardando retorno", value: status?.aguardando_retorno ?? 0, Icon: Clock3, action: () => { setAguardandoAberto(true); void carregarAguardando().catch(e => show(erro(e), "error")); } },
               { label: "Perícias sem laudo · 60 dias", value: status?.pericias_sem_laudo ?? 0, Icon: AlertCircle, action: () => { setMostrarSemLaudo(true); void carregarSemLaudo(); } },
             ].map(({ label, value, Icon, action }) => (
               <button key={label} type="button" onClick={action} className="group rounded-2xl border border-zinc-200 bg-white p-4 text-left shadow-sm transition hover:border-accent-400 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900">
@@ -1196,67 +1191,7 @@ export function Acompanhamento() {
       )}
       {secao === "monitoramento" && (
         <>
-          <section className="surface-panel p-5">
-            <h2 className="text-sm font-semibold">Consultar publicações</h2>
-            <p className="mt-1 text-xs text-zinc-500">
-              Consulte até 31 dias por execução. Resultados repetidos não criam
-              publicações duplicadas.
-            </p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div>
-                <Label htmlFor="djen-inicio">Disponibilização inicial</Label>
-                <Input
-                  id="djen-inicio"
-                  type="date"
-                  value={consulta.inicio}
-                  max={consulta.fim}
-                  onChange={(e) =>
-                    setConsulta({ ...consulta, inicio: e.target.value })
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="djen-fim">Disponibilização final</Label>
-                <Input
-                  id="djen-fim"
-                  type="date"
-                  value={consulta.fim}
-                  max={hoje()}
-                  onChange={(e) =>
-                    setConsulta({ ...consulta, fim: e.target.value })
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="djen-adv">Advogados</Label>
-                <Select
-                  id="djen-adv"
-                  value={consulta.advogado_id}
-                  onChange={(e) =>
-                    setConsulta({ ...consulta, advogado_id: e.target.value })
-                  }
-                >
-                  <option value="">Todos os ativos</option>
-                  {status?.advogados
-                    .filter((a) => a.ativo)
-                    .map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.nome}
-                      </option>
-                    ))}
-                </Select>
-              </div>
-              <Button
-                className="self-end"
-                onClick={() => void consultar()}
-                loading={consultando || Boolean(status?.executando)}
-                disabled={!status?.advogados.some((a) => a.ativo)}
-              >
-                <Search className="h-4 w-4" />
-                Buscar publicações
-              </Button>
-            </div>
-          </section>
+
           <section className="surface-panel p-5">
             <h2 className="flex items-center gap-2 text-sm font-semibold">
               <Settings2 className="h-4 w-4" />
@@ -1614,6 +1549,71 @@ export function Acompanhamento() {
           </section>
         </>
       )}
+      </div>
+      <Modal open={consultaAberta} onClose={() => setConsultaAberta(false)} title="Consultar DJEN" description="Busque novas publicações sem sair da sua área de trabalho." maxWidth="max-w-2xl">
+          <section className="surface-panel p-5">
+            <h2 className="text-sm font-semibold">Consultar publicações</h2>
+            <p className="mt-1 text-xs text-zinc-500">
+              Consulte até 31 dias por execução. Resultados repetidos não criam
+              publicações duplicadas.
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-2">
+              <div>
+                <Label htmlFor="djen-inicio">Disponibilização inicial</Label>
+                <Input
+                  id="djen-inicio"
+                  type="date"
+                  value={consulta.inicio}
+                  max={consulta.fim}
+                  onChange={(e) =>
+                    setConsulta({ ...consulta, inicio: e.target.value })
+                  }
+                />
+              </div>
+              <div>
+                <Label htmlFor="djen-fim">Disponibilização final</Label>
+                <Input
+                  id="djen-fim"
+                  type="date"
+                  value={consulta.fim}
+                  max={hoje()}
+                  onChange={(e) =>
+                    setConsulta({ ...consulta, fim: e.target.value })
+                  }
+                />
+              </div>
+              <div>
+                <Label htmlFor="djen-adv">Advogados</Label>
+                <Select
+                  id="djen-adv"
+                  value={consulta.advogado_id}
+                  onChange={(e) =>
+                    setConsulta({ ...consulta, advogado_id: e.target.value })
+                  }
+                >
+                  <option value="">Todos os ativos</option>
+                  {status?.advogados
+                    .filter((a) => a.ativo)
+                    .map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.nome}
+                      </option>
+                    ))}
+                </Select>
+              </div>
+              <Button
+                className="self-end"
+                onClick={() => void consultar()}
+                loading={consultando || Boolean(status?.executando)}
+                disabled={!status?.advogados.some((a) => a.ativo)}
+              >
+                <Search className="h-4 w-4" />
+                Buscar publicações
+              </Button>
+            </div>
+          </section>
+      </Modal>
+      <Modal open={aguardandoAberto} onClose={() => setAguardandoAberto(false)} title="Acompanhamentos aguardando retorno" maxWidth="max-w-3xl">{conteudoAguardando}</Modal>
       <Modal
         open={Boolean(formAdv)}
         onClose={() => {
@@ -1830,17 +1830,12 @@ export function Acompanhamento() {
       </Modal>
       <Modal
         open={Boolean(detalhe) && !mensagem}
-        onClose={() => {
-          if (!salvando) {
-            detailSeq.current++;
-            setDetalhe(null);
-          }
-        }}
+        onClose={fecharDetalhe}
         title="Processo · detalhes e próximos passos"
-        maxWidth="max-w-6xl"
+        maxWidth="max-w-4xl"
         footer={
           <>
-            <Button variant="outline" onClick={() => setDetalhe(null)}>
+            <Button variant="outline" onClick={fecharDetalhe}>
               Fechar
             </Button>
             <Button

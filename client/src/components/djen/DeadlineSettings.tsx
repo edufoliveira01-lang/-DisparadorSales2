@@ -21,8 +21,8 @@ type Config = {
   calendarName: string;
   calendarios: Calendario[];
 };
-export function DeadlineSettings() {
-  const parametros = new URLSearchParams(window.location.search);
+export function DeadlineSettings({ manualOnly = false, initialCalendar }: { manualOnly?: boolean; initialCalendar?: { tribunal: string; orgao: string; ano: number } } = {}) {
+  const parametros = initialCalendar ? new URLSearchParams({ tribunal: initialCalendar.tribunal, orgao: initialCalendar.orgao, ano: String(initialCalendar.ano) }) : new URLSearchParams(window.location.search);
   const anoSolicitado = Number(parametros.get("ano"));
   const ano = Number.isInteger(anoSolicitado) && anoSolicitado >= 2000 && anoSolicitado <= 2100 ? anoSolicitado : new Date().getFullYear(),
     vazio = {
@@ -69,6 +69,7 @@ export function DeadlineSettings() {
     return <p className="text-sm">Carregando configuração de prazos…</p>;
   return (
     <section className="surface-panel space-y-5 p-5">
+      {!manualOnly && <>
       <div>
         <h2 className="text-base font-semibold">
           Prazos e calendários forenses
@@ -135,7 +136,8 @@ export function DeadlineSettings() {
         <p className="mt-1 text-zinc-500">Consulte a cobertura, procure por tribunal ou órgão e veja quais fontes precisam de atenção.</p>
         <Link to="/processos/calendarios" className="mt-2 inline-block font-semibold text-accent-600 underline">Abrir calendários de prazos</Link>
       </div>
-      <details className="border-t pt-4" id="calendario-manual" open={new URLSearchParams(window.location.search).has("manual")}>
+      </>}
+      <details className="border-t pt-4" id="calendario-manual" open={manualOnly || new URLSearchParams(window.location.search).has("manual")}>
         <summary className="cursor-pointer text-sm font-semibold">
           Preencher calendário manual completo (alternativa)
         </summary>
@@ -357,3 +359,4 @@ export function DeadlineSettings() {
     </section>
   );
 }
+

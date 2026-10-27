@@ -1,5 +1,5 @@
+import { Acompanhamento } from "./Acompanhamento";
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { ArrowLeft, ArrowRight, CalendarClock, Clock3, History, Pencil, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
@@ -38,7 +38,8 @@ const regras = [
 ] as const;
 
 export function QuadroProcessos() {
-  const navigate = useNavigate(), { show } = useToast();
+  const { show } = useToast();
+  const [publicacaoAberta, setPublicacaoAberta] = useState<number | null>(null);
   const [quadro, setQuadro] = useState<Quadro | null>(null);
   const [busca, setBusca] = useState(""), [filtro, setFiltro] = useState("todos");
   const [erro, setErro] = useState(""), [busy, setBusy] = useState(false);
@@ -85,7 +86,7 @@ export function QuadroProcessos() {
   ) || [];
   return <div className="space-y-5">
     <PageHeader title="Quadro de processos" description="Acompanhe cada processo por etapa. Os cartões se organizam com base nas publicações do DJEN."
-      actions={<><Button variant="outline" onClick={() => navigate("/processos")}><ArrowLeft className="h-4 w-4" /> Publicações</Button><Button variant="outline" onClick={() => void carregar()}><RefreshCw className="h-4 w-4" /> Atualizar</Button></>} />
+      actions={<><Button variant="outline" onClick={() => void carregar()}><RefreshCw className="h-4 w-4" /> Atualizar</Button></>} />
     <div className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
       <div className="relative min-w-[220px] flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
         <Input aria-label="Buscar processos no quadro" placeholder="Buscar cliente, processo ou andamento…" className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
@@ -134,7 +135,7 @@ export function QuadroProcessos() {
             <div className="scrollbar-thin max-h-[min(68vh,780px)] min-h-24 space-y-2 overflow-y-auto pr-1">
               {cartoes.map((card) => <article key={card.processo_chave}
                 className={`rounded-xl border bg-white p-4 shadow-soft transition-[border-color,box-shadow] hover:shadow-card hover:border-accent-400 dark:bg-zinc-950 ${card.publicacoes_nao_lidas ? "border-l-4 border-l-accent-600 dark:border-zinc-800" : "border-zinc-200 dark:border-zinc-800"}`}>
-                <button type="button" onClick={() => navigate(`/processos?abrir=${card.publicacao_id}`)} className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500">
+                <button type="button" onClick={() => setPublicacaoAberta(card.publicacao_id)} className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500">
                   <span className="flex items-start justify-between gap-2"><strong className="line-clamp-2 text-xs leading-snug text-zinc-900 dark:text-zinc-100">{card.cliente_nome || "Nome a conferir"}</strong></span>
                   <span className="mt-1 block text-[11px] text-zinc-500">{card.numero}</span>
                   <span className="mt-2 line-clamp-2 block text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-300">{card.situacao || card.resumo}</span>
@@ -179,6 +180,7 @@ export function QuadroProcessos() {
       </div>
     </div>}
     <p className="text-[11px] text-zinc-500">As contagens nas listas são dias corridos de acompanhamento interno, desde a data indicada no cartão. Elas não substituem o prazo processual nem presumem vencimento de RPV.</p>
+    {publicacaoAberta !== null && <Acompanhamento key={publicacaoAberta} detailId={publicacaoAberta} onCloseDetail={() => { setPublicacaoAberta(null); void carregar(); }} />}
     <ConfirmDialog open={Boolean(excluir)} title="Excluir lista vazia?" message={`A lista ${excluir?.nome || ""} será removida do quadro.`} confirmLabel="Excluir lista" confirmVariant="danger" loading={busy} onCancel={() => setExcluir(null)} onConfirm={() => {
       if (excluir) void acao(async () => { await api.delete(`/djen/kanban/listas/${excluir.id}`); setExcluir(null); });
     }} />
