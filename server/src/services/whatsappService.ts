@@ -1016,6 +1016,13 @@ class WhatsappManager {
     const observarSincronizacao = () => {
       if (!tentativaAtiva() || pronto) return;
       sincronizacaoObservada = true;
+      // loading_screen pode chegar antes de authenticated/CONNECTED. A partir daqui o
+      // watchdog de sincronização assume; o limite de inicialização de 2 minutos não
+      // pode encerrar um carregamento que ainda tem sua janela de 3 minutos válida.
+      if (this.inicioTimer) {
+        clearTimeout(this.inicioTimer);
+        this.inicioTimer = null;
+      }
       // loading_screen é emitido somente depois que o WhatsApp começa a carregar a conta.
       // Mesmo que getState() seja interrompido por uma navegação, esta fase precisa continuar
       // limitada: se o evento ready nunca vier, recuperamos o browser preservando a sessão.
@@ -1854,3 +1861,4 @@ class WhatsappManager {
 }
 
 export const whatsappManager = new WhatsappManager();
+

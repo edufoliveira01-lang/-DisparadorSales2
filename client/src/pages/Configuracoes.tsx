@@ -1,4 +1,6 @@
 import { Settings as SettingsIcon } from "lucide-react";
+import { useLocation } from "react-router-dom";
+import { beginRequestActivity } from "@/lib/requestActivity";
 import { DeadlineSettings } from "@/components/djen/DeadlineSettings";
 import { SettingsOverview, type SettingsSectionKey } from "@/components/SettingsOverview";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -81,9 +83,16 @@ const STATUS_LABEL: Record<WhatsappState["status"], string> = {
 };
 
 export function Configuracoes() {
+  const { search: settingsSearch } = useLocation();
   const { show } = useToast();
   const { theme, setTheme } = useTheme();
-  const [configSection, setConfigSection] = useState<SettingsSectionKey | null>(()=>new URLSearchParams(window.location.search).has("prazos")?"prazos":new URLSearchParams(window.location.search).has("whatsapp")?"whatsapp":null);
+  const [configSection, setConfigSection] = useState<SettingsSectionKey | null>(()=>new URLSearchParams(window.location.search).has("prazos")?"prazos":new URLSearchParams(window.location.search).has("whatsapp")?"whatsapp":new URLSearchParams(window.location.search).has("google")?"google":null);
+  useEffect(() => {
+    const params = new URLSearchParams(settingsSearch);
+    if (params.has("whatsapp")) setConfigSection("whatsapp");
+    else if (params.has("google")) setConfigSection("google");
+    else if (params.has("prazos")) setConfigSection("prazos");
+  }, [settingsSearch]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [trelloKey, setTrelloKey] = useState("");
   const [trelloToken, setTrelloToken] = useState("");
@@ -429,6 +438,7 @@ export function Configuracoes() {
   async function handleConfirmarRestore() {
     if (!arquivoRestore) return;
     setRestaurando(true);
+    const finish = beginRequestActivity("Restaurando backup do sistema");
     try {
       const buffer = await arquivoRestore.arrayBuffer();
       const response = await fetch("/api/backup/restore", {
@@ -447,6 +457,7 @@ export function Configuracoes() {
     } catch (err) {
       show(err instanceof Error ? err.message : "Erro ao restaurar backup.", "error");
     } finally {
+      finish();
       setRestaurando(false);
     }
   }
@@ -717,9 +728,9 @@ export function Configuracoes() {
 
       <section hidden={configSection !== "whatsapp"}><CollapsibleCard alwaysOpen
         icon={<Wifi className="h-4 w-4 text-accent-500" />}
-        title="Conexão com o WhatsApp"
+        title="WhatsApp de envio aos clientes"
         storageKey="whatsapp"
-        headerExtra={<Badge tone={whatsappTone as "success" | "danger" | "warning"}>{STATUS_LABEL[whatsapp.status]}</Badge>}
+        headerExtra={<Badge tone={whatsappTone as "success" | "danger" | "warning"}>{whatsapp.carregado ? STATUS_LABEL[whatsapp.status] : "Verificando conexão"}</Badge>}
       >
           {whatsapp.status === "aguardando_qr" && whatsapp.qrDataUrl && (
             <div className="flex flex-col items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-6 dark:border-zinc-800 dark:bg-zinc-800/40">
@@ -743,11 +754,11 @@ export function Configuracoes() {
             </div>
           )}
 
-          {whatsapp.status === "autenticado" && (
+          {(whatsapp.status === "autenticado" || (whatsapp.status === "inicializando" && typeof whatsapp.syncProgress === "number")) && (
             <div className="space-y-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-3 text-sm text-blue-700 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-300">
               <p className="flex items-center gap-2 font-medium">
                 <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-                Dispositivo vinculado. Sincronizando o WhatsApp
+                {whatsapp.status === "autenticado" ? "Dispositivo vinculado. " : ""}Sincronizando o WhatsApp
                 {whatsapp.syncProgress !== null && whatsapp.syncProgress !== undefined ? ` (${Math.round(whatsapp.syncProgress)}%)` : ""}...
               </p>
               <div className="h-1.5 overflow-hidden rounded-full bg-blue-100 dark:bg-blue-900/60">
@@ -770,8 +781,8 @@ export function Configuracoes() {
             <div className="space-y-1 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-400">
               <p>{whatsapp.lastError}</p>
               <p className="text-xs opacity-80">
-                Essa falha é conhecida e costuma ser temporária (bug do WhatsApp Web). Clique em "Conectar WhatsApp" para
-                tentar de novo.
+                Confira o motivo acima antes de tentar novamente. O botão "Parar" preserva a sessão;
+                "Desconectar" encerra o vínculo com o celular.
               </p>
             </div>
           )}
@@ -786,7 +797,7 @@ export function Configuracoes() {
                 <Button
                   onClick={handleConectarWhatsapp}
                   loading={whatsapp.conectando || whatsapp.status === "inicializando"}
-                  disabled={whatsapp.status === "aguardando_qr" || whatsapp.status === "pareando" || whatsapp.status === "autenticado"}
+                  disabled={!whatsapp.carregado || whatsapp.status === "aguardando_qr" || whatsapp.status === "pareando" || whatsapp.status === "autenticado"}
                 >
                   {whatsapp.status === "aguardando_qr" ? <Loader2 className="h-4 w-4 animate-spin" /> : <WifiOff className="h-4 w-4" />}
                   Conectar WhatsApp

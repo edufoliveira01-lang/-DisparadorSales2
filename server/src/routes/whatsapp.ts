@@ -39,9 +39,14 @@ whatsappRouter.get("/events", (req, res) => {
   };
   send();
   const unsubscribe = whatsappManager.onChange(send);
+  // Comentários SSE mantêm o fluxo ativo mesmo quando o estado não muda por minutos.
+  const heartbeat = setInterval(() => res.write(": keep-alive\n\n"), 15000);
+  heartbeat.unref();
 
   req.on("close", () => {
+    clearInterval(heartbeat);
     unsubscribe();
     res.end();
   });
 });
+

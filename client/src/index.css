@@ -493,3 +493,18 @@
  .process-filter-rail .process-summary > div { display:grid; grid-template-columns:minmax(0,1fr); gap:10px; }
  .process-filter-rail .process-summary > div > button { width:100%; }
 }
+
+.global-status-rail { position:sticky; top:80px; z-index:19; }
+.service-activity { border-bottom:1px solid rgb(124 58 237 / .14); background:rgb(245 243 255 / .97); color:#5b21b6; backdrop-filter:blur(16px); }
+.service-activity-heading { display:flex; align-items:center; gap:9px; min-height:40px; padding:5px 28px; }
+.service-activity-toggle { display:flex; align-items:center; justify-content:center; min-width:32px; min-height:32px; border-radius:9px; }
+.service-activity-toggle:hover { background:rgb(124 58 237 / .08); }
+.service-activity-toggle:focus-visible { outline:2px solid #8b5cf6; outline-offset:2px; }
+.service-activity-list { display:grid; gap:8px; max-height:160px; overflow-y:auto; padding:0 28px 12px 51px; font-size:12px; }
+.service-activity-list a { display:block; text-decoration:underline; text-underline-offset:3px; }
+.dark .service-activity { background:rgb(30 25 48 / .97); color:#ddd6fe; }
+@media(max-width:767px) {
+  .global-status-rail { top:124px; }
+  .service-activity-heading { padding-inline:16px; }
+  .service-activity-list { padding-inline:39px 16px; }
+}

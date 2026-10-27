@@ -88,6 +88,28 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 describe("pareamento por QR e sincronização do WhatsApp", () => {
+  it("não encerra pelo limite de inicialização quando o carregamento já começou sem authenticated", async () => {
+    client.getState.mockRejectedValue(new Error("Execution context was destroyed"));
+    await vi.advanceTimersByTimeAsync(100000);
+    client.emit("loading_screen", 40);
+    await vi.advanceTimersByTimeAsync(30001);
+    expect(client.destroy).not.toHaveBeenCalled();
+    expect(whatsappManager.getState().syncProgress).toBe(40);
+    client.emit("ready");
+    expect(whatsappManager.isReady()).toBe(true);
+  });
+  it("mantém o limite de sincronização quando só há loading_screen e preserva o login", async () => {
+    client.getState.mockRejectedValue(new Error("Execution context was destroyed"));
+    client.emit("loading_screen", 20);
+    manager.tentativa = 6;
+    await vi.advanceTimersByTimeAsync(120001);
+    expect(client.destroy).not.toHaveBeenCalled();
+    client.emit("loading_screen", 65);
+    await vi.advanceTimersByTimeAsync(60001);
+    expect(client.destroy).toHaveBeenCalledOnce();
+    expect(client.logout).not.toHaveBeenCalled();
+    expect(whatsappManager.getState().lastError).toMatch(/iniciou a sincronização/);
+  });
   it("recupera a sessão conectada quando duas verificações seguidas encontram navegador congelado", async () => {
     client.getState.mockResolvedValue("CONNECTED");
     client.emit("ready");
@@ -319,3 +341,4 @@ describe("pareamento por QR e sincronização do WhatsApp", () => {
     expect(whatsappManager.getState().lastError).toMatch(/iniciou a sincronização/);
   });
 });
+

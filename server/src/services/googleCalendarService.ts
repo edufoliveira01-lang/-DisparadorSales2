@@ -1358,10 +1358,11 @@ let manualSyncJob: GoogleCalendarSyncJob = {
   error: null,
 };
 
-export function getGoogleCalendarSyncJob(): GoogleCalendarSyncJob {
+export function getGoogleCalendarSyncJob(): GoogleCalendarSyncJob & { background: { running: boolean; pending: number } } {
   return {
     ...manualSyncJob,
     result: manualSyncJob.result ? { ...manualSyncJob.result } : null,
+    background: { running: queueRunning, pending: syncQueue.size },
   };
 }
 
@@ -1444,3 +1445,4 @@ export function scheduleGoogleCalendarDelete(periciaId: number): void {
   syncQueue.set(periciaId, "delete");
   setImmediate(() => drainQueue().catch((err) => console.error("[Google Agenda] Erro na fila de exclusão:", err)));
 }
+

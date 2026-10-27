@@ -56,7 +56,7 @@ export function ProcessAlerts() {
   const chave = `${retornos}:${semLaudo}`;
   const recolhido = recolhidoPara === chave;
   return (
-    <section aria-label="Avisos do acompanhamento processual" className="sticky top-20 z-10 border-b border-amber-200 bg-amber-50/95 px-4 py-2.5 shadow-sm backdrop-blur dark:border-amber-900 dark:bg-amber-950/95 sm:px-6 lg:px-8">
+    <section aria-label="Avisos do acompanhamento processual" className="border-b border-amber-200 bg-amber-50/95 px-4 py-2.5 shadow-sm backdrop-blur dark:border-amber-900 dark:bg-amber-950/95 sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-[1480px] flex-wrap items-center gap-x-4 gap-y-2 text-xs text-amber-950 dark:text-amber-100">
         <button type="button" onClick={() => setRecolhidoPara(recolhido ? null : chave)} aria-expanded={!recolhido}
           className="inline-flex items-center gap-2 rounded-lg px-1 py-1 font-semibold hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:bg-amber-900">
@@ -78,3 +78,4 @@ export function ProcessAlerts() {
     </section>
   );
 }
+

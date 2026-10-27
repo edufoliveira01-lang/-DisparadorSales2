@@ -11,7 +11,7 @@ import {
 import { Link, useLocation } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { QuickNavigation } from "./QuickNavigation";
-import { GlobalBatchProgress } from "./GlobalBatchProgress";
+import { GlobalServiceActivity } from "./GlobalServiceActivity";
 import { ProcessAlerts } from "./ProcessAlerts";
 import { useActiveService } from "@/context/ActiveServiceContext";
 import { useWhatsapp } from "@/context/WhatsappContext";
@@ -40,7 +40,7 @@ export function Layout({ children }: { children: ReactNode }) {
     "aguardando_qr",
     "pareando",
   ].includes(whatsapp.status);
-  const connectionLabel = connected
+  const connectionLabel = !whatsapp.carregado ? "Verificando conexão do WhatsApp" : connected
     ? "WhatsApp conectado"
     : connecting
       ? "WhatsApp conectando"
@@ -196,8 +196,10 @@ export function Layout({ children }: { children: ReactNode }) {
           tabIndex={-1}
           className="min-w-0 flex-1 outline-none"
         >
-          <GlobalBatchProgress />
-          <ProcessAlerts />
+          <div className="global-status-rail">
+            <GlobalServiceActivity />
+            <ProcessAlerts />
+          </div>
           <div
             key={pathname}
             className="page-content mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-7 sm:py-8 xl:px-10"

@@ -4,12 +4,14 @@ import {
   useEffect,
   useState,
   useRef,
+  useCallback,
   type ReactNode,
 } from "react";
 import { api } from "@/lib/api";
 import type { WhatsappState } from "@/lib/types";
 
 interface WhatsappContextValue extends WhatsappState {
+  carregado: boolean;
   conectando: boolean;
   conectar: () => Promise<void>;
   parar: () => Promise<void>;
@@ -36,80 +38,80 @@ const WhatsappContext = createContext<WhatsappContextValue | null>(null);
 export function WhatsappProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<WhatsappState>(ESTADO_INICIAL);
   const [conectando, setConectando] = useState(false);
+  const [carregado, setCarregado] = useState(false);
+  const operacao = useRef(0);
+  const revisao = useRef(0);
+  const aplicar = useCallback((value: WhatsappState) => {
+    revisao.current++;
+    setState(value);
+    setCarregado(true);
+  }, []);
 
   useEffect(() => {
+    let ativo = true;
+    let consultando = false;
+    const consultar = async () => {
+      if (!ativo || consultando || document.visibilityState !== "visible") return;
+      consultando = true;
+      const seq = operacao.current;
+      const versao = revisao.current;
+      try {
+        const value = await api.get<WhatsappState>("/whatsapp/status", { background: true, signal: AbortSignal.timeout(10000) });
+        if (ativo && seq === operacao.current && versao === revisao.current) aplicar(value);
+      } catch { /* A próxima consulta recupera o estado sem inventar uma desconexão. */ }
+      finally { consultando = false; }
+    };
     const eventSource = new EventSource(`${api.baseUrl}/whatsapp/events`);
+    eventSource.onopen = () => { void consultar(); };
+    eventSource.onerror = () => { void consultar(); };
     eventSource.onmessage = (event) => {
       try {
-        setState(JSON.parse(event.data));
+        if (ativo) aplicar(JSON.parse(event.data));
       } catch (err) {
         console.error("Erro ao processar evento de WhatsApp:", err);
       }
     };
-    return () => eventSource.close();
-  }, []);
+    void consultar();
+    const timer = setInterval(() => { void consultar(); }, 5000);
+    window.addEventListener("focus", consultar);
+    document.addEventListener("visibilitychange", consultar);
+    return () => {
+      ativo = false;
+      clearInterval(timer);
+      eventSource.close();
+      window.removeEventListener("focus", consultar);
+      document.removeEventListener("visibilitychange", consultar);
+    };
+  }, [aplicar]);
 
-  const operacao = useRef(0);
   async function conectar() {
     const atual = ++operacao.current;
     setConectando(true);
     try {
       const novoEstado = await api.post<WhatsappState>("/whatsapp/connect");
-      if (atual === operacao.current) setState(novoEstado);
+      if (atual === operacao.current) aplicar(novoEstado);
     } finally {
-      setConectando(false);
+      if (atual === operacao.current) setConectando(false);
     }
   }
 
   async function parar() {
-    ++operacao.current;
+    const atual = ++operacao.current;
     setConectando(false);
-    setState((prev) => ({
-      ...prev,
-      status: "desconectado",
-      qrDataUrl: null,
-      lastError: null,
-    }));
     const novoEstado = await api.post<WhatsappState>("/whatsapp/stop");
-    setState(novoEstado);
+    if (atual === operacao.current) aplicar(novoEstado);
   }
 
   async function desconectar() {
-    ++operacao.current;
+    const atual = ++operacao.current;
     setConectando(false);
-    setState((prev) => ({
-      ...prev,
-      status: "desconectado",
-      qrDataUrl: null,
-      lastError: null,
-    }));
     const novoEstado = await api.post<WhatsappState>("/whatsapp/disconnect");
-    setState(novoEstado);
+    if (atual === operacao.current) aplicar(novoEstado);
   }
 
-  useEffect(() => {
-    if (
-      !["inicializando", "autenticado", "aguardando_qr", "pareando"].includes(state.status)
-    )
-      return;
-    let ativo = true;
-    const timer = setInterval(() => {
-      const seq = operacao.current;
-      void api
-        .get<WhatsappState>("/whatsapp/status")
-        .then((r) => {
-          if (ativo && seq === operacao.current) setState(r);
-        })
-        .catch(() => {});
-    }, 5000);
-    return () => {
-      ativo = false;
-      clearInterval(timer);
-    };
-  }, [state.status]);
   return (
     <WhatsappContext.Provider
-      value={{ ...state, conectando, conectar, parar, desconectar }}
+      value={{ ...state, carregado, conectando, conectar, parar, desconectar }}
     >
       {children}
     </WhatsappContext.Provider>
@@ -124,3 +126,4 @@ export function useWhatsapp(): WhatsappContextValue {
     );
   return ctx;
 }
+
