@@ -94,26 +94,60 @@ describe("seleção de envios para alerta de entrega", () => {
       WHERE tipo = 'entrega'
         AND origem_id IN (SELECT id FROM send_logs WHERE card_id LIKE ?)
     `).run(`${prefixo}%`);
+    db.prepare("DELETE FROM pending_replies WHERE card_id LIKE ?").run(`${prefixo}%`);
     db.prepare("DELETE FROM send_logs WHERE card_id LIKE ?").run(`${prefixo}%`);
   });
 
-  it("não alerta lembrete bem-sucedido apenas por falta de confirmação técnica", () => {
+  function acompanhar(id: number, status = "aguardando", ack = 1): number {
+    const log = db.prepare("SELECT card_id FROM send_logs WHERE id = ?").get(id) as { card_id: string };
+    const info = db.prepare(`
+      INSERT INTO pending_replies (card_id, card_nome, telefone, telefone_digits, send_log_id, status, ack, created_at)
+      VALUES (?, 'CLIENTE TESTE', '(13) 99999-9999', '5513999999999', ?, ?, ?, datetime('now', '-30 hours'))
+    `).run(log.card_id, id, status, ack);
+    return Number(info.lastInsertRowid);
+  }
+
+  it("ignora o Histórico mesmo com envio antigo sem confirmação ou falha", () => {
+    const antigo = inserirEnvio("disparo", "sucesso");
+    const falha = inserirEnvio("disparo", "falha");
+    expect(listLogsPendentesDeAlerta(24, "Whapi").map((log) => log.id)).not.toContain(antigo);
+    expect(listLogsPendentesDeAlerta(24, "Whapi").map((log) => log.id)).not.toContain(falha);
+  });
+
+  it("ignora acompanhamentos respondidos, cancelados ou entregues, mesmo se o log tiver ACK antigo", () => {
+    const respondido = inserirEnvio("disparo", "sucesso");
+    const cancelado = inserirEnvio("disparo", "sucesso");
+    const entregue = inserirEnvio("disparo", "sucesso");
+    acompanhar(respondido, "respondido");
+    acompanhar(cancelado, "cancelado");
+    acompanhar(entregue, "aguardando", 2);
+    const ids = listLogsPendentesDeAlerta(24, "Whapi").map((log) => log.id);
+    expect(ids).not.toContain(respondido);
+    expect(ids).not.toContain(cancelado);
+    expect(ids).not.toContain(entregue);
+  });
+
+  it("não alerta lembrete sem acompanhamento", () => {
     const id = inserirEnvio("lembrete", "sucesso");
     expect(listLogsPendentesDeAlerta(24).some((log) => log.id === id)).toBe(false);
   });
 
-  it("continua alertando quando o envio do lembrete falha de fato", () => {
+  it("não inclui falha de envio, pois não existe mensagem aguardando dois tiques", () => {
     const id = inserirEnvio("lembrete", "falha");
-    expect(listLogsPendentesDeAlerta(24).some((log) => log.id === id)).toBe(true);
+    acompanhar(id);
+    expect(listLogsPendentesDeAlerta(24).some((log) => log.id === id)).toBe(false);
   });
 
-  it("mantém a confirmação de entrega para disparos normais", () => {
+  it("alerta somente envio ativo abaixo de dois tiques após o prazo", () => {
     const id = inserirEnvio("disparo", "sucesso");
+    acompanhar(id);
+    expect(listLogsPendentesDeAlerta(48).some((log) => log.id === id)).toBe(false);
     expect(listLogsPendentesDeAlerta(24).some((log) => log.id === id)).toBe(true);
   });
 
   it("controla Telegram e Whapi separadamente quando só um canal confirmou o alerta", () => {
-    const id = inserirEnvio("disparo", "falha");
+    const id = inserirEnvio("disparo", "sucesso");
+    acompanhar(id);
 
     expect(listLogsPendentesDeAlerta(24, "Telegram").some((log) => log.id === id)).toBe(true);
     expect(listLogsPendentesDeAlerta(24, "Whapi").some((log) => log.id === id)).toBe(true);
@@ -122,6 +156,14 @@ describe("seleção de envios para alerta de entrega", () => {
 
     expect(listLogsPendentesDeAlerta(24, "Telegram").some((log) => log.id === id)).toBe(false);
     expect(listLogsPendentesDeAlerta(24, "Whapi").some((log) => log.id === id)).toBe(true);
+  });
+
+  it("para de alertar no momento em que a espera é finalizada", () => {
+    const id = inserirEnvio("disparo", "sucesso");
+    const pendenteId = acompanhar(id);
+    expect(listLogsPendentesDeAlerta(24, "Whapi").some((log) => log.id === id)).toBe(true);
+    db.prepare("UPDATE pending_replies SET status = 'respondido' WHERE id = ?").run(pendenteId);
+    expect(listLogsPendentesDeAlerta(24, "Whapi").some((log) => log.id === id)).toBe(false);
   });
 });
 
@@ -178,6 +220,23 @@ describe("seleção de respostas pendentes para notificação", () => {
 
     db.prepare("UPDATE pending_replies SET ack_updated_at = datetime('now', '-50 hours') WHERE id = ?").run(id);
     expect(listPendingRepliesPendentesDeAlerta(48, "Telegram").some((item) => item.id === id)).toBe(true);
+  });
+
+  it("usa a confirmação recente do envio quando o pendente ainda tem ACK antigo", () => {
+    const log = inserirEnvio("disparo", "sucesso");
+    const card = db.prepare("SELECT card_id FROM send_logs WHERE id = ?").get(log) as { card_id: string };
+    db.prepare("UPDATE send_logs SET ack = 2, ack_updated_at = datetime('now', '-2 hours') WHERE id = ?").run(log);
+    const info = db.prepare(`
+      INSERT INTO pending_replies (card_id, card_nome, telefone, telefone_digits, status, ack, ack_updated_at, send_log_id, created_at)
+      VALUES (?, 'CLIENTE TESTE', '(13) 99999-9999', '5513999999999', 'aguardando', 1,
+        datetime('now', '-72 hours'), ?, datetime('now', '-72 hours'))
+    `).run(card.card_id, log);
+    const id = Number(info.lastInsertRowid);
+    expect(listPendingRepliesPendentesDeAlerta(24, "Whapi").some((item) => item.id === id)).toBe(false);
+    db.prepare("UPDATE send_logs SET ack_updated_at = datetime('now', '-25 hours') WHERE id = ?").run(log);
+    expect(listPendingRepliesPendentesDeAlerta(24, "Whapi").some((item) => item.id === id)).toBe(true);
+    db.prepare("DELETE FROM pending_replies WHERE id = ?").run(id);
+    db.prepare("DELETE FROM send_logs WHERE id = ?").run(log);
   });
 });
 
@@ -274,3 +333,4 @@ describe("correlação da resposta com o Histórico", () => {
     expect(pendente.send_log_id).toBe(Number(logInfo.lastInsertRowid));
   });
 });
+

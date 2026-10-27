@@ -110,11 +110,9 @@ httpServer.listen(port, () => {
   }
 });
 
-// Verifica periodicamente envios com problema de entrega e pendentes sem resposta para
-// notificar no Telegram (não faz nada se a integração não estiver configurada). Roda pouco
-// depois do start (não precisa esperar meia hora após um restart pra pegar algo pendente) e
-// depois a cada 30 minutos — frequência de sobra para prazos de alerta medidos em horas.
-const INTERVALO_VERIFICACAO_MS = 30 * 60 * 1000;
+// Ao vencer o prazo configurado, verifica os acompanhamentos a cada 15 segundos.
+// A rotina tem trava interna para não sobrepor consultas e envios de canais lentos.
+const INTERVALO_VERIFICACAO_MS = 15_000;
 setTimeout(
   () => verificarNotificacoesPendentes("inicializacao").catch((err) => {
     console.error("[Notificações] Erro na verificação inicial:", err);
@@ -127,7 +125,7 @@ setTimeout(
       origem: "automatico",
     });
   }),
-  60_000
+  5_000
 );
 setInterval(
   () => verificarNotificacoesPendentes("periodica").catch((err) => {
@@ -169,3 +167,4 @@ async function shutdown() {
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+

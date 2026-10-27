@@ -198,8 +198,14 @@ export function listPendingRepliesPendentesDeAlerta(
              WHERE tipo = 'resposta' AND origem_id = pending_replies.id AND canal = ?
            )
            AND MAX(COALESCE(pending_replies.ack, -1), COALESCE(send_logs.ack, -1)) >= 2
-           AND COALESCE(pending_replies.ack_updated_at, send_logs.ack_updated_at, pending_replies.created_at)
-             <= datetime('now', '-' || ? || ' hours')
+           AND CASE
+             WHEN COALESCE(pending_replies.ack, -1) >= 2 AND COALESCE(send_logs.ack, -1) >= 2
+               THEN MIN(COALESCE(pending_replies.ack_updated_at, pending_replies.created_at),
+                        COALESCE(send_logs.ack_updated_at, send_logs.created_at))
+             WHEN COALESCE(pending_replies.ack, -1) >= 2
+               THEN COALESCE(pending_replies.ack_updated_at, pending_replies.created_at)
+             ELSE COALESCE(send_logs.ack_updated_at, send_logs.created_at)
+           END <= datetime('now', '-' || ? || ' hours')
          ORDER BY pending_replies.created_at ASC`
       )
       .all(canal, horasLimite) as PendingReply[];
@@ -212,8 +218,14 @@ export function listPendingRepliesPendentesDeAlerta(
        WHERE pending_replies.status = 'aguardando'
          AND pending_replies.alerta_resposta_enviado_em IS NULL
          AND MAX(COALESCE(pending_replies.ack, -1), COALESCE(send_logs.ack, -1)) >= 2
-         AND COALESCE(pending_replies.ack_updated_at, send_logs.ack_updated_at, pending_replies.created_at)
-           <= datetime('now', '-' || ? || ' hours')
+         AND CASE
+           WHEN COALESCE(pending_replies.ack, -1) >= 2 AND COALESCE(send_logs.ack, -1) >= 2
+             THEN MIN(COALESCE(pending_replies.ack_updated_at, pending_replies.created_at),
+                      COALESCE(send_logs.ack_updated_at, send_logs.created_at))
+           WHEN COALESCE(pending_replies.ack, -1) >= 2
+             THEN COALESCE(pending_replies.ack_updated_at, pending_replies.created_at)
+           ELSE COALESCE(send_logs.ack_updated_at, send_logs.created_at)
+         END <= datetime('now', '-' || ? || ' hours')
        ORDER BY pending_replies.created_at ASC`
     )
     .all(horasLimite) as PendingReply[];
@@ -266,3 +278,4 @@ export function deletePendingReplies(ids: number[]): number {
   const info = db.prepare(`DELETE FROM pending_replies WHERE id IN (${placeholders})`).run(...ids);
   return info.changes;
 }
+

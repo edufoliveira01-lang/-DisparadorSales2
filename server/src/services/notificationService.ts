@@ -29,15 +29,9 @@ function lerHorasLimite(chave: string): number {
 function montarMensagemEntrega(logs: SendLog[], horasLimite: number): string {
   const titulo =
     logs.length === 1
-      ? "⚠️ 1 mensagem do DisparaZap não foi entregue ao cliente:"
-      : `⚠️ ${logs.length} mensagens do DisparaZap não foram entregues aos clientes:`;
-  const falhas = logs.filter((log) => log.status === "falha").length;
-  const semConfirmacao = logs.length - falhas;
-  const resumo = [
-    falhas ? `${falhas} com falha de envio` : null,
-    semConfirmacao ? `${semConfirmacao} não entregue há mais de ${horasLimite}h` : null,
-  ].filter(Boolean).join("; ");
-  return `${titulo}\n\nOrigem: verificação automática do sistema.\nResumo: ${resumo}.\n\nConfira clientes, horários e resultado por canal na área Logs do DisparaZap.`;
+      ? "⚠️ 1 mensagem do DisparaZap ainda não tem confirmação de entrega:"
+      : `⚠️ ${logs.length} mensagens do DisparaZap ainda não têm confirmação de entrega:`;
+  return `${titulo}\n\nOrigem: verificação automática do sistema.\nResumo: ${logs.length} aguardando resposta sem dois tiques de entrega há mais de ${horasLimite}h.\n\nConfira os acompanhamentos em Aguardando resposta no DisparaZap.`;
 }
 
 function montarMensagemResposta(pendentes: PendingReply[], horasLimite: number): string {
@@ -45,7 +39,7 @@ function montarMensagemResposta(pendentes: PendingReply[], horasLimite: number):
     pendentes.length === 1
       ? "🕑 1 cliente ainda não respondeu ao DisparaZap:"
       : `🕑 ${pendentes.length} clientes ainda não responderam ao DisparaZap:`;
-  return `${titulo}\n\nOrigem: verificação automática do sistema.\nResumo: ${pendentes.length} sem resposta há mais de ${horasLimite}h.\n\nConfira clientes, horários e resultado por canal na área Logs do DisparaZap.`;
+  return `${titulo}\n\nOrigem: verificação automática do sistema.\nResumo: ${pendentes.length} com dois tiques de entrega e sem resposta há mais de ${horasLimite}h.\n\nConfira os acompanhamentos em Aguardando resposta no DisparaZap.`;
 }
 
 interface CanalNotificacao {
@@ -112,34 +106,27 @@ async function enviarPeloCanal(canal: CanalNotificacao, texto: string): Promise<
 }
 
 /**
- * Avisa sobre envios com problema de entrega (falha imediata, ou "enviado" sem confirmar entrega
- * além do prazo configurado) ainda não notificados.
+ * Avisa somente sobre acompanhamentos ativos cujo envio ainda não tem dois tiques.
  */
 async function verificarEntregasPendentes(canais: CanalNotificacao[], origemVerificacao: OrigemVerificacao): Promise<void> {
   const horasLimite = lerHorasLimite("telegram_alerta_horas");
-  for (const canal of canais) {
+  await Promise.all(canais.map(async (canal) => {
     const logs = listLogsPendentesDeAlerta(horasLimite, canal.nome);
-    if (logs.length === 0) continue;
-    const falhas = logs.filter((log) => log.status === "falha").length;
-    const regraAlerta = falhas === logs.length
-      ? "falha_envio"
-      : falhas === 0
-        ? "nao_entregue"
-        : "falha_ou_nao_entregue";
+    if (logs.length === 0) return;
 
     const resultado = await enviarPeloCanal(canal, montarMensagemEntrega(logs, horasLimite));
     recordSystemLog({
       nivel: resultado.sucesso ? "aviso" : "erro",
       categoria: "notificacao",
       evento: "alerta_entrega",
-      titulo: `${logs.length} ${logs.length === 1 ? "envio requer" : "envios requerem"} atenção (${canal.nome})`,
+      titulo: `${logs.length} ${logs.length === 1 ? "envio aguarda" : "envios aguardam"} confirmação de entrega (${canal.nome})`,
       mensagem: resultado.sucesso
-        ? `O sistema detectou falha de envio ou mensagem não entregue e encaminhou o alerta pelo canal ${canal.nome}.`
-        : `O sistema detectou falha de envio ou mensagem não entregue, mas o canal ${canal.nome} não confirmou o recebimento do alerta.`,
+        ? `O sistema detectou acompanhamento sem confirmação de entrega e encaminhou o alerta pelo canal ${canal.nome}.`
+        : `O sistema detectou acompanhamento sem confirmação de entrega, mas o canal ${canal.nome} não confirmou o recebimento do alerta.`,
       origem: "automatico",
       detalhes: {
         tipo_verificacao: origemVerificacao,
-        regra_alerta: regraAlerta,
+        regra_alerta: "nao_entregue",
         horas_limite: horasLimite,
         detectado_em: new Date().toISOString(),
         canais: [resultado],
@@ -159,7 +146,7 @@ async function verificarEntregasPendentes(canais: CanalNotificacao[], origemVeri
       markNotificationDelivered("entrega", canal.nome, logs.map((log) => log.id));
       console.log(`[Notificações] Alerta enviado pela ${canal.nome} sobre ${logs.length} envio(s) com problema de entrega.`);
     }
-  }
+  }));
 }
 
 /**
@@ -168,9 +155,9 @@ async function verificarEntregasPendentes(canais: CanalNotificacao[], origemVeri
  */
 async function verificarRespostasPendentes(canais: CanalNotificacao[], origemVerificacao: OrigemVerificacao): Promise<void> {
   const horasLimite = lerHorasLimite("telegram_alerta_horas_resposta");
-  for (const canal of canais) {
+  await Promise.all(canais.map(async (canal) => {
     const pendentes = listPendingRepliesPendentesDeAlerta(horasLimite, canal.nome);
-    if (pendentes.length === 0) continue;
+    if (pendentes.length === 0) return;
 
     const resultado = await enviarPeloCanal(canal, montarMensagemResposta(pendentes, horasLimite));
     recordSystemLog({
@@ -202,18 +189,26 @@ async function verificarRespostasPendentes(canais: CanalNotificacao[], origemVer
       markNotificationDelivered("resposta", canal.nome, pendentes.map((p) => p.id));
       console.log(`[Notificações] Alerta enviado pela ${canal.nome} sobre ${pendentes.length} pendente(s) sem resposta.`);
     }
-  }
+  }));
 }
 
 /**
- * Verificação periódica combinada: dispara os dois alertas (entrega e resposta) acima em todos os
- * canais configurados. Roda de forma silenciosa se nenhum canal estiver configurado — a
- * funcionalidade é totalmente opcional.
+ * Verificação dos acompanhamentos ativos, com um alerta por tipo e por canal configurado.
+ * Uma execução anterior precisa terminar antes da próxima começar.
  */
+let verificacaoEmAndamento = false;
 export async function verificarNotificacoesPendentes(origemVerificacao: OrigemVerificacao = "periodica"): Promise<void> {
-  const canais = canaisConfigurados();
-  if (canais.length === 0) return;
-
-  await verificarEntregasPendentes(canais, origemVerificacao);
-  await verificarRespostasPendentes(canais, origemVerificacao);
+  if (verificacaoEmAndamento) return;
+  verificacaoEmAndamento = true;
+  try {
+    const canais = canaisConfigurados();
+    if (canais.length === 0) return;
+    await Promise.all([
+      verificarEntregasPendentes(canais, origemVerificacao),
+      verificarRespostasPendentes(canais, origemVerificacao),
+    ]);
+  } finally {
+    verificacaoEmAndamento = false;
+  }
 }
+

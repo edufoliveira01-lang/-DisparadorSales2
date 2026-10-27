@@ -161,49 +161,34 @@ export function updateLogAckByMessageId(whatsappMessageId: string, ack: number):
   return getByMessageIdStmt.get(params) as SendLog;
 }
 
-/**
- * Envios com problema de entrega ainda não notificados: falha no envio (alerta imediato) ou
- * "enviado" há mais de horasLimite horas sem confirmar entrega (ack ainda não chegou a 2).
- * Lembretes bem-sucedidos não entram na espera por confirmação: eles são mensagens informativas
- * e só geram alerta quando o próprio envio falha de fato.
- * Usado pela verificação periódica que avisa no Telegram.
- */
+/** Somente envios que ainda aparecem em Aguardando resposta e não chegaram a dois tiques.
+ * O ACK do pendente também conta: ele pode ter sido atualizado antes do log ou por outra
+ * representação do mesmo ID de mensagem. O histórico, por si só, nunca gera monitoramento. */
 export function listLogsPendentesDeAlerta(horasLimite: number, canal?: NotificationChannel): SendLog[] {
+  const criteria = `
+    FROM send_logs
+    JOIN pending_replies ON pending_replies.send_log_id = send_logs.id
+    WHERE pending_replies.status = 'aguardando'
+      AND send_logs.status = 'sucesso'
+      AND MAX(COALESCE(send_logs.ack, -1), COALESCE(pending_replies.ack, -1)) < 2
+      AND send_logs.created_at <= datetime('now', '-' || ? || ' hours')`;
   if (canal) {
     return db
       .prepare(
-        `SELECT * FROM send_logs
-         WHERE NOT EXISTS (
+        `SELECT send_logs.* ${criteria}
+           AND NOT EXISTS (
              SELECT 1 FROM notification_deliveries
              WHERE tipo = 'entrega' AND origem_id = send_logs.id AND canal = ?
            )
-           AND (
-             status = 'falha'
-             OR (
-               tipo_envio != 'lembrete'
-               AND status = 'sucesso'
-               AND (ack IS NULL OR ack < 2)
-               AND created_at <= datetime('now', '-' || ? || ' hours')
-             )
-           )
-         ORDER BY created_at ASC`
+         ORDER BY send_logs.created_at ASC`
       )
-      .all(canal, horasLimite) as SendLog[];
+      .all(horasLimite, canal) as SendLog[];
   }
   return db
     .prepare(
-      `SELECT * FROM send_logs
-       WHERE alerta_entrega_enviado_em IS NULL
-         AND (
-           status = 'falha'
-           OR (
-             tipo_envio != 'lembrete'
-             AND status = 'sucesso'
-             AND (ack IS NULL OR ack < 2)
-             AND created_at <= datetime('now', '-' || ? || ' hours')
-           )
-         )
-       ORDER BY created_at ASC`
+      `SELECT send_logs.* ${criteria}
+         AND send_logs.alerta_entrega_enviado_em IS NULL
+       ORDER BY send_logs.created_at ASC`
     )
     .all(horasLimite) as SendLog[];
 }
@@ -225,4 +210,5 @@ export function deleteLogs(ids: number[]): number {
   const info = db.prepare(`DELETE FROM send_logs WHERE id IN (${placeholders})`).run(...ids);
   return info.changes;
 }
+
 
