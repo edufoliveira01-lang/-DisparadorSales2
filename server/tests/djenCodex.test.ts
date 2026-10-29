@@ -130,6 +130,20 @@ describe("evidência e significado da classificação", () => {
       "Local da perícia não informado nesta publicação.",
     );
   });
+  it("classifica remarcação com nova data e horário anterior mantido sem inventar horário", () => {
+    const texto = "Perícia médica alterada para 17/12/2026 · horário anterior mantido, na Avenida dos Imigrantes, 1411.";
+    const revisao = analise(texto);
+    revisao.situacao = "Perícia médica remarcada";
+    const resultado = validarAnaliseCodex(revisao, texto);
+    expect(resultado.categorias).toContain("pericia");
+    expect(resultado.agendamento.data).toBe("17/12/2026");
+    expect(resultado.agendamento.horario).toBeNull();
+    expect(resultado.alertas.join(" ")).toMatch(/horário anterior mantido/);
+  });
+  it("não classifica uma perícia cancelada com menção à remarcação anterior", () => {
+    const texto = "Perícia médica alterada para 17/12/2026 · horário anterior mantido, agora cancelada.";
+    expect(validarAnaliseCodex(analise(texto), texto).categorias).not.toContain("pericia");
+  });
   it.each([
     "Após a juntada do laudo pericial, manifestem-se as partes.",
     "Não houve juntada do laudo pericial nos autos.",

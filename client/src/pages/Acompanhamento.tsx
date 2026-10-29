@@ -353,6 +353,17 @@ function PublicacoesConsulta() {
 }
 
 function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; onCloseDetail?: () => void } = {}) {
+  const { user } = useAuth();
+  const quickFiltersKey = `djen-quick-filters:${user.id}`;
+  const [quickFilters, setQuickFilters] = useState<string[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(quickFiltersKey) || "null");
+      if (Array.isArray(saved)) return [...new Set(saved.filter((key): key is string => typeof key === "string" && key in FILTROS))];
+    } catch { /* Usa os atalhos iniciais se o armazenamento estiver indisponível. */ }
+    return FILTROS_RAPIDOS.map(([key]) => key);
+  });
+  const [quickFiltersOpen, setQuickFiltersOpen] = useState(false);
+  const [quickFiltersDraft, setQuickFiltersDraft] = useState<string[]>([]);
   const [consultaAberta, setConsultaAberta] = useState(false);
   const [aguardandoAberto, setAguardandoAberto] = useState(false);
   const { pathname, search } = useLocation(),
@@ -418,6 +429,8 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     "resumo" | "publicacao" | "prazos" | "cliente" | "historico"
   >("resumo");
   const [detalhe, setDetalhe] = useState<Publicacao | null>(null),
+    [detalheAberto, setDetalheAberto] = useState(false),
+    [carregandoDetalhe, setCarregandoDetalhe] = useState(false),
     [contatos, setContatos] = useState<Contact[]>([]),
     [categorias, setCategorias] = useState<Categoria[]>([]),
     [resultado, setResultado] = useState<Resultado>("nao_identificado"),
@@ -659,15 +672,19 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
   }
   async function abrir(id: number) {
     const current = ++detailSeq.current;
+    setDetalhe(null);
+    setDetalheAberto(true);
+    setCarregandoDetalhe(true);
     try {
-      const [p, c] = await Promise.all([
-        api.get<Publicacao>(`/djen/publicacoes/${id}`),
-        api.get<Contact[]>("/contacts"),
-      ]);
+      // A lista de contatos pode ser grande; o painel não depende dela para abrir.
+      if (!contatos.length) void api.get<Contact[]>("/contacts").then((contacts) => {
+        if (current === detailSeq.current) setContatos(contacts);
+      }).catch(() => { /* A aba de cliente pode ser recarregada na próxima abertura. */ });
+      const p = await api.get<Publicacao>(`/djen/publicacoes/${id}`);
       if (current !== detailSeq.current) return;
       setDetalhe(p);
+      setCarregandoDetalhe(false);
       setAbaDetalhe("resumo");
-      setContatos(c);
       setRevisaoAlterada(false);
       setCategorias(p.categorias);
       setSituacao(p.situacao || "");
@@ -676,11 +693,15 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
         cliente_id: p.cliente_id ? String(p.cliente_id) : "",
         observacoes: p.observacoes || "",
       });
-      await api.post(`/djen/publicacoes/${id}/lida`);
-      if (!detailId) void carregarLista();
-      void carregarStatus();
+      void api.post(`/djen/publicacoes/${id}/lida`).then(() => {
+        if (current !== detailSeq.current) return;
+        if (!detailId) void carregarLista();
+        void carregarStatus();
+      }).catch((error) => { if (current === detailSeq.current) show(erro(error), "error"); });
     } catch (e) {
       if (current !== detailSeq.current) return;
+      setCarregandoDetalhe(false);
+      setDetalheAberto(false);
       show(erro(e), "error");
       if (detailId) onCloseDetail?.();
     }
@@ -768,7 +789,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     void abrir(detailId);
     return () => { detailSeq.current++; };
   }, [detailId]);
-  function fecharDetalhe() { if (!salvando) { detailSeq.current++; setDetalhe(null); onCloseDetail?.(); } }
+  function fecharDetalhe() { if (!salvando) { detailSeq.current++; setDetalheAberto(false); setCarregandoDetalhe(false); setDetalhe(null); onCloseDetail?.(); } }
   const conteudoAguardando = (
         <div className="space-y-4">
           <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-5 dark:border-amber-900 dark:bg-amber-950/20">
@@ -882,12 +903,23 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
       {secao === "publicacoes" && (
         <nav className="process-quick-filters" aria-label="Filtros rápidos de publicações">
           <button type="button" aria-pressed={!filtro.categoria} onClick={() => filtrar("categoria", "")}>Todos</button>
-          {FILTROS_RAPIDOS.map(([categoria, label]) => (
+          {quickFilters.map((categoria) => (
             <button key={categoria} type="button" aria-pressed={filtro.categoria.split(",").includes(categoria)}
-              onClick={() => filtrar("categoria", filtro.categoria === categoria ? "" : categoria)}>{label}</button>
+              onClick={() => filtrar("categoria", filtro.categoria === categoria ? "" : categoria)}>{FILTROS[categoria as keyof typeof FILTROS]}</button>
           ))}
+          <button type="button" className="quick-filter-add" aria-label="Personalizar filtros rápidos" title="Adicionar ou organizar filtros rápidos" onClick={() => { setQuickFiltersDraft(quickFilters); setQuickFiltersOpen(true); }}><Plus className="h-4 w-4" /></button>
         </nav>
       )}
+      <Modal open={quickFiltersOpen} onClose={() => setQuickFiltersOpen(false)} title="Personalizar filtros rápidos" description="Escolha as categorias que deseja ver abaixo do título.">
+        <div className="space-y-3">
+          {(Object.entries(FILTROS) as [string, string][]).map(([key, label]) => (
+            <label key={key} className="flex cursor-pointer items-center gap-3 rounded-xl border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-700">
+              <input type="checkbox" checked={quickFiltersDraft.includes(key)} onChange={() => setQuickFiltersDraft((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key])} />{label}
+            </label>
+          ))}
+          <div className="flex justify-end gap-2 pt-2"><Button variant="outline" onClick={() => setQuickFiltersOpen(false)}>Cancelar</Button><Button onClick={() => { setQuickFilters(quickFiltersDraft); try { localStorage.setItem(quickFiltersKey, JSON.stringify(quickFiltersDraft)); } catch { /* A preferência permanece até recarregar. */ } setQuickFiltersOpen(false); }}>Salvar atalhos</Button></div>
+        </div>
+      </Modal>
       {falha && (
         <p
           role="alert"
@@ -1882,7 +1914,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
         </div>
       </Modal>
       <Modal
-        open={Boolean(detalhe) && !mensagem}
+        open={detalheAberto && !mensagem}
         onClose={fecharDetalhe}
         title="Processo · detalhes e próximos passos"
         maxWidth="max-w-4xl"
@@ -1893,7 +1925,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
             </Button>
             <Button
               onClick={() => void acao(compor)}
-              disabled={salvando || Boolean(detalhe?.cancelada)}
+              disabled={salvando || !detalhe || Boolean(detalhe?.cancelada)}
             >
               <Send className="h-3.5 w-3.5" />
               Avisar cliente pelo WhatsApp
@@ -1901,6 +1933,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
           </>
         }
       >
+        {carregandoDetalhe && <div role="status" className="flex items-center gap-3 rounded-xl bg-accent-50 p-5 text-sm text-accent-700 dark:bg-accent-950/30 dark:text-accent-200"><RefreshCw className="h-4 w-4 animate-spin" />Abrindo detalhes do processo…</div>}
         {detalhe && (
           <div className="space-y-5">
             {Boolean(detalhe.relacionadas_total && detalhe.relacionadas_total > 1) && (
