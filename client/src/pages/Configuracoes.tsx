@@ -47,6 +47,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { useTheme } from "@/context/ThemeContext";
 import { cn } from "@/lib/utils";
 import { GoogleCalendarSettings } from "@/components/GoogleCalendarSettings";
+import { LoginBrandingSettings } from "@/components/LoginBrandingSettings";
+import { useAuth } from "@/context/AuthContext";
 
 interface TrelloBoard {
   id: string;
@@ -83,6 +85,7 @@ const STATUS_LABEL: Record<WhatsappState["status"], string> = {
 };
 
 export function Configuracoes() {
+  const { user } = useAuth();
   const { search: settingsSearch } = useLocation();
   const { show } = useToast();
   const { theme, setTheme } = useTheme();
@@ -512,6 +515,7 @@ export function Configuracoes() {
               ))}
             </div>
           </div>
+          {user.role === "administrador" && <LoginBrandingSettings />}
         </CardContent>
       </Card></section>
 

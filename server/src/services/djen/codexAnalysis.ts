@@ -18,6 +18,7 @@ import {
   type ContextoPublicacao,
 } from "./classifier";
 import { registrarHistoricoDjen } from "./history";
+import { versaoExemplosClassificacao } from "./teaching";
 
 let timer: ReturnType<typeof setInterval> | null = null;
 const atuais = new Map<number, AbortController>();
@@ -197,6 +198,7 @@ function chaveCache(p: Tarefa) {
     .update(
       JSON.stringify([
         VERSAO_CLASSIFICADOR,
+        versaoExemplosClassificacao(),
         p.tipo_documento,
         p.classe,
         p.processo,
@@ -214,7 +216,7 @@ function lerCache(p: Tarefa): AnaliseCodex | null {
     .prepare(
       "SELECT analise_json FROM djen_analise_cache WHERE chave=? AND versao=?",
     )
-    .get(chave, VERSAO_CLASSIFICADOR) as { analise_json: string } | undefined;
+    .get(chave, `${VERSAO_CLASSIFICADOR}:${versaoExemplosClassificacao()}`) as { analise_json: string } | undefined;
   if (!row) return null;
   try {
     return validarAnaliseCodex(
@@ -232,7 +234,7 @@ function gravarCache(p: Tarefa, analise: AnaliseCodex) {
   db.prepare(
     `INSERT INTO djen_analise_cache(chave,versao,analise_json) VALUES (?,?,?)
      ON CONFLICT(chave) DO UPDATE SET versao=excluded.versao,analise_json=excluded.analise_json,updated_at=CURRENT_TIMESTAMP`,
-  ).run(chaveCache(p), VERSAO_CLASSIFICADOR, JSON.stringify(analise));
+  ).run(chaveCache(p), `${VERSAO_CLASSIFICADOR}:${versaoExemplosClassificacao()}`, JSON.stringify(analise));
 }
 
 function registrarCache(p: Tarefa) {

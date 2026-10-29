@@ -64,6 +64,7 @@ import {
 import { listarAguardandoMovimentacao, atualizarAguardandoMovimentacao } from "../services/djen/followUp";
 import { listarObrigacoesExternas, atualizarObrigacaoExterna } from "../services/djen/externalFollowUp";
 import { concluirProcessosSelecionados } from "../services/djen/bulk";
+import { criarExemploClassificacao, excluirExemploClassificacao, listarExemplosClassificacao } from "../services/djen/teaching";
 import {
   listarKanban, criarListaKanban, alterarListaKanban, ordenarListasKanban,
   excluirListaKanban, moverCartaoKanban, ativarClassificacaoAutomatica, fixarEtapaManual,
@@ -161,6 +162,16 @@ djenRouter.get(
   "/codex/conexao",
   wrap(async (_req, res) => res.json(await verificarConexaoCodex(true))),
 );
+const somenteAdministrador: import("express").RequestHandler = (req, res, next) => req.accessUser?.role === "administrador"
+  ? next() : res.status(403).json({ error: "Somente o administrador pode gerenciar exemplos do Codex." });
+djenRouter.get("/codex/exemplos", somenteAdministrador, wrap((_req, res) => res.json(listarExemplosClassificacao())));
+djenRouter.post("/codex/exemplos", somenteAdministrador, wrap((req, res) => {
+  const exemplo = criarExemploClassificacao(req.body || {}, req.accessUser!.id);
+  changed(); res.status(201).json(exemplo);
+}));
+djenRouter.delete("/codex/exemplos/:id", somenteAdministrador, wrap((req, res) => {
+  excluirExemploClassificacao(id(req.params.id)); changed(); res.json({ ok: true });
+}));
 djenRouter.post(
   "/codex/reanalisar",
   wrap((_req, res) => res.status(202).json(enfileirarAnaliseCodex())),

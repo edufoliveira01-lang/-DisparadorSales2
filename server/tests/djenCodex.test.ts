@@ -31,6 +31,7 @@ import {
   detalhesPublicacao,
 } from "../src/services/djen/store";
 import { normalizarPublicacao } from "../src/services/djen/api";
+import { criarExemploClassificacao, excluirExemploClassificacao, instrucaoExemplosClassificacao, versaoExemplosClassificacao } from "../src/services/djen/teaching";
 import {
   iniciarMonitorCodex,
   pararMonitorCodex,
@@ -87,7 +88,7 @@ function importar(texto = laudo) {
 }
 beforeEach(() => {
   db.exec(
-    "DELETE FROM djen_mensagens;DELETE FROM djen_publicacao_advogados;DELETE FROM djen_publicacoes;DELETE FROM djen_processos;DELETE FROM djen_advogados;DELETE FROM djen_analise_cache;DELETE FROM djen_codex_execucoes;UPDATE djen_config SET ia_ativa=0,ia_pausa=NULL,ia_modo='economico';",
+    "DELETE FROM djen_exemplos_classificacao;DELETE FROM djen_mensagens;DELETE FROM djen_publicacao_advogados;DELETE FROM djen_publicacoes;DELETE FROM djen_processos;DELETE FROM djen_advogados;DELETE FROM djen_analise_cache;DELETE FROM djen_codex_execucoes;UPDATE djen_config SET ia_ativa=0,ia_pausa=NULL,ia_modo='economico';",
   );
   runner.analisarComCodex.mockReset();
   runner.analisarLoteComCodex.mockReset();
@@ -97,6 +98,20 @@ afterEach(() => {
   pararMonitorCodex();
 });
 describe("evidência e significado da classificação", () => {
+  it("aceita somente exemplo com revisão e trecho literal; invalida o cache ao editar exemplos", () => {
+    const texto = "Perícia médica alterada para 17/12/2026 · horário anterior mantido.";
+    const { id } = importar(texto);
+    const input = { publicacao_id: id, categoria: "pericia", trecho: texto, orientacao: "A remarcação confirma a nova data, mas exige conferir o horário original." };
+    expect(() => criarExemploClassificacao(input, 1)).toThrow(/Revise/);
+    revisarPublicacao(id, { categorias: ["pericia"], resultado: "nao_identificado" });
+    expect(() => criarExemploClassificacao({ ...input, trecho: "Trecho inventado para classificar uma perícia" }, 1)).toThrow(/literalmente/);
+    const before = versaoExemplosClassificacao();
+    const example = criarExemploClassificacao(input, 1);
+    expect(versaoExemplosClassificacao()).not.toBe(before);
+    expect(instrucaoExemplosClassificacao()).toContain(input.orientacao);
+    excluirExemploClassificacao(example.id);
+    expect(versaoExemplosClassificacao()).toBe(before);
+  });
   it("recusa citação inventada pelo modelo", () => {
     expect(() =>
       validarAnaliseCodex(

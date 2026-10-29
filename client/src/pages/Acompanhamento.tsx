@@ -46,6 +46,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Pagination } from "@/components/ui/Pagination";
 import { useAuth } from "@/context/AuthContext";
+import { CodexTeaching } from "@/components/djen/CodexTeaching";
 
 const TIPOS = {
   sentenca: "Sentença de mérito",
@@ -431,6 +432,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
   const [detalhe, setDetalhe] = useState<Publicacao | null>(null),
     [detalheAberto, setDetalheAberto] = useState(false),
     [carregandoDetalhe, setCarregandoDetalhe] = useState(false),
+    [previaDetalhe, setPreviaDetalhe] = useState<Publicacao | null>(null),
     [contatos, setContatos] = useState<Contact[]>([]),
     [categorias, setCategorias] = useState<Categoria[]>([]),
     [resultado, setResultado] = useState<Resultado>("nao_identificado"),
@@ -455,6 +457,20 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     [enviando, setEnviando] = useState(false);
   const seq = useRef(0),
     detailSeq = useRef(0);
+  const prefetchRef = useRef(new Map<number, { request: Promise<Publicacao>; started: number }>());
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function carregarDetalhe(id: number) {
+    const cached = prefetchRef.current.get(id);
+    if (cached && Date.now() - cached.started < 15_000) return cached.request;
+    const request = api.get<Publicacao>(`/djen/publicacoes/${id}`);
+    prefetchRef.current.set(id, { request, started: Date.now() });
+    void request.catch(() => prefetchRef.current.delete(id));
+    return request;
+  }
+  function anteciparDetalhe(id: number) {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => { void carregarDetalhe(id).catch(() => {}); }, 150);
+  }
   const carregarStatus = useCallback(async () => {
     const data = await api.get<Status>("/djen/status");
     setStatus(data);
@@ -673,6 +689,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
   async function abrir(id: number) {
     const current = ++detailSeq.current;
     setDetalhe(null);
+    setPreviaDetalhe(items.find((p) => p.id === id) || null);
     setDetalheAberto(true);
     setCarregandoDetalhe(true);
     try {
@@ -680,9 +697,10 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
       if (!contatos.length) void api.get<Contact[]>("/contacts").then((contacts) => {
         if (current === detailSeq.current) setContatos(contacts);
       }).catch(() => { /* A aba de cliente pode ser recarregada na próxima abertura. */ });
-      const p = await api.get<Publicacao>(`/djen/publicacoes/${id}`);
+      const p = await carregarDetalhe(id);
       if (current !== detailSeq.current) return;
       setDetalhe(p);
+      setPreviaDetalhe(null);
       setCarregandoDetalhe(false);
       setAbaDetalhe("resumo");
       setRevisaoAlterada(false);
@@ -789,7 +807,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     void abrir(detailId);
     return () => { detailSeq.current++; };
   }, [detailId]);
-  function fecharDetalhe() { if (!salvando) { detailSeq.current++; setDetalheAberto(false); setCarregandoDetalhe(false); setDetalhe(null); onCloseDetail?.(); } }
+  function fecharDetalhe() { if (!salvando) { detailSeq.current++; if (detalhe) prefetchRef.current.delete(detalhe.id); setDetalheAberto(false); setCarregandoDetalhe(false); setDetalhe(null); setPreviaDetalhe(null); onCloseDetail?.(); } }
   const conteudoAguardando = (
         <div className="space-y-4">
           <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-5 dark:border-amber-900 dark:bg-amber-950/20">
@@ -1031,6 +1049,9 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                   role="button"
                   tabIndex={0}
                   aria-label={`Abrir processo ${p.processo}`}
+                  onPointerEnter={() => anteciparDetalhe(p.id)}
+                  onPointerLeave={() => { if (hoverTimer.current) clearTimeout(hoverTimer.current); }}
+                  onFocus={(e) => { if (e.target === e.currentTarget) anteciparDetalhe(p.id); }}
                   onClick={(e) => {
                     if (
                       !(e.target as HTMLElement).closest("button,a,input,label")
@@ -1556,6 +1577,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
               </div>
             )}
           </section>
+          {user.role === "administrador" && <CodexTeaching />}
           <section className="surface-panel p-5">
             <h2 className="text-sm font-semibold">
               Últimas consultas (5 mais recentes)
@@ -1933,7 +1955,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
           </>
         }
       >
-        {carregandoDetalhe && <div role="status" className="flex items-center gap-3 rounded-xl bg-accent-50 p-5 text-sm text-accent-700 dark:bg-accent-950/30 dark:text-accent-200"><RefreshCw className="h-4 w-4 animate-spin" />Abrindo detalhes do processo…</div>}
+        {carregandoDetalhe && <div role="status" className="space-y-3 rounded-xl bg-accent-50 p-5 text-sm text-accent-700 dark:bg-accent-950/30 dark:text-accent-200"><p className="flex items-center gap-3"><RefreshCw className="h-4 w-4 animate-spin" />Carregando histórico e ações do processo…</p>{previaDetalhe && <div className="space-y-2 border-t border-accent-200 pt-3 dark:border-accent-800"><strong className="block">{previaDetalhe.cliente_exibicao || previaDetalhe.processo}</strong><p>Processo {previaDetalhe.processo}</p><p>{previaDetalhe.situacao}</p><p className="whitespace-pre-line text-zinc-600 dark:text-zinc-300">{previaDetalhe.resumo}</p></div>}</div>}
         {detalhe && (
           <div className="space-y-5">
             {Boolean(detalhe.relacionadas_total && detalhe.relacionadas_total > 1) && (
@@ -1946,7 +1968,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                    Processo
+                    Processo · publicação #{detalhe.id}
                   </p>
                   <h3 className="mt-1 break-all text-base font-semibold">
                     {detalhe.processo || "Processo não informado"}
@@ -2414,6 +2436,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                     ? "Classificação revisada"
                     : "Aguardando revisão"}
                 </Badge>
+                {user.role === "administrador" && Boolean(detalhe.revisada) && !revisaoAlterada && <Link className="text-xs font-medium text-violet-700 underline underline-offset-2 dark:text-violet-300" to={`/processos/monitoramento?exemplo=${detalhe.id}`} onClick={() => { detailSeq.current++; setDetalheAberto(false); setDetalhe(null); }}>Usar esta revisão como exemplo para o Codex</Link>}
               </div>
             </details>
             )}

@@ -132,6 +132,15 @@ export function runDjenMigrations(db: Database.Database): void {
       chave TEXT PRIMARY KEY, versao TEXT NOT NULL, analise_json TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS djen_exemplos_classificacao (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      publicacao_id INTEGER NOT NULL REFERENCES djen_publicacoes(id) ON DELETE CASCADE,
+      categoria TEXT NOT NULL,
+      trecho TEXT NOT NULL,
+      orientacao TEXT NOT NULL,
+      criado_por INTEGER,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
     CREATE TABLE IF NOT EXISTS djen_codex_execucoes (
       id INTEGER PRIMARY KEY AUTOINCREMENT, modelo TEXT NOT NULL, esforco TEXT NOT NULL,
       modo TEXT NOT NULL, itens INTEGER NOT NULL, caracteres INTEGER NOT NULL,

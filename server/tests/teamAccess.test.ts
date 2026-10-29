@@ -6,6 +6,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { db } from "../src/db";
 import { authRouter } from "../src/routes/auth";
 import { teamRouter } from "../src/routes/team";
+import { djenRouter } from "../src/routes/djen";
 import { authenticatedApi } from "../src/middleware/access";
 import { hashPassword } from "../src/services/authService";
 
@@ -14,6 +15,7 @@ app.use(cookieParser(), express.json());
 app.use("/api/auth", authRouter);
 app.use("/api", authenticatedApi);
 app.use("/api/team", teamRouter);
+app.use("/api/djen", djenRouter);
 app.get("/api/settings", (_req, res) => res.json({ secret: true }));
 app.get("/api/contacts", (_req, res) => res.json([]));
 const server = createServer(app);
@@ -43,6 +45,8 @@ describe("equipe e controle de acesso", () => {
     expect((await request("/contacts", {}, cookie)).status).toBe(200);
     expect((await request("/settings", {}, cookie)).status).toBe(403);
     expect((await request("/team", {}, cookie)).status).toBe(403);
+    expect((await request("/djen/codex/exemplos", {}, cookie)).status).toBe(403);
+    expect((await request("/djen/codex/exemplos", {}, adminCookie)).status).toBe(200);
     expect((await request("/team", {}, "")).status).toBe(401);
     const disabled = await request(`/team/${person.id}`, { method: "PUT", body: JSON.stringify({ active: false }) }, adminCookie);
     expect(disabled.status).toBe(200);
