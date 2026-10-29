@@ -403,6 +403,7 @@ const TEMPO_PARA_CONSIDERAR_CONEXAO_ESTAVEL_MS = 2 * 60 * 1000;
 const TEMPO_LIMITE_APOS_AUTENTICAR_MS = 3 * 60 * 1000;
 const INTERVALO_SAUDE_WHATSAPP_MS = 45 * 1000;
 const INTERVALO_CONFERENCIA_ENTREGA_MS = 2 * 60 * 1000;
+const INTERVALO_CONFERENCIA_RESPOSTA_MS = 30 * 1000;
 const INTERVALO_RETOMADA_SESSAO_MS = 2 * 60 * 1000;
 
 type Listener = () => void;
@@ -506,7 +507,10 @@ class WhatsappManager {
   private estabilidadeTimer: ReturnType<typeof setTimeout> | null = null;
   private monitorSaudeTimer: ReturnType<typeof setInterval> | null = null;
   private conferenciaEntregaTimer: ReturnType<typeof setInterval> | null = null;
+  private conferenciaRespostaTimer: ReturnType<typeof setInterval> | null = null;
   private conferindoEntregas = false;
+  private conferindoRespostas = false;
+  private proximoPendenteConferido = 0;
   private ultimoLogConferido = 0;
   private retomadaTimer: ReturnType<typeof setTimeout> | null = null;
   private falhasSaude = 0;
@@ -614,6 +618,8 @@ class WhatsappManager {
     this.monitorSaudeTimer = null;
     if (this.conferenciaEntregaTimer) clearInterval(this.conferenciaEntregaTimer);
     this.conferenciaEntregaTimer = null;
+    if (this.conferenciaRespostaTimer) clearInterval(this.conferenciaRespostaTimer);
+    this.conferenciaRespostaTimer = null;
     this.falhasSaude = 0;
   }
 
@@ -641,13 +647,41 @@ class WhatsappManager {
   }
 
   private iniciarConferenciaEntrega(client: Client): void {
+    if (this.conferenciaEntregaTimer) clearInterval(this.conferenciaEntregaTimer);
+    if (this.conferenciaRespostaTimer) clearInterval(this.conferenciaRespostaTimer);
     this.ultimoLogConferido = 0;
+    this.proximoPendenteConferido = 0;
     this.conferenciaEntregaTimer = setInterval(() => {
       void this.conferirEntregasRecentes(client);
     }, INTERVALO_CONFERENCIA_ENTREGA_MS);
     this.conferenciaEntregaTimer.unref();
     const inicial = setTimeout(() => void this.conferirEntregasRecentes(client), 15000);
     inicial.unref();
+    this.conferenciaRespostaTimer = setInterval(() => {
+      void this.conferirRespostasPendentes(client);
+    }, INTERVALO_CONFERENCIA_RESPOSTA_MS);
+    this.conferenciaRespostaTimer.unref();
+    const primeiraResposta = setTimeout(() => void this.conferirRespostasPendentes(client), 10000);
+    primeiraResposta.unref();
+  }
+
+  /** Recupera respostas cujo evento em tempo real não chegou ao servidor. */
+  private async conferirRespostasPendentes(client: Client): Promise<void> {
+    if (this.conferindoRespostas || this.client !== client || this.status !== "conectado") return;
+    this.conferindoRespostas = true;
+    try {
+      const pendentes = listPendingReplies().filter((item) => item.status === "aguardando");
+      if (!pendentes.length) { this.proximoPendenteConferido = 0; return; }
+      const inicio = this.proximoPendenteConferido % pendentes.length;
+      const quantidade = Math.min(5, pendentes.length);
+      for (let i = 0; i < quantidade; i++) {
+        if (this.client !== client || this.status !== "conectado") break;
+        const pendente = pendentes[(inicio + i) % pendentes.length];
+        try { await this.verificarMensagemPerdida(client, pendente); }
+        catch (error) { console.warn(`[WhatsApp] Falha ao conferir resposta do acompanhamento ${pendente.id}:`, error); }
+      }
+      this.proximoPendenteConferido = (inicio + quantidade) % pendentes.length;
+    } finally { this.conferindoRespostas = false; }
   }
 
   /** Sessões salvas voltam a tentar conectar mesmo após esgotar as tentativas rápidas. */
@@ -1915,6 +1949,22 @@ class WhatsappManager {
           ?? this.findPendingReplyByChatId(contato.number);
       } catch {
         // Nem toda mensagem permite carregar o contato; o evento continua sendo ignorado sem erro.
+      }
+    }
+
+    // Após migração para @lid, nem o chat nem o contato necessariamente expõem o telefone.
+    // O ID da mensagem enviada dentro desta conversa fornece um vínculo inequívoco.
+    if (!pending) {
+      try {
+        const aguardando = listPendingReplies().filter((item) => item.status === "aguardando" && item.whatsapp_message_id);
+        if (aguardando.length) {
+          const chat = await message.getChat();
+          const recentes = await chat.fetchMessages({ limit: 40 });
+          const idsEnviados = new Set(recentes.filter((item) => item.fromMe).flatMap((item) => whatsappMessageIdCandidates(item.id).map(whatsappMessageStableKey)));
+          pending = aguardando.find((item) => item.whatsapp_message_id && idsEnviados.has(whatsappMessageStableKey(item.whatsapp_message_id)) && message.timestamp * 1000 >= new Date(`${item.created_at.replace(" ", "T")}Z`).getTime());
+        }
+      } catch (error) {
+        console.warn("[WhatsApp] Não foi possível comparar a conversa com a mensagem enviada:", error);
       }
     }
 

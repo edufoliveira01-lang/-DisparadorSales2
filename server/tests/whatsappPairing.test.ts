@@ -35,6 +35,7 @@ vi.mock("whatsapp-web.js", async () => {
   };
 });
 import { whatsappManager } from "../src/services/whatsappService";
+import { db } from "../src/db";
 import * as profile from "../src/services/whatsappProfile";
 interface FakeClient extends EventEmitter {
   getState: ReturnType<typeof vi.fn>;
@@ -50,6 +51,8 @@ const manager = whatsappManager as unknown as {
   iniciarTentativa: (g: number) => Promise<void>;
   iniciarTentativaSegura: (g: number) => void;
   reconciliarPendentesAoReconectar: () => Promise<void>;
+  resolvePendingReplyForMessage: (message: unknown) => Promise<void>;
+  conferirRespostasPendentes: (client: unknown) => Promise<void>;
   recuperarBrowserTravado: (motivo: string) => Promise<void>;
   usarVersaoAtual: boolean;
   recuperarPerfilNaFalha: boolean;
@@ -92,6 +95,46 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 describe("pareamento por QR e sincronização do WhatsApp", () => {
+  it("identifica resposta após migração do chat para LID pelo ID do envio original", async () => {
+    const cardId = `TESTE-RESPOSTA-LID-${Date.now()}`;
+    const originalId = `true_5511999998888@c.us_${Date.now()}ABC`;
+    const info = db.prepare(`INSERT INTO pending_replies
+      (card_id,card_nome,telefone,telefone_digits,whatsapp_chat_id,whatsapp_message_id,status,created_at)
+      VALUES (?,'CLIENTE TESTE','(11) 99999-8888','5511999998888','5511999998888@c.us',?,'aguardando',datetime('now','-1 minute'))`).run(cardId, originalId);
+    try {
+      const mensagem = {
+        from: "987654321@lid", fromMe: false, hasQuotedMsg: false, body: "recebi",
+        timestamp: Math.floor(Date.now() / 1000),
+        getContact: vi.fn(async () => ({ id: { _serialized: "987654321@lid" }, number: "987654321" })),
+        getChat: vi.fn(async () => ({ fetchMessages: vi.fn(async () => [
+          { fromMe: true, id: { _serialized: originalId } },
+        ]) })),
+      };
+      await manager.resolvePendingReplyForMessage(mensagem);
+      expect(db.prepare("SELECT status,resposta_preview FROM pending_replies WHERE id=?").get(info.lastInsertRowid))
+        .toEqual({ status: "respondido", resposta_preview: "recebi" });
+    } finally { db.prepare("DELETE FROM pending_replies WHERE id=?").run(info.lastInsertRowid); }
+  });
+  it("recupera resposta recebida quando o evento do WhatsApp não chegou", async () => {
+    const cardId = `TESTE-RESPOSTA-RECUPERADA-${Date.now()}`;
+    const info = db.prepare(`INSERT INTO pending_replies
+      (card_id,card_nome,telefone,telefone_digits,whatsapp_chat_id,status,ack,created_at)
+      VALUES (?,'CLIENTE TESTE','(11) 99999-8888','5511999998888','5511999998888@c.us','aguardando',2,datetime('now','-1 minute'))`).run(cardId);
+    try {
+      client.emit("ready");
+      const fake = client as FakeClient & {
+        getNumberId: ReturnType<typeof vi.fn>;
+        getChatById: ReturnType<typeof vi.fn>;
+      };
+      fake.getNumberId = vi.fn(async () => null);
+      fake.getChatById = vi.fn(async () => ({ fetchMessages: vi.fn(async () => [
+        { fromMe: false, timestamp: Math.floor(Date.now() / 1000), body: "recebi" },
+      ]) }));
+      await manager.conferirRespostasPendentes(client);
+      expect(db.prepare("SELECT status,resposta_preview FROM pending_replies WHERE id=?").get(info.lastInsertRowid))
+        .toEqual({ status: "respondido", resposta_preview: "recebi" });
+    } finally { db.prepare("DELETE FROM pending_replies WHERE id=?").run(info.lastInsertRowid); }
+  });
   it("cada nova tentativa recebe dois minutos completos para iniciar", async () => {
     await vi.advanceTimersByTimeAsync(90000);
     client.rejectInitialize(new Error("Waiting failed: 90000ms exceeded"));

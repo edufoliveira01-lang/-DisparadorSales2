@@ -23,6 +23,7 @@ import { formatPhoneDisplay } from "@/lib/phone";
 import type { PendingReply } from "@/lib/types";
 import { useToast } from "@/components/ui/Toast";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
+import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 import { AckIndicator } from "@/components/AckIndicator";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/Button";
@@ -108,7 +109,7 @@ export function PendentesResposta() {
     carregar();
   }, [carregar]);
 
-  useSocketEvent("pendingReply:resolved", carregar);
+  useRealtimeRefresh(carregar, ["pendingReply:resolved"]);
   useSocketEvent<PendingReply>("pendingReply:ack-update", (atualizado) => {
     setPendentes((prev) => (prev ? prev.map((item) => (item.id === atualizado.id ? atualizado : item)) : prev));
   });
