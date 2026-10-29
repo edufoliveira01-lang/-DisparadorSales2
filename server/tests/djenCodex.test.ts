@@ -104,7 +104,8 @@ describe("evidência e significado da classificação", () => {
     const input = { publicacao_id: id, categoria: "pericia", trecho: texto, orientacao: "A remarcação confirma a nova data, mas exige conferir o horário original." };
     expect(() => criarExemploClassificacao(input, 1)).toThrow(/Revise/);
     revisarPublicacao(id, { categorias: ["pericia"], resultado: "nao_identificado" });
-    expect(() => criarExemploClassificacao({ ...input, trecho: "Trecho inventado para classificar uma perícia" }, 1)).toThrow(/literalmente/);
+    expect(() => criarExemploClassificacao({ ...input, categoria: "acordao" }, 1)).toThrow(/não está na revisão/);
+    expect(() => criarExemploClassificacao({ ...input, trecho: "Trecho inventado para classificar uma perícia" }, 1)).toThrow(/não coincide/);
     const before = versaoExemplosClassificacao();
     const example = criarExemploClassificacao(input, 1);
     expect(versaoExemplosClassificacao()).not.toBe(before);

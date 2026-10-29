@@ -26,8 +26,10 @@ export function criarExemploClassificacao(input: Record<string, unknown>, actorI
   const p = db.prepare("SELECT texto,categorias_json,revisada FROM djen_publicacoes WHERE id=? AND cancelada=0").get(id) as { texto: string; categorias_json: string; revisada: number } | undefined;
   if (!p || !p.revisada) throw new DjenInputError("Revise a classificação desta publicação antes de usá-la como exemplo.");
   const categorias = JSON.parse(p.categorias_json) as string[];
-  if (!p.texto.includes(trecho) || (categoria === "outros" ? categorias.length !== 0 : !categorias.includes(categoria)))
-    throw new DjenInputError("O trecho deve constar literalmente na publicação e a categoria deve corresponder à revisão salva.");
+  if (categoria === "outros" ? categorias.length !== 0 : !categorias.includes(categoria))
+    throw new DjenInputError(`A categoria ${categoria} não está na revisão salva desta publicação. Abra o processo, ajuste a classificação e salve a revisão antes de criar o exemplo.`);
+  if (!p.texto.includes(trecho))
+    throw new DjenInputError("O trecho não coincide com o texto capturado. Selecione e copie as palavras diretamente do inteiro teor desta publicação.");
   if ((db.prepare("SELECT COUNT(*) AS n FROM djen_exemplos_classificacao").get() as { n: number }).n >= 30)
     throw new DjenInputError("Limite de 30 exemplos. Remova um exemplo antigo para continuar.");
   const result = db.prepare("INSERT INTO djen_exemplos_classificacao(publicacao_id,categoria,trecho,orientacao,criado_por) VALUES (?,?,?,?,?)").run(id, categoria, trecho, orientacao, actorId);
