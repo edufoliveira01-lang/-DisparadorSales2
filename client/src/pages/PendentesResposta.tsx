@@ -36,6 +36,7 @@ import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { useAuth } from "@/context/AuthContext";
 import { StatCard } from "@/components/ui/StatCard";
 
 const ITENS_POR_PAGINA = 20;
@@ -77,6 +78,9 @@ function formatarData(item: PendingReply): string {
 }
 
 export function PendentesResposta() {
+  const { can } = useAuth();
+  const canManage = can("pending.manage");
+  const canSend = can("messages.send");
   const { show } = useToast();
   const [pendentes, setPendentes] = useState<PendingReply[] | null>(null);
   const [processando, setProcessando] = useState<number | null>(null);
@@ -340,7 +344,7 @@ export function PendentesResposta() {
         </p>
       </section>
 
-      {selecionados.size > 0 && (
+      {canManage && selecionados.size > 0 && (
         <div className="flex flex-col gap-3 rounded-xl border border-accent-200 bg-accent-50 px-4 py-3 dark:border-accent-900 dark:bg-accent-900/20 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm font-medium text-accent-800 dark:text-accent-300">{selecionados.size} registro(s) selecionado(s)</p>
           <div className="grid grid-cols-2 gap-2 sm:flex">
@@ -368,21 +372,21 @@ export function PendentesResposta() {
         />
       ) : (
         <WorkspacePanel title="Clientes aguardando retorno" description="Confirme o recebimento, cobre uma resposta ou finalize a espera."
-          aside={<label className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400"><Checkbox checked={aguardandoPaginado.length > 0 && aguardandoPaginado.every(item => selecionados.has(item.id))} onChange={() => alternarSelecionarTodos(aguardandoPaginado)} />Selecionar esta página</label>}
+          aside={canManage ? <label className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400"><Checkbox checked={aguardandoPaginado.length > 0 && aguardandoPaginado.every(item => selecionados.has(item.id))} onChange={() => alternarSelecionarTodos(aguardandoPaginado)} />Selecionar esta página</label> : undefined}
           footer={<Pagination page={paginaAguardando} totalItems={aguardando.length} pageSize={ITENS_POR_PAGINA} onPageChange={setPaginaAguardando} />}
         >
           {aguardandoPaginado.map(item => <WorkspaceRow key={item.id} selected={selecionados.has(item.id)}
-            selection={<Checkbox aria-label={`Selecionar ${item.card_nome || "cliente"}`} checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} />}
+            selection={canManage ? <Checkbox aria-label={`Selecionar ${item.card_nome || "cliente"}`} checked={selecionados.has(item.id)} onChange={() => alternarSelecionado(item.id)} /> : undefined}
             primary={<div><h3 className="break-words text-[13px] font-medium text-zinc-900 dark:text-zinc-100">{item.card_nome || "Sem nome"}</h3><p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{formatPhoneDisplay(item.telefone)}</p></div>}
             secondary={<div className="space-y-2"><StatusBadge ack={item.ack} respostaStatus={item.status} /><div><AckIndicator ack={item.ack} /></div><p className="text-[11px] text-zinc-500 dark:text-zinc-400">Enviado em {formatarData(item)}</p></div>}
             actionsClassName="whitespace-nowrap xl:max-w-none xl:flex-nowrap"
             actions={<>
-              <Button size="sm" onClick={() => confirmar(item)} loading={processando === item.id && cobrando !== item.id} disabled={processando !== null}><CheckCircle2 className="h-3.5 w-3.5" /> Confirmar recebimento</Button>
-              <Button variant="outline" size="sm" onClick={() => cobrar(item)} loading={cobrando === item.id} disabled={processando !== null}><MessageCircleQuestion className="h-3.5 w-3.5" /> {cobrando === item.id ? "Confirmando envio…" : "Cobrar resposta"}</Button>
-              <div className="flex items-center gap-1">
+              {canManage && <Button size="sm" onClick={() => confirmar(item)} loading={processando === item.id && cobrando !== item.id} disabled={processando !== null}><CheckCircle2 className="h-3.5 w-3.5" /> Confirmar recebimento</Button>}
+              {canSend && <Button variant="outline" size="sm" onClick={() => cobrar(item)} loading={cobrando === item.id} disabled={processando !== null}><MessageCircleQuestion className="h-3.5 w-3.5" /> {cobrando === item.id ? "Confirmando envio…" : "Cobrar resposta"}</Button>}
+              {canManage && <div className="flex items-center gap-1">
                 <Button variant="ghost" size="sm" onClick={() => abrirFinalizacao(item)} disabled={processando !== null}><NotebookPen className="h-3.5 w-3.5" /> Finalizar espera</Button>
                 <Button variant="ghost" size="icon" className="h-[33px] w-[33px]" title="Apagar registro" aria-label={`Apagar registro de ${item.card_nome || "cliente"}`} onClick={() => setApagarAlvo(item)} disabled={processando === item.id}><Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" /></Button>
-              </div>
+              </div>}
             </>}
           />)}
         </WorkspacePanel>

@@ -54,6 +54,7 @@ import { WorkspacePanel } from "@/components/ui/Workspace";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatCard } from "@/components/ui/StatCard";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useAuth } from "@/context/AuthContext";
 
 const PANORAMA_EVENTS = [
   "send:update", "send:ack-update", "pendingReply:ack-update", "pendingReply:resolved",
@@ -155,6 +156,7 @@ function classesIconeEventoDashboard(categoria: CategoriaEvento): string {
 }
 
 export function Dashboard() {
+  const { can } = useAuth();
   const { show } = useToast();
   const navigate = useNavigate();
   const [agendaTab, setAgendaTab] = useState(0);
@@ -237,9 +239,9 @@ export function Dashboard() {
     setCarregandoPanorama(true);
     try {
       const [pericias, pendentes, logs] = await Promise.all([
-        api.get<PericiaAgendada[]>("/pericias-agendadas"),
-        api.get<PendingReply[]>("/pending-replies"),
-        api.get<SendLog[]>("/logs"),
+        can("calendar.view") ? api.get<PericiaAgendada[]>("/pericias-agendadas") : Promise.resolve([]),
+        can("pending.view") ? api.get<PendingReply[]>("/pending-replies") : Promise.resolve([]),
+        can("history.view") ? api.get<SendLog[]>("/logs") : Promise.resolve([]),
       ]);
       setPanorama({ pericias, pendentes, logs });
     } catch {
@@ -247,22 +249,22 @@ export function Dashboard() {
     } finally {
       setCarregandoPanorama(false);
     }
-  }, []);
+  }, [can]);
 
   useEffect(() => {
     carregarCards();
     carregarPanorama();
-    api.get<Template[]>("/templates").then((data) => {
+    if (can("templates.view")) api.get<Template[]>("/templates").then((data) => {
       setTemplates(data);
       if (data.length > 0) setTemplateId((data.find(t => t.padrao) || data[0]).id);
     });
-    api.get<Settings>("/settings").then((data) => {
+    if (can("integrations.manage")) api.get<Settings>("/settings").then((data) => {
       setIntervaloEnvio({
         min: Number(data.send_interval_min) || 5,
         max: Number(data.send_interval_max) || 15,
       });
     });
-  }, [carregarCards, carregarPanorama]);
+  }, [carregarCards, carregarPanorama, can]);
 
   useSocketEvent<{ cardId: string; status: "sucesso" | "falha"; erro?: string }>("send:update", (payload) => {
     setEnviandoCardId(null);
@@ -847,7 +849,7 @@ export function Dashboard() {
       />
 
 
-          <button type="button" className="return-bubble dashboard-return" onClick={()=>navigate("/pendentes")}><span className="return-bubble-icon"><MessageSquareReply className="h-6 w-6" /></span><span><strong>{visaoGeral.aguardandoResposta}</strong><span>clientes aguardando retorno</span></span><ArrowRight className="h-5 w-5" /></button>
+          {can("pending.view") && <button type="button" className="return-bubble dashboard-return" onClick={()=>navigate("/pendentes")}><span className="return-bubble-icon"><MessageSquareReply className="h-6 w-6" /></span><span><strong>{visaoGeral.aguardandoResposta}</strong><span>clientes aguardando retorno</span></span><ArrowRight className="h-5 w-5" /></button>}
       <div className="overview-layout">
         <div className="overview-work">
           <section className="work-intro">
@@ -856,7 +858,7 @@ export function Dashboard() {
               {[{label:"Para enviar",value:resumo.pendentes,icon:Clock3,filter:"pendentes"},{label:"Conferidos",value:resumo.prontos,icon:ShieldCheck,filter:"todos"},{label:"Enviados",value:resumo.enviados,icon:CheckCheck,filter:"enviados"}].map(({label,value,icon:Icon,filter}) => <button key={label} type="button" onClick={() => setFiltroStatus(filter as FiltroStatus)} className="metric-orbit"><Icon className="h-4 w-4" /><strong>{value}</strong><span>{label}</span></button>)}
             </div>
           </section>
-      {erro ? <EmptyState icon={Inbox} title="Não foi possível carregar os cards" description={erro} action={<Button variant="outline" onClick={() => navigate("/configuracoes")}>Ir para Configurações</Button>} /> : (
+      {erro ? <EmptyState icon={Inbox} title="Não foi possível carregar os cards" description={erro} action={can("integrations.manage") ? <Button variant="outline" onClick={() => navigate("/configuracoes")}>Ir para Configurações</Button> : undefined} /> : (
         <WorkspacePanel title="Central de avisos" description="Revise os compromissos e prepare a mensagem de cada cliente."
           aside={<span className="text-xs text-zinc-500 dark:text-zinc-400">{cardsFiltrados.length} de {cards?.length ?? 0} avisos</span>}
           toolbar={<div className="space-y-4">
@@ -866,10 +868,10 @@ export function Dashboard() {
               <Select aria-label="Modelo de mensagem" value={templateId ?? ""} onChange={e => setTemplateId(Number(e.target.value))}>{templates.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}</Select>
             </div>
             <FiltroRapido label="Situação" options={STATUS_OPTIONS} value={filtroStatus} onChange={value => setFiltroStatus(value as FiltroStatus)} />
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+            {can("messages.send") && <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800">
               <label className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300"><Checkbox checked={cardsFiltrados.length > 0 && cardsFiltrados.every(c => selecionados.has(c.cardId))} onChange={toggleSelecionarTodos} disabled={cardsFiltrados.length === 0 || Boolean(batchProgress)} />Selecionar todos <span className="text-zinc-400">· {selecionados.size} selecionados</span></label>
               <Button size="sm" onClick={abrirConfirmBatch} disabled={selecionados.size === 0 || Boolean(batchProgress)}><Send className="h-3.5 w-3.5" /> Enviar selecionados ({selecionados.size})</Button>
-            </div>
+            </div>}
           </div>}
           footer="Os avisos usam os dados do Trello e os contatos deste serviço. Confira as informações antes de confirmar o envio."
         >
@@ -1370,6 +1372,7 @@ function PainelEventosDashboard({
   /** Quando falso, mantém o painel compacto e usa a ação inferior para abrir o Calendário. */
   expandirLocalmente?: boolean;
 }) {
+  const { can } = useAuth();
   const [expandido, setExpandido] = useState(false);
   const limiteInicial = 3;
   const eventosVisiveis =
@@ -1382,7 +1385,7 @@ function PainelEventosDashboard({
           <CalendarDays className="h-4 w-4 shrink-0 text-accent-600 dark:text-accent-300" />
           <span className="truncate">{titulo}</span>
         </h2>
-        <Button
+        {can("calendar.view") && <Button
           variant="ghost"
           size="icon"
           className="h-5 w-5"
@@ -1391,7 +1394,7 @@ function PainelEventosDashboard({
           aria-label="Ver calendário"
         >
           <ArrowRight className="h-3.5 w-3.5" />
-        </Button>
+        </Button>}
       </div>
       <p className="mt-[5px] text-xs leading-relaxed text-zinc-400 dark:text-zinc-400">
         {descricao}
@@ -1456,7 +1459,7 @@ function PainelEventosDashboard({
                     <span className="min-w-0 [overflow-wrap:anywhere]">{evento.local}</span>
                   </p>
                 )}
-                {onEnviarItem && (
+                {can("messages.send") && onEnviarItem && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -1511,7 +1514,7 @@ function PainelEventosDashboard({
           )}
         </div>
       )}
-      {onEnviarTodos && eventos.length > 0 && (
+      {can("messages.send") && onEnviarTodos && eventos.length > 0 && (
         <Button
           variant="outline"
           className="mt-[13px]"

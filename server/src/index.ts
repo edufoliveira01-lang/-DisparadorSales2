@@ -7,8 +7,10 @@ import { djenRouter } from "./routes/djen";
 import { iniciarMonitorDjen, pararMonitorDjen } from "./services/djen/sync";
 import { cardsRouter } from "./routes/cards";
 import { authRouter } from "./routes/auth";
+import { teamRouter } from "./routes/team";
+import { brandingRouter } from "./routes/branding";
 import { backupRouter } from "./routes/backup";
-import { getSession } from "./services/authService";
+import { authenticatedApi } from "./middleware/access";
 import { contactsRouter } from "./routes/contacts";
 import { logsRouter } from "./routes/logs";
 import { pendingRepliesRouter } from "./routes/pendingReplies";
@@ -40,24 +42,13 @@ app.use(express.json({ limit: "2mb" }));
 app.use("/api/auth", authRouter);
 
 // Middleware de autenticação para as demais rotas
-app.use("/api", (req, res, next) => {
-  // Pular autenticação para rotas de auth e health
-  if (req.path.startsWith("/auth") || req.path === "/health") {
-    return next();
-  }
-
-  const sessionId = req.cookies.session_id;
-  if (!sessionId) return res.status(401).json({ error: "Não autenticado." });
-  
-  const session = getSession(sessionId);
-  if (!session) return res.status(401).json({ error: "Sessão expirada." });
-  
-  next();
-});
+app.use("/api", authenticatedApi);
 
 app.use("/api", notifyDashboardChanges);
 app.use("/api/djen", djenRouter);
 app.use("/api/settings", settingsRouter);
+app.use("/api/team", teamRouter);
+app.use("/api/branding", brandingRouter);
 app.use("/api/backup", backupRouter);
 app.use("/api/trello", trelloRouter);
 app.use("/api/contacts", contactsRouter);

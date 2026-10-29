@@ -5,6 +5,7 @@ import { api, ApiError } from "@/lib/api";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
 import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
+import { useAuth } from "@/context/AuthContext";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -38,6 +39,8 @@ const regras = [
 ] as const;
 
 export function QuadroProcessos() {
+  const { can } = useAuth();
+  const canManage = can("processes.manage");
   const { show } = useToast();
   const [publicacaoAberta, setPublicacaoAberta] = useState<number | null>(null);
   const [quadro, setQuadro] = useState<Quadro | null>(null);
@@ -121,7 +124,7 @@ export function QuadroProcessos() {
               <h2 className="min-w-0 truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100" title={lista.nome}>{lista.nome}</h2>
               <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800">{cartoes.length}</span>
             </div>}
-            {editando !== lista.id && <div className="mb-3 flex items-center gap-1 border-b border-zinc-200 pb-2 dark:border-zinc-800">
+            {canManage && editando !== lista.id && <div className="mb-3 flex items-center gap-1 border-b border-zinc-200 pb-2 dark:border-zinc-800">
               {lista.regra_categoria
                 ? <span className="mr-auto max-w-[145px] truncate text-[10px] text-sky-700 dark:text-sky-300" title={`Categoria DJEN: ${regras.find(([codigo]) => codigo === lista.regra_categoria)?.[1] || lista.regra_categoria}`}>DJEN: {regras.find(([codigo]) => codigo === lista.regra_categoria)?.[1] || lista.regra_categoria}</span>
                 : lista.contar_dias ? <span className="mr-auto flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-300"><CalendarClock className="h-3 w-3" /> Contagem de espera</span>
@@ -153,9 +156,9 @@ export function QuadroProcessos() {
                 </div>
                 {lista.contar_dias > 0 && <div className="mt-3 rounded-lg bg-amber-50 p-2 text-[11px] text-amber-900 dark:bg-amber-950 dark:text-amber-200">
                   <span className="flex items-center gap-1 font-semibold"><Clock3 className="h-3.5 w-3.5" /> {card.inicio_espera_em ? `${diasDesde(card.inicio_espera_em)} dia(s) nesta espera` : "Informe o início da espera"}</span>
-                  <label className="mt-1 flex items-center gap-2">Desde <input type="date" aria-label={`Início da espera de ${card.numero}`} max={hoje()} value={card.inicio_espera_em || ""} disabled={busy}
+                  {canManage && <label className="mt-1 flex items-center gap-2">Desde <input type="date" aria-label={`Início da espera de ${card.numero}`} max={hoje()} value={card.inicio_espera_em || ""} disabled={busy}
                     onChange={(e) => { const data = e.target.value; if (data) void acao(() => api.put(`/djen/kanban/cartoes/${encodeURIComponent(card.processo_chave)}/inicio`, { inicio_em: data })); }}
-                    className="max-w-[145px] rounded border border-amber-200 bg-white px-1 py-0.5 text-[11px] text-zinc-800 dark:border-amber-900 dark:bg-zinc-900 dark:text-zinc-100" /></label>
+                    className="max-w-[145px] rounded border border-amber-200 bg-white px-1 py-0.5 text-[11px] text-zinc-800 dark:border-amber-900 dark:bg-zinc-900 dark:text-zinc-100" /></label>}
                 </div>}
                 <div className="mt-3 flex items-center justify-end gap-2 border-t border-zinc-100 pt-2 dark:border-zinc-800">
                   <button type="button" aria-label={`Histórico das etapas de ${card.numero}`} title="Histórico das etapas" onClick={() => abrirHistorico(card)} className="rounded p-1.5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><History className="h-4 w-4" /></button>
@@ -165,7 +168,7 @@ export function QuadroProcessos() {
             </div>
           </section>;
         })}
-        <form className="w-[292px] shrink-0 rounded-2xl border border-dashed border-zinc-300 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900" onSubmit={(e) => {
+        {canManage && <form className="w-[292px] shrink-0 rounded-2xl border border-dashed border-zinc-300 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900" onSubmit={(e) => {
           e.preventDefault(); void acao(async () => { await api.post("/djen/kanban/listas", { nome: nomeNovo, contar_dias: contarNovo, regra_categoria: regraNova }); setNomeNovo(""); setContarNovo(false); setRegraNova(""); });
         }}>
           <h2 className="flex items-center gap-2 text-sm font-semibold"><Plus className="h-4 w-4" /> Nova lista</h2>
@@ -176,7 +179,7 @@ export function QuadroProcessos() {
           <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">O nome da lista é livre. A categoria escolhida é a regra: quando o DJEN identificar esse ato na publicação, o cartão entra automaticamente na lista. Depois ele pode avançar com um novo andamento.</p>
           <label className="mt-3 flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300"><Checkbox checked={contarNovo} onChange={(e) => setContarNovo(e.target.checked)} /> Contar dias nesta etapa</label>
           <Button size="sm" type="submit" disabled={busy || nomeNovo.trim().length < 2 || !regraNova} className="mt-3">Criar lista</Button>
-        </form>
+        </form>}
       </div>
     </div>}
     <p className="text-[11px] text-zinc-500">As contagens nas listas são dias corridos de acompanhamento interno, desde a data indicada no cartão. Elas não substituem o prazo processual nem presumem vencimento de RPV.</p>

@@ -1,0 +1,52 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import express from "express";
+import cookieParser from "cookie-parser";
+import { afterAll, describe, expect, it } from "vitest";
+import { db } from "../src/db";
+import { authRouter } from "../src/routes/auth";
+import { teamRouter } from "../src/routes/team";
+import { authenticatedApi } from "../src/middleware/access";
+import { hashPassword } from "../src/services/authService";
+
+const app = express();
+app.use(cookieParser(), express.json());
+app.use("/api/auth", authRouter);
+app.use("/api", authenticatedApi);
+app.use("/api/team", teamRouter);
+app.get("/api/settings", (_req, res) => res.json({ secret: true }));
+app.get("/api/contacts", (_req, res) => res.json([]));
+const server = createServer(app);
+const ready = new Promise<string>((resolve) => server.listen(0, "127.0.0.1", () => resolve(`http://127.0.0.1:${(server.address() as AddressInfo).port}`)));
+afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())));
+
+async function request(path: string, options: RequestInit = {}, cookie = "") {
+  const url = await ready;
+  return fetch(`${url}/api${path}`, { ...options, headers: { "Content-Type": "application/json", ...(cookie ? { Cookie: cookie } : {}), ...options.headers } });
+}
+
+describe("equipe e controle de acesso", () => {
+  it("cria um perfil limitado, aplica permissão na API e encerra a sessão ao desativar", async () => {
+    const adminName = `owner_${Date.now()}`;
+    db.prepare("INSERT INTO users (username, display_name, role, password_hash) VALUES (?, ?, 'administrador', ?)")
+      .run(adminName, "Administrador de teste", hashPassword("senha-inicial-segura"));
+    const adminLogin = await request("/auth/login", { method: "POST", body: JSON.stringify({ username: adminName, password: "senha-inicial-segura" }) });
+    expect(adminLogin.status).toBe(200);
+    const adminCookie = adminLogin.headers.get("set-cookie")!.split(";")[0];
+    const username = `reader_${Date.now()}`;
+    const created = await request("/team", { method: "POST", body: JSON.stringify({ username, display_name: "Pessoa consulta", role: "consulta", password: "senha-inicial-segura", permissions: ["contacts.view"] }) }, adminCookie);
+    expect(created.status).toBe(201);
+    const person = await created.json() as { id: number };
+    const login = await request("/auth/login", { method: "POST", body: JSON.stringify({ username, password: "senha-inicial-segura" }) });
+    expect(login.status).toBe(200);
+    const cookie = login.headers.get("set-cookie")!.split(";")[0];
+    expect((await request("/contacts", {}, cookie)).status).toBe(200);
+    expect((await request("/settings", {}, cookie)).status).toBe(403);
+    expect((await request("/team", {}, cookie)).status).toBe(403);
+    expect((await request("/team", {}, "")).status).toBe(401);
+    const disabled = await request(`/team/${person.id}`, { method: "PUT", body: JSON.stringify({ active: false }) }, adminCookie);
+    expect(disabled.status).toBe(200);
+    expect((await request("/contacts", {}, cookie)).status).toBe(401);
+    expect((await request("/auth/login", { method: "POST", body: JSON.stringify({ username, password: "senha-inicial-segura" }) })).status).toBe(401);
+  });
+});

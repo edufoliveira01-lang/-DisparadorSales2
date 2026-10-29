@@ -181,7 +181,29 @@ export function runMigrations(db: Database.Database): void {
       last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
+
+    CREATE TABLE IF NOT EXISTS access_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      action TEXT NOT NULL,
+      actor_user_id INTEGER,
+      target_user_id INTEGER,
+      details_json TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_access_audit_created_at ON access_audit(created_at);
   `);
+
+  // Até esta versão só a conta inicial podia ser criada. Preserva todos os acessos
+  // existentes como administradores e não altera senhas nem sessões na migração.
+  const userColumns = (db.pragma("table_info(users)") as { name: string }[]).map((column) => column.name);
+  for (const [name, definition] of [
+    ["display_name", "TEXT"],
+    ["role", "TEXT NOT NULL DEFAULT 'administrador'"],
+    ["permissions_json", "TEXT"],
+    ["active", "INTEGER NOT NULL DEFAULT 1"],
+  ]) {
+    if (!userColumns.includes(name)) db.exec(`ALTER TABLE users ADD COLUMN ${name} ${definition}`);
+  }
 
   // A primeira versão da integração limitava os destinos aos números 1 e 2 por CHECK.
   // Reconstrói somente essa tabela em instalações existentes para aceitar uma quantidade

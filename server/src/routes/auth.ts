@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   getUserByUsername,
   hashPassword,
+  verifyPassword,
   createSession,
   getSession,
   deleteSession,
@@ -14,8 +15,14 @@ import {
 import { sendRecoveryEmail } from "../services/emailService";
 import { getSetting } from "../services/settingsService";
 import { enviarMensagemTelegram } from "../services/telegramService";
+import { auditAccess, invalidateUserSessions, publicUser } from "../services/accessService";
+import { loginBranding, loginImage } from "./branding";
+import { disconnectUserSockets } from "../websocket";
 
 export const authRouter = Router();
+authRouter.get("/login-branding", loginBranding);
+authRouter.get("/login-image", loginImage);
+const failures = new Map<string, { count: number; until: number }>();
 
 authRouter.post("/login", (req, res) => {
   const { username, password } = req.body;
@@ -24,10 +31,19 @@ authRouter.post("/login", (req, res) => {
     return res.status(400).json({ error: "Usuário e senha são obrigatórios." });
   }
   
-  const user = getUserByUsername(username);
-  if (!user || user.password_hash !== hashPassword(password)) {
+  const key = `${req.ip}:${String(username).toLowerCase()}`;
+  const attempt = failures.get(key);
+  if (attempt && attempt.count >= 6 && attempt.until > Date.now()) {
+    return res.status(429).json({ error: "Muitas tentativas. Aguarde 15 minutos." });
+  }
+  const user = getUserByUsername(String(username));
+  if (!user || !user.active || !verifyPassword(String(password), user.password_hash)) {
+    failures.set(key, { count: (attempt?.until && attempt.until > Date.now() ? attempt.count : 0) + 1, until: Date.now() + 15 * 60_000 });
     return res.status(401).json({ error: "Usuário ou senha incorretos." });
   }
+  failures.delete(key);
+  // Senhas anteriores eram SHA-256 sem salt. Atualiza ao autenticar sem interromper contas existentes.
+  if (!user.password_hash.startsWith("scrypt$")) updateUser(user.id, { password_hash: hashPassword(String(password)) });
   
   const sessionId = createSession(user.id);
   
@@ -39,13 +55,7 @@ authRouter.post("/login", (req, res) => {
     sameSite: "lax"
   });
   
-  res.json({ 
-    user: { 
-      id: user.id, 
-      username: user.username, 
-      email: user.email 
-    } 
-  });
+  res.json({ user: publicUser(user) });
 });
 
 authRouter.post("/logout", (req, res) => {
@@ -65,15 +75,9 @@ authRouter.get("/me", (req, res) => {
   if (!session) return res.status(401).json({ error: "Sessão expirada." });
   
   const user = getUserById(session.user_id);
-  if (!user) return res.status(401).json({ error: "Usuário não encontrado." });
+  if (!user || !user.active) return res.status(401).json({ error: "Usuário não encontrado." });
   
-  res.json({ 
-    user: { 
-      id: user.id, 
-      username: user.username, 
-      email: user.email 
-    } 
-  });
+  res.json({ user: publicUser(user) });
 });
 
 authRouter.put("/update", (req, res) => {
@@ -86,20 +90,31 @@ authRouter.put("/update", (req, res) => {
   const { username, email, password, currentPassword } = req.body;
   
   const user = getUserById(session.user_id);
-  if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
+  if (!user || !user.active) return res.status(404).json({ error: "Usuário não encontrado." });
   
   // Validar senha atual para qualquer mudança sensível
-  if (currentPassword && user.password_hash !== hashPassword(currentPassword)) {
+  if (!currentPassword || !verifyPassword(String(currentPassword), user.password_hash)) {
     return res.status(401).json({ error: "Senha atual incorreta." });
+  }
+  if (password && (typeof password !== "string" || password.length < 12)) {
+    return res.status(400).json({ error: "A nova senha deve ter pelo menos 12 caracteres." });
   }
 
   const updateData: any = {};
-  if (username) updateData.username = username;
-  if (email !== undefined) updateData.email = email;
+  if (username && typeof username === "string") updateData.username = username.trim();
+  if (email !== undefined) updateData.email = typeof email === "string" ? email.trim() || null : null;
   if (password) updateData.password_hash = hashPassword(password);
   
   if (Object.keys(updateData).length > 0) {
-    updateUser(user.id, updateData);
+    try { updateUser(user.id, updateData); }
+    catch { return res.status(409).json({ error: "Este usuário já está em uso." }); }
+    auditAccess("conta_atualizada", user.id, user.id, { campos: Object.keys(updateData).filter((field) => field !== "password_hash"), senha_alterada: Boolean(password) });
+    if (password) {
+      invalidateUserSessions(user.id);
+      disconnectUserSockets(user.id);
+      res.clearCookie("session_id");
+      return res.json({ ok: true, relogin: true });
+    }
   }
   
   res.json({ ok: true });
@@ -110,27 +125,23 @@ authRouter.post("/forgot-password", async (req, res) => {
   if (!username) return res.status(400).json({ error: "Informe o usuário." });
 
   const user = getUserByUsername(username);
-  if (!user) {
-    return res.status(404).json({ error: "Usuário não encontrado." });
-  }
+  const resposta = { message: "Se a conta tiver um canal de recuperação, as instruções serão enviadas." };
+  if (!user || !user.active) return res.json(resposta);
 
   // Telegram é o canal preferido (mais simples de configurar que SMTP, e já costuma estar
   // pronto por causa das notificações de entrega/resposta). E-mail continua como alternativa
   // pra quem não usa o Telegram.
   const telegramToken = getSetting("telegram_bot_token");
   const telegramChatId = getSetting("telegram_chat_id");
-  const telegramConfigurado = Boolean(telegramToken && telegramChatId);
+  const telegramConfigurado = user.role === "administrador" && Boolean(telegramToken && telegramChatId);
 
   if (!telegramConfigurado && !user.email) {
-    return res.status(400).json({
-      error:
-        "Nenhum canal de recuperação configurado. Configure o Telegram em Configurações → Notificações, ou cadastre um e-mail de recuperação.",
-    });
+    return res.json(resposta);
   }
 
   const token = generateRecoveryToken(user.id);
 
-  if (telegramConfigurado) {
+  if (!user.email && telegramConfigurado) {
     try {
       const recoveryUrl = `${process.env.APP_URL || "http://localhost:3333"}/login?token=${token}`;
       await enviarMensagemTelegram(
@@ -138,7 +149,7 @@ authRouter.post("/forgot-password", async (req, res) => {
         telegramChatId!,
         `🔑 Recuperação de senha do DisparaZap solicitada.\n\nDefina uma nova senha (link expira em 1h):\n${recoveryUrl}\n\nSe não foi você, ignore esta mensagem.`
       );
-      return res.json({ message: "Link de recuperação enviado no Telegram." });
+      return res.json(resposta);
     } catch (err) {
       console.error("[Auth] Erro ao enviar recuperação via Telegram:", err);
       if (!user.email) {
@@ -150,7 +161,7 @@ authRouter.post("/forgot-password", async (req, res) => {
 
   try {
     await sendRecoveryEmail(user.email!, token);
-    res.json({ message: "E-mail de recuperação enviado com sucesso." });
+    res.json(resposta);
   } catch (err) {
     console.error("[Auth] Erro na recuperação:", err);
     res.status(500).json({ error: "Erro ao enviar e-mail. Verifique as configurações de SMTP no arquivo .env ou consulte o log do servidor." });
@@ -159,13 +170,16 @@ authRouter.post("/forgot-password", async (req, res) => {
 
 authRouter.post("/reset-password", (req, res) => {
   const { token, password } = req.body;
-  if (!token || !password) return res.status(400).json({ error: "Token e nova senha são obrigatórios." });
+  if (!token || typeof password !== "string" || password.length < 12) return res.status(400).json({ error: "Informe o token e uma senha de pelo menos 12 caracteres." });
   
   const user = getUserByRecoveryToken(token);
   if (!user) return res.status(400).json({ error: "Token inválido ou expirado." });
   
   updateUser(user.id, { password_hash: hashPassword(password) });
   clearRecoveryToken(user.id);
+  invalidateUserSessions(user.id);
+  disconnectUserSockets(user.id);
+  auditAccess("senha_recuperada", user.id, user.id);
   
   res.json({ message: "Senha alterada com sucesso." });
 });

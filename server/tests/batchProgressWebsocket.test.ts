@@ -4,6 +4,8 @@ import { io as connect, type Socket } from "../../client/node_modules/socket.io-
 import { afterEach, describe, expect, it } from "vitest";
 import { initWebsocket } from "../src/websocket";
 import { finishBatch, listActiveBatches, startBatch, updateBatch, type BatchProgress } from "../src/services/batchProgressService";
+import { db } from "../src/db";
+import { createSession } from "../src/services/authService";
 
 const clients: Socket[] = [];
 let stop: undefined | (() => Promise<void>);
@@ -23,7 +25,9 @@ async function setup() {
 }
 
 async function snapshot(url: string) {
-  const client = connect(url, { autoConnect: false, transports: ["websocket"], forceNew: true });
+  const account = db.prepare("SELECT id FROM users WHERE role = 'administrador' LIMIT 1").get() as { id: number };
+  const session = createSession(account.id);
+  const client = connect(url, { autoConnect: false, transports: ["websocket"], forceNew: true, extraHeaders: { Cookie: `session_id=${session}` } });
   clients.push(client);
   const state = new Promise<BatchProgress[]>((resolve) => client.once("batch:state", resolve));
   client.connect();

@@ -31,6 +31,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { WorkspacePanel, WorkspaceRow } from "@/components/ui/Workspace";
+import { useAuth } from "@/context/AuthContext";
 
 const ITENS_POR_PAGINA = 20;
 const LETRAS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
@@ -45,6 +46,8 @@ function inicialSemAcento(nome: string): string {
 }
 
 export function Agenda() {
+  const { can } = useAuth();
+  const canManage = can("contacts.manage");
   const { show } = useToast();
   const [contacts, setContacts] = useState<Contact[] | null>(null);
   const [busca, setBusca] = useState("");
@@ -244,19 +247,19 @@ export function Agenda() {
         title="Contatos"
         description="Contatos usados para identificar cada cliente com segurança pelo nome completo e número do processo."
         actions={<div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
-          <input
+          {canManage && <input
             ref={fileInputRef}
             type="file"
             accept=".csv,.vcf,text/csv,text/vcard"
             className="hidden"
             onChange={handleArquivoSelecionado}
-          />
-          <Button className="col-span-2 sm:order-3 sm:col-auto" onClick={abrirNovo}>
+          />}
+          {canManage && <Button className="col-span-2 sm:order-3 sm:col-auto" onClick={abrirNovo}>
             <Plus className="h-4 w-4" /> Novo contato
-          </Button>
-          <Button variant="outline" onClick={() => fileInputRef.current?.click()} loading={importando}>
+          </Button>}
+          {canManage && <Button variant="outline" onClick={() => fileInputRef.current?.click()} loading={importando}>
             <Upload className="h-4 w-4" /> Importar
-          </Button>
+          </Button>}
           <Button variant="outline" onClick={() => window.open("/api/contacts/export", "_blank")}>
             <Download className="h-4 w-4" /> Exportar
           </Button>
@@ -271,22 +274,22 @@ export function Agenda() {
             <button type="button" onClick={() => setLetra(null)} className={cn("shrink-0 rounded-md px-3 py-1.5 text-xs", letra === null ? "bg-accent-50 font-semibold text-accent-700 dark:bg-accent-900/30 dark:text-accent-300" : "text-zinc-500 dark:text-zinc-400")}>Todos</button>
             {LETRAS.map(item => <button key={item} type="button" onClick={() => setLetra(letra === item ? null : item)} className={cn("h-7 w-7 shrink-0 rounded-md text-xs", letra === item ? "bg-accent-50 font-semibold text-accent-700 dark:bg-accent-900/30 dark:text-accent-300" : "text-zinc-500 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800")}>{item}</button>)}
           </nav>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+          {canManage && <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
             <label className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400"><Checkbox checked={contatosPaginados.length > 0 && contatosPaginados.every(c => selecionados.has(c.id))} onChange={alternarSelecionarTodos} />Selecionar esta página · {filtrados.length} resultados</label>
             {selecionados.size > 0 && <div className="flex flex-wrap gap-2"><Button variant="ghost" size="sm" onClick={() => setSelecionados(new Set())}>Limpar seleção</Button><Button variant="outline" className="danger-action" size="sm" onClick={() => setConfirmMassaAberto(true)} loading={apagandoSelecionados}><Trash2 className="h-3.5 w-3.5" /> Apagar selecionados ({selecionados.size})</Button></div>}
-          </div>
+          </div>}
         </div>}
-        footer="Importação disponível em CSV do Google/Android ou vCard (.vcf)."
+        footer={canManage ? "Importação disponível em CSV do Google/Android ou vCard (.vcf)." : undefined}
       >
-        {contacts === null ? <div className="p-5"><Skeleton className="h-40" /></div> : filtrados.length === 0 ? <EmptyState icon={Users} title={busca || letra ? "Nenhum contato encontrado" : "Nenhum contato cadastrado ainda"} description="Adicione um contato ou ajuste os filtros da busca." action={!busca && !letra && <Button onClick={abrirNovo}>Novo contato</Button>} /> : <>
+        {contacts === null ? <div className="p-5"><Skeleton className="h-40" /></div> : filtrados.length === 0 ? <EmptyState icon={Users} title={busca || letra ? "Nenhum contato encontrado" : "Nenhum contato cadastrado ainda"} description="Adicione um contato ou ajuste os filtros da busca." action={canManage && !busca && !letra && <Button onClick={abrirNovo}>Novo contato</Button>} /> : <>
           {contatosPaginados.map(c => <WorkspaceRow key={c.id} selected={selecionados.has(c.id)}
-            selection={<Checkbox aria-label={`Selecionar ${c.nome}`} checked={selecionados.has(c.id)} onChange={() => alternarSelecionado(c.id)} />}
+            selection={canManage ? <Checkbox aria-label={`Selecionar ${c.nome}`} checked={selecionados.has(c.id)} onChange={() => alternarSelecionado(c.id)} /> : undefined}
             primary={<div><span className="directory-avatar" aria-hidden="true">{c.nome.split(" ").filter(Boolean).slice(0,2).map(word=>word[0]).join("")}</span><h3 className="break-words text-[13px] font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</h3><p className="mt-1 break-all text-xs text-zinc-500 dark:text-zinc-400">{c.processo || "Processo não informado"}</p></div>}
             secondary={<span className="inline-flex items-center gap-2 text-sm"><Phone className="h-3.5 w-3.5 text-zinc-400" />{formatPhoneDisplay(c.telefone)}</span>}
             actions={<>
               {c.observacoes && <Button size="sm" variant="ghost" aria-expanded={expandido === c.id} onClick={() => setExpandido(expandido === c.id ? null : c.id)}><StickyNote className="h-3.5 w-3.5" /> Observações</Button>}
-              <Button size="sm" variant="outline" aria-label={`Editar ${c.nome}`} onClick={() => abrirEdicao(c)}><Pencil className="h-3.5 w-3.5" /> Editar</Button>
-              <Button size="sm" variant="ghost" className="text-red-600 dark:text-red-400" aria-label={`Apagar ${c.nome}`} onClick={() => setExcluirAlvo(c)} loading={excluindo === c.id}><Trash2 className="h-3.5 w-3.5" /> Apagar</Button>
+              {canManage && <Button size="sm" variant="outline" aria-label={`Editar ${c.nome}`} onClick={() => abrirEdicao(c)}><Pencil className="h-3.5 w-3.5" /> Editar</Button>}
+              {canManage && <Button size="sm" variant="ghost" className="text-red-600 dark:text-red-400" aria-label={`Apagar ${c.nome}`} onClick={() => setExcluirAlvo(c)} loading={excluindo === c.id}><Trash2 className="h-3.5 w-3.5" /> Apagar</Button>}
             </>}
           >{expandido === c.id && c.observacoes && <div><p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Observações</p><p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">{c.observacoes}</p></div>}</WorkspaceRow>)}
           <div className="border-t border-zinc-200 px-5 py-4 dark:border-zinc-800"><Pagination page={pagina} totalItems={filtrados.length} pageSize={ITENS_POR_PAGINA} onPageChange={setPagina} /></div>

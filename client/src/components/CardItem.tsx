@@ -27,6 +27,7 @@ import { Checkbox } from "@/components/ui/Checkbox";
 import { Select } from "@/components/ui/Select";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { classificarEvento, type CategoriaEvento } from "@/lib/eventVisual";
+import { useAuth } from "@/context/AuthContext";
 
 export interface CardItemProps {
   card: CardViewModel;
@@ -101,6 +102,7 @@ export function CardItem({
   modo,
   onChangeModo,
 }: CardItemProps) {
+  const { can } = useAuth();
   const temNaoIdentificado = card.pericias.some(
     (p) =>
       p.data?.includes("NAO_IDENTIFICADA") ||
@@ -124,9 +126,9 @@ export function CardItem({
     >
       <div className="p-4 md:p-5">
         <div className="flex items-start gap-3">
-          <div className="pt-1">
+          {can("messages.send") && <div className="pt-1">
             <Checkbox checked={selecionado} onChange={onToggleSelecionar} />
-          </div>
+          </div>}
 
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-3">
@@ -135,17 +137,17 @@ export function CardItem({
                   <h3 className="break-words text-base font-semibold leading-snug text-zinc-900 dark:text-zinc-100">
                     {card.nomeCliente}
                   </h3>
-                  <button
+                  {can("calendar.manage") && <button
                     onClick={onEditarNome}
                     title="Editar nome do cliente"
                     className="mt-0.5 shrink-0 text-zinc-400 hover:text-accent-600 dark:text-zinc-500 dark:hover:text-accent-400"
                   >
                     <Pencil className="h-3.5 w-3.5" />
-                  </button>
+                  </button>}
                 </div>
                 <p className="mt-1 hidden truncate text-xs text-zinc-400 md:block">{card.cardNome}</p>
               </div>
-              <Button
+              {can("messages.send") && <Button
                 size="sm"
                 className="hidden shrink-0 md:inline-flex"
                 onClick={onEnviar}
@@ -153,7 +155,7 @@ export function CardItem({
                 disabled={!contatoEfetivo || card.pericias.length === 0}
               >
                 <Send className="h-3.5 w-3.5" /> Enviar
-              </Button>
+              </Button>}
             </div>
 
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -214,13 +216,13 @@ export function CardItem({
                     </p>
                   )}
                 </div>
-                <button
+                {can("calendar.manage") && <button
                   onClick={() => onEditarPericia(i)}
                   title="Editar informações da perícia"
                   className="shrink-0 rounded-md p-1 text-zinc-400 hover:bg-white hover:text-accent-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-accent-400"
                 >
                   <Pencil className="h-3.5 w-3.5" />
-                </button>
+                </button>}
               </div>
 
               <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
@@ -284,9 +286,9 @@ export function CardItem({
                   <p className="mt-0.5 break-all text-xs text-zinc-500 dark:text-zinc-400">Processo: {contatoEfetivo.processo}</p>
                 )}
               </div>
-              <Button variant="ghost" size="sm" className="self-start sm:self-center" onClick={onEditarContato}>
+              {can("contacts.manage") && <Button variant="ghost" size="sm" className="self-start sm:self-center" onClick={onEditarContato}>
                 <Pencil className="h-3.5 w-3.5" /> Editar contato
-              </Button>
+              </Button>}
             </div>
           ) : card.sugestaoContato ? (
             <div className="space-y-2">
@@ -297,23 +299,23 @@ export function CardItem({
               <p className="text-sm text-zinc-600 dark:text-zinc-300">
                 Sugestão: <span className="font-medium">{card.sugestaoContato.nome}</span> · {formatPhoneDisplay(card.sugestaoContato.telefone)}
               </p>
-              <div className="flex flex-wrap gap-3 text-xs font-medium">
+              {can("contacts.manage") && <div className="flex flex-wrap gap-3 text-xs font-medium">
                 <button onClick={onUsarSugestao} className="text-accent-700 hover:underline dark:text-accent-400">
                   Confirmar esta sugestão
                 </button>
                 <button onClick={onCadastrarContato} className="flex items-center gap-1 text-accent-700 hover:underline dark:text-accent-400">
                   <UserPlus className="h-3.5 w-3.5" /> Cadastrar outro contato
                 </button>
-              </div>
+              </div>}
             </div>
           ) : (
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <Badge tone="danger">
                 <XCircle className="h-3.5 w-3.5" /> Sem contato cadastrado
               </Badge>
-              <Button variant="outline" size="sm" onClick={onCadastrarContato}>
+              {can("contacts.manage") && <Button variant="outline" size="sm" onClick={onCadastrarContato}>
                 <UserPlus className="h-3.5 w-3.5" /> Cadastrar contato
-              </Button>
+              </Button>}
             </div>
           )}
         </div>

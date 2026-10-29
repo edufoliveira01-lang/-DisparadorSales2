@@ -12,7 +12,10 @@ import {
   Settings,
   ScrollText,
   Clock3,
+  UserRoundCog,
+  UserRound,
 } from "lucide-react";
+import type { Permission } from "@/context/AuthContext";
 export const navigation = [
   {
     to: "/",
@@ -114,7 +117,49 @@ export const navigation = [
     icon: Settings,
     group: "sistema",
   },
+  {
+    to: "/equipe",
+    label: "Equipe e acessos",
+    description: "Pessoas, perfis e permissões",
+    icon: UserRoundCog,
+    group: "sistema",
+  },
+  {
+    to: "/minha-conta",
+    label: "Minha conta",
+    description: "Seus dados de acesso e senha",
+    icon: UserRound,
+    group: "sistema",
+  },
 ] as const;
+
+export function navigationPermission(to: string): Permission | null {
+  if (to === "/") return "dashboard.view";
+  if (to === "/calendario") return "calendar.view";
+  if (to.startsWith("/templates")) return "templates.view";
+  if (to === "/pendentes") return "pending.view";
+  if (to === "/historico") return "history.view";
+  if (to === "/agenda") return "contacts.view";
+  if (to === "/logs") return "activity.view";
+  if (to === "/configuracoes") return "integrations.manage";
+  if (to === "/equipe") return "team.manage";
+  if (to === "/processos/calendarios") return "deadlines.view";
+  if (to === "/processos/monitoramento") return "djen.manage";
+  if (["/processos/advogados", "/processos/aguardando"].includes(to)) return "processes.manage";
+  if (to.startsWith("/processos")) return "processes.view";
+  return null;
+}
+
+export function permittedNavigation(permissions: readonly Permission[]) {
+  return navigation.filter((item) => {
+    const required = navigationPermission(item.to);
+    return !required || permissions.includes(required);
+  });
+}
+
+export function firstAllowedPage(permissions: readonly Permission[]): string {
+  return permittedNavigation(permissions)[0]?.to ?? "/minha-conta";
+}
 export function getCurrentPage(pathname: string) {
   return (
     navigation.find((item) => item.to === pathname) ??

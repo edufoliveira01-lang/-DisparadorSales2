@@ -7,6 +7,7 @@ import { requestActivities } from "@/lib/requestActivity";
 import { useWhatsapp } from "@/context/WhatsappContext";
 import { useBatchProgress } from "@/context/BatchProgressContext";
 import { useToast } from "@/components/ui/Toast";
+import { useAuth } from "@/context/AuthContext";
 
 interface Job { id: string; label: string; href: string; waiting?: boolean }
 interface DjenStatus {
@@ -19,6 +20,12 @@ interface CalendarStatus { executando: number; na_fila: number }
 
 /** Mounted in the shared shell: polling and notifications survive every route change. */
 export function GlobalServiceActivity() {
+  const { can } = useAuth();
+  const showDjen = can("processes.view");
+  const showGoogle = can("integrations.manage");
+  const showCalendars = can("deadlines.view");
+  const showWhatsapp = can("whatsapp.manage");
+  const showBatches = can("messages.send");
   const requests = useSyncExternalStore(requestActivities.subscribe, requestActivities.getSnapshot);
   const whatsapp = useWhatsapp();
   const { lotes } = useBatchProgress();
@@ -29,10 +36,10 @@ export function GlobalServiceActivity() {
   useEffect(() => {
     const previous = previousWhatsapp.current;
     previousWhatsapp.current = whatsapp.status;
-    const wasConnecting = ["inicializando", "aguardando_qr", "pareando", "autenticado"].includes(previous);
+    const wasConnecting = showWhatsapp && ["inicializando", "aguardando_qr", "pareando", "autenticado"].includes(previous);
     if (wasConnecting && whatsapp.status === "conectado") show("WhatsApp conectado. Sincronização concluída.", "success");
     if (wasConnecting && whatsapp.status === "falha") show(whatsapp.lastError || "Não foi possível conectar o WhatsApp. Confira a conexão nas configurações.", "error");
-  }, [whatsapp.status, whatsapp.lastError, show]);
+  }, [whatsapp.status, whatsapp.lastError, show, showWhatsapp]);
 
   useEffect(() => {
     let disposed = false;
@@ -52,6 +59,7 @@ export function GlobalServiceActivity() {
       }).finally(() => fetching.delete(key));
     };
     const refresh = () => {
+      if (showDjen) {
       update<DjenStatus>("djen", "/djen/status", status => {
         const result: Job[] = [];
         if (status.executando) result.push({ id: "djen", label: "DJEN · Buscando publicações", href: "/processos/monitoramento" });
@@ -64,12 +72,17 @@ export function GlobalServiceActivity() {
           if (result) show(result.status === "concluida" ? "Busca no DJEN concluída." : "Busca no DJEN encerrada. Confira o resultado no monitoramento.", result.status === "falha" ? "error" : "info");
         }
       });
+      }
+      if (showGoogle) {
       update<GoogleJob>("google", "/google-calendar/sync/status", value => value.state === "running" || value.background?.running || value.background?.pending
         ? [{ id: "google", label: "Google Agenda · Sincronizando eventos", href: "/configuracoes?google=1" }] : [], (old, next) => {
           if (old.state === "running" && next.state !== "running") show(next.state === "completed" ? "Sincronização com o Google Agenda concluída." : next.error || "Falha ao sincronizar o Google Agenda.", next.state === "completed" ? "success" : "error");
         });
+      }
+      if (showCalendars) {
       update<CalendarStatus>("calendars", "/djen/calendarios", value => value.executando || value.na_fila
         ? [{ id: "calendars", label: `Tribunais · Importando calendários${value.na_fila ? ` · ${value.na_fila} na fila` : ""}`, href: "/processos/calendarios" }] : []);
+      }
     };
     const schedule = () => { clearTimeout(debounce); debounce = setTimeout(refresh, 200); };
     refresh();
@@ -89,7 +102,7 @@ export function GlobalServiceActivity() {
       window.removeEventListener("focus", schedule);
       document.removeEventListener("visibilitychange", schedule);
     };
-  }, [show]);
+  }, [show, showDjen, showGoogle, showCalendars]);
 
   const activities: Job[] = Object.values(jobs).flat();
   const progress = typeof whatsapp.syncProgress === "number" ? ` (${Math.round(whatsapp.syncProgress)}%)` : "";
@@ -97,8 +110,8 @@ export function GlobalServiceActivity() {
     : whatsapp.status === "pareando" ? "WhatsApp · Validando vínculo com o celular"
     : whatsapp.status === "autenticado" || (whatsapp.status === "inicializando" && typeof whatsapp.syncProgress === "number") ? `WhatsApp · Sincronizando${progress}`
     : whatsapp.status === "inicializando" || whatsapp.conectando ? `WhatsApp · ${whatsapp.faseInicializacao || "Iniciando conexão"}` : null;
-  if (whatsappLabel) activities.unshift({ id: "whatsapp", label: whatsappLabel, href: "/configuracoes?whatsapp=1" });
-  for (const batch of lotes) activities.push({ id: batch.id, label: `${batch.tipo === "lembretes" ? "Lembretes" : "Mensagens"} · ${batch.aguardandoReconexao ? "Aguardando reconexão do WhatsApp" : `${batch.processados} de ${batch.total} processados`}`, href: "/", waiting: batch.aguardandoReconexao });
+  if (showWhatsapp && whatsappLabel) activities.unshift({ id: "whatsapp", label: whatsappLabel, href: "/configuracoes?whatsapp=1" });
+  if (showBatches) for (const batch of lotes) activities.push({ id: batch.id, label: `${batch.tipo === "lembretes" ? "Lembretes" : "Mensagens"} · ${batch.aguardandoReconexao ? "Aguardando reconexão do WhatsApp" : `${batch.processados} de ${batch.total} processados`}`, href: "/", waiting: batch.aguardandoReconexao });
   for (const request of requests) activities.push({ id: `request-${request.id}`, label: request.label + (request.count > 1 ? ` · ${request.count} tarefas` : ""), href: "" });
   if (!activities.length) return null;
   return (

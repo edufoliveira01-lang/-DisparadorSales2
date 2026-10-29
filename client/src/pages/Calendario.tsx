@@ -20,6 +20,7 @@ import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { useAuth } from "@/context/AuthContext";
 
 const CALENDAR_EVENTS = ["lembrete:update", "lembrete:batch-completed", "dashboard:changed"] as const;
 
@@ -277,6 +278,7 @@ function contarEventosResumo(eventos: PericiaAgendada[]) {
 }
 
 export function Calendario() {
+  const { can } = useAuth();
   const { show } = useToast();
   const [pericias, setPericias] = useState<PericiaAgendada[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -512,11 +514,11 @@ export function Calendario() {
           <span className="md:hidden">Consulte perícias e audiências agendadas ou importadas.</span>
           <span className="hidden md:inline">Acompanhe compromissos criados manualmente, comunicados por WhatsApp ou importados do Trello.</span>
         </>}
-        actions={
+        actions={can("calendar.manage") ?
           <Button onClick={() => abrirNovoEvento()}>
             <CalendarPlus className="h-4 w-4" /> Novo compromisso
           </Button>
-        }
+        : undefined}
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -637,11 +639,11 @@ export function Calendario() {
           icon={CalendarDays}
           title="Nenhum evento no calendário"
           description="Adicione um evento manualmente ou conclua um envio de WhatsApp para começar."
-          action={
+          action={can("calendar.manage") ?
             <Button onClick={() => abrirNovoEvento()}>
               <CalendarPlus className="h-4 w-4" /> Adicionar primeiro evento
             </Button>
-          }
+          : undefined}
         />
       ) : buscaAtiva ? (
         filtradas.length === 0 ? (
@@ -856,11 +858,11 @@ export function Calendario() {
             <ChevronRight className="h-5 w-5" />
           </Button>
         }
-        footer={
+        footer={can("calendar.manage") ?
           <Button onClick={() => diaSelecionado && abrirNovoEvento(diaSelecionado)}>
             <CalendarPlus className="h-4 w-4" /> Adicionar neste dia
           </Button>
-        }
+        : undefined}
       >
         {periciasDoDiaSelecionado.length > 0 ? (
           <div className="space-y-3">
@@ -1086,6 +1088,7 @@ function ResultadoBuscaLinha({
   excluindo?: boolean;
 }) {
   const tipo = classificarTipo(pericia);
+  const { can } = useAuth();
   return (
     <article
       className={cn(
@@ -1131,12 +1134,12 @@ function ResultadoBuscaLinha({
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
           <CalendarReminderButton pericia={pericia} onSent={onReminderSent} />
-          <Button variant="ghost" size="icon" title="Editar evento" aria-label="Editar evento" onClick={onEditar}>
+          {can("calendar.manage") && <Button variant="ghost" size="icon" title="Editar evento" aria-label="Editar evento" onClick={onEditar}>
             <Pencil className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" title="Apagar" aria-label="Apagar evento" onClick={onExcluir} disabled={excluindo}>
+          </Button>}
+          {can("calendar.manage") && <Button variant="ghost" size="icon" title="Apagar" aria-label="Apagar evento" onClick={onExcluir} disabled={excluindo}>
             <Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" />
-          </Button>
+          </Button>}
         </div>
       </div>
     </article>
@@ -1159,6 +1162,7 @@ function PericiaLinha({
   excluindo?: boolean;
 }) {
   const tipo = classificarTipo(pericia);
+  const { can } = useAuth();
   return (
     <div
       className={cn(
@@ -1186,7 +1190,7 @@ function PericiaLinha({
           {pericia.fonte === "trello_sync" && <Badge tone="neutral">Importado</Badge>}
           {pericia.status === "substituida" && <Badge tone="neutral">Substituída</Badge>}
           <CalendarReminderButton pericia={pericia} onSent={onReminderSent} />
-          {(onEditar || onExcluir) && (
+          {can("calendar.manage") && (onEditar || onExcluir) && (
             <div className="ml-auto flex items-center gap-1 md:ml-0">
               {onEditar && (
                 <Button variant="ghost" size="icon" title="Editar evento" aria-label="Editar evento" onClick={onEditar}>

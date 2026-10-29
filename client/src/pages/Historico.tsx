@@ -47,6 +47,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatCard } from "@/components/ui/StatCard";
+import { useAuth } from "@/context/AuthContext";
 
 const ITENS_POR_PAGINA = 20;
 
@@ -267,6 +268,7 @@ function PainelComunicacao({
   onReenviarInformacoes: (log: SendLog) => void;
   reenviando: boolean;
 }) {
+  const { can } = useAuth();
   const temMensagem = Boolean(log.mensagem_enviada);
   const temResposta = temRespostaRecebida(log);
   const temFinalizacao = temFinalizacaoSemResposta(log);
@@ -305,7 +307,7 @@ function PainelComunicacao({
             </div>
           </div>
         )}
-        {log.tipo_envio !== "lembrete" && log.mensagem_enviada && (
+        {can("messages.send") && log.tipo_envio !== "lembrete" && log.mensagem_enviada && (
           <Button
             variant="outline"
             size="sm"
@@ -322,6 +324,9 @@ function PainelComunicacao({
 }
 
 export function Historico() {
+  const { can } = useAuth();
+  const canManage = can("history.manage");
+  const canSend = can("messages.send");
   const { show } = useToast();
   const [logs, setLogs] = useState<SendLog[] | null>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -653,7 +658,7 @@ export function Historico() {
         ))}
       </div>
 
-      {selecionados.size > 0 && (
+      {canManage && selecionados.size > 0 && (
         <div className="flex items-center justify-between rounded-xl border border-accent-200 bg-accent-50 px-4 py-3 dark:border-accent-900 dark:bg-accent-900/20">
           <p className="text-sm font-medium text-accent-800 dark:text-accent-300">
             {selecionados.size} registro(s) selecionado(s)
@@ -686,13 +691,13 @@ export function Historico() {
       ) : (
         <>
           <WorkspacePanel title="Mensagens enviadas" description="Entrega, resposta e dados usados em cada aviso."
-            aside={<label className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400"><Checkbox checked={logsPaginados.length > 0 && logsPaginados.every(l => selecionados.has(l.id))} onChange={alternarSelecionarTodos} />Selecionar esta página</label>}
+            aside={canManage ? <label className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400"><Checkbox checked={logsPaginados.length > 0 && logsPaginados.every(l => selecionados.has(l.id))} onChange={alternarSelecionarTodos} />Selecionar esta página</label> : undefined}
           >
             {logsPaginados.map(log => <WorkspaceRow key={log.id} selected={selecionados.has(log.id)}
-              selection={<Checkbox aria-label={`Selecionar registro de ${log.card_nome || "cliente"}`} checked={selecionados.has(log.id)} onChange={() => alternarSelecionado(log.id)} />}
+              selection={canManage ? <Checkbox aria-label={`Selecionar registro de ${log.card_nome || "cliente"}`} checked={selecionados.has(log.id)} onChange={() => alternarSelecionado(log.id)} /> : undefined}
               primary={<div><h3 className="break-words text-[13px] font-medium text-zinc-900 dark:text-zinc-100">{log.card_nome || "Sem nome"}</h3><p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{log.telefone ? formatPhoneDisplay(log.telefone) : "Telefone não informado"}</p><ResumoRemarcacao log={log} /><div className="mt-2 flex flex-wrap gap-1">{log.tipo_envio === "lembrete" && <Badge tone="info">Lembrete</Badge>}{log.tipo_envio === "reenvio" && <Badge tone="accent">Reenvio</Badge>}</div></div>}
               secondary={<div className="space-y-2"><StatusBadge sendStatus={log.status} ack={log.ack} respostaStatus={log.resposta_status} /><div><AckIndicator ack={log.ack} sendStatus={log.status} respondido={log.resposta_status === "respondido"} /></div><p className="text-[11px] text-zinc-500 dark:text-zinc-400">{formatarData(log)}</p></div>}
-              actions={<><Button variant="outline" size="sm" aria-expanded={expandido === log.id} onClick={() => setExpandido(expandido === log.id ? null : log.id)}>{expandido === log.id ? "Recolher detalhes" : "Ver detalhes"}</Button>{log.status === "falha" && log.tipo_envio === "disparo" && <Button variant="outline" size="sm" onClick={() => reenviar(log)} loading={reenviando === log.id}><RotateCcw className="h-3.5 w-3.5" /> Reenviar</Button>}<Button variant="ghost" size="icon" aria-label={`Apagar registro de ${log.card_nome || "cliente"}`} onClick={() => setApagarAlvo(log)} disabled={apagando === log.id}><Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" /></Button></>}
+              actions={<><Button variant="outline" size="sm" aria-expanded={expandido === log.id} onClick={() => setExpandido(expandido === log.id ? null : log.id)}>{expandido === log.id ? "Recolher detalhes" : "Ver detalhes"}</Button>{canSend && log.status === "falha" && log.tipo_envio === "disparo" && <Button variant="outline" size="sm" onClick={() => reenviar(log)} loading={reenviando === log.id}><RotateCcw className="h-3.5 w-3.5" /> Reenviar</Button>}{canManage && <Button variant="ghost" size="icon" aria-label={`Apagar registro de ${log.card_nome || "cliente"}`} onClick={() => setApagarAlvo(log)} disabled={apagando === log.id}><Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" /></Button>}</>}
             >{expandido === log.id && <div className="space-y-4">{log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}<div className="grid min-w-0 gap-4 xl:grid-cols-2"><PainelAgendamento log={log} /><PainelComunicacao log={log} onReenviarInformacoes={setReenviarInformacoesAlvo} reenviando={reenviandoInformacoes === log.id} /></div></div>}</WorkspaceRow>)}
           </WorkspacePanel>
           <Pagination page={pagina} totalItems={logsFiltrados.length} pageSize={ITENS_POR_PAGINA} onPageChange={setPagina} />

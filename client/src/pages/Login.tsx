@@ -1,207 +1,72 @@
-import { useState, useEffect } from "react";
-import { ArrowLeft, Key, LogIn, Mail, Send, ShieldAlert } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import { ArrowLeft, ArrowRight, Eye, EyeOff, KeyRound, LockKeyhole, Mail, MessageSquareText, ShieldCheck, Zap } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
-import { Button } from "@/components/ui/Button";
-import { Input, Label } from "@/components/ui/Input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { APP_VERSION } from "@/lib/appVersion";
+import { firstAllowedPage } from "@/lib/navigation";
+import type { TeamUser } from "@/context/AuthContext";
+import "./Login.css";
 
 export function Login() {
   const { show } = useToast();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [carregando, setCarregando] = useState(false);
-
-  // Estados para recuperação
-  const [modo, setModo] = useState<"login" | "esqueci" | "reset">("login");
+  const [visible, setVisible] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<"login" | "forgot" | "reset">("login");
   const [token, setToken] = useState("");
-  const [novaSenha, setNovaSenha] = useState("");
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const t = params.get("token");
-    if (t) {
-      setToken(t);
-      setModo("reset");
-    }
+    const param = new URLSearchParams(window.location.search).get("token");
+    if (param) { setToken(param); setMode("reset"); }
+    void fetch("/api/auth/login-branding", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((result: { imageUrl: string | null }) => setImageUrl(result.imageUrl))
+      .catch(() => {});
   }, []);
 
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    setCarregando(true);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault(); setBusy(true);
     try {
-      await api.post("/auth/login", { username, password });
-      window.location.href = "/";
-    } catch (err) {
-      show(err instanceof ApiError ? err.message : "Erro ao realizar login.", "error");
-    } finally {
-      setCarregando(false);
-    }
-  }
+      if (mode === "login") {
+        const result = await api.post<{ user: TeamUser }>("/auth/login", { username, password });
+        window.location.replace(firstAllowedPage(result.user.permissions));
+      } else if (mode === "forgot") {
+        const result = await api.post<{ message: string }>("/auth/forgot-password", { username });
+        show(result.message, "info"); setMode("login");
+      } else {
+        await api.post("/auth/reset-password", { token, password });
+        show("Senha alterada. Entre com sua nova senha.", "success");
+        window.history.replaceState({}, "", "/login"); setPassword(""); setMode("login");
+      }
+    } catch (error) { show(error instanceof ApiError ? error.message : "Não foi possível continuar. Tente novamente.", "error"); }
+    finally { setBusy(false); }
+  };
 
-  async function handleEsqueci(e: React.FormEvent) {
-    e.preventDefault();
-    setCarregando(true);
-    try {
-      const res = await api.post<{ message: string }>("/auth/forgot-password", { username });
-      show(res.message, "info");
-      setModo("login");
-    } catch (err) {
-      show(err instanceof ApiError ? err.message : "Erro ao processar pedido.", "error");
-    } finally {
-      setCarregando(false);
-    }
-  }
+  return <main className="login-layout">
+    <section className={`login-visual ${imageUrl ? "has-image" : ""}`} style={imageUrl ? { backgroundImage: `linear-gradient(180deg, rgba(21,18,58,.16), rgba(19,15,63,.78)), url("${imageUrl}")` } : undefined} aria-label="DisparaZap 2 · Sales & Associados">
+      <div className="login-visual-header"><span className="login-brand-symbol"><Zap size={25} fill="currentColor" /></span><span><strong>DisparaZap <i>2</i></strong><small>Sales &amp; Associados</small></span></div>
+      {!imageUrl && <div className="login-illustration" aria-hidden="true"><div className="login-orbit orbit-one" /><div className="login-orbit orbit-two" /><div className="login-floating floating-one"><MessageSquareText size={27} /><span>Mensagens</span></div><div className="login-center-card"><span className="login-center-logo"><Zap size={37} fill="currentColor" /></span><span className="login-center-line" /><span className="login-center-line short" /><span className="login-center-progress"><span /></span></div><div className="login-floating floating-two"><ShieldCheck size={25} /><span>Acompanhamento</span></div></div>}
+      <div className="login-visual-copy"><span className="login-eyebrow">UM ESPAÇO DE TRABALHO MAIS CLARO</span><h2>Seu trabalho conectado.<br />Sua rotina no controle.</h2><p>Perícias, mensagens e processos organizados no mesmo lugar.</p></div>
+      <span className="login-visual-footer">DisparaZap 2 · v{APP_VERSION}</span>
+    </section>
 
-  async function handleReset(e: React.FormEvent) {
-    e.preventDefault();
-    setCarregando(true);
-    try {
-      await api.post("/auth/reset-password", { token, password: novaSenha });
-      show("Senha alterada com sucesso! Faça login.", "success");
-      setModo("login");
-      window.history.replaceState({}, "", "/login");
-    } catch (err) {
-      show(err instanceof ApiError ? err.message : "Token inválido ou expirado.", "error");
-    } finally {
-      setCarregando(false);
-    }
-  }
-
-  return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-zinc-50 login-screen px-4 py-10 dark:bg-zinc-950">
-      <div className="relative w-full max-w-md space-y-8 animate-slide-up">
-        <div className="flex flex-col items-center text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-500 text-white shadow-soft">
-            <LogIn className="h-7 w-7" />
-          </div>
-          <h2 className="mt-5 text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
-            DisparaZap <span className="text-accent-600 dark:text-accent-300">2</span>
-          </h2>
-          <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-            {modo === "login" ? "Seu espaço de trabalho na Sales & Associados." :
-             modo === "esqueci" ? "Recupere seu acesso ao sistema." : "Defina sua nova senha."}
-          </p>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              {modo === "login" ? (
-                <><LogIn className="h-5 w-5 text-accent-500" /> Bem-vindo de volta</>
-              ) : modo === "esqueci" ? (
-                <><Mail className="h-5 w-5 text-accent-500" /> Recuperação</>
-              ) : (
-                <><Key className="h-5 w-5 text-accent-500" /> Nova Senha</>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {modo === "login" && (
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="username">Usuário</Label>
-                  <Input
-                    id="username"
-                    type="text"
-                    placeholder="Seu usuário"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="password">Senha</Label>
-                    <button
-                      type="button"
-                      onClick={() => setModo("esqueci")}
-                      className="text-xs text-accent-600 hover:underline"
-                    >
-                      Esqueci minha senha
-                    </button>
-                  </div>
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
-                </div>
-                <Button type="submit" className="w-full" loading={carregando}>
-                  Entrar no sistema
-                </Button>
-              </form>
-            )}
-
-            {modo === "esqueci" && (
-              <form onSubmit={handleEsqueci} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="username-recovery">Usuário</Label>
-                  <Input
-                    id="username-recovery"
-                    type="text"
-                    placeholder="Digite seu usuário"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    required
-                  />
-                  <p className="text-xs text-zinc-500">
-                    Um link será enviado pelo Telegram (se configurado) ou para o e-mail cadastrado neste usuário.
-                  </p>
-                </div>
-                <Button type="submit" className="w-full" loading={carregando}>
-                  Enviar link de recuperação
-                </Button>
-                <button
-                  type="button"
-                  onClick={() => setModo("login")}
-                  className="flex w-full items-center justify-center gap-1 text-sm text-zinc-500 hover:text-zinc-700"
-                >
-                  <ArrowLeft className="h-4 w-4" /> Voltar para o login
-                </button>
-              </form>
-            )}
-
-            {modo === "reset" && (
-              <form onSubmit={handleReset} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="new-password">Nova Senha</Label>
-                  <Input
-                    id="new-password"
-                    type="password"
-                    placeholder="Mínimo 6 caracteres"
-                    value={novaSenha}
-                    onChange={(e) => setNovaSenha(e.target.value)}
-                    required
-                    minLength={6}
-                  />
-                </div>
-                <Button type="submit" className="w-full" loading={carregando}>
-                  Alterar senha
-                </Button>
-              </form>
-            )}
-
-            <div className="mt-6 rounded-lg bg-amber-50 p-3 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
-              <p className="flex items-center gap-1.5 font-semibold">
-                <ShieldAlert className="h-3.5 w-3.5" /> Segurança
-              </p>
-              <p className="mt-1">
-                Sua sessão expira automaticamente após 3 horas de inatividade.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <p className="text-center text-xs text-zinc-400">
-          Uso 100% local · v{APP_VERSION}
-        </p>
-      </div>
-    </div>
-  );
+    <section className="login-form-side"><div className="login-form-wrap">
+      <div className="login-mobile-brand"><Zap size={20} fill="currentColor" /> DisparaZap 2</div>
+      <span className="login-form-eyebrow">BEM-VINDO AO SEU ESPAÇO</span>
+      <h1>{mode === "login" ? "Entre na sua conta" : mode === "forgot" ? "Recuperar acesso" : "Criar nova senha"}</h1>
+      <p className="login-intro">{mode === "login" ? "Acesse o que você precisa, com as permissões da sua equipe." : mode === "forgot" ? "Informe seu usuário para receber as instruções no canal cadastrado." : "Escolha uma senha segura de pelo menos 12 caracteres."}</p>
+      <form onSubmit={submit} className="login-form">
+        {mode !== "reset" && <label htmlFor="login-username">Usuário</label>}
+        {mode !== "reset" && <div className="login-input-wrap"><Mail size={19} /><input id="login-username" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="Seu nome de usuário" required /></div>}
+        {mode !== "forgot" && <><label htmlFor="login-password">{mode === "reset" ? "Nova senha" : "Senha"}</label><div className="login-input-wrap"><LockKeyhole size={19} /><input id="login-password" type={visible ? "text" : "password"} autoComplete={mode === "reset" ? "new-password" : "current-password"} value={password} onChange={(event) => setPassword(event.target.value)} placeholder={mode === "reset" ? "Pelo menos 12 caracteres" : "Sua senha"} minLength={mode === "reset" ? 12 : undefined} required /><button type="button" className="login-visibility" onClick={() => setVisible(!visible)} aria-label={visible ? "Ocultar senha" : "Mostrar senha"}>{visible ? <EyeOff size={19} /> : <Eye size={19} />}</button></div></>}
+        {mode === "login" && <div className="login-inline"><span><KeyRound size={15} /> Acesso individual e protegido</span><button type="button" onClick={() => setMode("forgot")}>Esqueci minha senha</button></div>}
+        <button type="submit" className="login-submit" disabled={busy}>{busy ? "Aguarde…" : mode === "login" ? "Entrar no sistema" : mode === "forgot" ? "Enviar instruções" : "Salvar nova senha"}<ArrowRight size={19} /></button>
+        {mode !== "login" && <button type="button" className="login-back" onClick={() => setMode("login")}><ArrowLeft size={17} /> Voltar para o login</button>}
+      </form>
+      <div className="login-footnote"><ShieldCheck size={18} /><span>Sua conta é criada pelo administrador. Cada pessoa acessa apenas suas áreas autorizadas.</span></div>
+      <p className="login-mobile-version">DisparaZap 2 · v{APP_VERSION}</p>
+    </div></section>
+  </main>;
 }
-

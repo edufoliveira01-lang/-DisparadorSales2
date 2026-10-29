@@ -45,6 +45,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Pagination } from "@/components/ui/Pagination";
+import { useAuth } from "@/context/AuthContext";
 
 const TIPOS = {
   sentenca: "Sentença de mérito",
@@ -318,7 +319,40 @@ const UFS =
     " ",
   );
 
-export function Acompanhamento({ detailId, onCloseDetail }: { detailId?: number; onCloseDetail?: () => void } = {}) {
+export function Acompanhamento(props: { detailId?: number; onCloseDetail?: () => void } = {}) {
+  const { can } = useAuth();
+  return can("processes.manage") ? <AcompanhamentoEditor {...props} /> : <PublicacoesConsulta />;
+}
+
+function PublicacoesConsulta() {
+  const [items, setItems] = useState<Publicacao[]>([]);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    const query = new URLSearchParams({ busca: search, pagina: String(page), arquivo: "ativos" });
+    api.get<{ items: Publicacao[]; total: number }>(`/djen/publicacoes?${query}`).then((result) => {
+      if (active) { setItems(result.items); setTotal(result.total); setError(""); }
+    }).catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : "Falha ao carregar publicações."); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [search, page]);
+  return <div className="space-y-5">
+    <PageHeader title="Publicações processuais" description="Consulta de decisões, perícias e andamentos dos processos." />
+    <div className="surface-panel space-y-4 p-5"><label className="block text-sm font-medium" htmlFor="consulta-processo">Buscar cliente ou processo</label><Input id="consulta-processo" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Nome ou número do processo" />
+      <p className="text-xs text-zinc-500">{loading ? "Carregando…" : `${total} publicação(ões) encontrada(s)`}</p>
+    </div>
+    {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
+    <div className="space-y-3">{items.map((item) => <article key={item.id} className="surface-panel p-5"><div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">{item.cliente_exibicao || item.cliente_nome || item.processo}</strong><span className="text-xs text-zinc-500">{item.tribunal} · {item.data_disponibilizacao}</span></div><p className="mt-2 text-xs text-zinc-500">Processo {item.processo} · {item.situacao || "Em acompanhamento"}</p><p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">{item.resumo || item.analise?.resumo || "Resumo ainda não disponível."}</p></article>)}</div>
+    {!loading && total > 25 && <div className="flex items-center justify-center gap-4"><Button variant="outline" disabled={page === 1} onClick={() => setPage(page - 1)}>Anterior</Button><span className="text-sm">Página {page}</span><Button variant="outline" disabled={page * 25 >= total} onClick={() => setPage(page + 1)}>Próxima</Button></div>}
+  </div>;
+}
+
+function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; onCloseDetail?: () => void } = {}) {
   const [consultaAberta, setConsultaAberta] = useState(false);
   const [aguardandoAberto, setAguardandoAberto] = useState(false);
   const { pathname, search } = useLocation(),

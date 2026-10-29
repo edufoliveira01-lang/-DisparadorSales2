@@ -9,6 +9,7 @@ import {
 } from "react";
 import { api } from "@/lib/api";
 import type { WhatsappState } from "@/lib/types";
+import { useAuth } from "@/context/AuthContext";
 
 interface WhatsappContextValue extends WhatsappState {
   carregado: boolean;
@@ -36,6 +37,8 @@ const WhatsappContext = createContext<WhatsappContextValue | null>(null);
  * depender só do push do SSE, para a UI reagir na hora.
  */
 export function WhatsappProvider({ children }: { children: ReactNode }) {
+  const { can } = useAuth();
+  const manageWhatsapp = can("whatsapp.manage");
   const [state, setState] = useState<WhatsappState>(ESTADO_INICIAL);
   const [conectando, setConectando] = useState(false);
   const [carregado, setCarregado] = useState(false);
@@ -57,14 +60,14 @@ export function WhatsappProvider({ children }: { children: ReactNode }) {
       const versao = revisao.current;
       try {
         const value = await api.get<WhatsappState>("/whatsapp/status", { background: true, signal: AbortSignal.timeout(10000) });
-        if (ativo && seq === operacao.current && versao === revisao.current) aplicar(value);
+        if (ativo && seq === operacao.current && versao === revisao.current) aplicar(manageWhatsapp ? value : { ...ESTADO_INICIAL, status: value.status });
       } catch { /* A próxima consulta recupera o estado sem inventar uma desconexão. */ }
       finally { consultando = false; }
     };
-    const eventSource = new EventSource(`${api.baseUrl}/whatsapp/events`);
-    eventSource.onopen = () => { void consultar(); };
-    eventSource.onerror = () => { void consultar(); };
-    eventSource.onmessage = (event) => {
+    const eventSource = manageWhatsapp ? new EventSource(`${api.baseUrl}/whatsapp/events`) : null;
+    if (eventSource) eventSource.onopen = () => { void consultar(); };
+    if (eventSource) eventSource.onerror = () => { void consultar(); };
+    if (eventSource) eventSource.onmessage = (event) => {
       try {
         if (ativo) aplicar(JSON.parse(event.data));
       } catch (err) {
@@ -78,11 +81,11 @@ export function WhatsappProvider({ children }: { children: ReactNode }) {
     return () => {
       ativo = false;
       clearInterval(timer);
-      eventSource.close();
+      eventSource?.close();
       window.removeEventListener("focus", consultar);
       document.removeEventListener("visibilitychange", consultar);
     };
-  }, [aplicar]);
+  }, [aplicar, manageWhatsapp]);
 
   async function conectar() {
     const atual = ++operacao.current;

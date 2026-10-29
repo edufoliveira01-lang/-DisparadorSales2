@@ -17,7 +17,9 @@ import { useActiveService } from "@/context/ActiveServiceContext";
 import { useWhatsapp } from "@/context/WhatsappContext";
 import { useTheme } from "@/context/ThemeContext";
 import { getCurrentPage } from "@/lib/navigation";
+import { useAuth } from "@/context/AuthContext";
 export function Layout({ children }: { children: ReactNode }) {
+  const { user, can } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -112,7 +114,10 @@ export function Layout({ children }: { children: ReactNode }) {
             >
               <Menu className="h-5 w-5" />
             </button>
-            <nav className="workspace-switch" aria-label="Área de trabalho"><Link to="/" aria-current={active === "pericias" ? "true" : undefined}>Perícias e avisos</Link><Link to="/processos" aria-current={active === "processos" ? "true" : undefined}>Processos e DJEN</Link></nav>
+            <nav className="workspace-switch" aria-label="Área de trabalho">
+              {(can("dashboard.view") || can("calendar.view") || can("pending.view") || can("history.view")) && <Link to={can("dashboard.view") ? "/" : can("calendar.view") ? "/calendario" : can("pending.view") ? "/pendentes" : "/historico"} aria-current={active === "pericias" ? "true" : undefined}>Perícias e avisos</Link>}
+              {(can("processes.view") || can("deadlines.view")) && <Link to={can("processes.view") ? "/processos" : "/processos/calendarios"} aria-current={active === "processos" ? "true" : undefined}>Processos e DJEN</Link>}
+            </nav>
             <div className="min-w-0 topbar-breadcrumb">
               <p className="hidden items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400 md:flex">
                 <span>
@@ -147,9 +152,9 @@ export function Layout({ children }: { children: ReactNode }) {
               </kbd>
             </button>
             <Link
-              to="/configuracoes"
+              to={can("whatsapp.manage") ? "/configuracoes?whatsapp=1" : "/minha-conta"}
               title={connectionLabel}
-              aria-label={connectionLabel + ". Abrir configurações."}
+              aria-label={connectionLabel}
               className={`connection-status ${connected ? "is-connected" : ""}`}
             >
               <span
@@ -175,20 +180,20 @@ export function Layout({ children }: { children: ReactNode }) {
                 <Moon className="h-[18px] w-[18px]" />
               )}
             </button>
-            <Link
+            {can("integrations.manage") && <Link
               to="/configuracoes"
               className="topbar-icon hidden sm:flex"
               aria-label="Abrir configurações"
               title="Configurações"
             >
               <Settings className="h-[18px] w-[18px]" />
-            </Link>
-            <span
+            </Link>}
+            <Link to="/minha-conta"
               className="hidden h-9 w-9 items-center justify-center rounded-full bg-accent-100 text-[11px] font-semibold text-accent-700 dark:bg-accent-900 dark:text-accent-200 sm:flex"
-              aria-label="Sales & Associados"
+              aria-label={`Minha conta: ${user.display_name || user.username}`}
             >
-              SA
-            </span>
+              {(user.display_name || user.username).slice(0, 2).toUpperCase()}
+            </Link>
           </div>
         </header>
         <main
@@ -198,7 +203,7 @@ export function Layout({ children }: { children: ReactNode }) {
         >
           <div className="global-status-rail">
             <GlobalServiceActivity />
-            <ProcessAlerts />
+            {can("processes.view") && <ProcessAlerts />}
           </div>
           <div
             key={pathname}

@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { socket } from "@/lib/socket";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
+import { useAuth } from "@/context/AuthContext";
 
 export interface BatchProgress {
   id: string;
@@ -17,11 +18,14 @@ export interface BatchProgress {
 const BatchProgressContext = createContext<{ lotes: BatchProgress[]; conectado: boolean } | null>(null);
 
 export function BatchProgressProvider({ children }: { children: ReactNode }) {
+  const { can } = useAuth();
+  const canSend = can("messages.send");
   const [lotes, setLotes] = useState<BatchProgress[]>([]);
   const [conectado, setConectado] = useState(socket.connected);
   const { show } = useToast();
 
   useEffect(() => {
+    if (!canSend) return;
     let disposed = false;
     let fetching = false;
     let revision = 0;
@@ -76,7 +80,7 @@ export function BatchProgressProvider({ children }: { children: ReactNode }) {
       document.removeEventListener("visibilitychange", recuperar);
       for (const [evento, handler] of Object.entries(handlers)) socket.off(evento, handler);
     };
-  }, [show]);
+  }, [show, canSend]);
 
   return <BatchProgressContext.Provider value={{ lotes, conectado }}>{children}</BatchProgressContext.Provider>;
 }

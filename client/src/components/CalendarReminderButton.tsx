@@ -9,12 +9,14 @@ import { useToast } from "./ui/Toast";
 import { Button } from "./ui/Button";
 import { Modal } from "./ui/Modal";
 import { Input, Label } from "./ui/Input";
+import { useAuth } from "@/context/AuthContext";
 
 interface Pending { ids: number[]; nome: string; processo?: string; contato?: { id: number; nome: string; telefone: string } }
 interface Validation { pendencias: Pending[]; telefonesPendentes?: Pending[]; eventos?: PericiaAgendada[] }
 const guard = createInFlightGuard<number>();
 
 export function CalendarReminderButton({ pericia, onSent }: { pericia: PericiaAgendada; onSent: () => void }) {
+  const { can } = useAuth();
   const { status } = useWhatsapp();
   const { show } = useToast();
   const [open, setOpen] = useState(false);
@@ -72,7 +74,7 @@ export function CalendarReminderButton({ pericia, onSent }: { pericia: PericiaAg
     } catch (error) { handleError(error); }
     finally { guard.finish(pericia.id); lock.current = false; setBusy(false); }
   }
-  if (!active) return null;
+  if (!active || !can("messages.send")) return null;
   return <>
     <Button size="sm" variant="outline" onClick={() => void begin()} loading={busy} aria-label={`${pericia.ultimo_lembrete_em ? "Reenviar" : "Enviar"} lembrete para ${pericia.nome}`}><Send className="h-3.5 w-3.5" />{pericia.ultimo_lembrete_em ? "Reenviar lembrete" : "Enviar lembrete"}</Button>
     <Modal open={open} onClose={() => { if (!busy) setOpen(false); }} title={pending ? pending.type === "telefone" ? "Informe o telefone" : "Confirme o processo" : resend ? "Reenviar lembrete" : "Enviar lembrete"} description={pending ? "Complete os dados do destinatário para continuar." : "Confira o compromisso e o destinatário antes do envio."} footer={<><Button variant="ghost" disabled={busy} onClick={() => setOpen(false)}>Cancelar</Button><Button loading={busy} disabled={Boolean(pending && !value.trim())} onClick={() => void confirm()}>{pending ? "Salvar e revisar" : resend ? "Confirmar reenvio" : "Confirmar envio"}</Button></>}>

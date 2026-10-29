@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowUpRight, Search } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Modal } from "./ui/Modal";
-import { navigation } from "@/lib/navigation";
+import { permittedNavigation } from "@/lib/navigation";
+import { useAuth } from "@/context/AuthContext";
 const normalize = (text: string) =>
   text
     .normalize("NFD")
@@ -17,6 +18,7 @@ export function QuickNavigation({
 }) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
+  const { user } = useAuth();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   useEffect(() => {
@@ -27,12 +29,12 @@ export function QuickNavigation({
   }, [open]);
   const results = useMemo(
     () =>
-      navigation.filter((item) =>
+      permittedNavigation(user.permissions).filter((item) =>
         normalize(item.label + " " + item.description).includes(
           normalize(query),
         ),
       ),
-    [query],
+    [query, user.permissions],
   );
   function choose(to: string) {
     onClose();

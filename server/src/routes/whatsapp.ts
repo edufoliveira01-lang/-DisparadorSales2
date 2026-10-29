@@ -1,11 +1,14 @@
 import { Router } from "express";
 import { whatsappManager } from "../services/whatsappService";
 import { WhatsappSessionRecoveryError } from "../services/whatsappProfile";
+import { getUserById } from "../services/authService";
+import { hasPermission } from "../services/accessService";
 
 export const whatsappRouter = Router();
 
-whatsappRouter.get("/status", (_req, res) => {
-  res.json(whatsappManager.getState());
+whatsappRouter.get("/status", (req, res) => {
+  const state = whatsappManager.getState();
+  res.json(req.accessUser && hasPermission(req.accessUser, "whatsapp.manage") ? state : { status: state.status });
 });
 
 whatsappRouter.post("/connect", async (_req, res, next) => {
@@ -51,6 +54,8 @@ whatsappRouter.get("/events", (req, res) => {
   res.flushHeaders();
 
   const send = () => {
+    const user = req.accessUser && getUserById(req.accessUser.id);
+    if (!user || !hasPermission(user, "whatsapp.manage")) { res.end(); return; }
     res.write(`data: ${JSON.stringify(whatsappManager.getState())}\n\n`);
   };
   send();

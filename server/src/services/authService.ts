@@ -1,10 +1,8 @@
 import crypto from "node:crypto";
 import { db } from "../db";
+import type { AccessUser } from "./accessService";
 
-export interface User {
-  id: number;
-  username: string;
-  email: string | null;
+export interface User extends AccessUser {
   password_hash: string;
 }
 
@@ -25,7 +23,20 @@ export interface Session {
 const SESSION_DURATION_HOURS = 3;
 
 export function hashPassword(password: string): string {
-  return crypto.createHash("sha256").update(password).digest("hex");
+  const salt = crypto.randomBytes(16).toString("hex");
+  return `scrypt$${salt}$${crypto.scryptSync(password, salt, 64).toString("hex")}`;
+}
+
+export function verifyPassword(password: string, stored: string): boolean {
+  const parts = stored.split("$");
+  if (parts.length === 3 && parts[0] === "scrypt" && /^[a-f0-9]{32}$/.test(parts[1]) && /^[a-f0-9]{128}$/.test(parts[2])) {
+    const actual = crypto.scryptSync(password, parts[1], 64);
+    return crypto.timingSafeEqual(actual, Buffer.from(parts[2], "hex"));
+  }
+  if (/^[a-f0-9]{64}$/.test(stored)) {
+    return crypto.timingSafeEqual(crypto.createHash("sha256").update(password).digest(), Buffer.from(stored, "hex"));
+  }
+  return false;
 }
 
 export function getUserByUsername(username: string): User | undefined {
@@ -36,8 +47,9 @@ export function getUserById(id: number): User | undefined {
   return db.prepare("SELECT * FROM users WHERE id = ?").get(id) as User | undefined;
 }
 
-export function updateUser(id: number, data: Partial<Omit<User, "id">>) {
+export function updateUser(id: number, data: Partial<Pick<User, "username" | "email" | "display_name" | "password_hash">>) {
   const fields = Object.keys(data).map(f => `${f} = ?`).join(", ");
+  if (!fields) return;
   const values = Object.values(data);
   db.prepare(`UPDATE users SET ${fields} WHERE id = ?`).run(...values, id);
 }
@@ -55,7 +67,7 @@ export function generateRecoveryToken(userId: number): string {
 /** Retorna o usuário dono do token, ou undefined se o token não existir ou já tiver expirado. */
 export function getUserByRecoveryToken(token: string): User | undefined {
   const user = db.prepare("SELECT * FROM users WHERE recovery_token = ?").get(token) as UserWithRecovery | undefined;
-  if (!user) return undefined;
+  if (!user || !user.active) return undefined;
 
   if (!user.recovery_expires || new Date(user.recovery_expires) < new Date()) {
     clearRecoveryToken(user.id);

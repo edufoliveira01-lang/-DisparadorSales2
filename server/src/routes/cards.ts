@@ -13,6 +13,7 @@ import { getCardsFromList, TrelloError } from "../services/trelloService";
 import { normalizePhone } from "../utils/phone";
 import { normalizeProcesso } from "../utils/processo";
 import { detectarRemarcacao } from "../services/periciasAgendadasService";
+import { hasPermission } from "../services/accessService";
 
 export const cardsRouter = Router();
 
@@ -45,7 +46,7 @@ function autoCadastrarPorTelefone(
   return createContact(nomeCliente, telefoneNormalizado, undefined, processo);
 }
 
-cardsRouter.get("/", async (_req, res) => {
+cardsRouter.get("/", async (req, res) => {
   const key = getSetting("trello_key");
   const token = getSetting("trello_token");
   const listId = getSetting("trello_list_id");
@@ -79,7 +80,7 @@ cardsRouter.get("/", async (_req, res) => {
       let match = matchContact(nomeCliente, [...contacts, ...novosContatos], processoCliente);
       let criterioContato: MatchCriterio | null = match.criterio;
 
-      if (!match.exact) {
+      if (!match.exact && req.accessUser && hasPermission(req.accessUser, "contacts.manage")) {
         const telefoneCard = pericias.map((p) => p.telefone).find((t) => t.trim());
         if (telefoneCard) {
           const contato = autoCadastrarPorTelefone(

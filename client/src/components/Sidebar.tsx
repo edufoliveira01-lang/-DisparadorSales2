@@ -11,7 +11,8 @@ import {
 } from "lucide-react";
 import { useActiveService } from "@/context/ActiveServiceContext";
 import { cn } from "@/lib/utils";
-import { navigation } from "@/lib/navigation";
+import { permittedNavigation } from "@/lib/navigation";
+import { useAuth } from "@/context/AuthContext";
 import { APP_VERSION } from "@/lib/appVersion";
 
 interface SidebarProps {
@@ -27,6 +28,8 @@ export function Sidebar({
   onNavigate,
 }: SidebarProps) {
   const active = useActiveService();
+  const { user, can } = useAuth();
+  const visibleNavigation = permittedNavigation(user.permissions);
   const navigate = useNavigate();
   const asideRef = useRef<HTMLElement>(null);
   const [desktop, setDesktop] = useState(
@@ -118,12 +121,14 @@ export function Sidebar({
               to: "/processos",
             },
           ] as const
-        ).map(({ id, label, icon: Icon, to }) => (
+        ).filter(({ id }) => id === "processos" ? can("processes.view") || can("deadlines.view") : visibleNavigation.some((item) => item.group === "pericias"))
+          .map(({ id, label, icon: Icon, to }) => (
           <button
             key={id}
             type="button"
             onClick={() => {
-              navigate(to);
+              navigate(id === "processos" && !can("processes.view") ? "/processos/calendarios"
+                : id === "pericias" && !can("dashboard.view") ? visibleNavigation.find((item) => item.group === "pericias")?.to || "/minha-conta" : to);
               onNavigate();
             }}
             aria-pressed={active === id}
@@ -150,7 +155,7 @@ export function Sidebar({
           <div key={group} className="mb-5">
             <p className="sidebar-section-label">{label}</p>
             <div className="space-y-1">
-              {navigation
+              {visibleNavigation
                 .filter((item) => item.group === group)
                 .map((item) => {
                   const Icon = item.icon;
@@ -169,7 +174,7 @@ export function Sidebar({
                         className="h-[19px] w-[19px] shrink-0"
                         strokeWidth={1.7}
                       />
-                      <span className="sidebar-copy">{item.label}</span><span className="sidebar-short">{({"/":"Início","/calendario":"Agenda","/templates":"Mensagens","/pendentes":"Retornos","/historico":"Envios","/processos":"Publicações","/processos/quadro":"Quadro","/processos/aguardando":"Espera","/processos/advogados":"Advogados","/processos/monitoramento":"DJEN","/processos/calendarios":"Prazos","/agenda":"Contatos","/logs":"Atividade","/configuracoes":"Ajustes"} as Record<string,string>)[item.to]}</span>
+                      <span className="sidebar-copy">{item.label}</span><span className="sidebar-short">{({"/":"Início","/calendario":"Agenda","/templates":"Mensagens","/pendentes":"Retornos","/historico":"Envios","/processos":"Publicações","/processos/quadro":"Quadro","/processos/aguardando":"Espera","/processos/advogados":"Advogados","/processos/monitoramento":"DJEN","/processos/calendarios":"Prazos","/agenda":"Contatos","/logs":"Atividade","/configuracoes":"Ajustes","/equipe":"Equipe","/minha-conta":"Conta"} as Record<string,string>)[item.to]}</span>
                     </NavLink>
                   );
                 })}
@@ -180,11 +185,11 @@ export function Sidebar({
       <div className="sidebar-footer">
         <div className="sidebar-copy flex min-w-0 items-center gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-xs font-semibold text-violet-200">
-            SA
+            {(user.display_name || user.username).slice(0, 2).toUpperCase()}
           </span>
           <div>
             <p className="text-xs font-medium text-slate-200">
-              Seu espaço de trabalho
+              {user.display_name || user.username}
             </p>
             <p className="mt-1 text-[10px] text-slate-400">
               DisparaZap · v{APP_VERSION}

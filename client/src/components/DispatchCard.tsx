@@ -17,8 +17,10 @@ import { Checkbox } from "./ui/Checkbox";
 import { Modal } from "./ui/Modal";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { formatPlaceholder, cn } from "@/lib/utils";
+import { useAuth } from "@/context/AuthContext";
 
 export function DispatchCard(props: CardItemProps) {
+  const { can } = useAuth();
   const {
     card,
     contatoEfetivo: contato,
@@ -57,11 +59,11 @@ export function DispatchCard(props: CardItemProps) {
         )}
       >
         <div className="dispatch-identity"><span className="client-avatar" aria-hidden="true">{card.nomeCliente.split(" ").filter(Boolean).slice(0,2).map(word=>word[0]).join("")}</span>
-          <Checkbox
+          {can("messages.send") && <Checkbox
             aria-label={`Selecionar ${card.nomeCliente}`}
             checked={selecionado}
             onChange={props.onToggleSelecionar}
-          />
+          />}
           <div className="min-w-0 flex-1">
             <h3 className="break-words text-sm font-semibold text-zinc-900 dark:text-zinc-100">
               {card.nomeCliente}
@@ -75,7 +77,7 @@ export function DispatchCard(props: CardItemProps) {
               )}
             </p>
           </div>
-          <Button
+          {can("contacts.manage") && <Button
             variant="ghost"
             size="icon"
             title="Editar nome do cliente"
@@ -83,7 +85,7 @@ export function DispatchCard(props: CardItemProps) {
             onClick={props.onEditarNome}
           >
             <Pencil className="h-3.5 w-3.5" />
-          </Button>
+          </Button>}
         </div>
         <div className="dispatch-schedule">
           {card.pericias.map((p, index) => {
@@ -96,7 +98,7 @@ export function DispatchCard(props: CardItemProps) {
                   <span className="font-medium text-zinc-700 dark:text-accent-300">
                     {formatPlaceholder(p.tipo) || "Tipo não identificado"}
                   </span>
-                  <button
+                  {can("calendar.manage") && <button
                     type="button"
                     title="Editar informações da perícia"
                     aria-label={`Editar compromisso ${index + 1} de ${card.nomeCliente}`}
@@ -104,7 +106,7 @@ export function DispatchCard(props: CardItemProps) {
                     className="rounded p-1 text-zinc-500 hover:text-accent-600 dark:text-zinc-400"
                   >
                     <Pencil className="h-3.5 w-3.5" />
-                  </button>
+                  </button>}
                 </div>
                 <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
                   <span className="inline-flex items-center gap-1.5">
@@ -199,14 +201,14 @@ export function DispatchCard(props: CardItemProps) {
             </p>
           )}
           <div className="ticket-actions">
-            <Button
+            {can("messages.send") && <Button
               size="sm"
               onClick={props.onEnviar}
               loading={enviando}
               disabled={!contato || !card.pericias.length}
             >
               <Send className="h-3.5 w-3.5" /> Revisar e avisar
-            </Button>
+            </Button>}
             <Button
               size="sm"
               variant="outline"
@@ -214,7 +216,7 @@ export function DispatchCard(props: CardItemProps) {
             >
               Ver detalhes
             </Button>
-            {contato ? (
+            {can("contacts.manage") && (contato ? (
               <Button
                 size="sm"
                 variant="outline"
@@ -230,7 +232,7 @@ export function DispatchCard(props: CardItemProps) {
               >
                 <UserPlus className="h-3.5 w-3.5" /> Cadastrar contato
               </Button>
-            )}
+            ))}
           </div>
         </div>
       </article>
