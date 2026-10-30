@@ -1,3 +1,4 @@
+import { selectedAiConnection } from "../services/ai/connection";
 import {
   statusCalendarios,
   enfileirarCalendarios,
@@ -123,7 +124,8 @@ djenRouter.get(
       advogados: listarAdvogados(),
       pericias_sem_laudo: listarPericiasSemLaudo().length,
       aguardando_retorno: acompanhamentos().length,
-      codex: statusAnalisesCodex(),
+      ia: statusAnalisesCodex(),
+      codex: statusAnalisesCodex(), // Compatibilidade com abas da versão anterior.
     }),
   ),
 );
@@ -159,25 +161,25 @@ djenRouter.put(
   }),
 );
 djenRouter.get(
-  "/codex/conexao",
-  wrap(async (_req, res) => res.json(await verificarConexaoCodex(true))),
+  ["/ia/conexao", "/codex/conexao"],
+  wrap(async (_req, res) => res.json(await selectedAiConnection())),
 );
 const somenteAdministrador: import("express").RequestHandler = (req, res, next) => req.accessUser?.role === "administrador"
-  ? next() : res.status(403).json({ error: "Somente o administrador pode gerenciar exemplos do Codex." });
-djenRouter.get("/codex/exemplos", somenteAdministrador, wrap((_req, res) => res.json(listarExemplosClassificacao())));
-djenRouter.post("/codex/exemplos", somenteAdministrador, wrap((req, res) => {
+  ? next() : res.status(403).json({ error: "Somente o administrador pode gerenciar exemplos da IA." });
+djenRouter.get(["/ia/exemplos", "/codex/exemplos"], somenteAdministrador, wrap((_req, res) => res.json(listarExemplosClassificacao())));
+djenRouter.post(["/ia/exemplos", "/codex/exemplos"], somenteAdministrador, wrap((req, res) => {
   const exemplo = criarExemploClassificacao(req.body || {}, req.accessUser!.id);
   changed(); res.status(201).json(exemplo);
 }));
-djenRouter.delete("/codex/exemplos/:id", somenteAdministrador, wrap((req, res) => {
+djenRouter.delete(["/ia/exemplos/:id", "/codex/exemplos/:id"], somenteAdministrador, wrap((req, res) => {
   excluirExemploClassificacao(id(req.params.id)); changed(); res.json({ ok: true });
 }));
 djenRouter.post(
-  "/codex/reanalisar",
+  ["/ia/reanalisar", "/codex/reanalisar"],
   wrap((_req, res) => res.status(202).json(enfileirarAnaliseCodex())),
 );
 djenRouter.post(
-  "/codex/retomar",
+  ["/ia/retomar", "/codex/retomar"],
   wrap((_req, res) => {
     db.prepare("UPDATE djen_config SET ia_pausa=NULL WHERE id=1").run();
     db.prepare(
@@ -574,4 +576,5 @@ djenRouter.post(
     changed();
   }),
 );
+
 

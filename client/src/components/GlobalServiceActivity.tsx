@@ -13,7 +13,7 @@ interface Job { id: string; label: string; href: string; waiting?: boolean }
 interface DjenStatus {
   executando: number | null;
   ultimas: { id: number; status: string }[];
-  codex: { executando: number | null; executando_ids?: number[]; pendentes: number; pausa: string | null };
+  ia: { executando: number | null; executando_ids?: number[]; pendentes: number; pausa: string | null };
 }
 interface GoogleJob { state: string; error: string | null; background?: { running: boolean; pending: number } }
 interface CalendarStatus { executando: number; na_fila: number }
@@ -63,8 +63,8 @@ export function GlobalServiceActivity() {
       update<DjenStatus>("djen", "/djen/status", status => {
         const result: Job[] = [];
         if (status.executando) result.push({ id: "djen", label: "DJEN · Buscando publicações", href: "/processos/monitoramento" });
-        const active = status.codex?.executando_ids?.length || (status.codex?.executando ? 1 : 0);
-        if (active) result.push({ id: "codex", label: `Codex · Analisando ${active} publicação(ões)${status.codex.pendentes ? ` · ${status.codex.pendentes} na fila` : ""}`, href: "/processos/monitoramento" });
+        const active = status.ia?.executando_ids?.length || (status.ia?.executando ? 1 : 0);
+        if (active) result.push({ id: "codex", label: `IA · Analisando ${active} publicação(ões)${status.ia.pendentes ? ` · ${status.ia.pendentes} na fila` : ""}`, href: "/processos/monitoramento" });
         return result;
       }, (old, next) => {
         if (old.executando && old.executando !== next.executando) {
@@ -127,3 +127,4 @@ export function GlobalServiceActivity() {
     </section>
   );
 }
+

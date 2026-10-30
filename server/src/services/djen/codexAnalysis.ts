@@ -1,3 +1,5 @@
+import { chatgptLoginBusy } from "../ai/chatgptAuth";
+import { aiProfile, profileIdentity, type AiProfile } from "../ai/config";
 import { createHash } from "node:crypto";
 import { db } from "../../db";
 import { emitEvent } from "../../websocket";
@@ -6,7 +8,6 @@ import {
   analisarLoteComCodex,
   ErroModeloCodex,
   ErroPublicacaoCodex,
-  PERFIS_CODEX,
   type ModoAnaliseCodex,
 } from "./codexRunner";
 import { configuracaoDjen, DjenInputError, publicacaoPorId } from "./store";
@@ -34,6 +35,7 @@ interface Tarefa {
   processo: string;
   tribunal: string;
   ia_manual: number;
+  perfil: AiProfile;
 }
 
 const contexto = (p: Tarefa): ContextoPublicacao => ({
@@ -90,6 +92,8 @@ export function statusAnalisesCodex() {
         ? 4
         : 1;
   return {
+    provedor: aiProfile(config.ia_modo).provedor,
+    modelo: aiProfile(config.ia_modo).modelo,
     executando: ids[0] || null,
     executando_ids: ids,
     execucoes_simultaneas: execucoesAtuais.size,
@@ -129,6 +133,7 @@ export function salvarAnaliseCodex(
   texto: string,
   tipoDocumento: string,
   analise: AnaliseCodex,
+  perfil: AiProfile = aiProfile(configuracaoDjen().ia_modo),
 ): boolean {
   const p = publicacaoPorId(id);
   if (
@@ -140,7 +145,7 @@ export function salvarAnaliseCodex(
     return false;
   db.transaction(() => {
     db.prepare(
-      `UPDATE djen_publicacoes SET ia_status='concluida',ia_manual=0,ia_json=?,ia_erro=NULL,ia_em=CURRENT_TIMESTAMP,ia_versao=?,
+      `UPDATE djen_publicacoes SET ia_status='concluida',ia_manual=0,ia_json=?,ia_erro=NULL,ia_em=CURRENT_TIMESTAMP,ia_versao=?,ia_provedor=?,ia_modelo=?,ia_configuracao=?,
       categorias_json=CASE WHEN revisada=0 THEN ? ELSE categorias_json END,
       evidencias_json=CASE WHEN revisada=0 THEN ? ELSE evidencias_json END,
       situacao=CASE WHEN revisada=0 THEN ? ELSE situacao END,
@@ -148,6 +153,7 @@ export function salvarAnaliseCodex(
     ).run(
       JSON.stringify(analise),
       VERSAO_CLASSIFICADOR,
+      perfil.provedor || "codex", perfil.modelo, String(perfil.configuracao || 0),
       JSON.stringify(analise.categorias),
       JSON.stringify(analise.evidencias),
       analise.situacao || "",
@@ -157,8 +163,9 @@ export function salvarAnaliseCodex(
     registrarHistoricoDjen(
       id,
       "analise",
-      "Análise do Codex concluída. Revisões humanas são preservadas.",
+      "Análise da IA concluída. Revisões humanas são preservadas.",
       {
+        provedor: perfil.provedor || "codex", modelo: perfil.modelo,
         categorias: analise.categorias,
         resultado: analise.resultado,
         situacao: analise.situacao || "",
@@ -198,6 +205,7 @@ function chaveCache(p: Tarefa) {
     .update(
       JSON.stringify([
         VERSAO_CLASSIFICADOR,
+        profileIdentity(p.perfil),
         versaoExemplosClassificacao(),
         p.tipo_documento,
         p.classe,
@@ -209,7 +217,7 @@ function chaveCache(p: Tarefa) {
     .digest("hex");
 }
 
-function lerCache(p: Tarefa): AnaliseCodex | null {
+function lerCache(p: Tarefa): { analise: AnaliseCodex; perfil: AiProfile } | null {
   if (p.ia_manual) return null;
   const chave = chaveCache(p);
   const row = db
@@ -219,32 +227,30 @@ function lerCache(p: Tarefa): AnaliseCodex | null {
     .get(chave, `${VERSAO_CLASSIFICADOR}:${versaoExemplosClassificacao()}`) as { analise_json: string } | undefined;
   if (!row) return null;
   try {
-    return validarAnaliseCodex(
-      JSON.parse(row.analise_json),
-      p.texto,
-      contexto(p),
-    );
+    const saved = JSON.parse(row.analise_json);
+    if (!saved.perfil || saved.perfil.provedor !== p.perfil.provedor || saved.perfil.configuracao !== p.perfil.configuracao) return null;
+    return { analise: validarAnaliseCodex(saved.analise, p.texto, contexto(p)), perfil: saved.perfil };
   } catch {
     db.prepare("DELETE FROM djen_analise_cache WHERE chave=?").run(chave);
     return null;
   }
 }
 
-function gravarCache(p: Tarefa, analise: AnaliseCodex) {
+function gravarCache(p: Tarefa, analise: AnaliseCodex, perfil: AiProfile) {
   db.prepare(
     `INSERT INTO djen_analise_cache(chave,versao,analise_json) VALUES (?,?,?)
      ON CONFLICT(chave) DO UPDATE SET versao=excluded.versao,analise_json=excluded.analise_json,updated_at=CURRENT_TIMESTAMP`,
-  ).run(chaveCache(p), `${VERSAO_CLASSIFICADOR}:${versaoExemplosClassificacao()}`, JSON.stringify(analise));
+  ).run(chaveCache(p), `${VERSAO_CLASSIFICADOR}:${versaoExemplosClassificacao()}`, JSON.stringify({ analise, perfil }));
 }
 
-function registrarCache(p: Tarefa) {
+function registrarCache(p: Tarefa, perfil: AiProfile) {
   db.prepare(
-    "INSERT INTO djen_codex_execucoes(modelo,esforco,modo,itens,caracteres,status,duracao_ms) VALUES ('cache','nenhum',?,1,?,'cache',0)",
-  ).run(configuracaoDjen().ia_modo, p.texto.length);
+    "INSERT INTO djen_codex_execucoes(modelo,esforco,modo,itens,caracteres,status,duracao_ms,provedor) VALUES (?,?,?,1,?,'cache',0,?)",
+  ).run(perfil.modelo, perfil.esforco, perfil.modo, p.texto.length, perfil.provedor || "codex");
 }
 
 function buscarPendentes(config: ReturnType<typeof configuracaoDjen>) {
-  return db
+  const rows = db
     .prepare(
       `SELECT p.id,p.texto,p.tipo_documento,p.classe,p.tribunal,p.ia_manual,pr.numero AS processo
        FROM djen_publicacoes p JOIN djen_processos pr ON pr.chave=p.processo_chave
@@ -252,6 +258,7 @@ function buscarPendentes(config: ReturnType<typeof configuracaoDjen>) {
        ORDER BY p.ia_manual DESC,p.revisada ASC,p.id ASC LIMIT 24`,
     )
     .all(config.ia_ativa && !config.ia_pausa ? 1 : 0) as Tarefa[];
+  return rows.map((p) => ({ ...p, perfil: aiProfile(p.ia_manual ? "precisao" : p.texto.length > 20000 && config.ia_modo === "economico" ? "equilibrado" : config.ia_modo) }));
 }
 
 function aplicarCache(config: ReturnType<typeof configuracaoDjen>): boolean {
@@ -264,11 +271,11 @@ function aplicarCache(config: ReturnType<typeof configuracaoDjen>): boolean {
       )
       .run(new Date().toISOString(), p.id);
     if (!claim.changes) continue;
-    if (salvarAnaliseCodex(p.id, p.texto, p.tipo_documento, analise)) {
+    if (salvarAnaliseCodex(p.id, p.texto, p.tipo_documento, analise.analise, analise.perfil)) {
       db.prepare("UPDATE djen_publicacoes SET ia_duracao_ms=0 WHERE id=?").run(
         p.id,
       );
-      registrarCache(p);
+      registrarCache(p, analise.perfil);
     }
     changed();
     return true;
@@ -322,7 +329,7 @@ function precisaAprofundar(analise: AnaliseCodex) {
 
 function marcarErro(p: Tarefa, error: unknown) {
   const erro =
-    error instanceof Error ? error.message : "Falha na análise do Codex.";
+    error instanceof Error ? error.message : "Falha na análise da IA.";
   db.prepare(
     "UPDATE djen_publicacoes SET ia_status='erro',ia_manual=0,ia_erro=? WHERE id=? AND texto=? AND tipo_documento=? AND ia_status='analisando'",
   ).run(erro, p.id, p.texto, p.tipo_documento);
@@ -345,13 +352,10 @@ async function executarGrupo(
   const pendentes = new Set(grupo.map((p) => p.id));
   let loteInvalido = false;
   try {
-    const manual = Boolean(grupo[0]?.ia_manual);
-    const extenso = grupo.length === 1 && grupo[0].texto.length > 20000;
-    const perfilInicial = manual
-      ? PERFIS_CODEX.precisao
-      : extenso && modo === "economico"
-        ? PERFIS_CODEX.equilibrado
-        : PERFIS_CODEX[modo];
+    const perfilInicial = grupo[0].perfil;
+    const perfilForte = aiProfile("equilibrado");
+    const podeEscalar = perfilInicial.modo === "economico" && perfilInicial.modelo !== perfilForte.modelo;
+    let perfilLote = perfilInicial;
     if (grupo.length > 1) {
       try {
         const itens = grupo.map((p) => ({
@@ -370,14 +374,11 @@ async function executarGrupo(
         } catch (error) {
           if (
             !(error instanceof ErroModeloCodex) ||
-            perfilInicial.modelo !== "gpt-6-luna"
+            !podeEscalar
           )
             throw error;
-          lote = await analisarLoteComCodex(
-            itens,
-            controller.signal,
-            PERFIS_CODEX.equilibrado,
-          );
+          perfilLote = perfilForte;
+          lote = await analisarLoteComCodex(itens, controller.signal, perfilLote);
         }
         for (const [id, analise] of lote.resultados)
           resultados.set(id, analise);
@@ -390,12 +391,14 @@ async function executarGrupo(
     }
     for (const p of grupo) {
       let analise = resultados.get(p.id);
+      let perfilUsado = perfilLote;
       try {
         if (!analise) {
           const perfilIndividual =
-            loteInvalido && perfilInicial.modelo === "gpt-6-luna"
-              ? PERFIS_CODEX.equilibrado
+            loteInvalido && podeEscalar
+              ? perfilForte
               : perfilInicial;
+          perfilUsado = perfilIndividual;
           try {
             analise = await analisarComCodex(
               p.texto,
@@ -406,31 +409,22 @@ async function executarGrupo(
             );
           } catch (error) {
             if (
-              perfilIndividual.modelo !== "gpt-6-luna" ||
+              (!podeEscalar || perfilIndividual.modelo !== perfilInicial.modelo) ||
               (!erroDaPublicacao(error) && !(error instanceof ErroModeloCodex))
             )
               throw error;
-            analise = await analisarComCodex(
-              p.texto,
-              p.tipo_documento,
-              controller.signal,
-              contexto(p),
-              PERFIS_CODEX.equilibrado,
-            );
+            perfilUsado = perfilForte;
+            analise = await analisarComCodex(p.texto, p.tipo_documento, controller.signal, contexto(p), perfilUsado);
           }
         } else if (
-          perfilInicial.modelo === "gpt-6-luna" &&
+          podeEscalar &&
           precisaAprofundar(analise)
-        )
-          analise = await analisarComCodex(
-            p.texto,
-            p.tipo_documento,
-            controller.signal,
-            contexto(p),
-            PERFIS_CODEX.equilibrado,
-          );
-        if (salvarAnaliseCodex(p.id, p.texto, p.tipo_documento, analise)) {
-          gravarCache(p, analise);
+        ) {
+          perfilUsado = perfilForte;
+          analise = await analisarComCodex(p.texto, p.tipo_documento, controller.signal, contexto(p), perfilUsado);
+        }
+        if (salvarAnaliseCodex(p.id, p.texto, p.tipo_documento, analise, perfilUsado)) {
+          gravarCache(p, analise, perfilUsado);
           db.prepare(
             "UPDATE djen_publicacoes SET ia_duracao_ms=? WHERE id=?",
           ).run(Date.now() - inicio, p.id);
@@ -443,7 +437,7 @@ async function executarGrupo(
       }
     }
   } catch (error) {
-    let mensagem = "Falha na análise do Codex.";
+    let mensagem = "Falha na análise da IA.";
     for (const p of grupo)
       if (pendentes.has(p.id)) mensagem = marcarErro(p, error);
     if (!encerrando && !erroDaPublicacao(error))
@@ -462,6 +456,7 @@ async function executarGrupo(
 export async function processarFilaCodex() {
   const tarefas: Promise<void>[] = [];
   while (!encerrando) {
+    if (chatgptLoginBusy()) break;
     const config = configuracaoDjen();
     if (execucoesAtuais.size >= config.ia_paralelismo) break;
     if (aplicarCache(config)) continue;
@@ -497,3 +492,4 @@ export function pararMonitorCodex() {
   execucoesAtuais.clear();
   atuais.clear();
 }
+

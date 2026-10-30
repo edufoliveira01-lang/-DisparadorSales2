@@ -1,3 +1,5 @@
+import { executeApiStructured } from "../ai/apiProvider";
+import { chatgptLocalLoginAllowed, type AiProfile } from "../ai/config";
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -14,11 +16,7 @@ import {
 import { instrucaoExemplosClassificacao } from "./teaching";
 
 export type ModoAnaliseCodex = "economico" | "equilibrado" | "precisao";
-export interface PerfilCodex {
-  modo: ModoAnaliseCodex;
-  modelo: "gpt-6-luna" | "gpt-6.1-sol";
-  esforco: "low" | "medium";
-}
+export interface PerfilCodex extends AiProfile {}
 export const PERFIS_CODEX: Record<ModoAnaliseCodex, PerfilCodex> = {
   economico: { modo: "economico", modelo: "gpt-6-luna", esforco: "low" },
   equilibrado: {
@@ -135,11 +133,11 @@ export async function executarCliCodex(
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString();
       if (stdout.length > 2_000_000)
-        stop("Resposta do Codex excedeu o limite.");
+        stop("Resposta da IA excedeu o limite.");
     });
     child.stderr.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();
-      if (stderr.length > 2_000_000) stop("Saída do Codex excedeu o limite.");
+      if (stderr.length > 2_000_000) stop("Saída da IA excedeu o limite.");
     });
     child.on("error", () => {
       cleanup();
@@ -209,7 +207,7 @@ async function consultarConexaoCodex(): Promise<ConexaoCodex> {
         instalado: false,
         conectado: false,
         mensagem:
-          "Executável do Codex indisponível. Execute npm run codex:install --prefix server no servidor e depois conecte a conta.",
+          "Componente de conexão da conta ChatGPT indisponível. Contate o administrador da instalação.",
       };
     const r = await executarCliCodex(
       ["-c", 'cli_auth_credentials_store="file"', "login", "status"],
@@ -223,15 +221,15 @@ async function consultarConexaoCodex(): Promise<ConexaoCodex> {
       instalado: true,
       conectado,
       mensagem: conectado
-        ? "Conectado ao Codex com a conta ChatGPT."
-        : "Conecte sua conta no servidor: npm run codex:login --prefix server",
+        ? "Conta ChatGPT conectada à IA."
+        : "Conecte sua conta em Configurações → Inteligência artificial.",
     };
   } catch {
     return {
       instalado: false,
       conectado: false,
       mensagem:
-        "Não foi possível verificar o Codex. Confira a instalação e a permissão do usuário do servidor.",
+        "Não foi possível verificar a conexão da conta ChatGPT. Confira a instalação ou selecione um provedor por API.",
     };
   }
 }
@@ -244,7 +242,7 @@ function registrarExecucao(
 ) {
   try {
     db.prepare(
-      "INSERT INTO djen_codex_execucoes(modelo,esforco,modo,itens,caracteres,status,duracao_ms) VALUES (?,?,?,?,?,?,?)",
+      "INSERT INTO djen_codex_execucoes(modelo,esforco,modo,itens,caracteres,status,duracao_ms,provedor) VALUES (?,?,?,?,?,?,?,?)",
     ).run(
       perfil.modelo,
       perfil.esforco,
@@ -253,13 +251,14 @@ function registrarExecucao(
       caracteres,
       status,
       duracaoMs,
+      perfil.provedor || "codex",
     );
   } catch (error) {
-    console.error("[DJEN] Não foi possível registrar o uso do Codex:", error);
+    console.error("[DJEN] Não foi possível registrar o uso da IA:", error);
   }
 }
 
-async function executarAnaliseEstruturada(
+export async function executarAnaliseEstruturada(
   prompt: string,
   schemaValue: object,
   perfil: PerfilCodex,
@@ -267,9 +266,18 @@ async function executarAnaliseEstruturada(
   caracteres: number,
   signal?: AbortSignal,
 ): Promise<unknown> {
+  if (perfil.provedor && perfil.provedor !== "codex") {
+    const inicio = Date.now(); let status: "concluida" | "falha" = "falha";
+    try {
+      const parsed = await executeApiStructured(perfil.provedor, perfil.modelo, prompt, schemaValue, signal);
+      status = "concluida";
+      return parsed;
+    } finally { registrarExecucao(perfil, itens, caracteres, status, Date.now() - inicio); }
+  }
+  if (!chatgptLocalLoginAllowed()) throw new Error("A conexão tradicional da conta ChatGPT não está habilitada neste modo hospedado. Configure um provedor por API.");
   if (!(await verificarConexaoCodex()).conectado)
     throw new Error(
-      "Codex sem conexão ChatGPT. Execute npm run codex:login --prefix server com o mesmo usuário do PM2.",
+      "IA sem conexão com a conta ChatGPT. Conecte em Configurações → Inteligência artificial.",
     );
   const workdir = await fs.mkdtemp(path.join(os.tmpdir(), "djen-codex-"));
   const inicio = Date.now();
@@ -312,16 +320,16 @@ async function executarAnaliseEstruturada(
         )
       )
         throw new Error(
-          "Limite de uso do Codex atingido. Aguarde a liberação e retome as análises.",
+          "Limite de uso da IA atingido. Aguarde a liberação e retome as análises.",
         );
       if (
         /model.*(?:not available|unsupported|not found|access)/i.test(r.stderr)
       )
         throw new ErroModeloCodex(
-          `O modelo ${perfil.modelo} não está disponível para esta conta do Codex. Confira o acesso da conta e retome a fila.`,
+          `O modelo ${perfil.modelo} não está disponível para esta conta ChatGPT. Confira o acesso da conta e retome a fila.`,
         );
       throw new Error(
-        "O Codex não concluiu a análise. Confira a conexão, os limites da conta e o acesso à internet; depois retome a fila.",
+        "A IA não concluiu a análise. Confira a conexão, os limites da conta e o acesso à internet; depois retome a fila.",
       );
     }
     try {
@@ -332,7 +340,7 @@ async function executarAnaliseEstruturada(
       return parsed;
     } catch {
       throw new ErroPublicacaoCodex(
-        "O Codex não retornou uma análise JSON válida. Tente novamente.",
+        "A IA não retornou uma análise JSON válida. Tente novamente.",
       );
     }
   } finally {
@@ -454,10 +462,10 @@ export async function analisarLoteComCodex(
   perfil: PerfilCodex = PERFIS_CODEX.economico,
 ): Promise<ResultadoLoteCodex> {
   if (itens.length < 2 || itens.length > 8)
-    throw new Error("O lote do Codex deve conter de 2 a 8 publicações.");
+    throw new Error("O lote da IA deve conter de 2 a 8 publicações.");
   const ids = itens.map((item) => item.id);
   if (new Set(ids).size !== ids.length)
-    throw new Error("O lote do Codex contém identificadores repetidos.");
+    throw new Error("O lote da IA contém identificadores repetidos.");
   const schema = {
     type: "object",
     additionalProperties: false,
@@ -494,7 +502,7 @@ export async function analisarLoteComCodex(
   )) as { resultados?: { id?: unknown; analise?: unknown }[] };
   if (!Array.isArray(parsed?.resultados))
     throw new ErroPublicacaoCodex(
-      "O Codex não retornou todos os resultados do lote.",
+      "A IA não retornou todos os resultados do lote.",
     );
   const resultados = new Map<number, AnaliseCodex>();
   const invalidos: number[] = [];
@@ -522,7 +530,8 @@ export async function analisarLoteComCodex(
   }
   if (resultados.size + invalidos.length !== itens.length)
     throw new ErroPublicacaoCodex(
-      "O Codex não retornou todos os resultados do lote.",
+      "A IA não retornou todos os resultados do lote.",
     );
   return { resultados, invalidos };
 }
+

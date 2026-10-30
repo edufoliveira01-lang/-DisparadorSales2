@@ -1,3 +1,4 @@
+import { AISettings } from "@/components/AISettings";
 import { Settings as SettingsIcon } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { beginRequestActivity } from "@/lib/requestActivity";
@@ -89,10 +90,11 @@ export function Configuracoes() {
   const { search: settingsSearch } = useLocation();
   const { show } = useToast();
   const { theme, setTheme } = useTheme();
-  const [configSection, setConfigSection] = useState<SettingsSectionKey | null>(()=>new URLSearchParams(window.location.search).has("prazos")?"prazos":new URLSearchParams(window.location.search).has("whatsapp")?"whatsapp":new URLSearchParams(window.location.search).has("google")?"google":null);
+  const [configSection, setConfigSection] = useState<SettingsSectionKey | null>(()=>new URLSearchParams(window.location.search).has("ia")?"ia":new URLSearchParams(window.location.search).has("prazos")?"prazos":new URLSearchParams(window.location.search).has("whatsapp")?"whatsapp":new URLSearchParams(window.location.search).has("google")?"google":null);
   useEffect(() => {
     const params = new URLSearchParams(settingsSearch);
-    if (params.has("whatsapp")) setConfigSection("whatsapp");
+    if (params.has("ia")) setConfigSection("ia");
+    else if (params.has("whatsapp")) setConfigSection("whatsapp");
     else if (params.has("google")) setConfigSection("google");
     else if (params.has("prazos")) setConfigSection("prazos");
   }, [settingsSearch]);
@@ -480,6 +482,7 @@ export function Configuracoes() {
       <div className="settings-layout"><aside><SettingsOverview selected={configSection} onOpen={setConfigSection} whatsappConnected={whatsapp.status === "conectado"} /></aside><div className="settings-detail">
       {configSection === null && <div className="settings-welcome"><span className="eyebrow">Do seu jeito</span><h2>Um espaço que acompanha<br />o seu ritmo.</h2><p>Escolha uma área ao lado para ajustar suas conexões, sua aparência e sua rotina.</p><div className="settings-orbit" aria-hidden="true"><SettingsIcon className="h-12 w-12" /></div><Button onClick={()=>setConfigSection("aparencia")}>Personalizar aparência</Button></div>}
 
+      {configSection === "ia" && <AISettings />}
       <section hidden={configSection !== "aparencia"}><Card>
         <CardContent className="pt-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1056,4 +1059,5 @@ export function Configuracoes() {
     </div>
   );
 }
+
 

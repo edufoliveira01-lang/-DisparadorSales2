@@ -1,4 +1,6 @@
 import "./loadEnv";
+import { aiRouter } from "./routes/ai";
+import { stopChatgptAuth } from "./services/ai/chatgptAuth";
 import cors from "cors";
 import express from "express";
 import cookieParser from "cookie-parser";
@@ -46,6 +48,7 @@ app.use("/api", authenticatedApi);
 
 app.use("/api", notifyDashboardChanges);
 app.use("/api/djen", djenRouter);
+app.use("/api/ai", aiRouter);
 app.use("/api/settings", settingsRouter);
 app.use("/api/team", teamRouter);
 app.use("/api/branding", brandingRouter);
@@ -152,10 +155,12 @@ setInterval(podarPericiasAgendadas, INTERVALO_PODA_PERICIAS_MS);
 async function shutdown() {
   console.log("Encerrando servidor...");
   pararMonitorDjen();
+  stopChatgptAuth();
   await whatsappManager.shutdown().catch(() => {});
   process.exit(0);
 }
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+
 

@@ -288,6 +288,14 @@ export function runDjenMigrations(db: Database.Database): void {
     db.exec("UPDATE djen_kanban_cartoes SET revisar_etapa=1");
     db.prepare("INSERT INTO djen_kanban_meta(chave,valor) VALUES ('classificador','2.50.19') ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor").run();
   })();
+  // Metadados de origem da análise. Preserva o JSON e as revisões já existentes.
+  const publicationAiColumns = db.prepare("PRAGMA table_info(djen_publicacoes)").all() as { name: string }[];
+  for (const name of ["ia_provedor", "ia_modelo", "ia_configuracao"]) {
+    if (!publicationAiColumns.some((c) => c.name === name)) db.exec(`ALTER TABLE djen_publicacoes ADD COLUMN ${name} TEXT`);
+  }
+  db.prepare("UPDATE djen_publicacoes SET ia_provedor='codex' WHERE ia_provedor IS NULL AND ia_json IS NOT NULL").run();
+  const executionAiColumns = db.prepare("PRAGMA table_info(djen_codex_execucoes)").all() as { name: string }[];
+  if (!executionAiColumns.some((c) => c.name === "provedor")) db.exec("ALTER TABLE djen_codex_execucoes ADD COLUMN provedor TEXT NOT NULL DEFAULT 'codex'");
   // Reconcilia análises antigas somente quando o próprio texto comprova o fato.
   // Revisões humanas e registros sem análise permanecem intactos.
   const candidatos = db.prepare(

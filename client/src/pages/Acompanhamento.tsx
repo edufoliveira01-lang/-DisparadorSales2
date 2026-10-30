@@ -46,7 +46,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Pagination } from "@/components/ui/Pagination";
 import { useAuth } from "@/context/AuthContext";
-import { CodexTeaching } from "@/components/djen/CodexTeaching";
+import { IATeaching } from "@/components/djen/IATeaching";
 
 const TIPOS = {
   sentenca: "Sentença de mérito",
@@ -116,6 +116,8 @@ interface Publicacao {
   andamentos_total?: number;
   andamentos_nao_lidos?: number;
   pericia_publicacao_id?: number | null;
+  ia_provedor?: string | null;
+  ia_modelo?: string | null;
   ia_status: string;
   ia_erro: string | null;
   ia_em: string | null;
@@ -251,7 +253,7 @@ interface Busca {
   finished_at: string | null;
 }
 interface Status {
-  codex: {
+  ia: {
     executando: number | null;
     executando_ids: number[];
     simultaneas: number;
@@ -420,7 +422,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     ia_modo: "economico" as "economico" | "equilibrado" | "precisao",
     aguardo_dias: 30,
   });
-  const [conexaoCodex, setConexaoCodex] = useState<{
+  const [conexaoIA, setConexaoIA] = useState<{
     conectado: boolean;
     mensagem: string;
   } | null>(null);
@@ -563,11 +565,11 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
   useEffect(() => {
     if (
       !status?.executando &&
-      !status?.codex.executando &&
+      !status?.ia.executando &&
       !(
         status?.config.ia_ativa &&
-        (status.codex.executando || status.codex.pendentes) &&
-        !status.codex.pausa
+        (status.ia.executando || status.ia.pendentes) &&
+        !status.ia.pausa
       )
     )
       return;
@@ -584,7 +586,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     if (
       !detalhe ||
       !["pendente", "analisando"].includes(detalhe.ia_status) ||
-      (!detalhe.ia_manual && (!status?.config.ia_ativa || status.codex.pausa))
+      (!detalhe.ia_manual && (!status?.config.ia_ativa || status.ia.pausa))
     )
       return;
     let active = true;
@@ -606,7 +608,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
       active = false;
       clearInterval(timer);
     };
-  }, [detalhe, status?.config.ia_ativa, status?.codex.pausa, revisaoAlterada]);
+  }, [detalhe, status?.config.ia_ativa, status?.ia.pausa, revisaoAlterada]);
   const atualizarEmTempoReal = useCallback(() => {
     void carregarStatus().catch((e) => setFalha(erro(e)));
     if (secao === "publicacoes") void carregarLista();
@@ -976,7 +978,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
             </div>
 <div className="process-filter-fields"><div><span className="process-filter-label">Categorias de andamento</span><MultiSelect inline label="Categorias (múltiplas)" placeholder="Todas as categorias" value={filtro.categoria.split(",").filter(Boolean)} options={Object.entries(FILTROS).map(([value, label]) => ({ value, label }))} onChange={(v) => filtrar("categoria", v.join(","))} /></div><div><span className="process-filter-label">Resultado da sentença</span><MultiSelect inline label="Resultado da sentença" placeholder="Todos os resultados" value={filtro.resultado.split(",").filter(Boolean)} options={Object.entries(RESULTADOS).map(([value, label]) => ({ value, label }))} onChange={(v) => filtrar("resultado", v.join(","))} /></div><div><span className="process-filter-label">Advogado</span><MultiSelect inline label="Advogado" placeholder="Todos os advogados" value={filtro.advogado_id.split(",").filter(Boolean)} options={(status?.advogados || []).map((a) => ({ value: String(a.id), label: `${a.nome} · ${a.uf_oab} ${a.numero_oab}` }))} onChange={(v) => filtrar("advogado_id", v.join(","))} /></div><div><span className="process-filter-label">Leitura e pendências</span><MultiSelect inline label="Situação" placeholder="Todas as situações" value={filtro.situacao.split(",").filter(Boolean)} options={[{ value: "nao_lidas", label: "Não lidas" }, { value: "lidas", label: "Lidas" }, { value: "revisar", label: "A revisar" }, { value: "com_prazo", label: "Com prazo em aberto" }]} onChange={(v) => filtrar("situacao", v.join(","))} /></div></div>          </section>
           </aside><div className="process-results">
-          <p className="flex items-center gap-2 text-[11px] text-zinc-500"><Sparkles className="h-3.5 w-3.5" />{status?.codex.pausa ? `Análise pausada: ${status.codex.pausa}` : `${status?.codex.pendentes ?? 0} publicação(ões) aguardando classificação pelo Codex`}. Classificações pendentes aparecem em Outros até a análise.</p>
+          <p className="flex items-center gap-2 text-[11px] text-zinc-500"><Sparkles className="h-3.5 w-3.5" />{status?.ia.pausa ? `Análise pausada: ${status.ia.pausa}` : `${status?.ia.pendentes ?? 0} publicação(ões) aguardando classificação pela IA`}. Classificações pendentes aparecem em Outros até a análise.</p>
           <div
             id="navegacao-publicacoes"
             className="sticky top-20 z-20 scroll-mt-24 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white/95 px-4 py-2 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95"
@@ -1376,21 +1378,12 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
           </section>
           <section className="surface-panel space-y-4 p-5">
             <h2 className="flex items-center gap-2 text-sm font-semibold">
-              <Sparkles className="h-4 w-4" /> Classificação e resumos com Codex
+              <Sparkles className="h-4 w-4" /> Classificação e resumos com IA
             </h2>
             <p className="text-xs leading-relaxed text-zinc-500">
-              Use sua conta ChatGPT no Codex instalado no servidor. A análise lê
-              o inteiro teor capturado e não altera o controle de perícias.
-              Publicações inconclusivas ficam em Outros para conferência.
+              A IA lê o inteiro teor capturado usando o provedor e os modelos configurados. Publicações inconclusivas ficam em Outros para conferência.
             </p>
-            <p className="text-xs text-zinc-500">
-              Primeira conexão: execute{" "}
-              <code className="break-all">
-                npm run codex:login --prefix server
-              </code>{" "}
-              no servidor, com o mesmo usuário do PM2, e conclua o login no link
-              informado pelo Codex.
-            </p>
+            <Link className="inline-flex text-xs font-medium text-violet-700 underline dark:text-violet-300" to="/configuracoes?ia=1">Configurar provedor e conexão da IA</Link>
             <div className="flex flex-wrap items-center gap-3">
               <Button
                 size="sm"
@@ -1398,15 +1391,15 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                 loading={salvando}
                 onClick={() =>
                   void acao(async () => {
-                    setConexaoCodex(await api.get("/djen/codex/conexao"));
+                    setConexaoIA(await api.get("/djen/ia/conexao"));
                   })
                 }
               >
                 Verificar conexão
               </Button>
-              {conexaoCodex && (
+              {conexaoIA && (
                 <span className="text-xs text-zinc-500">
-                  {conexaoCodex.mensagem}
+                  {conexaoIA.mensagem}
                 </span>
               )}
             </div>
@@ -1422,12 +1415,12 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
             <p className="text-xs text-zinc-500">
               A primeira ativação analisa as publicações pendentes, incluindo as
               antigas sem revisão. As revisões salvas são preservadas. O uso
-              está sujeito aos limites da conta Codex.
+              está sujeito aos limites e créditos do provedor configurado.
             </p>
             <div className="max-w-md">
-              <Label htmlFor="codex-modo">Modo de análise</Label>
+              <Label htmlFor="ia-modo">Modo de análise</Label>
               <Select
-                id="codex-modo"
+                id="ia-modo"
                 value={config.ia_modo}
                 onChange={(e) =>
                   setConfig({
@@ -1441,22 +1434,20 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
               >
                 <option value="economico">Econômico — lotes de até 8</option>
                 <option value="equilibrado">
-                  Equilibrado — modelo forte, lotes de até 4
+                  Equilibrado — lotes de até 4
                 </option>
                 <option value="precisao">
                   Máxima precisão — análise individual
                 </option>
               </Select>
               <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">
-                No modo econômico, casos duvidosos são encaminhados
-                automaticamente ao modelo mais forte. Publicações extensas
-                continuam sendo analisadas individualmente e sem cortes.
+                No modo econômico, casos inconclusivos podem usar o modelo equilibrado configurado no mesmo provedor. Publicações extensas são analisadas integralmente em trechos.
               </p>
             </div>
             <div className="max-w-xs">
-              <Label htmlFor="codex-paralelismo">Análises simultâneas</Label>
+              <Label htmlFor="ia-paralelismo">Análises simultâneas</Label>
               <Select
-                id="codex-paralelismo"
+                id="ia-paralelismo"
                 value={config.ia_paralelismo}
                 onChange={(e) =>
                   setConfig({
@@ -1482,30 +1473,30 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                   void acao(async () => {
                     await api.put("/djen/config", config);
                     await carregarStatus();
-                    show("Configuração do Codex salva.", "success");
+                    show("Configuração da IA salva.", "success");
                   })
                 }
               >
-                Salvar configuração do Codex
+                Salvar configuração da IA
               </Button>
               <Button
                 size="sm"
                 variant="outline"
                 loading={salvando}
                 disabled={
-                  !status?.config.ia_ativa || Boolean(status?.codex.executando)
+                  !status?.config.ia_ativa || Boolean(status?.ia.executando)
                 }
                 onClick={() => {
-                  const quantidade = status?.codex.reanalisaveis ?? 0;
+                  const quantidade = status?.ia.reanalisaveis ?? 0;
                   if (
                     !window.confirm(
-                      `Reanalisar ${quantidade} publicação(ões) sem revisão? Textos já analisados poderão usar o cache; os demais consumirão o limite do Codex.`,
+                      `Reanalisar ${quantidade} publicação(ões) sem revisão? Textos já analisados poderão usar o cache; os demais consumirão o limite da IA.`,
                     )
                   )
                     return;
                   void acao(async () => {
                     const resposta = await api.post<{ enfileiradas: number }>(
-                      "/djen/codex/reanalisar",
+                      "/djen/ia/reanalisar",
                       {},
                     );
                     await carregarStatus();
@@ -1518,7 +1509,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
               >
                 Reanalisar publicações sem revisão
               </Button>
-              {status?.codex.pausa && (
+              {status?.ia.pausa && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -1526,7 +1517,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                   disabled={!status.config.ia_ativa}
                   onClick={() =>
                     void acao(async () => {
-                      await api.post("/djen/codex/retomar", {});
+                      await api.post("/djen/ia/retomar", {});
                       await carregarStatus();
                     })
                   }
@@ -1535,18 +1526,18 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                 </Button>
               )}
             </div>
-            {status?.codex.pausa && (
+            {status?.ia.pausa && (
               <p
                 role="alert"
                 className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
               >
-                {status.codex.pausa}
+                {status.ia.pausa}
               </p>
             )}
             <p className="text-xs text-zinc-500">
-              {status?.codex.pendentes ?? 0} na fila ·{" "}
-              {status?.codex.falhas ?? 0} com falha
-              {status?.codex.executando ? " · análise em andamento" : ""}
+              {status?.ia.pendentes ?? 0} na fila ·{" "}
+              {status?.ia.falhas ?? 0} com falha
+              {status?.ia.executando ? " · análise em andamento" : ""}
             </p>
             {status && (
               <div className="grid gap-2 sm:grid-cols-3">
@@ -1555,7 +1546,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                     Execuções em 30 dias
                   </p>
                   <p className="mt-1 text-lg font-semibold">
-                    {status.codex.uso_30_dias.chamadas}
+                    {status.ia.uso_30_dias.chamadas}
                   </p>
                 </div>
                 <div className="rounded-lg bg-emerald-50 p-3 dark:bg-emerald-950/30">
@@ -1563,7 +1554,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                     Execuções evitadas
                   </p>
                   <p className="mt-1 text-lg font-semibold text-emerald-800 dark:text-emerald-200">
-                    {status.codex.uso_30_dias.execucoes_evitadas}
+                    {status.ia.uso_30_dias.execucoes_evitadas}
                   </p>
                 </div>
                 <div className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/60">
@@ -1571,13 +1562,13 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                     Reaproveitadas do cache
                   </p>
                   <p className="mt-1 text-lg font-semibold">
-                    {status.codex.uso_30_dias.cache_hits}
+                    {status.ia.uso_30_dias.cache_hits}
                   </p>
                 </div>
               </div>
             )}
           </section>
-          {user.role === "administrador" && <CodexTeaching />}
+          {user.role === "administrador" && <IATeaching />}
           <section className="surface-panel p-5">
             <h2 className="text-sm font-semibold">
               Últimas consultas (5 mais recentes)
@@ -2112,7 +2103,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                 <section className="rounded-xl border border-accent-200 bg-accent-50/40 p-4 dark:border-zinc-800 dark:bg-zinc-900">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h3 className="flex items-center gap-2 text-sm font-semibold">
-                  <Sparkles className="h-4 w-4" /> Análise pelo Codex
+                  <Sparkles className="h-4 w-4" /> Análise pela IA
                 </h3>
                 <Button
                   size="sm"
@@ -2138,15 +2129,16 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                         setResultado(p.resultado);
                       }
                       await carregarStatus();
-                      show("Publicação adicionada à fila do Codex.", "success");
+                      show("Publicação adicionada à fila da IA.", "success");
                     })
                   }
                 >
                   {detalhe.analise
-                    ? "Reanalisar com Codex"
-                    : "Analisar com Codex"}
+                    ? "Reanalisar com IA"
+                    : "Analisar com IA"}
                 </Button>
               </div>
+              {detalhe.ia_provedor && <p className="mt-2 text-[11px] text-zinc-500">Origem da análise: {detalhe.ia_provedor === "codex" ? "OpenAI · conta ChatGPT" : detalhe.ia_provedor === "anthropic" ? "Anthropic · API" : "OpenAI · API"}{detalhe.ia_modelo ? ` · ${detalhe.ia_modelo}` : " · registro anterior sem modelo identificado"}</p>}
               <p className="mt-2 text-xs text-zinc-500">
                 {detalhe.ia_status === "analisando"
                   ? "Analisando publicação…"
@@ -2154,9 +2146,9 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                     ? detalhe.ia_manual
                       ? "Análise manual na fila; não depende da análise automática."
                       : !status?.config.ia_ativa
-                        ? "Análise automática desativada. O botão Analisar com Codex funciona manualmente."
-                        : status.codex.pausa
-                          ? `Fila pausada: ${status.codex.pausa}`
+                        ? "Análise automática desativada. O botão Analisar com IA funciona manualmente."
+                        : status.ia.pausa
+                          ? `Fila pausada: ${status.ia.pausa}`
                           : "Aguardando análise na fila."
                     : detalhe.ia_status === "erro"
                       ? detalhe.ia_erro
@@ -2167,7 +2159,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
               {detalhe.analise && (
                 <div className="mt-3 space-y-3 text-xs leading-relaxed [overflow-wrap:anywhere]">
                   <p className="font-medium">
-                    Sugestão do Codex:{" "}
+                    Sugestão da IA:{" "}
                     {detalhe.analise.categorias
                       .map((c) => TIPOS[c])
                       .join(" · ") || "Outros"}
@@ -2329,7 +2321,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                 Conferir ou ajustar classificação
               </summary>
               <p className="mt-1 text-xs text-zinc-500">
-                Confira a sugestão do Codex e o inteiro teor antes de salvar a
+                Confira a sugestão da IA e o inteiro teor antes de salvar a
                 revisão. Sem categoria aplicável, selecione Outros.
               </p>
               <div className="mt-3">
@@ -2436,7 +2428,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                     ? "Classificação revisada"
                     : "Aguardando revisão"}
                 </Badge>
-                {user.role === "administrador" && Boolean(detalhe.revisada) && !revisaoAlterada && <Link className="text-xs font-medium text-violet-700 underline underline-offset-2 dark:text-violet-300" to={`/processos/monitoramento?exemplo=${detalhe.id}`} onClick={() => { detailSeq.current++; setDetalheAberto(false); setDetalhe(null); }}>Usar esta revisão como exemplo para o Codex</Link>}
+                {user.role === "administrador" && Boolean(detalhe.revisada) && !revisaoAlterada && <Link className="text-xs font-medium text-violet-700 underline underline-offset-2 dark:text-violet-300" to={`/processos/monitoramento?exemplo=${detalhe.id}`} onClick={() => { detailSeq.current++; setDetalheAberto(false); setDetalhe(null); }}>Usar esta revisão como exemplo para a IA</Link>}
               </div>
             </details>
             )}
@@ -2644,5 +2636,6 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     </div>
   );
 }
+
 
 

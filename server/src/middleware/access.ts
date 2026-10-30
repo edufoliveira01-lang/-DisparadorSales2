@@ -10,6 +10,7 @@ declare global {
 
 function permissionsFor(path: string, method: string): Permission[] {
   const read = method === "GET" || method === "HEAD";
+  if (path === "/ai" || path.startsWith("/ai/")) return ["integrations.manage"];
   if (path.startsWith("/team")) return ["team.manage"];
   if (path.startsWith("/branding")) return ["team.manage"];
   if (path.startsWith("/backup")) return ["backup.manage"];
@@ -33,7 +34,7 @@ function permissionsFor(path: string, method: string): Permission[] {
     if (sub.startsWith("/calendarios") || sub.startsWith("/prazos/config")) return [read ? "deadlines.view" : "deadlines.manage"];
     if (sub.includes("/prazos") || sub === "/prazos") return [read ? "deadlines.view" : "deadlines.manage"];
     if (sub.includes("/mensagem")) return ["processes.view", "messages.send"];
-    if (sub.startsWith("/buscar") || sub.startsWith("/config") || sub.startsWith("/codex") || (!read && sub.startsWith("/advogados"))) return ["djen.manage"];
+    if (sub.startsWith("/buscar") || sub.startsWith("/config") || (sub.startsWith("/codex") || sub.startsWith("/ia")) || (!read && sub.startsWith("/advogados"))) return ["djen.manage"];
     return [read ? "processes.view" : "processes.manage"];
   }
   // Novas rotas exigem classificação explícita antes de entrar em produção.
@@ -59,3 +60,4 @@ export const authenticatedApi: RequestHandler = (req, res, next) => {
   }
   next();
 };
+
