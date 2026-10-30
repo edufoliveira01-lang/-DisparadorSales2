@@ -13,7 +13,11 @@ export const aiRouter = Router();
 aiRouter.use((req, res, next) => {
   const origin = req.get("origin");
   if (!origin) return next();
-  const allowed = new Set([`${req.protocol}://${req.get("host")}`]);
+  const host = req.get("host");
+  const allowed = new Set([`${req.protocol}://${host}`]);
+  // O Nginx termina o HTTPS e encaminha HTTP para o Express. O Host continua
+  // sendo o do painel; aceite seu HTTPS sem confiar em headers de proxy arbitrários.
+  if (host && req.protocol === "http") allowed.add(`https://${host}`);
   try { if (process.env.APP_URL) allowed.add(new URL(process.env.APP_URL).origin); } catch { /* Uma URL inválida não libera outra origem. */ }
   if (!allowed.has(origin)) return res.status(403).json({ error: "Origem não autorizada para gerenciar a IA." });
   next();
