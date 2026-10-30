@@ -17,7 +17,7 @@ import { getSetting } from "../services/settingsService";
 import { enviarMensagemTelegram } from "../services/telegramService";
 import { auditAccess, invalidateUserSessions, publicUser } from "../services/accessService";
 import { loginBranding, loginImage } from "./branding";
-import { disconnectUserSockets } from "../websocket";
+import { disconnectUserSockets, disconnectSessionSockets } from "../websocket";
 
 export const authRouter = Router();
 authRouter.get("/login-branding", loginBranding);
@@ -62,6 +62,7 @@ authRouter.post("/logout", (req, res) => {
   const sessionId = req.cookies.session_id;
   if (sessionId) {
     deleteSession(sessionId);
+    disconnectSessionSockets(sessionId);
   }
   res.clearCookie("session_id");
   res.json({ ok: true });
@@ -183,3 +184,4 @@ authRouter.post("/reset-password", (req, res) => {
   
   res.json({ message: "Senha alterada com sucesso." });
 });
+

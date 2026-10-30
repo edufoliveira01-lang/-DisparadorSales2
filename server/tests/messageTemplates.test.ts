@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "../src/db";
 import { getSetting, setSetting } from "../src/services/settingsService";
 import { GROUPS, initializeMessageTemplates, listMessageTemplates, saveMessageTemplate, deleteMessageTemplate, defaultRescheduleTemplate, type MessageTemplate } from "../src/services/messageTemplateService";
@@ -12,11 +12,14 @@ let original: MessageTemplate[];
 let settings: Record<string, string | null>;
 const appointments: number[] = [];
 beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-10-01T12:00:00Z"));
   original = db.prepare("SELECT * FROM message_templates").all() as MessageTemplate[];
   const keys = Object.values(GROUPS).flatMap(scopes => Object.values(scopes).flatMap(c => c.key ? [c.key] : []));
   settings = Object.fromEntries([...keys, "message_templates_migrated"].map(key => [key, getSetting(key)]));
 });
 afterEach(() => {
+  vi.useRealTimers();
   while (appointments.length) deletePericiaAgendada(appointments.pop()!);
   db.prepare("DELETE FROM message_templates").run();
   const insert = db.prepare("INSERT INTO message_templates (id, categoria, escopo, nome, mensagem, padrao) VALUES (?, ?, ?, ?, ?, ?)");
@@ -135,3 +138,4 @@ describe("mensagens de remarcação", () => {
     expect(result[1]).not.toContain("Remarcado");
   });
 });
+

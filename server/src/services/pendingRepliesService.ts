@@ -176,6 +176,14 @@ export function listPendingReplies(): PendingReply[] {
   return listStmt.all() as PendingReply[];
 }
 
+/** Cursor por ID: percorre toda a espera, sem o limite da lista exibida na interface. */
+export function listAwaitingRepliesPage(afterId = 0, limit = 50): PendingReply[] {
+  if (!Number.isSafeInteger(afterId) || afterId < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 200)
+    throw new Error("Paginação de respostas inválida.");
+  return db.prepare("SELECT * FROM pending_replies WHERE status='aguardando' AND id>? ORDER BY id LIMIT ?")
+    .all(afterId, limit) as PendingReply[];
+}
+
 export function getPendingReply(id: number): PendingReply | undefined {
   return getStmt.get(id) as PendingReply | undefined;
 }
@@ -278,4 +286,5 @@ export function deletePendingReplies(ids: number[]): number {
   const info = db.prepare(`DELETE FROM pending_replies WHERE id IN (${placeholders})`).run(...ids);
   return info.changes;
 }
+
 

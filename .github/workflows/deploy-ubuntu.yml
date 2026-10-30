@@ -71,6 +71,8 @@ jobs:
             delete value.version;
             if (path.endsWith("package-lock.json") || path.endsWith("npm-shrinkwrap.json")) {
               if (value.packages && value.packages[""]) delete value.packages[""].version;
+              // O vínculo file:.. também representa o próprio projeto, não uma biblioteca externa.
+              if (value.packages?.[".."]?.name === "disparador-pericias") delete value.packages[".."].version;
             }
             function sorted(v) {
               if (Array.isArray(v)) return v.map(sorted);
@@ -132,9 +134,46 @@ jobs:
           
           STAGE=$(mktemp -d /home/dropsales/disparazap-build-XXXXXX)
           STOPPED=false
+          PUBLISHING=false
+          PREVIOUS=$(git -C "$APP" rev-parse HEAD)
+          BACKUP=""
           cleanup() {
             result=$?
             trap - EXIT
+            if [ "$result" -ne 0 ] && [ "$PUBLISHING" = true ]; then
+              echo "Falha na publicação. Restaurando código e interface anteriores."
+              cd "$APP"
+              if [ "$SERVER" = true ]; then pm2 stop disparador-backend || true; fi
+              # A árvore estava limpa ao iniciar e o lock impede outro deploy simultâneo.
+              git reset --hard "$PREVIOUS" || { echo "ERRO: restauração do código falhou"; exit 1; }
+              if [ -d "$BACKUP/dist-anterior" ]; then
+                rm -rf server/dist
+                cp -a "$BACKUP/dist-anterior" server/dist
+              fi
+              for entry in 'root-node_modules-anterior:node_modules' 'node_modules-anterior:server/node_modules' 'client-node_modules-anterior:client/node_modules'; do
+                source="${entry%%:*}"; destination="${entry#*:}"
+                if [ -d "$BACKUP/$source" ]; then
+                  rm -rf -- "$destination"
+                  mv "$BACKUP/$source" "$destination"
+                fi
+              done
+              if [ -f "$BACKUP/interface.tar.gz" ]; then tar -xzf "$BACKUP/interface.tar.gz" -C /var/www; fi
+              # O banco em uso é preservado: não se descartam operações realizadas durante o deploy.
+              if [ "$SERVER" = true ]; then
+                RUNNER_TRACKING_ID="" pm2 restart disparador-backend --update-env || true
+                STOPPED=false
+              fi
+              RESTORED=false
+              for tentativa in {1..30}; do
+                if curl --max-time 5 -fsS http://127.0.0.1:8081/api/health; then RESTORED=true; break; fi
+                sleep 2
+              done
+              if [ "$RESTORED" = true ]; then
+                echo "Versão anterior restaurada e API disponível."
+              else
+                echo "ERRO: a API anterior também não respondeu; consulte o PM2 e o backup: $BACKUP"
+              fi
+            fi
             if [ "$STOPPED" = true ]; then
               RUNNER_TRACKING_ID="" pm2 restart disparador-backend --update-env || true
             fi
@@ -149,26 +188,30 @@ jobs:
           else
             cp -a --reflink=auto "$APP/node_modules" node_modules
           fi
+          # Os testes de integração usam servidor e cliente, mesmo em alterações de um só módulo.
+          if [ "$SERVER_DEPS" = true ] || [ ! -d "$APP/server/node_modules" ]; then
+            npm ci --prefix server --include=optional
+            npm run codex:install --prefix server
+          else
+            cp -a --reflink=auto "$APP/server/node_modules" server/node_modules
+          fi
+          if [ "$CLIENT_DEPS" = true ] || [ ! -d "$APP/client/node_modules" ]; then
+            npm ci --prefix client
+          else
+            cp -a --reflink=auto "$APP/client/node_modules" client/node_modules
+          fi
+          # Nenhum teste usa o banco/sessão do escritório. Falhas impedem a publicação.
+          DATA_DIR="$STAGE/test-data" NODE_ENV=test npm test --prefix server
+          npm run lint --prefix client
           if [ "$SERVER" = true ]; then
-            if [ "$SERVER_DEPS" = true ]; then
-              npm install --prefix server --include=optional
-              npm run codex:install --prefix server
-            else
-              cp -a --reflink=auto "$APP/server/node_modules" server/node_modules
-            fi
             npm run build --prefix server
             test -f server/dist/index.js
           fi
           if [ "$CLIENT" = true ]; then
-            if [ "$CLIENT_DEPS" = true ]; then
-              npm install --prefix client
-            else
-              cp -a --reflink=auto "$APP/client/node_modules" client/node_modules
-            fi
             npm run build --prefix client
             test -f client/dist/index.html
           fi
-          
+
           mkdir -p "$BACKUPS"
           chmod 700 "$BACKUPS"
           BACKUP=$(mktemp -d "$BACKUPS/deploy-$(date +%Y%m%d-%H%M%S)-XXXXXX")
@@ -195,13 +238,15 @@ jobs:
             tar --exclude='server/node_modules' -czf "$BACKUP/servidor.tar.gz" server
           fi
           
+          PUBLISHING=true
           git merge --ff-only "$GITHUB_SHA"
           if [ "$ROOT_DEPS" = true ]; then
             if [ -d node_modules ]; then mv node_modules "$BACKUP/root-node_modules-anterior"; fi
             mv "$STAGE/node_modules" node_modules
           fi
           if [ "$SERVER" = true ]; then
-            mv server/dist "$BACKUP/dist-anterior"
+            cp -a server/dist "$BACKUP/dist-anterior"
+            rm -rf server/dist
             mv "$STAGE/server/dist" server/dist
             if [ "$SERVER_DEPS" = true ]; then
               if [ -d server/node_modules ]; then mv server/node_modules "$BACKUP/node_modules-anterior"; fi
@@ -253,6 +298,7 @@ jobs:
             fi
             sleep 2
           done
-          echo "A API não respondeu; verifique o PM2."
+          echo "A API não respondeu; a versão anterior será restaurada."
           exit 1
+
 

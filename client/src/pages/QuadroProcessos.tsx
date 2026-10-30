@@ -54,6 +54,9 @@ export function QuadroProcessos() {
   const [excluir, setExcluir] = useState<Lista | null>(null);
   const [historicoDe, setHistoricoDe] = useState<Cartao | null>(null);
   const [historico, setHistorico] = useState<Movimento[]>([]);
+  const [movendo, setMovendo] = useState<Cartao | null>(null);
+  const [destino, setDestino] = useState("");
+  const [arrastando, setArrastando] = useState<string | null>(null);
 
   const carregar = useCallback(async () => {
     try { setQuadro(await api.get<Quadro>("/djen/kanban")); setErro(""); }
@@ -85,17 +88,18 @@ export function QuadroProcessos() {
   const termo = normal(busca.trim());
   const filtrados = quadro?.cartoes.filter((c) =>
     (!termo || normal(`${c.cliente_nome || ""} ${c.numero} ${c.resumo}`).includes(termo)) &&
-    (filtro === "todos" || (filtro === "prazos" && c.prazos_abertos > 0) || (filtro === "nao_lidos" && c.publicacoes_nao_lidas > 0)),
+    (filtro === "todos" || (filtro === "prazos" && c.prazos_abertos > 0) || (filtro === "nao_lidos" && c.publicacoes_nao_lidas > 0)
+      || (filtro === "manual" && c.modo === "manual") || (filtro === "triagem" && quadro?.listas.find((l) => l.id === c.lista_id)?.codigo === "triagem")),
   ) || [];
   return <div className="space-y-5">
-    <PageHeader title="Quadro de processos" description="Acompanhe cada processo por etapa. Os cartões se organizam com base nas publicações do DJEN."
+    <PageHeader title="Quadro de processos" description="Etapas pelo histórico do DJEN. Arraste um cartão ou use Mover para corrigir sua etapa; a escolha fica mantida até você voltar ao automático."
       actions={<><Button variant="outline" onClick={() => void carregar()}><RefreshCw className="h-4 w-4" /> Atualizar</Button></>} />
     <div className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
       <div className="relative min-w-[220px] flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
         <Input aria-label="Buscar processos no quadro" placeholder="Buscar cliente, processo ou andamento…" className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
       </div>
       <Select aria-label="Filtrar cartões" className="w-auto min-w-[180px]" value={filtro} onChange={(e) => setFiltro(e.target.value)}>
-        <option value="todos">Todos os processos</option><option value="prazos">Com prazo em aberto</option><option value="nao_lidos">Com publicação não lida</option>
+        <option value="todos">Todos os processos</option><option value="triagem">Sem etapa identificada</option><option value="manual">Etapa manual</option><option value="prazos">Com prazo em aberto</option><option value="nao_lidos">Com publicação não lida</option>
       </Select>
       <span className="text-xs text-zinc-500">{filtrados.length} de {quadro?.cartoes.length ?? 0} processos</span>
     </div>
@@ -107,6 +111,10 @@ export function QuadroProcessos() {
           const cartoes = filtrados.filter((c) => c.lista_id === lista.id);
           const totalNaLista = quadro.cartoes.filter((c) => c.lista_id === lista.id).length;
           return <section key={lista.id} aria-label={`${lista.nome}: ${cartoes.length} processos`}
+            onDragOver={(e) => { if (canManage && !busy && arrastando) e.preventDefault(); }}
+            onDrop={(e) => { e.preventDefault(); const chave = e.dataTransfer.getData("application/x-disparazap-processo"); setArrastando(null);
+              if (canManage && !busy && quadro.cartoes.some((c) => c.processo_chave === chave && c.lista_id !== lista.id))
+                void acao(() => api.put(`/djen/kanban/cartoes/${encodeURIComponent(chave)}`, { lista_id: lista.id })); }}
             className="w-[310px] shrink-0 rounded-2xl border border-zinc-200/80 bg-zinc-100/70 p-3 dark:border-zinc-800 dark:bg-zinc-900">
             {editando === lista.id ? <form className="space-y-2" onSubmit={(e) => {
               e.preventDefault(); void acao(async () => {
@@ -137,6 +145,9 @@ export function QuadroProcessos() {
             {!lista.codigo && !lista.regra_categoria && editando !== lista.id && <p className="mb-2 rounded-lg bg-amber-50 p-2 text-[11px] text-amber-800">Escolha uma categoria do DJEN em Editar lista para ativar a movimentação automática.</p>}
             <div className="scrollbar-thin max-h-[min(68vh,780px)] min-h-24 space-y-2 overflow-y-auto pr-1">
               {cartoes.map((card) => <article key={card.processo_chave}
+                draggable={canManage && !busy}
+                onDragStart={(e) => { e.dataTransfer.setData("application/x-disparazap-processo", card.processo_chave); e.dataTransfer.effectAllowed = "move"; setArrastando(card.processo_chave); }}
+                onDragEnd={() => setArrastando(null)}
                 className={`rounded-xl border bg-white p-4 shadow-soft transition-[border-color,box-shadow] hover:shadow-card hover:border-accent-400 dark:bg-zinc-950 ${card.publicacoes_nao_lidas ? "border-l-4 border-l-accent-600 dark:border-zinc-800" : "border-zinc-200 dark:border-zinc-800"}`}>
                 <button type="button" onClick={() => setPublicacaoAberta(card.publicacao_id)} className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500">
                   <span className="flex items-start justify-between gap-2"><strong className="line-clamp-2 text-xs leading-snug text-zinc-900 dark:text-zinc-100">{card.cliente_nome || "Nome a conferir"}</strong></span>
@@ -150,9 +161,10 @@ export function QuadroProcessos() {
                 </button>
                 <div className="mt-2 text-[10px] text-zinc-500">
                   <span className="inline-flex rounded-full bg-sky-50 px-2 py-0.5 font-medium text-sky-800 dark:bg-sky-950 dark:text-sky-300" title={card.etapa_evidencia || undefined}>
-                    {card.etapa_publicacao_id ? "Etapa automática · DJEN" : "Fase processual ainda não identificada"}
+                    {card.modo === "manual" ? "Etapa manual · mantida" : card.etapa_publicacao_id ? "Etapa automática · DJEN" : "Fase processual ainda não identificada"}
                   </span>
                   {card.etapa_evidencia && <p className="mt-1 line-clamp-2 leading-relaxed" title={card.etapa_evidencia}>Base: “{card.etapa_evidencia}”</p>}
+                  {card.sugestao && <p className="mt-1 leading-relaxed" title={card.sugestao.evidencia || undefined}>O histórico sugere: {card.sugestao.lista_nome}. Sua escolha manual foi mantida.</p>}
                 </div>
                 {lista.contar_dias > 0 && <div className="mt-3 rounded-lg bg-amber-50 p-2 text-[11px] text-amber-900 dark:bg-amber-950 dark:text-amber-200">
                   <span className="flex items-center gap-1 font-semibold"><Clock3 className="h-3.5 w-3.5" /> {card.inicio_espera_em ? `${diasDesde(card.inicio_espera_em)} dia(s) nesta espera` : "Informe o início da espera"}</span>
@@ -161,6 +173,10 @@ export function QuadroProcessos() {
                     className="max-w-[145px] rounded border border-amber-200 bg-white px-1 py-0.5 text-[11px] text-zinc-800 dark:border-amber-900 dark:bg-zinc-900 dark:text-zinc-100" /></label>}
                 </div>}
                 <div className="mt-3 flex items-center justify-end gap-2 border-t border-zinc-100 pt-2 dark:border-zinc-800">
+                  {canManage && <>
+                    <button type="button" disabled={busy} onClick={() => { setMovendo(card); setDestino(String(card.lista_id)); }} aria-label={`Mover processo ${card.numero}`} className="mr-auto rounded px-2 py-1 text-xs font-medium text-accent-700 hover:bg-accent-50 disabled:opacity-50">Mover</button>
+                    {card.modo === "manual" && <button type="button" disabled={busy} onClick={() => void acao(() => api.put(`/djen/kanban/cartoes/${encodeURIComponent(card.processo_chave)}/automatico`, {}))} className="rounded px-2 py-1 text-[11px] text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800">Voltar ao automático</button>}
+                  </>}
                   <button type="button" aria-label={`Histórico das etapas de ${card.numero}`} title="Histórico das etapas" onClick={() => abrirHistorico(card)} className="rounded p-1.5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><History className="h-4 w-4" /></button>
                 </div>
               </article>)}
@@ -184,6 +200,19 @@ export function QuadroProcessos() {
     </div>}
     <p className="text-[11px] text-zinc-500">As contagens nas listas são dias corridos de acompanhamento interno, desde a data indicada no cartão. Elas não substituem o prazo processual nem presumem vencimento de RPV.</p>
     {publicacaoAberta !== null && <Acompanhamento key={publicacaoAberta} detailId={publicacaoAberta} onCloseDetail={() => { setPublicacaoAberta(null); void carregar(); }} />}
+    <Modal open={Boolean(movendo)} onClose={() => { if (!busy) setMovendo(null); }} title="Mover processo" maxWidth="max-w-md" footer={<>
+      <Button variant="outline" disabled={busy} onClick={() => setMovendo(null)}>Cancelar</Button>
+      <Button disabled={busy || !destino} onClick={() => { if (movendo) void acao(async () => {
+        await api.put(`/djen/kanban/cartoes/${encodeURIComponent(movendo.processo_chave)}`, { lista_id: Number(destino) }); setMovendo(null);
+      }); }}>Salvar etapa</Button>
+    </>}>
+      <p className="mb-3 text-sm">{movendo?.cliente_nome || movendo?.numero}</p>
+      <label className="block text-xs font-medium" htmlFor="kanban-destino">Lista de destino</label>
+      <Select id="kanban-destino" className="mt-2" value={destino} onChange={(e) => setDestino(e.target.value)} disabled={busy}>
+        {quadro?.listas.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
+      </Select>
+      <p className="mt-3 text-xs text-zinc-500">A etapa ficará manual. Novas análises e publicações não substituirão sua escolha. Você pode voltar ao automático pelo cartão.</p>
+    </Modal>
     <ConfirmDialog open={Boolean(excluir)} title="Excluir lista vazia?" message={`A lista ${excluir?.nome || ""} será removida do quadro.`} confirmLabel="Excluir lista" confirmVariant="danger" loading={busy} onCancel={() => setExcluir(null)} onConfirm={() => {
       if (excluir) void acao(async () => { await api.delete(`/djen/kanban/listas/${excluir.id}`); setExcluir(null); });
     }} />
@@ -192,4 +221,5 @@ export function QuadroProcessos() {
     </Modal>
   </div>;
 }
+
 

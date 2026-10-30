@@ -92,7 +92,7 @@ export function createSession(userId: number): string {
   return sessionId;
 }
 
-export function getSession(sessionId: string): Session | undefined {
+export function getSession(sessionId: string, touch = true): Session | undefined {
   const session = db.prepare("SELECT * FROM sessions WHERE id = ?").get(sessionId) as Session | undefined;
   
   if (!session) return undefined;
@@ -104,7 +104,7 @@ export function getSession(sessionId: string): Session | undefined {
   }
   
   // Verificar inatividade (3 horas)
-  const lastActivity = new Date(session.last_activity);
+  const lastActivity = new Date(session.last_activity.includes("T") ? session.last_activity : session.last_activity.replace(" ", "T") + "Z");
   const threeHoursAgo = new Date(Date.now() - SESSION_DURATION_HOURS * 60 * 60 * 1000);
   
   if (lastActivity < threeHoursAgo) {
@@ -113,7 +113,7 @@ export function getSession(sessionId: string): Session | undefined {
   }
   
   // Atualizar última atividade
-  db.prepare("UPDATE sessions SET last_activity = CURRENT_TIMESTAMP WHERE id = ?").run(sessionId);
+  if (touch) db.prepare("UPDATE sessions SET last_activity = CURRENT_TIMESTAMP WHERE id = ?").run(sessionId);
   
   return session;
 }
@@ -125,3 +125,4 @@ export function deleteSession(sessionId: string): void {
 export function cleanupSessions(): void {
   db.prepare("DELETE FROM sessions WHERE expires_at < CURRENT_TIMESTAMP").run();
 }
+

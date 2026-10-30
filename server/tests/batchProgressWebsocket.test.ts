@@ -2,7 +2,10 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { io as connect, type Socket } from "../../client/node_modules/socket.io-client";
 import { afterEach, describe, expect, it } from "vitest";
-import { initWebsocket } from "../src/websocket";
+import { initWebsocket, emitEvent } from "../src/websocket";
+import express from "express";
+import cookieParser from "cookie-parser";
+import { authRouter } from "../src/routes/auth";
 import { finishBatch, listActiveBatches, startBatch, updateBatch, type BatchProgress } from "../src/services/batchProgressService";
 import { db } from "../src/db";
 import { createSession } from "../src/services/authService";
@@ -17,7 +20,10 @@ afterEach(async () => {
 });
 
 async function setup() {
-  const http = createServer();
+  const app = express();
+  app.use(cookieParser());
+  app.use("/api/auth", authRouter);
+  const http = createServer(app);
   const server = initWebsocket(http);
   await new Promise<void>((resolve) => http.listen(0, "127.0.0.1", resolve));
   stop = () => new Promise<void>((resolve) => server.close(() => resolve()));
@@ -31,10 +37,41 @@ async function snapshot(url: string) {
   clients.push(client);
   const state = new Promise<BatchProgress[]>((resolve) => client.once("batch:state", resolve));
   client.connect();
-  return { client, state: await state };
+  return { client, session, state: await state };
 }
 
 describe("recuperação de lote via WebSocket", () => {
+  it("encerra só as conexões da sessão encerrada pelo logout", async () => {
+    const url = await setup();
+    const first = await snapshot(url), second = await snapshot(url);
+    const disconnected = new Promise<void>((resolve) => first.client.once("disconnect", () => resolve()));
+    const response = await fetch(`${url}/api/auth/logout`, { method: "POST", headers: { Cookie: `session_id=${first.session}` } });
+    expect(response.status).toBe(200);
+    await disconnected;
+    expect(first.client.connected).toBe(false);
+    expect(second.client.connected).toBe(true);
+  });
+  it.each(["expires_at", "last_activity"])("não transmite eventos depois de expirar %s", async (column) => {
+    const url = await setup();
+    const { client, session } = await snapshot(url);
+    const received: unknown[] = [];
+    client.on("djen:changed", (value) => received.push(value));
+    db.prepare(`UPDATE sessions SET ${column}='2000-01-01T00:00:00.000Z' WHERE id=?`).run(session);
+    const disconnected = new Promise<void>((resolve) => client.once("disconnect", () => resolve()));
+    emitEvent("djen:changed", { confidential: true });
+    await disconnected;
+    expect(received).toEqual([]);
+  });
+  it("eventos em segundo plano não renovam a atividade da sessão", async () => {
+    const url = await setup();
+    const { client, session } = await snapshot(url);
+    const timestamp = new Date(Date.now() - 60_000).toISOString();
+    db.prepare("UPDATE sessions SET last_activity=? WHERE id=?").run(timestamp, session);
+    const received = new Promise<void>((resolve) => client.once("djen:changed", () => resolve()));
+    emitEvent("djen:changed", {});
+    await received;
+    expect(db.prepare("SELECT last_activity FROM sessions WHERE id=?").get(session)).toEqual({ last_activity: timestamp });
+  });
   it("entrega o progresso atual para uma nova conexão, como após atualizar a página", async () => {
     const url = await setup();
     const id = startBatch("mensagens", 4);
@@ -64,3 +101,4 @@ describe("recuperação de lote via WebSocket", () => {
     expect(await empty).toEqual([]);
   });
 });
+
