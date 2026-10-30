@@ -49,3 +49,7 @@ O driver SQLite não muda nesta entrega. As migrações acrescentam metadados se
 As APIs não dependem do executável local para gerar análises. Se a opção de conta ChatGPT informar componente indisponível, um administrador da infraestrutura pode reparar a dependência com `npm run codex:install --prefix server`; isso é manutenção da instalação, não o fluxo de login do usuário.
 
 Fontes de implementação: [OpenAI — saídas estruturadas](https://developers.openai.com/api/docs/guides/structured-outputs), [Anthropic — saídas estruturadas](https://platform.claude.com/docs/en/build-with-claude/structured-outputs), [autenticação do componente oficial](https://learn.chatgpt.com/docs/app-server), [Sign in with ChatGPT](https://developers.openai.com/siwc/quickstart).
+
+## Acesso pelo Nginx com HTTPS
+
+A central de IA aceita o HTTPS do mesmo `Host` do painel quando o Nginx encaminha HTTP ao backend. Headers `X-Forwarded-Host` e `X-Forwarded-Proto` não liberam origens externas. Se o proxy substituir o `Host` por um endereço interno, configure `APP_URL` com a URL pública completa do painel.

@@ -1,4 +1,4 @@
-import { createServer } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
 import express from "express";
 import cookieParser from "cookie-parser";
@@ -26,6 +26,21 @@ afterEach(() => { vi.unstubAllEnvs(); db.prepare("DELETE FROM settings WHERE cha
 async function request(path: string, method = "GET", data?: unknown, cookie = adminCookie) {
   return fetch(`${await ready}${path}`, { method, headers: { "Content-Type": "application/json", Cookie: cookie }, body: data ? JSON.stringify(data) : undefined });
 }
+// node:http preserva o Host do proxy; o fetch do Node o substitui pelo destino.
+async function proxyRequest(path: string, headers: Record<string, string>, method = "GET", data?: unknown): Promise<Response> {
+  const url = `${await ready}${path}`;
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(url, { method, headers }, (res) => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => { body += chunk; });
+      res.on("end", () => resolve(new Response(body, { status: res.statusCode })));
+      res.on("error", reject);
+    });
+    req.on("error", reject);
+    req.end(data === undefined ? undefined : JSON.stringify(data));
+  });
+}
 const input = { provider: "openai", models: { economico: "test-model", equilibrado: "test-model", precisao: "test-model" }, api_key: "never-expose-this-test-key" };
 
 describe("API administrativa da central de IA", () => {
@@ -38,6 +53,24 @@ describe("API administrativa da central de IA", () => {
     expect(response.status).toBe(403);
     const local = await fetch(`${await ready}/config`, { headers: { Cookie: adminCookie, Origin: new URL(await ready).origin } });
     expect(local.status).toBe(200);
+  });
+  it("aceita leitura e alteração pelo HTTPS do painel atrás do Nginx", async () => {
+    vi.stubEnv("APP_URL", "http://localhost:8081");
+    const headers = { Cookie: adminCookie, Host: "disparazap.saleseassociados.com.br", Origin: "https://disparazap.saleseassociados.com.br", "Content-Type": "application/json" };
+    expect((await proxyRequest("/config", headers)).status).toBe(200);
+    const saved = await proxyRequest("/config", headers, "PUT", input);
+    expect(saved.status).toBe(200);
+    expect((await saved.json()).provider).toBe("openai");
+  });
+  it.each(["https://evil.invalid", "https://disparazap.saleseassociados.com.br.evil.invalid", "https://disparazap.saleseassociados.com.br:444", "null"])("recusa %s mesmo com headers encaminhados forjados", async (origin) => {
+    vi.stubEnv("APP_URL", "http://localhost:8081");
+    const response = await proxyRequest("/config", { Cookie: adminCookie, Host: "disparazap.saleseassociados.com.br", Origin: origin, "X-Forwarded-Host": "evil.invalid", "X-Forwarded-Proto": "https", "Content-Type": "application/json" }, "PUT", input);
+    expect(response.status).toBe(403);
+    expect(db.prepare("SELECT 1 FROM settings WHERE chave='ai_openai_api_key'").get()).toBeUndefined();
+  });
+  it("aceita a origem pública explícita quando o proxy usa um Host interno", async () => {
+    vi.stubEnv("APP_URL", "https://painel.example/path");
+    expect((await proxyRequest("/config", { Cookie: adminCookie, Host: "localhost:3333", Origin: "https://painel.example" })).status).toBe(200);
   });
   it("salva modelos e criptografa a chave sem devolvê-la na configuração nem na auditoria", async () => {
     const saved = await request("/config", "PUT", input); expect(saved.status).toBe(200);
