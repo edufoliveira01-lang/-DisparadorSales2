@@ -157,3 +157,12 @@ A área Aguardando retorno mostra somente processos cuja última publicação ca
 - Acompanhamentos continuam sendo lembretes operacionais, sem converter o período citado em data processual definitiva. A tela informa a cobertura de publicações e ordens reconhecidas.
 - Perícias sem laudo só alertam a partir de 60 dias, com processo preenchido e sem laudo posterior identificado ou resolução manual. Audiências não geram cobrança de laudo. A tela mostra eventos futuros, realizados há menos de 60 dias e cadastros sem processo.
 - A limpeza usa a data da realização e preserva perícias ativas pendentes e agendamentos futuros. Registros anteriormente apagados não são reconstruídos automaticamente; precisam ser recuperados da fonte ou de backup.
+
+
+## Extração comum de providências — 2.53.0
+
+Resumo operacional, sugestões de prazo, obrigações externas e emenda no Kanban passam a consultar a mesma extração de destinatário, comando e período literal. Formas como “regularmente intimada a promover EMENDA À INICIAL, no prazo improrrogável de 15 (quinze) dias” geram providência do escritório e candidato de 15 dias. Idade de comprovante (180 dias antes do ajuizamento), hipóteses, pedidos e simples ciência não geram esse prazo.
+
+As ordens são separadas por destinatário. Horas, meses, data limite expressa e número/extenso divergentes ficam visíveis para conferência sem conversão automática em dias. O cálculo de vencimento continua condicionado ao calendário, regime e marco inicial. Não se presume acesso aos autos completos.
+
+A apresentação de registros antigos é recalculada a partir do texto capturado, sem apagar JSON, revisões, prazos ou movimentos manuais. A nova versão invalida o cache para próximas análises e reavalia sugestões automáticas do quadro; não dispara reanálise paga de todo o histórico. O prompt inclui verificação de coerência entre resumo e providência. A ausência de período calculável não é apresentada como prova de inexistência de obrigação.

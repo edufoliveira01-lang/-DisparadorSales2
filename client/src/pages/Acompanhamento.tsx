@@ -183,6 +183,7 @@ interface Publicacao {
     } | null;
   } | null;
   acao?: {
+    fonte?: "publicacao" | "ia" | "nao_confirmada";
     tipo: "ciencia" | "cumprimento" | "prazo_explicito";
     descricao: string | null;
     prazo_texto: string | null;
@@ -2078,11 +2079,12 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                 <section className={`rounded-xl border p-4 ${detalhe.acao?.tipo === "prazo_explicito" ? "border-amber-200 bg-amber-50/70 dark:border-amber-900 dark:bg-amber-950/20" : "border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/30"}`}>
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">O que fazer agora</p>
                   <h3 className="mt-1 text-sm font-semibold">
-                    {detalhe.acao?.tipo === "prazo_explicito" ? "Conferir prazo da parte" : detalhe.acao?.tipo === "cumprimento" ? "Providência sem prazo expresso" : "Acompanhar / tomar ciência"}
+                    {detalhe.acao?.tipo === "prazo_explicito" ? "Escritório · conferir prazo expresso" : detalhe.acao?.tipo === "cumprimento" ? "Escritório · providência sem prazo expresso" : "Conferir providências da publicação"}
                   </h3>
                   <p className="mt-2 text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
-                    {detalhe.acao?.prazo_texto || detalhe.acao?.descricao || "Esta publicação não contém prazo expresso identificado para a parte autora ou para o escritório. Confira o inteiro teor antes de concluir."}
+                    {detalhe.acao?.prazo_texto || detalhe.acao?.descricao || "Não foi possível confirmar uma providência com prazo para o escritório pela identificação automática. Confira o inteiro teor antes de concluir."}
                   </p>
+                  {detalhe.acao?.fonte === "publicacao" && <p className="mt-2 text-[11px] font-medium text-accent-700 dark:text-accent-300">Providência identificada no texto da publicação · confira o trecho e o termo inicial.</p>}
                   {detalhe.acao?.tipo === "prazo_explicito" && (
                     <Button size="sm" variant="outline" className="mt-3" onClick={() => setAbaDetalhe("prazos")}>Conferir e calcular prazo <ArrowRight className="h-3.5 w-3.5" /></Button>
                   )}
@@ -2190,7 +2192,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                         }
                       >
                         {detalhe.acao.tipo === "prazo_explicito"
-                          ? "Prazo explícito para a parte"
+                          ? "Prazo expresso do escritório"
                           : detalhe.acao.tipo === "cumprimento"
                             ? "Exige providência"
                             : "Ciência / acompanhamento"}

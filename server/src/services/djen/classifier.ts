@@ -1,3 +1,4 @@
+import { identificarOrdensProcessuais, ordemDoEscritorio } from "./proceduralOrders";
 export const CATEGORIAS_DJEN = [
   "sentenca",
   "acordao",
@@ -52,7 +53,7 @@ export function normalizarTexto(value: string): string {
     .toLowerCase();
 }
 
-export const VERSAO_CLASSIFICADOR = "2.44.0";
+export const VERSAO_CLASSIFICADOR = "2.53.0";
 export class ErroAnaliseCodex extends Error {}
 export interface ContextoPublicacao {
   classe?: string;
@@ -163,6 +164,7 @@ RESULTADO DA SENTENÇA: JULGO PARCIALMENTE PROCEDENTES os pedidos + JULGO IMPROC
 SITUACAO: título curto e descritivo do fato, por exemplo "RPV paga · execução extinta", "Acordo homologado · pagamento parcelado", "Perícia determinada · aguardando agendamento", "Sentença parcialmente procedente". Serve para detalhar inclusive fatos que fiquem em Outros.
 OUTROS: categorias=[] quando fora das categorias previstas ou sem evidência suficiente. Não invente categorias novas. Em caso de dúvida, use Outros e explique a dúvida.
 PROVIDÊNCIA: diferencie ciência, ordem para a parte autora cumprir e ordem de aguardar. Use ciencia quando apenas comunica um fato. Use cumprimento quando o juiz determina atuação do escritório/cliente sem prazo numérico. Use prazo_explicito somente quando o texto ordena à autora/advogado manifestar-se, cumprir, juntar, emendar, apresentar documentos, impugnar etc. EM X DIAS; copie o trecho literal e informe o destinatário. "Aguarde-se por X dias", prazo do perito, INSS, réu ou juízo NÃO são prazo do escritório, ainda que a parte autora seja mencionada em outra frase. Descreva a espera no resumo/situação, sem sugerir prazo processual da parte. Use indeterminado se o destinatário não estiver claro.
+CONSISTÊNCIA: emenda à inicial determinada, inclusive "promover EMENDA À INICIAL, no prazo improrrogável de 15 (quinze) dias", é providência do escritório com prazo explícito, nunca simples ciência. Reconheça comandos nominais (emenda, regularização, apresentação, comprovação) vinculados a intimação. Não confunda idade/validade de um comprovante (ex.: 180 dias antes do ajuizamento) com prazo para cumprir. Se houver várias ordens, separe-as no resumo com destinatário e período; use a providência principal do escritório no campo estruturado. Citações de lei, condições futuras e pedidos ainda não deferidos não são ordens atuais. Horas, meses ou data limite expressa não devem ser convertidos em dias por suposição. Número e extenso divergentes exigem alerta de conferência. Antes de responder, confira se resumo e providência concordam; destinatário e trecho literal devem sustentar a ação.
 RESUMO: descreva objetivamente os fatos e determinações desta publicação, em até 150 palavras. Não afirme ter analisado os autos completos nem transforme providência futura em fato ocorrido. Explique em justificativa por que entrou nas categorias ou em Outros. Em evidencias, use SOMENTE citações literais e suficientes (15 a 1200 caracteres) da publicação para cada categoria atribuída, nunca texto criado por você. Alertas: dúvidas, dados faltantes e necessidade de conferência. Campo não informado: null. Não produza porcentagem de certeza.
 `;
 export function promptAnaliseCodex(
@@ -185,20 +187,7 @@ function remarcacaoComHorarioMantido(texto: string) {
   return data ? { data, trecho: trecho.trim().slice(0, 1200) } : null;
 }
 export function ordemComPrazoDaParte(trecho: string) {
-  const s = canon(trecho);
-  const destinatario = /\b(?:autor[ae]?|parte autora|demandante|requerente|exequente|impetrante|advogad[oa]s?|procurador[ae]?s?|patrono|as partes|ambas as partes)\b/.test(s);
-  const acao = /\b(?:cumpra|cumpram|manifest(?:e|em|ar)|apresent(?:e|em|ar)|junt(?:e|em|ar)|impugn(?:e|em|ar)|emend(?:e|em|ar)|regulariz(?:e|em|ar)|contest(?:e|em|ar)|replic(?:a|ar)|comprov(?:e|em|ar)|contrarrazo(?:e|em|ar)|esclarec(?:a|am|er)|recorr(?:a|am|er))\b/.test(s);
-  const periodo = /\b(?:prazo de|em|dentro de)\s+(?:\d{1,3}|[a-z]+(?:\s+e\s+[a-z]+)?)\s*(?:\([^)]{1,40}\)\s*)?dias\b/.exec(s);
-  const aguardo = /\b(?:aguarde-se|aguardar|aguarde|sobrestado|suspenso)\b/.test(s);
-  const outroDestinatario = /\b(?:perito|inss|parte re|requerido|executado|autarquia)\b/.test(s);
-  // Menções ao INSS ou perito como origem de uma proposta/documento não mudam
-  // quem recebeu a ordem. Se ambos aparecem, exige destinatário direto.
-  const antesPrazo = periodo ? s.slice(0, periodo.index) : "";
-  const alvo = String.raw`(?:autor[ae]?|parte autora|demandante|requerente|exequente|impetrante|advogad[oa]s?|procurador[ae]?s?|patrono|as partes|ambas as partes)`;
-  const direto = new RegExp(String.raw`\b(?:intime-se|intimem-se|notifique-se|de-se vista|abra-se vista)\s+(?:(?:a|ao|as|aos|o|os)\s+)?${alvo}\b`).test(antesPrazo)
-    || new RegExp(String.raw`\b${alvo}\b.{0,45}\b(?:foi|fica|esta)\s+intimad[oa]s?\b`).test(antesPrazo)
-    || new RegExp(String.raw`\b${alvo}\b.{0,45}\b(?:cumpra|cumpram|devera|deverao|manifeste|manifestem|apresente|apresentem|junte|juntem|impugne|impugnem)\b`).test(antesPrazo);
-  return Boolean(destinatario && acao && periodo && !aguardo && (!outroDestinatario || direto));
+  return identificarOrdensProcessuais(trecho).some((o) => ordemDoEscritorio(o) && o.tipo === "prazo_explicito");
 }
 const decisaoColegiada = (s: string) =>
   !/\b(?:decisao monocratica|decisao singular|decidiu monocraticamente)\b/.test(s) &&
@@ -363,6 +352,13 @@ export function validarAnaliseCodex(
     a.providencia.prazo_texto = null;
   }
   const alertas = [...a.alertas];
+  const ordemLiteral = identificarOrdensProcessuais(texto).filter(ordemDoEscritorio).find((o) => o.tipo === "prazo_explicito")
+    || identificarOrdensProcessuais(texto).filter(ordemDoEscritorio).find((o) => o.tipo === "cumprimento");
+  if (ordemLiteral && ordemLiteral.trecho.length <= 1200) {
+    if (a.providencia.tipo !== ordemLiteral.tipo || !["escritorio", "cliente"].includes(a.providencia.responsavel)) alertas.push("Providência conferida e alinhada à ordem expressa no texto da publicação.");
+    a.providencia = { tipo:ordemLiteral.tipo, descricao:ordemLiteral.descricao, prazo_texto:ordemLiteral.tipo === "prazo_explicito" ? ordemLiteral.trecho : null, responsavel:"escritorio" };
+    if (ordemLiteral.alerta) alertas.push(ordemLiteral.alerta);
+  }
   let categorias = [...new Set(a.categorias)].filter((c) => {
     const evidence = a.evidencias.filter((e) => e.categoria === c);
     if (!evidence.length) return false;
@@ -598,4 +594,5 @@ export function validarAnaliseCodex(
     alertas,
   };
 }
+
 

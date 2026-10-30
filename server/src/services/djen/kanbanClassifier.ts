@@ -1,3 +1,4 @@
+import { identificarOrdensProcessuais, ordemDoEscritorio, contextoNaoAtual } from "./proceduralOrders";
 import { normalizarTexto } from "./classifier";
 
 export const ETAPAS_AUTOMATICAS = [
@@ -24,16 +25,18 @@ export function classificarPublicacaoParaQuadro(texto: string): SinalEtapa | nul
   const partes = texto.split(/(?:[.;]\s+|\n+)/).filter(Boolean);
   const sinais: SinalEtapa[] = [];
   const adicionar = (codigo: EtapaAutomatica, trecho: string) => sinais.push({ codigo, evidencia: trecho.trim().slice(0, 230) });
+  for (const ordem of identificarOrdensProcessuais(texto)) if (ordemDoEscritorio(ordem) && ordem.acao === "emenda_inicial") {
+    const inicio = ordem.trecho.search(/emend[ae]/i);
+    adicionar("emenda_inicial", ordem.trecho.slice(Math.max(0, inicio - 70), inicio + 160));
+  }
   for (const trecho of partes) {
     const s = canon(trecho);
-    if (s.length < 8) continue;
+    if (s.length < 8 || contextoNaoAtual(s)) continue;
     if (/\b(?:distribuicao|distribuid[oa])\b.{0,100}\b(?:processo|acao|autos|feito|procedimento)\b|\b(?:processo|acao|autos|feito|procedimento)\b.{0,100}\b(?:distribuicao|distribuid[oa])\b/.test(s) &&
         !/\b(?:a distribuir|sera distribuid[oa]|aguarda distribuicao|apos distribuicao|distribuicao futura)\b/.test(s))
       adicionar("distribuicao", trecho);
     if (/\b(?:recebida|protocolada|distribuida)\b.{0,55}\b(?:peticao inicial|acao)\b|\b(?:peticao inicial|acao)\b.{0,55}\b(?:recebida|protocolada|distribuida)\b/.test(s))
       adicionar("peticao_inicial", trecho);
-    if (/\b(?:emende|emendar|emenda|emendada)\b.{0,80}\b(?:peticao inicial|inicial)\b|\b(?:peticao inicial|inicial)\b.{0,70}\b(?:emende|emenda|emendada)\b/.test(s) && !/\b(?:pedido de emenda indeferido|nao ha emenda)\b/.test(s))
-      adicionar("emenda_inicial", trecho);
     if (/\b(?:nomeio|nomeado|nomeada|designo|designado|designada)\b.{0,70}\bperit[oa]\b|\bperit[oa]\b.{0,70}\b(?:nomeado|nomeada|designado|designada)\b/.test(s) && !/\b(?:a nomear|a designar|nomeacao pendente|perito anterior)\b/.test(s))
       adicionar("perito_designado", trecho);
     if (/\b(?:juntada|juntado|apresentada)\b.{0,55}\bmanifestacao do perito\b|\bmanifestacao do perito\b.{0,55}\b(?:juntada|juntado|apresentada)\b/.test(s))
