@@ -6,8 +6,15 @@ const hoje = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/S
 const diasDesde = (data: string) =>
   Math.floor((Date.parse(`${hoje()}T12:00:00Z`) - Date.parse(`${data.slice(0, 10)}T12:00:00Z`)) / 86400000);
 
+export interface ObrigacaoExternaAcompanhamento {
+  publicacao_id: number; tipo: TipoObrigacao; responsavel: string; processo: string;
+  cliente_nome: string | null; data_disponibilizacao: string; dias_decorridos: number;
+  dias_espera: number; prazo_citado_dias: number | null; motivo: string; resumo: string;
+  acompanhamento_status: string; ultima_cobranca_em: string | null;
+}
+
 /** Lembretes operacionais: a ausência de prova no DJEN não comprova descumprimento nos autos. */
-export function listarObrigacoesExternas() {
+function* calcularObrigacoesExternas(): Generator<void, ObrigacaoExternaAcompanhamento[], void> {
   const config = db.prepare("SELECT aguardo_dias FROM djen_config WHERE id=1").get() as { aguardo_dias: number };
   const rows = db.prepare(
     `SELECT p.id,p.processo_chave,p.data_disponibilizacao,p.texto,p.situacao,p.ia_json,
@@ -27,12 +34,7 @@ export function listarObrigacoesExternas() {
   );
   const posteriores = new Map<string, string[]>();
   const acompanhados = new Set<string>();
-  const saida: {
-    publicacao_id: number; tipo: TipoObrigacao; responsavel: string; processo: string;
-    cliente_nome: string | null; data_disponibilizacao: string; dias_decorridos: number;
-    dias_espera: number; prazo_citado_dias: number | null; motivo: string; resumo: string;
-    acompanhamento_status: string; ultima_cobranca_em: string | null;
-  }[] = [];
+  const saida: ObrigacaoExternaAcompanhamento[] = [];
   for (const row of rows) {
     const textosPosteriores = posteriores.get(row.processo_chave) || [];
     for (const ordem of identificarObrigacoesExternas(row.texto)) {
@@ -62,8 +64,43 @@ export function listarObrigacoesExternas() {
     }
     textosPosteriores.push(row.texto);
     posteriores.set(row.processo_chave, textosPosteriores);
+    yield;
   }
   return saida.sort((a, b) => b.dias_decorridos - a.dias_decorridos);
+}
+
+/** Compatibilidade para diagnósticos e consumidores síncronos existentes. */
+export function listarObrigacoesExternas(): ObrigacaoExternaAcompanhamento[] {
+  const iterator = calcularObrigacoesExternas();
+  let step = iterator.next();
+  while (!step.done) step = iterator.next();
+  return step.value;
+}
+
+let consultaEmAndamento: Promise<ObrigacaoExternaAcompanhamento[]> | null = null;
+
+/**
+ * As rotas compartilham a consulta em execução e cedem tempo ao event loop entre
+ * lotes. O resultado não fica cacheado: mudanças de status/dados aparecem na próxima leitura.
+ */
+export function listarObrigacoesExternasAsync(): Promise<ObrigacaoExternaAcompanhamento[]> {
+  if (consultaEmAndamento) return consultaEmAndamento;
+  consultaEmAndamento = (async () => {
+    const iterator = calcularObrigacoesExternas();
+    let step = iterator.next();
+    let lote = 0;
+    let inicio = Date.now();
+    while (!step.done) {
+      if (++lote >= 5 || Date.now() - inicio >= 8) {
+        await new Promise<void>(resolve => setImmediate(resolve));
+        lote = 0;
+        inicio = Date.now();
+      }
+      step = iterator.next();
+    }
+    return step.value;
+  })().finally(() => { consultaEmAndamento = null; });
+  return consultaEmAndamento;
 }
 
 export function atualizarObrigacaoExterna(publicacaoId: number, tipo: unknown, status: unknown) {
