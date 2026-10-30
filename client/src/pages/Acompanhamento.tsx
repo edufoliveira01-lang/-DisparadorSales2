@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   FileCheck2,
+  Copy,
   Search,
   Plus,
   RefreshCw,
@@ -441,6 +442,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     [processo, setProcesso] = useState({ cliente_id: "", observacoes: "" });
   const [confirmacaoEnvio, setConfirmacaoEnvio] = useState(false);
   const [mostrarSemLaudo, setMostrarSemLaudo] = useState(false);
+  const [diagnostico, setDiagnostico] = useState<{ pericias: { ativas: number; sem_processo: number; futuras: number; menos_60_dias: number }; publicacoes: number; ordens_externas: number; aguardo_dias: number } | null>(null);
   const [periciasSemLaudo, setPericiasSemLaudo] = useState<PericiaSemLaudo[]>([]);
   const [aguardando, setAguardando] = useState<AguardandoRetorno[]>([]);
   const [tipoAguardando, setTipoAguardando] = useState("");
@@ -480,6 +482,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
   }, []);
   const carregarSemLaudo = useCallback(async () => {
     setCarregandoSemLaudo(true);
+    void api.get<NonNullable<typeof diagnostico>>("/djen/acompanhamentos/diagnostico").then(setDiagnostico).catch(() => setDiagnostico(null));
     try {
       setPericiasSemLaudo(
         await api.get<PericiaSemLaudo[]>("/djen/pericias/sem-laudo?dias=60"),
@@ -507,6 +510,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     navigate({ pathname, search: parametros.toString() }, { replace: true });
   }, [search, pathname, navigate, carregarSemLaudo]);
   const carregarAguardando = useCallback(async () => {
+    void api.get<NonNullable<typeof diagnostico>>("/djen/acompanhamentos/diagnostico").then(setDiagnostico).catch(() => setDiagnostico(null));
     setAguardando(await api.get<AguardandoRetorno[]>("/djen/aguardando"));
   }, []);
   const carregarLista = useCallback(async () => {
@@ -809,6 +813,10 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     void abrir(detailId);
     return () => { detailSeq.current++; };
   }, [detailId]);
+  async function copiarDetalhe(texto: string, nome: string) {
+    try { await navigator.clipboard.writeText(texto); show(`${nome} copiado.`, "success"); }
+    catch { show("Não foi possível copiar. Selecione o texto e use Ctrl+C.", "error"); }
+  }
   function fecharDetalhe() { if (!salvando) { detailSeq.current++; if (detalhe) prefetchRef.current.delete(detalhe.id); setDetalheAberto(false); setCarregandoDetalhe(false); setDetalhe(null); setPreviaDetalhe(null); onCloseDetail?.(); } }
   const conteudoAguardando = (
         <div className="space-y-4">
@@ -820,6 +828,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
               O sistema acompanha intimações e determinações capturadas no DJEN. Uma publicação posterior só encerra o alerta se trouxer indicação explícita de cumprimento; confira os autos antes de cobrar. O prazo citado não é contado como prazo processual nesta tela. Sem período expresso, o lembrete aparece após {status?.config.aguardo_dias ?? 30} dias.
             </p>
           </div>
+          {diagnostico && <p className="rounded-xl border border-zinc-200 p-3 text-xs text-zinc-500">Cobertura: {diagnostico.publicacoes} publicações consultadas · {diagnostico.ordens_externas} ordens externas identificadas. Os alertas só entram nesta lista após o período de conferência; ordens resolvidas não aparecem.</p>}
           <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900 sm:flex-row">
             <Input aria-label="Buscar acompanhamento" placeholder="Buscar cliente, processo ou ordem…" value={buscaAguardando} onChange={(e) => setBuscaAguardando(e.target.value)} />
             <Select aria-label="Filtrar tipo de acompanhamento" className="sm:max-w-[260px]" value={tipoAguardando} onChange={(e) => setTipoAguardando(e.target.value)}>
@@ -1850,6 +1859,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
             publicação de laudo identificada no mesmo processo. Não é contagem de
             prazo jurídico.
           </p>
+          {diagnostico && <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-xs dark:border-zinc-700 dark:bg-zinc-800"><p className="font-medium">Cobertura do acompanhamento</p><p className="mt-2">{diagnostico.pericias.ativas} registros ativos · {diagnostico.pericias.futuras} futuros · {diagnostico.pericias.menos_60_dias} realizados há menos de 60 dias.</p>{diagnostico.pericias.sem_processo > 0 && <p className="mt-2 text-amber-700">{diagnostico.pericias.sem_processo} registro(s) sem número de processo: complete o cadastro na agenda para permitir o cruzamento com os laudos do DJEN.</p>}<p className="mt-2 text-zinc-500">Somente registros presentes no controle de perícias podem gerar este alerta. Registros anteriormente excluídos não são reconstruídos por esta consulta.</p></div>}
           {carregandoSemLaudo ? (
             <p className="text-sm text-zinc-500">Carregando…</p>
           ) : !periciasSemLaudo.length ? (
@@ -1961,15 +1971,13 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
                     Processo · publicação #{detalhe.id}
                   </p>
-                  <h3 className="mt-1 break-all text-base font-semibold">
-                    {detalhe.processo || "Processo não informado"}
-                  </h3>
+                  <div className="mt-1 flex items-center gap-2"><h3 className="break-all text-base font-semibold">{detalhe.processo || "Processo não informado"}</h3>{detalhe.processo && <button type="button" aria-label="Copiar número do processo" title="Copiar número do processo" className="shrink-0 rounded-lg p-1.5 text-zinc-500 hover:bg-accent-100 hover:text-accent-700" onClick={() => void copiarDetalhe(detalhe.processo, "Número do processo")}><Copy className="h-3.5 w-3.5" /></button>}</div>
                   <p
-                    className={`mt-2 text-sm font-semibold ${detalhe.cliente_vinculado ? "text-zinc-800 dark:text-zinc-100" : "text-amber-700 dark:text-amber-300"}`}
+                    className={`mt-2 flex flex-wrap items-center gap-2 text-sm font-semibold ${detalhe.cliente_vinculado ? "text-zinc-800 dark:text-zinc-100" : "text-amber-700 dark:text-amber-300"}`}
                   >
-                    {detalhe.cliente_exibicao
+                    <span>{detalhe.cliente_exibicao
                       ? `Cliente: ${detalhe.cliente_exibicao}${detalhe.cliente_vinculado ? "" : " · vínculo pendente"}`
-                      : "Cliente não identificado na publicação"}
+                      : "Cliente não identificado na publicação"}</span>{detalhe.cliente_exibicao && <button type="button" aria-label="Copiar nome da parte" title="Copiar nome da parte" className="shrink-0 rounded-lg p-1.5 hover:bg-amber-100" onClick={() => void copiarDetalhe(detalhe.cliente_exibicao!, "Nome da parte")}><Copy className="h-3.5 w-3.5" /></button>}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">

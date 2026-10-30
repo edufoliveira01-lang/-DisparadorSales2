@@ -1,3 +1,4 @@
+import { diagnosticoAcompanhamentos } from "../services/djen/followUpDiagnostics";
 import { selectedAiConnection } from "../services/ai/connection";
 import {
   statusCalendarios,
@@ -114,6 +115,7 @@ const filtroPublicacoes = (req: import("express").Request) => {
       filtro[key] = (req.query[key] as string[]).join(",");
   return filtro;
 };
+djenRouter.get("/acompanhamentos/diagnostico", wrap((_req, res) => res.json(diagnosticoAcompanhamentos())));
 djenRouter.get(
   "/status",
   wrap((_req, res) =>
@@ -355,9 +357,9 @@ djenRouter.post(
   "/publicacoes/:id/prazos",
   wrap((req, res) => {
     const n = id(req.params.id);
-    salvarPrazo(n, req.body);
+    const prazo_id = salvarPrazo(n, req.body);
     changed();
-    res.status(201).json(detalhesPublicacao(n));
+    res.status(201).json({ ...detalhesPublicacao(n), prazo_id });
   }),
 );
 djenRouter.put(

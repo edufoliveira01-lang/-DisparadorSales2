@@ -136,15 +136,15 @@ setInterval(
   INTERVALO_VERIFICACAO_MS
 );
 
-// Poda diária do calendário de perícias agendadas: mantém só os últimos 3 meses, para não
-// crescer para sempre e para limitar a janela em que comparamos reagendamentos. Não afeta
+// Poda diária apenas de eventos antigos encerrados ou com laudo identificado.
+// Preserva eventos futuros e perícias ativas ainda sob acompanhamento. Não afeta
 // send_logs (Histórico) nem pending_replies — são tabelas independentes, com retenção própria.
 const DIAS_RETENCAO_PERICIAS_AGENDADAS = 90;
 const INTERVALO_PODA_PERICIAS_MS = 24 * 60 * 60 * 1000;
 function podarPericiasAgendadas(): void {
   try {
     const apagadas = podarPericiasAgendadasAntigas(DIAS_RETENCAO_PERICIAS_AGENDADAS);
-    if (apagadas > 0) console.log(`[Calendário] ${apagadas} perícia(s) agendada(s) com mais de 3 meses removida(s).`);
+    if (apagadas > 0) console.log(`[Calendário] ${apagadas} evento(s) encerrado(s) com mais de 3 meses removido(s).`);
   } catch (err) {
     console.error("[Calendário] Erro ao podar perícias agendadas antigas:", err);
   }

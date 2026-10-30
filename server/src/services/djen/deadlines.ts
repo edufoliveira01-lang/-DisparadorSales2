@@ -1,3 +1,4 @@
+import { identificarObrigacoesExternas } from "./obligations";
 import { db } from "../../db";
 import { getSetting, setSetting } from "../settingsService";
 import { dataValida, somarDias } from "./api";
@@ -223,6 +224,7 @@ export function sugestoesPrazos(publicacao: {
 }) {
   return {
     candidatos: identificarPrazos(publicacao.texto),
+    obrigacoes_externas: identificarObrigacoesExternas(publicacao.texto),
     calendarios: configPrazos()
       .calendarios.filter(
         (c) =>
@@ -374,4 +376,5 @@ export function concluirPublicacao(id: number, concluida: boolean) {
     "UPDATE djen_publicacoes SET concluida=?,concluida_em=CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE NULL END WHERE id=?",
   ).run(concluida ? 1 : 0, concluida ? 1 : 0, id);
 }
+
 

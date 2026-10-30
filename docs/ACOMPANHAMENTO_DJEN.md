@@ -147,3 +147,13 @@ A lista reúne publicações por processo, mas cada andamento preserva sua class
 
 A área Aguardando retorno mostra somente processos cuja última publicação capturada ordenou espera e cujo período transcorreu sem nova publicação no DJEN. Na ausência de período literal, o lembrete operacional usa 30 dias por padrão, configuráveis no monitoramento; isso não comprova ausência de movimentação nos autos e não é prazo judicial. O acompanhamento de perícias sem laudo continua separado e só alerta após 60 dias.
 
+
+
+## Detalhes e alertas — 2.52.0
+
+- Botões de copiar o processo e o nome da parte, documentos apresentados em cartões com origem e finalidade.
+- A aba Prazos separa ordens para o escritório de obrigações da parte contrária e de terceiros. O responsável é gravado no prazo e incluído no evento da agenda; prazos antigos ficam como responsável a conferir, sem inferência retroativa.
+- Adicionar à agenda de prazos abre o cadastro com responsável, descrição e datas. O envio usa a agenda processual configurada, independente das perícias. Se o Google falhar, o prazo já salvo é reaproveitado na nova tentativa.
+- Acompanhamentos continuam sendo lembretes operacionais, sem converter o período citado em data processual definitiva. A tela informa a cobertura de publicações e ordens reconhecidas.
+- Perícias sem laudo só alertam a partir de 60 dias, com processo preenchido e sem laudo posterior identificado ou resolução manual. Audiências não geram cobrança de laudo. A tela mostra eventos futuros, realizados há menos de 60 dias e cadastros sem processo.
+- A limpeza usa a data da realização e preserva perícias ativas pendentes e agendamentos futuros. Registros anteriormente apagados não são reconstruídos automaticamente; precisam ser recuperados da fonte ou de backup.

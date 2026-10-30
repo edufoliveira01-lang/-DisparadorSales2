@@ -20,7 +20,7 @@ const palavras: Record<string, number> = {
   cinquenta: 50, sessenta: 60, noventa: 90, cento: 100,
 };
 function prazoCitado(s: string): number | null {
-  const m = /\b(?:prazo de|pelo prazo de|em|dentro de)\s+(\d{1,3}|cinco|dez|quinze|vinte|trinta|quarenta|cinquenta|sessenta|noventa|cento)\s*(?:\(\s*\d{1,3}\s*\)\s*)?dias\b/.exec(s);
+  const m = /\b(?:prazo de|pelo prazo de|em|dentro de)\s+(\d{1,3}|cinco|dez|quinze|vinte|trinta|quarenta|cinquenta|sessenta|noventa|cento)\s*(?:\([^)]{1,40}\)\s*)?dias\b/.exec(s);
   if (!m) return null;
   const n = Number(m[1]) || palavras[m[1]];
   return n >= 1 && n <= 365 ? n : null;
@@ -29,11 +29,11 @@ function prazoCitado(s: string): number | null {
 /** Somente intimações/ordens explícitas, no mesmo trecho do destinatário e da providência. */
 export function identificarObrigacoesExternas(texto: string): ObrigacaoDetectada[] {
   const saida = new Map<TipoObrigacao, ObrigacaoDetectada>();
-  for (const original of texto.split(/(?:[.;]\s+|\n+)/).filter(Boolean)) {
+  for (const original of texto.replace(/\b(Sr|Sra|Dr|Dra)\.\s*/gi, "$1 ").split(/(?:[.;]\s+|\n+)/).filter(Boolean)) {
     const s = normalizar(original);
     if (!/\b(?:intime-se|intimem-se|intimad[oa]s?|intimar|intimacao|determino|determina-se|determinado)\b/.test(s)) continue;
     if (/\b(?:caso seja|se for|eventual|solicitou a intimacao|requereu a intimacao|pedido de intimacao)\b/.test(s)) continue;
-    const alvo = /\b(?:intime-se|intimem-se|intimar|intimad[oa]|intimacao d[oa]|determino|determina-se)\s+(?:(?:o|a|ao|aos|as|os|que o|que a)\s+)?(perit[oa]|calculista|contadoria|inss|parte re|parte contraria|reu|requerid[oa]|executad[oa]|autarquia)\b/.exec(s)?.[1]
+    const alvo = /\b(?:intime-se|intimem-se|intimar|intimad[oa]|intimacao d[oa]|determino|determina-se)\s+(?:(?:o|a|ao|aos|as|os|que o|que a)\s+)?(?:(?:sr|sra|dr|dra|senhor|senhora)\s+)?(perit[oa]|calculista|contadoria|inss|parte re|parte contraria|reu|requerid[oa]|executad[oa]|autarquia)\b/.exec(s)?.[1]
       || /\b(perit[oa]|calculista|contadoria|inss|parte re|parte contraria|reu|requerid[oa]|executad[oa]|autarquia)\b.{0,35}\b(?:foi|esta|fica|e)?\s*intimad[oa]\b/.exec(s)?.[1];
     if (!alvo) continue;
     let tipo: TipoObrigacao | null = null;
@@ -86,3 +86,4 @@ export function cumprimentoIdentificado(tipo: TipoObrigacao, texto: string, orde
   }
   return false;
 }
+

@@ -145,7 +145,14 @@ const relinkSubstituidasStmt = db.prepare(
 );
 const listStmt = db.prepare(`${SELECT_COM_LEMBRETE} ORDER BY p.data_hora_ms ASC`);
 const deleteAntigasStmt = db.prepare(
-  `DELETE FROM pericias_agendadas WHERE created_at <= datetime('now', '-' || ? || ' days')`
+  `DELETE FROM pericias_agendadas
+    WHERE data_hora_ms <= (strftime('%s','now')*1000 - ?*86400000)
+      AND (status<>'ativa' OR origem='audiencia'
+        OR EXISTS (SELECT 1 FROM djen_acompanhamentos_pericia a WHERE a.pericia_id=pericias_agendadas.id AND a.status='resolvido')
+        OR EXISTS (SELECT 1 FROM djen_publicacoes p, json_each(p.categorias_json) c
+          WHERE pericias_agendadas.processo_chave<>'' AND p.processo_chave=pericias_agendadas.processo_chave
+            AND p.cancelada=0 AND c.value='laudo_juntado'
+            AND date(p.data_disponibilizacao)>=date(pericias_agendadas.data_hora_ms/1000,'unixepoch')))`
 );
 
 const findAtivasDoMesmoTipoStmt = db.prepare(
@@ -605,10 +612,11 @@ export function marcarLembreteEnviado(ids: number[], logId: number): void {
 }
 
 /**
- * Remove entradas com mais de diasRetencao dias, independente do status — é só isso que evita
- * a lista crescer para sempre. Retorna quantas linhas foram apagadas.
+ * Limpa eventos antigos pela data de realização, preservando os ativos sem laudo
+ * ou sem processo e acompanhamentos não resolvidos. Nunca remove agendamentos futuros.
  */
 export function podarPericiasAgendadasAntigas(diasRetencao: number): number {
   const info = deleteAntigasStmt.run(diasRetencao);
   return info.changes;
 }
+

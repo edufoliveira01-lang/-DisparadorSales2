@@ -41,6 +41,10 @@ export function salvarPrazo(
   const termino =
     data.termino === "" || data.termino === null ? null : data.termino;
   const status = data.status || "aberto";
+  const anteriorResponsavel = prazoId ? db.prepare("SELECT responsavel FROM djen_prazos WHERE id=? AND publicacao_id=?").get(prazoId, publicacaoId) as { responsavel: string } | undefined : undefined;
+  const responsavel = data.responsavel ?? anteriorResponsavel?.responsavel ?? "nao_identificado";
+  if (!["escritorio", "parte_contraria", "terceiro", "nao_identificado"].includes(String(responsavel)))
+    throw new WorkflowInputError("Selecione quem deve cumprir o prazo.");
   if (
     !descricao ||
     descricao.length > 250 ||
@@ -91,6 +95,7 @@ export function salvarPrazo(
             data.observacoes,
           ).lastInsertRowid,
       );
+    db.prepare("UPDATE djen_prazos SET responsavel=? WHERE id=?").run(responsavel, prazoId);
     registrarHistoricoDjen(
       publicacaoId,
       "prazo",
@@ -106,6 +111,7 @@ export function salvarPrazo(
           termino,
           status,
           observacoes: data.observacoes,
+          responsavel,
         },
       },
     );
@@ -193,3 +199,4 @@ export function excluirDocumento(publicacaoId: number, documentoId: number) {
     );
   })();
 }
+
