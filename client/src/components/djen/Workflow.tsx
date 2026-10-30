@@ -22,6 +22,7 @@ export interface Prazo {
   termino: string | null;
   status: string;
   observacoes: string;
+  responsavel?: string;
 }
 export interface Documento {
   id: number;
@@ -64,7 +65,7 @@ function useAcao(refresh: () => Promise<void>) {
       show(ok, "success");
     } catch (e) {
       show(
-        e instanceof ApiError
+        e instanceof Error
           ? e.message
           : "Não foi possível salvar a alteração.",
         "error",
@@ -96,58 +97,21 @@ export function DjenDocumentos({
         <FileText className="h-4 w-4" />
         Documentos do andamento
       </h3>
-      <div className="mt-3 flex flex-wrap gap-3 text-xs text-accent-600">
-        {certidao ? (
-          <a
-            href={certidao}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-lg border border-accent-200 px-3 py-2 font-semibold"
-          >
-            <ExternalLink className="h-4 w-4" />
-            Abrir PDF oficial da publicação (DJEN)
-          </a>
-        ) : (
-          <p className="text-amber-700">
-            O DJEN não forneceu o identificador do PDF para esta publicação.
-            Consulte novamente a origem.
-          </p>
-        )}
-        {tribunal && (
-          <a
-            href={tribunal}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            Abrir documento original no tribunal
-          </a>
-        )}
-        <a
-          href={`/api/djen/publicacoes/${id}/documento`}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Ler texto capturado
-        </a>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {[
+          { url: certidao, titulo: "Certidão oficial DJEN", descricao: "PDF com o teor da publicação", tipo: "PDF oficial" },
+          { url: tribunal, titulo: "Documento no tribunal", descricao: "Consultar a origem · pode exigir login", tipo: "Tribunal" },
+          { url: `/api/djen/publicacoes/${id}/documento`, titulo: "Texto da publicação", descricao: "Versão capturada para leitura", tipo: "Texto" },
+          ...documentos.map((d) => ({ url: d.url, titulo: d.nome, descricao: "Documento vinculado ao andamento", tipo: "Anexo" })),
+        ].map((d, i) => d.url ? <a key={i} href={d.url} target="_blank" rel="noopener noreferrer" className="group flex min-w-0 items-start gap-3 rounded-xl border border-zinc-200 bg-zinc-50/70 p-4 transition-colors hover:border-accent-300 hover:bg-accent-50 dark:border-zinc-700 dark:bg-zinc-800/40 dark:hover:bg-accent-950/30">
+          <span className="rounded-lg bg-white p-2 text-accent-600 dark:bg-zinc-900"><FileText className="h-4 w-4" /></span><span className="min-w-0 flex-1"><span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">{d.tipo}</span><strong className="mt-1 block break-words text-sm text-zinc-800 dark:text-zinc-100">{d.titulo}</strong><span className="mt-1 block text-xs text-zinc-500">{d.descricao}</span></span><ExternalLink className="mt-1 h-4 w-4 shrink-0 text-zinc-400 group-hover:text-accent-600" />
+        </a> : <div key={i} className="rounded-xl border border-dashed border-zinc-200 p-4 text-xs text-zinc-500"><strong className="block">{d.titulo}</strong><p className="mt-2">Link não fornecido nesta publicação.</p></div>)}
       </div>
       <p className="mt-2 text-[11px] text-zinc-500">
         O PDF do DJEN é a certidão oficial com o teor da publicação. A íntegra
         de uma peça dos autos depende do documento disponibilizado pelo tribunal
         e pode exigir autenticação.
       </p>
-      {documentos.map((d) => (
-        <a
-          key={d.id}
-          href={d.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-2 block text-xs text-accent-600"
-        >
-          {d.nome}
-        </a>
-      ))}
     </section>
   );
 }
@@ -171,6 +135,8 @@ export function DjenPrazos({
     termino: "",
     status: "aberto",
     observacoes: "",
+    responsavel: "nao_identificado",
+    agendar: false,
   };
   const [form, setForm] = useState<(typeof vazio & { id?: number }) | null>(
     null,
@@ -185,19 +151,10 @@ export function DjenPrazos({
           <CalendarDays className="h-4 w-4" />
           Prazos deste andamento
         </h3>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setForm({ ...vazio })}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Adicionar prazo
-        </Button>
+        <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => setForm({ ...vazio })}><Plus className="h-3.5 w-3.5" />Registrar prazo</Button><Button size="sm" onClick={() => setForm({ ...vazio, agendar: true })}><CalendarDays className="h-3.5 w-3.5" />Adicionar à agenda de prazos</Button></div>
       </div>
       <p className="mt-2 text-xs text-zinc-500">
-        Identifique e calcule a sugestão usando o calendário forense
-        configurado. Confira as datas antes de salvar. A agenda processual é
-        independente das perícias.
+        Confira quem recebeu a ordem e as datas. Prazos do escritório exigem providência; prazos da parte contrária e de terceiros são acompanhamentos. A agenda de prazos é separada da agenda de perícias.
       </p>
       <DeadlineSuggestion
         id={id}
@@ -206,6 +163,7 @@ export function DjenPrazos({
           await api.post(`/djen/publicacoes/${id}/prazos`, {
             ...s,
             status: "aberto",
+            responsavel: "escritorio",
           });
           await refresh();
           show("Prazo calculado e salvo.", "success");
@@ -220,10 +178,10 @@ export function DjenPrazos({
         {prazos.map((p) => (
           <article
             key={p.id}
-            className="rounded-lg bg-zinc-50 p-3 text-xs dark:bg-zinc-800/40"
+            className={`rounded-2xl border-l-4 border p-4 text-xs ${p.responsavel === "escritorio" ? "border-amber-300 bg-amber-50/50 dark:bg-amber-950/20" : p.responsavel === "parte_contraria" || p.responsavel === "terceiro" ? "border-sky-300 bg-sky-50/50 dark:bg-sky-950/20" : "border-zinc-200 bg-zinc-50 dark:bg-zinc-800/40"}`}
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <strong>{p.descricao}</strong>
+              <div><p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">{({ escritorio: "Escritório · providência a cumprir", parte_contraria: "Parte contrária · acompanhar cumprimento", terceiro: "Terceiro · acompanhar cumprimento" } as Record<string, string>)[p.responsavel || ""] || "Responsável não informado · conferir"}</p><strong className="text-sm">{p.descricao}</strong></div>
               <Badge
                 tone={
                   p.status === "concluido"
@@ -244,12 +202,12 @@ export function DjenPrazos({
                       : "Em aberto"}
               </Badge>
             </div>
-            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <p>
-                Início do prazo: <strong>{dia(p.inicio)}</strong>
+                Início do prazo <strong className="mt-1 block text-base">{dia(p.inicio)}</strong>
               </p>
               <p>
-                Término do prazo: <strong>{dia(p.termino)}</strong>
+                Término do prazo <strong className="mt-1 block text-base">{dia(p.termino)}</strong>
               </p>
             </div>
             {p.observacoes && (
@@ -277,8 +235,10 @@ export function DjenPrazos({
                 onClick={() =>
                   setForm({
                     ...p,
+                    agendar: false,
                     inicio: p.inicio || "",
                     termino: p.termino || "",
+                    responsavel: p.responsavel || "nao_identificado",
                   })
                 }
               >
@@ -304,7 +264,9 @@ export function DjenPrazos({
         ))}
       </div>
       {form && (
-        <div className="mt-4 grid gap-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
+        <div className="mt-4 grid gap-4 rounded-2xl border border-accent-200 bg-accent-50/30 p-4 dark:border-zinc-700">
+          <h4 className="text-sm font-semibold">{form.agendar ? "Novo compromisso na agenda de prazos" : form.id ? "Editar prazo" : "Registrar prazo"}</h4>
+          <div><Label htmlFor="prazo-responsavel">Quem deve cumprir?</Label><Select id="prazo-responsavel" value={form.responsavel} onChange={(e) => setForm({ ...form, responsavel: e.target.value })}><option value="nao_identificado">Selecione o responsável</option><option value="escritorio">Escritório / parte representada</option><option value="parte_contraria">Parte contrária (ex.: INSS)</option><option value="terceiro">Terceiro (ex.: perito, contadoria)</option></Select></div>
           <div>
             <Label htmlFor="prazo-descricao">Descrição do prazo</Label>
             <Input
@@ -362,16 +324,22 @@ export function DjenPrazos({
             <Button
               size="sm"
               loading={busy}
+              disabled={!form.descricao.trim() || form.responsavel === "nao_identificado" || (form.agendar && (!form.termino || form.status !== "aberto"))}
               onClick={() =>
                 void executar(async () => {
                   const url = `/djen/publicacoes/${id}/prazos${form.id ? `/${form.id}` : ""}`;
-                  if (form.id) await api.put(url, form);
-                  else await api.post(url, form);
+                  let prazoId = form.id;
+                  if (prazoId) await api.put(url, form);
+                  else { const saved = await api.post<{ prazo_id: number }>(url, form); prazoId = saved.prazo_id; setForm({ ...form, id: prazoId }); }
+                  if (form.agendar) {
+                    try { await api.post(`/djen/publicacoes/${id}/prazos/${prazoId}/agenda`); }
+                    catch (e) { await refresh(); throw new Error(`Prazo salvo, mas não enviado à agenda. ${e instanceof Error ? e.message : "Tente novamente."}`); }
+                  }
                   setForm(null);
-                }, "Prazo salvo.")
+                }, form.agendar ? "Prazo salvo e adicionado à agenda de prazos." : "Prazo salvo.")
               }
             >
-              Salvar prazo
+              {form.agendar ? "Salvar e adicionar à agenda" : "Salvar prazo"}
             </Button>
             <Button
               size="sm"
@@ -504,3 +472,4 @@ export function DjenHistorico({
     </section>
   );
 }
+

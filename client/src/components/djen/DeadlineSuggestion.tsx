@@ -44,6 +44,7 @@ export function DeadlineSuggestion({
   const [calendario, setCalendario] = useState<CalendarioAutomatico | null>(
     null,
   );
+  const [externos, setExternos] = useState<{ tipo: string; responsavel: string; trecho: string; prazo_citado_dias: number | null }[]>([]);
   const [candidatos, setCandidatos] = useState<Candidato[]>([]),
     [descricao, setDescricao] = useState("Manifestação processual"),
     [dias, setDias] = useState<number | "">(""),
@@ -73,11 +74,13 @@ export function DeadlineSuggestion({
     void api
       .get<{
         candidatos: Candidato[];
+        obrigacoes_externas?: typeof externos;
         calendario_automatico: CalendarioAutomatico | null;
       }>(`/djen/publicacoes/${id}/prazos/sugestoes`)
       .then((r) => {
         if (ativo) {
           setCandidatos(r.candidatos);
+          setExternos(r.obrigacoes_externas || []);
           setCalendario(r.calendario_automatico);
           const principal = r.candidatos.length === 1 ? r.candidatos[0] : null;
           if (principal) {
@@ -145,21 +148,13 @@ export function DeadlineSuggestion({
     return () => window.clearTimeout(timer);
   }, [base, dias, id, marco, prontoParaCalcular, unidade, divergente, confirmarDivergencia]);
   return (
-    <details
-      open
-      className="mt-3 rounded-lg border border-accent-200 bg-accent-50/30 p-3 dark:border-zinc-700"
-    >
-      <summary className="cursor-pointer text-xs font-semibold">
-        Prazo sugerido automaticamente
-      </summary>
+    <section className="mt-5 space-y-4" aria-label="Identificação e cálculo de prazos">
+      <div className="grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-900 dark:bg-amber-950/20"><p className="text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">Escritório / parte representada</p><p className="mt-2 text-sm font-semibold">{!prontoParaCalcular ? (erro ? "Identificação indisponível" : "Consultando publicação…") : candidatos.length ? `${candidatos.length} prazo(s) expresso(s) identificado(s)` : "Nenhum prazo expresso identificado"}</p><p className="mt-1 text-xs text-zinc-500">{candidatos.length ? "Confira a ordem abaixo e registre a providência." : "Ciência ou acompanhamento não geram dias por padrão. Confira o inteiro teor."}</p></div><div className="rounded-xl border border-sky-200 bg-sky-50/60 p-4 dark:border-sky-900 dark:bg-sky-950/20"><p className="text-[10px] font-semibold uppercase tracking-wide text-sky-800 dark:text-sky-200">Parte contrária / terceiros</p><p className="mt-2 text-sm font-semibold">{prontoParaCalcular ? `${externos.length} obrigação(ões) identificada(s)` : erro ? "Não foi possível verificar" : "Consultando publicação…"}</p><p className="mt-1 text-xs text-zinc-500">Acompanhar o cumprimento. Estas ordens não são tratadas como prazo do escritório.</p></div></div>
+      {externos.map((e, i) => <article key={i} className="rounded-xl border border-sky-200 p-4 dark:border-sky-900"><p className="text-sm font-semibold">{e.responsavel} · {e.prazo_citado_dias ? `${e.prazo_citado_dias} dias mencionados` : "sem período expresso"}</p><p className="mt-2 text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">{e.trecho}</p><p className="mt-2 text-[11px] text-sky-700 dark:text-sky-300">Acompanhamento operacional em Aguardando retorno após o período de conferência, se não houver cumprimento identificado.</p></article>)}
       <div className="mt-3 space-y-3">
-        <p className="text-xs text-zinc-500">
-          Os feriados e suspensões são consultados automaticamente conforme o
-          tribunal e a localidade. Se necessário, o sistema indicará o dado que
-          falta; ajustes manuais ficam nas configurações.
-        </p>
+
         {calendario && (
-          <p className="text-xs text-zinc-500">
+          <details className="rounded-xl bg-zinc-50 p-3 text-xs dark:bg-zinc-800/40"><summary className="cursor-pointer font-medium">Calendário forense · {calendario.municipio || "localidade a confirmar"}</summary><p className="mt-2 text-zinc-500">
             Calendário: {calendario.municipio || "localidade em identificação"}{" "}
             ·{" "}
             {calendario.erro ||
@@ -170,17 +165,12 @@ export function DeadlineSuggestion({
             <Link to="/configuracoes?prazos=1" className="text-accent-600">
               Ver detalhes
             </Link>
-          </p>
+          </p></details>
         )}
-        <details className="rounded-lg border border-zinc-200 bg-white/70 p-3 dark:border-zinc-700 dark:bg-zinc-900/30">
-          <summary className="cursor-pointer text-xs font-semibold">
-            Ajustar dados do cálculo
-          </summary>
-          <div className="mt-3 space-y-3">
             {candidatos.map((c, i) => (
               <div key={i} className="rounded-lg border p-3 text-xs">
                 <p className="font-semibold">
-                  {c.descricao} · {c.dias} dias{" "}
+                  Escritório · {c.descricao} · {c.dias} dias{" "}
                   {c.unidade === "uteis" ? "úteis" : "corridos"}
                 </p>
                 <p className="mt-2 whitespace-pre-wrap text-zinc-600 dark:text-zinc-300">
@@ -206,12 +196,70 @@ export function DeadlineSuggestion({
                 </Button>
               </div>
             ))}
-            {!candidatos.length && (
+            {prontoParaCalcular && !candidatos.length && (
               <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
                 Nenhum prazo da parte foi reconhecido nesta publicação. Confira o texto e informe os dias manualmente; o sistema não preencherá 15 dias por padrão.
               </p>
             )}
             {candidatos.length > 1 && <p className="text-xs font-medium text-amber-800 dark:text-amber-300">Há mais de um prazo expresso. Selecione a ordem correta acima para calcular.</p>}
+        {resultado && (
+          <div className="rounded-lg bg-white p-3 text-xs dark:bg-zinc-800">
+            <div className="grid gap-3 sm:grid-cols-2"><div className="rounded-xl bg-zinc-50 p-4 dark:bg-zinc-900"><p className="text-zinc-500">Início sugerido</p><strong className="mt-1 block text-xl">{resultado.inicio.split("-").reverse().join("/")}</strong></div><div className="rounded-xl bg-accent-50 p-4 dark:bg-accent-950/30"><p className="text-accent-700 dark:text-accent-300">Término sugerido</p><strong className="mt-1 block text-xl">{resultado.termino.split("-").reverse().join("/")}</strong></div></div>
+            <p className="mt-2">{resultado.observacoes}</p>
+            <details className="mt-2">
+              <summary>Ver memória da contagem e fontes</summary>
+              <p>Publicação/ciência: {resultado.publicacao}</p>
+              {resultado.exclusoes.map((e, i) => (
+                <p key={i}>
+                  {e.data} · {e.motivo}
+                </p>
+              ))}
+              {resultado.fontes.map((f) => (
+                <a
+                  key={f}
+                  href={f}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 block break-all text-accent-600"
+                >
+                  Calendário oficial
+                </a>
+              ))}
+            </details>
+            <Button
+              size="sm"
+              className="mt-3"
+              loading={salvando}
+              disabled={salvo}
+              onClick={() => {
+                setSalvando(true);
+                setErro("");
+                void onSave({
+                  descricao,
+                  inicio: resultado.inicio,
+                  termino: resultado.termino,
+                  observacoes: `${dias} dias ${unidade}. Data-base: ${base} (${marco}). ${resultado.observacoes}\nFontes: ${resultado.fontes.join(", ")}`,
+                })
+                  .then(() => setSalvo(true))
+                  .catch((e) =>
+                    setErro(
+                      e instanceof ApiError
+                        ? e.message
+                        : "Não foi possível salvar o prazo.",
+                    ),
+                  )
+                  .finally(() => setSalvando(false));
+              }}
+            >
+              {salvo ? "Prazo salvo" : "Confirmar e salvar prazo"}
+            </Button>
+          </div>
+        )}
+        <details open={candidatos.length !== 1} className="rounded-xl border border-zinc-200 bg-white/70 p-4 dark:border-zinc-700 dark:bg-zinc-900/30">
+          <summary className="cursor-pointer text-xs font-semibold">
+            Ajustar dados do cálculo
+          </summary>
+          <div className="mt-3 space-y-3">
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <Label htmlFor="calc-dias">Quantidade de dias</Label>
@@ -300,64 +348,9 @@ export function DeadlineSuggestion({
             {erro}
           </p>
         )}
-        {resultado && (
-          <div className="rounded-lg bg-white p-3 text-xs dark:bg-zinc-800">
-            <p className="font-semibold">
-              Início sugerido: {resultado.inicio.split("-").reverse().join("/")}{" "}
-              · Término sugerido:{" "}
-              {resultado.termino.split("-").reverse().join("/")}
-            </p>
-            <p className="mt-2">{resultado.observacoes}</p>
-            <details className="mt-2">
-              <summary>Ver memória da contagem e fontes</summary>
-              <p>Publicação/ciência: {resultado.publicacao}</p>
-              {resultado.exclusoes.map((e, i) => (
-                <p key={i}>
-                  {e.data} · {e.motivo}
-                </p>
-              ))}
-              {resultado.fontes.map((f) => (
-                <a
-                  key={f}
-                  href={f}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-2 block break-all text-accent-600"
-                >
-                  Calendário oficial
-                </a>
-              ))}
-            </details>
-            <Button
-              size="sm"
-              className="mt-3"
-              loading={salvando}
-              disabled={salvo}
-              onClick={() => {
-                setSalvando(true);
-                setErro("");
-                void onSave({
-                  descricao,
-                  inicio: resultado.inicio,
-                  termino: resultado.termino,
-                  observacoes: `${dias} dias ${unidade}. Data-base: ${base} (${marco}). ${resultado.observacoes}\nFontes: ${resultado.fontes.join(", ")}`,
-                })
-                  .then(() => setSalvo(true))
-                  .catch((e) =>
-                    setErro(
-                      e instanceof ApiError
-                        ? e.message
-                        : "Não foi possível salvar o prazo.",
-                    ),
-                  )
-                  .finally(() => setSalvando(false));
-              }}
-            >
-              {salvo ? "Prazo salvo" : "Confirmar e salvar prazo"}
-            </Button>
-          </div>
-        )}
+
       </div>
-    </details>
+    </section>
   );
 }
+

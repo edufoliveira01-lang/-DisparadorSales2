@@ -107,6 +107,9 @@ export function runDjenMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_djen_historico_publicacao ON djen_historico(publicacao_id,id DESC);
   `);
+  const prazoCampos = db.prepare("PRAGMA table_info(djen_prazos)").all() as { name: string }[];
+  if (!prazoCampos.some((c) => c.name === "responsavel"))
+    db.exec("ALTER TABLE djen_prazos ADD COLUMN responsavel TEXT NOT NULL DEFAULT 'nao_identificado'");
   const campos = db.prepare("PRAGMA table_info(djen_publicacoes)").all() as {
     name: string;
   }[];

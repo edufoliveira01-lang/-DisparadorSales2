@@ -260,6 +260,7 @@ export function listarPericiasSemLaudo(diasAposPericia = 60) {
          LEFT JOIN contacts c ON c.id=pr.cliente_id
          LEFT JOIN djen_acompanhamentos_pericia ac ON ac.pericia_id=pa.id
         WHERE pa.status='ativa'
+          AND COALESCE(pa.origem,'')<>'audiencia'
           AND pa.processo_chave<>''
           AND pa.data_hora_ms <= (strftime('%s','now')*1000 - ?*86400000)
           AND COALESCE(ac.status,'pendente')<>'resolvido'
@@ -298,4 +299,5 @@ export function atualizarAcompanhamentoPericia(
   ).run(periciaId, status, status, observacoes);
   return { ok: true };
 }
+
 

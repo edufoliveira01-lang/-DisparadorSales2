@@ -31,6 +31,7 @@ export async function enviarPrazoAgenda(publicacaoId: number, prazoId: number) {
     .get(prazoId, publicacaoId) as
     | {
         descricao: string;
+        responsavel: string;
         inicio: string | null;
         termino: string | null;
         status: string;
@@ -43,6 +44,7 @@ export async function enviarPrazoAgenda(publicacaoId: number, prazoId: number) {
     throw new WorkflowInputError(
       "Salve um prazo em aberto com término válido antes de adicionar à agenda.",
     );
+  const responsavel = ({ escritorio: "Escritório", parte_contraria: "Parte contrária", terceiro: "Terceiro", nao_identificado: "Responsável a conferir" } as Record<string, string>)[p.responsavel] || "Responsável a conferir";
   const eventId = crypto
       .createHash("sha256")
       .update(`djen-prazo:${c.calendarId}:${prazoId}`)
@@ -54,8 +56,8 @@ export async function enviarPrazoAgenda(publicacaoId: number, prazoId: number) {
   ativos.add(chave);
   const endpoint = `/calendars/${encodeURIComponent(c.calendarId)}/events`;
   const event = {
-    summary: `Prazo: ${p.descricao} · ${p.numero}`,
-    description: `Processo: ${p.numero}\nTribunal: ${p.tribunal}\nInício do prazo: ${p.inicio || "não informado"}\nTérmino: ${p.termino}\n${p.observacoes}`,
+    summary: `${responsavel === "Escritório" ? "Prazo do escritório" : `Acompanhar · ${responsavel}`}: ${p.descricao} · ${p.numero}`,
+    description: `Responsável pelo cumprimento: ${responsavel}\nProcesso: ${p.numero}\nTribunal: ${p.tribunal}\nInício do prazo: ${p.inicio || "não informado"}\nTérmino: ${p.termino}\n${p.observacoes}`,
     start: { date: p.termino },
     end: { date: somarDias(p.termino, 1) },
     extendedProperties: {
@@ -93,3 +95,4 @@ export async function enviarPrazoAgenda(publicacaoId: number, prazoId: number) {
     ativos.delete(chave);
   }
 }
+
