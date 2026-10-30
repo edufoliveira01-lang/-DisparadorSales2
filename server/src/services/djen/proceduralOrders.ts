@@ -90,7 +90,11 @@ export function identificarOrdensProcessuais(texto: string): OrdemProcessual[] {
       ancoras.push({ inicio:frase.inicio+m.index!, fim:frase.inicio+m.index!+m[0].length, valor:m[0], comando:frase.inicio+comando });
     }
     for (let i=0; i<ancoras.length; i++) {
-      const a=ancoras[i]; const fim=Math.min(frase.fim, ancoras[i+1]?.comando ?? frase.fim, a.fim+1600);
+      const a=ancoras[i]; const limite=Math.min(frase.fim, ancoras[i+1]?.comando ?? frase.fim, a.fim+1600);
+      // Uma segunda ordem encerra a anterior, mesmo se o novo destinatário
+      // não estiver no catálogo (ex.: secretaria). Não transfira seus dias à autora.
+      const proximoComando=/\b(?:intime-se|intimem-se|notifique-se|notifiquem-se|cite-se|citem-se|de-se vista|abra-se vista)\b/.exec(s.slice(a.fim,limite));
+      const fim=proximoComando ? a.fim+proximoComando.index : limite;
       const inicio = i===0 && a.inicio-frase.inicio < 350 ? frase.inicio : a.comando;
       const ordem = s.slice(a.fim,fim); const ident=acao(ordem); const quem=destinatario(a.valor);
       // Pedido e hipótese depois do destinatário também não são ordem atual.

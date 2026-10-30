@@ -37,6 +37,7 @@ describe("extração unificada de providências", () => {
   });
   it.each([
     "Intime-se a autora para ciência da juntada do laudo pericial.",
+    "Intime-se a autora para ciência do despacho e intime-se a secretaria para juntar documentos em 5 dias.",
     "Dê-se ciência à autora. O perito apresentará laudo em 20 dias.",
     "Caso não seja juntado o laudo, intime-se a autora para se manifestar em 5 dias.",
     "Após a juntada do laudo, intime-se a autora para manifestação em 15 dias.",
