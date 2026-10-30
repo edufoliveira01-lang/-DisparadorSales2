@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import QRCode from "qrcode";
+import { WhatsappWorkCoordinator } from "./whatsappWorkCoordinator";
 import { Client, LocalAuth, type Message, type Reaction } from "whatsapp-web.js";
 import { dataDir } from "../db";
 import { whatsappMessageIdCandidates, whatsappMessageStableKey } from "../utils/whatsappMessageId";
@@ -405,6 +406,7 @@ const INTERVALO_SAUDE_WHATSAPP_MS = 45 * 1000;
 const INTERVALO_CONFERENCIA_ENTREGA_MS = 2 * 60 * 1000;
 const INTERVALO_CONFERENCIA_RESPOSTA_MS = 30 * 1000;
 const INTERVALO_RETOMADA_SESSAO_MS = 2 * 60 * 1000;
+const DEBUG_WHATSAPP_EVENTS = process.env.WHATSAPP_DEBUG_EVENTS === "1";
 
 type Listener = () => void;
 
@@ -511,6 +513,7 @@ class WhatsappManager {
   private conferindoEntregas = false;
   private conferindoRespostas = false;
   private proximoPendenteConferido = 0;
+  private tarefasWhatsapp = new WhatsappWorkCoordinator();
   private ultimoLogConferido = 0;
   private retomadaTimer: ReturnType<typeof setTimeout> | null = null;
   private falhasSaude = 0;
@@ -666,7 +669,11 @@ class WhatsappManager {
   }
 
   /** Recupera respostas cujo evento em tempo real não chegou ao servidor. */
-  private async conferirRespostasPendentes(client: Client): Promise<void> {
+  private conferirRespostasPendentes(client: Client): Promise<void> {
+    return this.tarefasWhatsapp.run(client, "conferencia-respostas", () => this.conferirRespostasPendentesSemSobreposicao(client));
+  }
+
+  private async conferirRespostasPendentesSemSobreposicao(client: Client): Promise<void> {
     if (this.conferindoRespostas || this.client !== client || this.status !== "conectado") return;
     this.conferindoRespostas = true;
     try {
@@ -1259,8 +1266,8 @@ class WhatsappManager {
     // Chega uma mensagem de QUALQUER conversa; o filtro por "está esperando resposta desse
     // telefone/conversa" acontece dentro de resolvePendingReplyForMessage.
     client.on("message", (message: Message) => {
-      if (message.fromMe || message.from.endsWith("@g.us")) return;
-      this.resolvePendingReplyForMessage(message).catch(
+      if (!tentativaAtiva() || message.fromMe || message.from.endsWith("@g.us")) return;
+      this.processarMensagemRecebida(client, message).catch(
         (err) => console.error("Erro ao processar mensagem recebida:", err)
       );
     });
@@ -1280,9 +1287,10 @@ class WhatsappManager {
     // pendente deixa de estar em "aguardando"). Para mensagens nossas, é o fallback que captura
     // o ID real quando o retorno direto de client.sendMessage() vem vazio.
     client.on("message_create", (message: Message) => {
+      if (!tentativaAtiva()) return;
       if (!message.fromMe) {
         if (message.from.endsWith("@g.us")) return;
-        this.resolvePendingReplyForMessage(message).catch((err) =>
+        this.processarMensagemRecebida(client, message).catch((err) =>
           console.error("Erro ao processar mensagem recebida pelo fallback:", err)
         );
         return;
@@ -1290,7 +1298,7 @@ class WhatsappManager {
 
       const messageId = whatsappMessageIdCandidates(message.id)[0];
       const toDigits = String(message.to || "").split("@")[0];
-      console.log(`[WhatsApp] message_create detectado (fromMe) para: ${toDigits}`);
+      if (DEBUG_WHATSAPP_EVENTS) console.log(`[WhatsApp] message_create detectado (fromMe) para: ${toDigits}`);
       if (!messageId) {
         console.warn("[WhatsApp] message_create sem identificador utilizável.");
         return;
@@ -1316,6 +1324,8 @@ class WhatsappManager {
     // da mensagem do WhatsApp, salvo tanto em send_logs quanto em pending_replies (quando há
     // monitoramento de resposta ativo) no momento do envio, em dispatchService.
     client.on("message_ack", (message: Message, ack: number) => {
+      // Confirmações de mensagens recebidas não pertencem aos envios do sistema.
+      if (!tentativaAtiva() || message.fromMe === false || !Number.isInteger(ack) || ack < -1 || ack > 4) return;
       try {
         const messageId = whatsappMessageIdCandidates(message.id)[0];
         if (!messageId) {
@@ -1337,17 +1347,17 @@ class WhatsappManager {
           aguardando.resolve(messageId);
         }
 
-        console.log(`[WhatsApp] Evento message_ack recebido: ID=${messageId}, ACK=${ack}`);
+        if (DEBUG_WHATSAPP_EVENTS) console.log(`[WhatsApp] Evento message_ack recebido: ID=${messageId}, ACK=${ack}`);
 
         const log = updateLogAckByMessageId(messageId, ack);
         const pending = updatePendingReplyAckByMessageId(messageId, ack);
 
         if (log) {
-          console.log(`[WhatsApp] Status do Log atualizado: ${messageId}`);
+          if (DEBUG_WHATSAPP_EVENTS) console.log(`[WhatsApp] Status do Log atualizado: ${messageId}`);
           emitEvent("send:ack-update", log);
         }
         if (pending) {
-          console.log(`[WhatsApp] Status do Pendente atualizado: ${messageId}`);
+          if (DEBUG_WHATSAPP_EVENTS) console.log(`[WhatsApp] Status do Pendente atualizado: ${messageId}`);
           emitEvent("pendingReply:ack-update", pending);
         }
 
@@ -1355,7 +1365,7 @@ class WhatsappManager {
         // salvo no banco (race condition). Guardamos o ack para tentar aplicar logo em seguida.
         if (!log || !pending) {
           const stableKey = whatsappMessageStableKey(messageId);
-          console.log(`[WhatsApp] ACK órfão detectado (race condition), guardando: ${stableKey}`);
+          if (DEBUG_WHATSAPP_EVENTS) console.log(`[WhatsApp] ACK órfão detectado (race condition), guardando: ${stableKey}`);
           const previousAck = this.acksPendentes.get(stableKey);
           if (previousAck === undefined || ack === -1 || ack > previousAck) {
             this.acksPendentes.set(stableKey, ack);
@@ -1829,6 +1839,10 @@ class WhatsappManager {
   private async reconciliarPendentesAoReconectar(): Promise<void> {
     const client = this.client;
     if (!client) return;
+    return this.tarefasWhatsapp.run(client, "conferencia-respostas", () => this.reconciliarPendentesSemSobreposicao(client));
+  }
+
+  private async reconciliarPendentesSemSobreposicao(client: Client): Promise<void> {
 
     let cursor = 0;
     while (this.client === client && this.status === "conectado") {
@@ -1924,6 +1938,19 @@ class WhatsappManager {
    * tenta o chat completo, os dígitos e por fim os aliases retornados pelo contato do WhatsApp.
    * Esta última etapa cobre conversas que chegam como @lid embora tenham sido abertas como @c.us.
    */
+  private processarMensagemRecebida(client: Client, message: Message): Promise<void> {
+    if (this.client !== client) return Promise.resolve();
+    // Sem acompanhamentos aguardando, não consulta contatos nem históricos do navegador.
+    if (!listAwaitingRepliesPage(0, 1).length) return Promise.resolve();
+    const messageId = whatsappMessageIdCandidates(message.id)[0];
+    if (!messageId) return this.resolvePendingReplyForMessage(message);
+    const key = "mensagem:" + message.from + ":" + whatsappMessageStableKey(messageId);
+    return this.tarefasWhatsapp.run(client, key, async () => {
+      if (this.client !== client) return;
+      await this.resolvePendingReplyForMessage(message);
+    }, 5000);
+  }
+
   private async resolvePendingReplyForMessage(message: Message): Promise<void> {
     let pending: PendingReply | undefined;
 
