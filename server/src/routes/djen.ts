@@ -64,7 +64,7 @@ import {
   atualizarAcompanhamentoPericia,
 } from "../services/djen/periciaIntegration";
 import { listarAguardandoMovimentacao, atualizarAguardandoMovimentacao } from "../services/djen/followUp";
-import { listarObrigacoesExternas, atualizarObrigacaoExterna } from "../services/djen/externalFollowUp";
+import { listarObrigacoesExternasAsync, atualizarObrigacaoExterna } from "../services/djen/externalFollowUp";
 import { concluirProcessosSelecionados } from "../services/djen/bulk";
 import { criarExemploClassificacao, excluirExemploClassificacao, listarExemplosClassificacao } from "../services/djen/teaching";
 import {
@@ -100,12 +100,12 @@ const id = (value: string) => {
   return n;
 };
 const changed = () => emitEvent("djen:changed", {});
-const acompanhamentos = () => [
+const acompanhamentos = async () => [
   ...listarAguardandoMovimentacao().map((item) => ({
     ...item, tipo: "aguardo_juizo", responsavel: "Juízo", prazo_citado_dias: null,
     dias_decorridos: item.dias_sem_publicacao,
   })),
-  ...listarObrigacoesExternas(),
+  ...await listarObrigacoesExternasAsync(),
 ];
 const filtroPublicacoes = (req: import("express").Request) => {
   const filtro: Record<string, string> = {};
@@ -118,14 +118,14 @@ const filtroPublicacoes = (req: import("express").Request) => {
 djenRouter.get("/acompanhamentos/diagnostico", wrap((_req, res) => res.json(diagnosticoAcompanhamentos())));
 djenRouter.get(
   "/status",
-  wrap((_req, res) =>
+  wrap(async (_req, res) =>
     res.json({
       ...statusBuscas(),
       resumo: resumoDjen(),
       config: configuracaoDjen(),
       advogados: listarAdvogados(),
       pericias_sem_laudo: listarPericiasSemLaudo().length,
-      aguardando_retorno: acompanhamentos().length,
+      aguardando_retorno: (await acompanhamentos()).length,
       ia: statusAnalisesCodex(),
       codex: statusAnalisesCodex(), // Compatibilidade com abas da versão anterior.
     }),
@@ -290,7 +290,7 @@ djenRouter.get(
 );
 djenRouter.get(
   "/aguardando",
-  wrap((_req, res) => res.json(acompanhamentos())),
+  wrap(async (_req, res) => res.json(await acompanhamentos())),
 );
 djenRouter.put(
   "/aguardando/:id",
