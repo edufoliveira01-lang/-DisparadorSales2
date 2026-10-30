@@ -1,6 +1,6 @@
 # DisparaZap — Sales & Associados
 
-Sistema de comunicação com clientes e acompanhamento processual. **Versão 2.50.19.**
+Sistema de comunicação com clientes e acompanhamento processual. **Versão 2.51.0.**
 
 ## Recursos atuais
 
@@ -8,7 +8,7 @@ Sistema de comunicação com clientes e acompanhamento processual. **Versão 2.5
 - Importação de cards do Trello e contatos CSV/vCard, vinculação de clientes e controle de remarcações.
 - Calendário semanal/mensal e Google Agenda com múltiplos destinos, reaproveitamento de eventos existentes e revisão de duplicidades.
 - Consulta e monitoramento DJEN por advogado, publicações agrupadas por processo, documentos, leitura e conclusão em lote.
-- Análise pelo Codex, revisão humana, exemplos de classificação, cache, lotes e paralelismo configurável.
+- Análise por IA com provedor selecionável, revisão humana, exemplos de classificação, cache, lotes e paralelismo configurável.
 - Quadro/Kanban de etapas processuais, prazos com calendários oficiais e acompanhamentos separados de perícia sem laudo, juízo e obrigações de terceiros.
 - Equipe com perfis Administrador, Gestor, Advogado, Atendimento e Consulta, permissões na API e interface, auditoria e personalização do login.
 - Notificações por canais configurados, backup administrativo e atividade dos serviços em tempo real.
@@ -22,7 +22,7 @@ O quadro utiliza **o histórico capturado do DJEN**, as categorias com evidênci
 - **Voltar ao automático**: aplica novamente a etapa sustentada pelo histórico disponível.
 - Se o histórico indicar outra etapa para um cartão manual, o quadro apresenta a sugestão sem mover o cartão.
 - Revisar uma categoria passa a valer para a etapa correspondente mesmo quando a IA não tinha produzido evidência para aquela categoria. A revisão não altera um cartão mantido manualmente.
-- Ensinar o Codex adiciona exemplos para **análises futuras**; não treina o modelo nem reanalisa automaticamente todas as publicações antigas. Para elas, salve a revisão ou solicite nova análise.
+- Ensinar a IA adiciona exemplos para **análises futuras**; não treina o modelo nem reanalisa automaticamente todas as publicações antigas. Para elas, salve a revisão ou solicite nova análise.
 - Uma categoria ampla não descreve todas as etapas possíveis: por exemplo, recurso, cálculos ou perícia realizada podem exigir evidência específica no texto ou ajuste manual.
 - As contagens de dias das listas são acompanhamento interno em dias corridos; não substituem prazos processuais.
 
@@ -32,7 +32,7 @@ Backend Node.js/TypeScript, Express, Socket.io, SQLite (`better-sqlite3`, WAL) e
 
 ```text
 server/src/db/          Banco, migrações e proteção de identidade do escritório
-server/src/services/    WhatsApp, agenda, notificações, DJEN e Codex
+server/src/services/    WhatsApp, agenda, notificações, DJEN e IA
 server/src/routes/      APIs com autenticação e permissões
 server/tests/           Testes automatizados com SQLite temporário
 client/src/pages/       Telas e fluxos
@@ -75,11 +75,7 @@ Por padrão, SQLite, sessão do WhatsApp e arquivos operacionais ficam em `serve
 3. Conecte o WhatsApp pelo QR em Configurações. O fluxo reutiliza a sessão válida e oferece recuperação quando necessário.
 4. Configure Google OAuth e destinos de agenda. Analise conflitos antes de confirmar remoções de eventos manuais.
 5. Cadastre advogados e configure o período e a frequência das consultas DJEN.
-6. Para análise por IA, autentique o Codex como o mesmo usuário que executa o backend:
-
-```bash
-npm run codex:login --prefix server
-```
+6. Em **Configurações → Inteligência artificial**, escolha OpenAI por API, Anthropic por API ou conta ChatGPT. Carregue os modelos ou informe seus identificadores, teste e salve. O login da conta ChatGPT é iniciado no painel e concluído na página oficial da OpenAI, sem SSH. Veja [docs/INTELIGENCIA_ARTIFICIAL.md](docs/INTELIGENCIA_ARTIFICIAL.md) para credenciais, modos locais/hospedados e limites.
 
 7. Cadastre pessoas e permissões em Equipe. Não compartilhe a conta administrativa.
 
@@ -96,10 +92,11 @@ Mais detalhes: [Acompanhamento DJEN](docs/ACOMPANHAMENTO_DJEN.md) e [Conexão Wh
 | `ENCRYPTION_KEY` | Chave estável de criptografia dos tokens. Preserve-a nos backups seguros. |
 | `INITIAL_ADMIN_PASSWORD` | Senha inicial opcional; usada somente quando não há usuários. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` | OAuth do Google Agenda. |
-| `DJEN_CODEX_HOME` | Diretório de autenticação do Codex; padrão `~/.disparador-codex`. |
+| `DJEN_CODEX_HOME` | Diretório de autenticação da conta ChatGPT; padrão `~/.disparador-codex`. |
+| `AI_DEPLOYMENT_MODE` | `local` para instalação interna local; `hosted` bloqueia o login tradicional da conta ChatGPT. |
 | `OFFICE_ID` | Identidade opcional para uma **nova instância isolada**; exige diretórios e chave próprios. |
 
-Credenciais de integrações também podem ser configuradas pela interface. SMTP e os canais de notificação dependem das configurações do servidor. Preserve `.env`, `DATA_DIR` e a autenticação do Codex ao migrar de máquina.
+Credenciais de integrações também podem ser configuradas pela interface. SMTP e os canais de notificação dependem das configurações do servidor. Preserve `.env`, `DATA_DIR` e a autenticação da conta ChatGPT ao migrar de máquina.
 
 ## Validação
 
@@ -143,6 +140,6 @@ ssh dropsales@192.168.15.10
 
 ## Dados externos e limites
 
-O armazenamento principal é local, mas as integrações enviam os dados necessários a WhatsApp, Trello, Google e canais de notificação. Com análise habilitada, o conteúdo enviado ao Codex é processado pelo serviço conectado. Revise permissões e configurações antes de usar dados reais.
+O armazenamento principal é local, mas as integrações enviam os dados necessários a WhatsApp, Trello, Google e canais de notificação. Com análise habilitada, o conteúdo da publicação é enviado ao provedor de IA selecionado. Revise permissões e configurações antes de usar dados reais.
 
 A recuperação de confirmações consulta a mensagem exata. A recuperação de respostas percorre as pendências por cursor, sem o limite de 200 itens usado na listagem da tela. Reações perdidas durante uma desconexão têm limitações da biblioteca; não se deve presumir sua recuperação.

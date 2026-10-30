@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { db } from "../db";
 
-const ENCRYPTED_KEYS = new Set(["trello_token", "telegram_bot_token", "whapi_token", "google_refresh_token"]);
+const ENCRYPTED_KEYS = new Set(["trello_token", "telegram_bot_token", "whapi_token", "google_refresh_token", "ai_openai_api_key", "ai_anthropic_api_key"]);
 const LEGACY_DEFAULT_SECRET = "chave-padrao-nao-segura-troque-no-env";
 
 export class SettingDecryptionError extends Error {
@@ -90,3 +90,4 @@ export function getAllSettings(): Record<string, string> {
 export function deleteSetting(chave: string): void {
   deleteStmt.run(chave);
 }
+

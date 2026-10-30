@@ -20,7 +20,8 @@ export const requestActivities = {
 
 export function activityLabel(path: string, method = "GET"): string {
   if (path.startsWith("/whatsapp/")) return "Atualizando conexão do WhatsApp";
-  if (path.startsWith("/djen/codex/")) return "Preparando análise pelo Codex";
+  if (path.startsWith("/ai/")) return "Configurando inteligência artificial";
+  if (path.startsWith("/djen/ia/")) return "Preparando análise pela IA";
   if (path.startsWith("/djen/calendarios")) return "Atualizando calendários dos tribunais";
   if (path.startsWith("/djen/buscar")) return "Iniciando busca no DJEN";
   if (path.startsWith("/djen/")) return method === "GET" ? "Carregando processos e DJEN" : "Atualizando processos e DJEN";
@@ -51,3 +52,4 @@ export function beginRequestActivity(label: string, delayMs = 700): () => void {
     if (pending.delete(id)) publish();
   };
 }
+

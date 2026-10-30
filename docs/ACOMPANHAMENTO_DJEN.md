@@ -1,4 +1,4 @@
-# Acompanhamento processual — versão 2.39.0
+# Acompanhamento processual — versão 2.51.0
 
 No seletor **Serviço ativo**, escolha **Processos e DJEN**. O controle anterior continua em **Perícias e avisos**.
 
@@ -11,51 +11,23 @@ No seletor **Serviço ativo**, escolha **Processos e DJEN**. O controle anterior
 5. Abra os detalhes para consultar o inteiro teor da publicação, partes, advogados, órgão julgador, classe, data, certidão oficial e outras publicações já capturadas do mesmo processo.
 6. Confira a classificação, vincule o contato correto da Agenda e, se desejar, revise a mensagem antes de confirmar o envio pelo WhatsApp.
 
-## Classificação e resumos pelo Codex
+## Classificação e resumos com IA
 
-A conexão é exclusivamente pelo **Codex CLI com login ChatGPT**. Não há chamada direta à API da OpenAI, campo de API key ou alternativa automática por API. O pacote `@openai/codex` está fixado na versão 0.163.0 e é instalado com `npm run install:all`.
+A partir da versão **2.51.0**, configure o provedor em **Configurações → Inteligência artificial**. Estão disponíveis OpenAI por API, Anthropic por API e a conexão existente de conta ChatGPT. A análise usa o provedor selecionado; não troca silenciosamente para outro serviço.
 
-### Primeira conexão no servidor
+As chaves de API são criptografadas com a `ENCRYPTION_KEY` da instalação. Para a conta ChatGPT, o painel inicia a autorização oficial por código em instalação interna local; o usuário conclui na página oficial, sem SSH e sem informar senha ao sistema. Implantações hospedadas/comerciais bloqueiam esse fluxo tradicional e precisam de integração oficial autorizada ou API. Veja [Inteligência artificial](INTELIGENCIA_ARTIFICIAL.md).
 
-Após atualizar e instalar as dependências, execute **com o mesmo usuário que executa o PM2**:
+Em **Monitoramento DJEN → Classificação e resumos com IA**, configure análise automática, paralelismo e modo:
 
-```bash
-cd ~/disparador-sales2
-npm run codex:login --prefix server
-```
+- **Econômico:** até oito publicações curtas por lote. Casos inconclusivos ou inválidos podem usar o modelo equilibrado do mesmo provedor, quando os modelos configurados são diferentes.
+- **Equilibrado:** até quatro publicações por lote.
+- **Máxima precisão:** uma publicação por execução. A reanálise manual usa esse modo.
 
-O Codex fornece o endereço e o código de autenticação. Abra o endereço e entre na conta ChatGPT que usará o serviço. Se o login por código de dispositivo estiver desativado, habilite-o nas configurações de segurança da conta ou solicite ao administrador do workspace. Não envie senhas ou arquivos de autenticação pelo aplicativo ou pelo GitHub.
+Os modelos são definidos na central de IA. Alterar o modelo principal aplica a escolha aos três modos; a área avançada permite escolher um por modo. Os valores anteriores da conta ChatGPT são mantidos até alteração explícita. Publicações com mais de 20 mil caracteres são tratadas individualmente; textos maiores são divididos com sobreposição e consolidados sem truncar o inteiro teor.
 
-Em **Monitoramento DJEN → Classificação e resumos com Codex**, clique em **Verificar conexão**, marque a análise automática e salve a configuração do Codex. O uso consome os limites disponíveis para a conta Codex; não há promessa de uso ilimitado. Uma falha interrompe a fila com aviso visível; depois de resolver a conexão ou aguardar a liberação de uso, clique em **Retomar análises**.
+O cache inclui provedor, modelo, esforço/perfil, revisão da conexão, versão do classificador, exemplos, texto e contexto. Cache de uma origem não é atribuído a outra. Análises antigas, histórico e revisões humanas são preservados. Os detalhes apresentam a origem da análise; registros legados sem modelo conhecido permanecem identificados como anteriores.
 
-### Controle de consumo
-
-A partir da versão **2.40.0**, a configuração oferece três modos:
-
-- **Econômico (padrão):** agrupa até oito publicações curtas, limitadas a 60 mil caracteres por execução, e usa `gpt-6-luna` com raciocínio baixo. Cada resultado é validado separadamente contra o texto da própria publicação. Resposta inválida, sinal explícito de dúvida ou inconsistência é repetido isoladamente com `gpt-6.1-sol` e raciocínio baixo.
-- **Equilibrado:** usa `gpt-6.1-sol` com raciocínio baixo e lotes de até quatro publicações.
-- **Máxima precisão:** usa `gpt-6.1-sol` com raciocínio médio e uma publicação por execução.
-
-Publicações com mais de 20 mil caracteres nunca entram em lote. Elas continuam no fluxo integral de textos longos e, no modo econômico, usam o perfil equilibrado. A análise manual sempre usa o modo de máxima precisão. Nenhum modo trunca o inteiro teor.
-
-O cache considera versão do classificador, texto integral, tipo documental, classe, processo e tribunal. Uma publicação automática idêntica pode reaproveitar uma análise já validada sem nova execução do Codex. A reanálise manual individual ignora o cache. O painel mostra, para os últimos 30 dias, execuções realizadas, reaproveitamentos e execuções evitadas por lotes ou cache. Esses números são operacionais do sistema e não representam créditos exatos cobrados pela conta ChatGPT.
-
-O botão de reanálise em massa informa previamente quantas publicações serão recolocadas na fila e exige confirmação. Resultados idênticos podem ser atendidos pelo cache; use a análise manual individual quando quiser forçar uma nova resposta para uma publicação específica. Reduzir o paralelismo diminui o pico de uso, mas não reduz por si só a quantidade total de texto processada.
-
-A análise começa desativada. Na primeira ativação, as publicações antigas sem revisão entram na fila junto com as novas. Até receber uma classificação, ficam em **Outros**, com o estado da análise indicado. O Codex retorna resumo desta publicação, justificativa, citações literais, dados do agendamento presentes e alertas. O histórico do processo mostra os resumos das publicações capturadas; não representa consulta aos autos completos.
-
-### Executável ausente após instalar as dependências
-
-Se aparecer `Missing optional dependency @openai/codex-linux-x64` (ou a variante da arquitetura), faltou o pacote nativo do CLI. Desde a versão 2.36.1, o instalador inclui dependências opcionais na instalação do servidor e verifica `codex --version` ao final de `npm run install:all`. Se necessário, instala explicitamente o pacote da plataforma na mesma versão do CLI, sem instalação global e sem alterar package.json/package-lock.json. O comando de login também faz essa verificação antes de iniciar a autenticação.
-
-Para reparar uma instalação já existente:
-
-```bash
-npm run codex:install --prefix server
-npm run codex:login --prefix server
-```
-
-A verificação de conexão na interface distingue executável ausente de conta ainda não conectada. O reparo usa apenas o registro npm; não muda as credenciais da conta nem faz chamada de análise de IA.
+A troca de conexão aguarda trabalhos em andamento. Falhas de autenticação ou limite pausam a fila; corrija a conexão e use **Retomar análises**. Remover a credencial ativa ou desconectar a conta também pausa a fila. O catálogo de modelos não comprova acesso à inferência; o teste faz uma pequena requisição sem dados de clientes e pode consumir créditos. Os indicadores de uso são contagens operacionais, não faturamento exato.
 
 ### Classificação por situação (2.37.0)
 
@@ -77,13 +49,11 @@ Toda classificação automática fica **A revisar**. O servidor verifica o forma
 
 ### Execução e credenciais
 
-O Codex roda com duas análises simultâneas por padrão (configurável de uma a três em Monitoramento DJEN) em diretório temporário, com saída JSON, sessão efêmera, sandbox somente leitura e ferramentas de shell, navegador, plugins, aplicativos e subagentes desativadas. O texto judicial é dado não confiável e não autoriza instruções ou ações. A execução não herda as chaves e tokens das outras integrações. API keys são removidas do ambiente e o modo de login é restrito a ChatGPT.
+A IA usa de uma a três execuções simultâneas configuráveis. Todas as origens retornam JSON e passam pelas mesmas validações de categorias, evidências e agendamento. O texto judicial é dado não confiável e não autoriza executar ações.
 
-A sessão fica em `~/.disparador-codex` do usuário do servidor, fora do banco/backup do aplicativo. Para um diretório persistente diferente, configure `DJEN_CODEX_HOME` no ambiente do PM2 e no ambiente usado pelo comando de login. Não é necessário informar chave de API. Em contêineres ou múltiplos usuários, mantenha esse diretório persistente, privado e idêntico nos dois comandos. O login não é compartilhado com os demais usuários da máquina.
+As APIs usam endpoints oficiais fixos e credenciais somente no backend. A conexão da conta ChatGPT mantém execução restrita por componente local, diretórios temporários, sessão efêmera e ferramentas desativadas. A autenticação gerenciada fica no diretório `DJEN_CODEX_HOME` (padrão `~/.disparador-codex`) do usuário do serviço; preserve esse diretório com permissões privadas ao migrar o servidor.
 
-A conexão positiva é verificada uma vez e reaproveitada por cinco minutos, com nova checagem forçada ao clicar em Verificar conexão. Uma falha de execução invalida esse cache. A interface mostra quantas publicações estão em análise, tempo médio das últimas 50 conclusões e estimativa de término, sujeita à variação dos textos e limites da conta. Erro de validação isolado não interrompe outras publicações; falha de conexão ou limite pausa novas tarefas. O modelo e o esforço de raciocínio foram mantidos.
-
-Há tempo máximo de três minutos por chamada do CLI. Publicações com mais de 60 mil caracteres são divididas em trechos com sobreposição; todas as partes são analisadas, com consolidação progressiva de fatos e evidências e validação das citações contra o texto original. Não há mais rejeição automática aos 120 mil caracteres. A análise de um texto longo pode usar várias chamadas e consumir mais tempo/limite da conta. Uma falha em qualquer parte impede que uma análise incompleta seja salva como conclusão. Uma execução interrompida pelo reinício volta à fila. Credenciais e erros brutos do CLI não são devolvidos ao navegador.
+Cada chamada tem limite de tempo, tamanho de resposta e validação de resultado completo. Limite de saída, recusa ou falha não são salvos como análise concluída. Erros brutos, tokens e chaves não são devolvidos ao navegador. Trabalhos interrompidos voltam à fila após reinício.
 
 Os prazos têm descrição, início, término, status e observações. A seção de identificação encontra ordens de manifestação com quantidade de dias expressa no texto. O usuário confere o destinatário, regime e marco inicial; não se inventa um prazo recursal apenas pelo rótulo Sentença/Acórdão. A calculadora CPC usa a data-base escolhida (disponibilização DJEN, publicação ou ciência conferida), dias úteis/corridos expressamente determinados, feriados e suspensões importados ou preenchidos manualmente, com memória da contagem. Não calcula automaticamente regras especiais, prazo em dobro ou ciência pessoal. O PDF oficial DJEN é aberto diretamente; documentos dos autos continuam dependendo dos links e do acesso do tribunal. A data da lista é a disponibilização, não o vencimento.
 
@@ -98,7 +68,7 @@ Documentação oficial consultada: [execução não interativa](https://develope
 - **Navegação:** controles no topo permanecem visíveis durante a rolagem; controles no final continuam disponíveis. A numeração foi corrigida entre a API e o componente de paginação.
 - **Cliente:** pesquisa por nome, telefone ou processo, sugestões do mesmo processo com seleção explícita e cadastro de contato no próprio detalhe. Nunca há vínculo por nome presumido. Ao preparar a mensagem, o contato escolhido é vinculado ao processo.
 - **Avisar cliente:** abre o editor mesmo antes de salvar a revisão. A confirmação exige conferência do inteiro teor, classificação, destinatário e mensagem; a revisão é salva antes do envio. O envio continua exigindo conexão e confirmação ACK, com idempotência e bloqueio de repetição recente. Também funciona em HTTP sem depender de crypto.randomUUID disponível.
-- **Codex manual:** funciona com análise automática desligada e tem prioridade na fila. Falha/limite de conexão permanece visível; o botão pode ser usado para tentar novamente. A análise automática continua configurada separadamente.
+- **Análise manual com IA:** funciona com análise automática desligada e tem prioridade na fila. Falha/limite de conexão permanece visível; o botão pode ser usado para tentar novamente. A análise automática continua configurada separadamente.
 - **Consultas:** somente cinco registros recentes são mostrados. Excluir remove apenas o histórico daquela consulta concluída, sem apagar publicações, advogados ou cursor; uma consulta em execução não pode ser excluída.
 
 ### Configurar os prazos e a agenda processual
@@ -176,3 +146,4 @@ Os dois serviços continuam independentes. O acompanhamento DJEN apenas consulta
 A lista reúne publicações por processo, mas cada andamento preserva sua classificação, documento, prazo e histórico. O painel distingue ciência, providência e prazo expresso dirigido à parte autora/escritório. Prazo do perito, do INSS e ordem de aguardar não criam prazo do cliente. Sugestões continuam sujeitas à conferência humana e ao calendário do tribunal.
 
 A área Aguardando retorno mostra somente processos cuja última publicação capturada ordenou espera e cujo período transcorreu sem nova publicação no DJEN. Na ausência de período literal, o lembrete operacional usa 30 dias por padrão, configuráveis no monitoramento; isso não comprova ausência de movimentação nos autos e não é prazo judicial. O acompanhamento de perícias sem laudo continua separado e só alerta após 60 dias.
+

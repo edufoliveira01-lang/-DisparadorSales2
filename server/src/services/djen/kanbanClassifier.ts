@@ -94,7 +94,7 @@ export function classificarPublicacaoParaQuadro(texto: string): SinalEtapa | nul
     ETAPAS_AUTOMATICAS.indexOf(atual.codigo) > ETAPAS_AUTOMATICAS.indexOf(maisAvancado.codigo) ? atual : maisAvancado);
 }
 
-/** Reaproveita evidências já conferidas da análise DJEN, sem pedir outra execução do Codex. */
+/** Reaproveita evidências já conferidas da análise DJEN, sem pedir outra execução da IA. */
 export function classificarPublicacaoComHistorico(row: {
   texto: string; categorias_json: string; evidencias_json: string; classe?: string; revisada?: number;
 }): SinalEtapa | null {

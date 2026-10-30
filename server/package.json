@@ -1,6 +1,6 @@
 {
   "name": "disparador-pericias-server",
-  "version": "2.50.19",
+  "version": "2.51.0",
   "description": "Backend do Disparador de Perícias — API Trello + WhatsApp + SQLite",
   "main": "dist/index.js",
   "type": "commonjs",

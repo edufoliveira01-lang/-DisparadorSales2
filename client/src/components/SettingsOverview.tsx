@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  BrainCircuit,
   Bell,
   CalendarDays,
   Database,
@@ -12,6 +13,7 @@ import {
 import { Badge } from "./ui/Badge";
 
 const sections = [
+  { key: "ia", title: "Inteligência artificial", description: "Provedor, modelos, credenciais e conexão da conta ChatGPT.", icon: BrainCircuit },
   {key:"prazos",title:"Prazos e calendários",description:"Agenda processual, feriados, suspensões e calendários de cada tribunal.",icon:CalendarDays},
   {
     key: "whatsapp",
@@ -113,4 +115,5 @@ export function SettingsOverview({
     </div>
   );
 }
+
 

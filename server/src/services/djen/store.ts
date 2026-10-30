@@ -180,7 +180,7 @@ export function salvarConfiguracaoDjen(data: Record<string, unknown>) {
     data.ia_modo !== undefined &&
     !["economico", "equilibrado", "precisao"].includes(String(data.ia_modo))
   )
-    throw new DjenInputError("Modo de análise do Codex inválido.");
+    throw new DjenInputError("Modo de análise da IA inválido.");
   const intervalo = Number(data.intervalo_minutos),
     janela = Number(data.janela_inicial_dias);
   if (
@@ -227,7 +227,7 @@ export function importarPublicacoes(
         "INSERT OR IGNORE INTO djen_processos(chave,numero) VALUES (?,?)",
       ).run(chave, p.processo);
       vincularProcessoAutomaticamente(chave, p.destinatarios);
-      // Até a análise do Codex, permanece em Outros; não há inferência por palavras-chave.
+      // Até a análise da IA, permanece em Outros; não há inferência por palavras-chave.
       const classificacao = {
         categorias: [],
         evidencias: [],
@@ -285,7 +285,7 @@ export function importarPublicacoes(
         );
         if (!preservar)
           db.prepare(
-            "UPDATE djen_publicacoes SET ia_status='pendente',ia_json=NULL,ia_erro=NULL,ia_em=NULL,ia_versao='',ia_duracao_ms=NULL,situacao='' WHERE id=?",
+            "UPDATE djen_publicacoes SET ia_status='pendente',ia_json=NULL,ia_erro=NULL,ia_em=NULL,ia_versao='',ia_duracao_ms=NULL,ia_provedor=NULL,ia_modelo=NULL,ia_configuracao=NULL,situacao='' WHERE id=?",
           ).run(id);
         if (!preservar)
           registrarHistoricoDjen(
@@ -798,4 +798,5 @@ export function listarAndamentosDoProcesso(id: number, pagina = 1) {
     .all(p.processo_chave, (pagina - 1) * 25);
   return { items, total, pagina, por_pagina: 25 };
 }
+
 
