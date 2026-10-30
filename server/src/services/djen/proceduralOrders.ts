@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 /** Fonte única de ordens: destinatário + comando + período no mesmo contexto literal.
  * Não calcula vencimentos nem cria prazo a partir de menções legais ou resumo da IA.
  */
@@ -16,13 +18,26 @@ export interface OrdemProcessual {
 }
 function fonteNormalizada(texto: string) {
   let normal = ""; let espaco = false; const indices: number[] = [];
+  const caracteres = new Map<string, string>();
   for (let i = 0; i < texto.length; i++) {
     const quebra = texto[i] === "-" ? texto.slice(i).match(/^-\s*\r?\n\s*(?=[a-zá-ú])/i) : null;
     if (quebra) { i += quebra[0].length - 1; continue; }
     if (texto[i] === "\u00ad") continue;
-    const valor = texto[i].normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    const codigo = texto.charCodeAt(i);
+    let valor: string;
+    if (codigo < 128) {
+      valor = codigo >= 65 && codigo <= 90 ? String.fromCharCode(codigo + 32) : texto[i];
+    } else {
+      const caractere = texto[i];
+      valor = caracteres.get(caractere) ?? caractere.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+      caracteres.set(caractere, valor);
+    }
     for (const c of valor) {
-      if (/\s/.test(c)) { if (!espaco) { normal += " "; indices.push(i); } espaco = true; }
+      const codigoNormalizado = c.charCodeAt(0);
+      const branco = codigoNormalizado < 128
+        ? codigoNormalizado === 32 || (codigoNormalizado >= 9 && codigoNormalizado <= 13)
+        : /\s/.test(c);
+      if (branco) { if (!espaco) { normal += " "; indices.push(i); } espaco = true; }
       else { normal += c; indices.push(i); espaco = false; }
     }
   }
@@ -48,7 +63,13 @@ function sentencas(s: string) {
   const out: { inicio: number; fim: number }[] = []; let inicio = 0;
   for (const m of s.matchAll(/[.;!?](?=\s|$)/g)) {
     const i = m.index!;
-    const anterior = s.slice(inicio, i).match(/([a-z0-9]+)$/)?.[1] || "";
+    let comeco = i;
+    while (comeco > inicio) {
+      const codigo = s.charCodeAt(comeco - 1);
+      if (!((codigo >= 97 && codigo <= 122) || (codigo >= 48 && codigo <= 57))) break;
+      comeco--;
+    }
+    const anterior = s.slice(comeco, i);
     if (s[i] === "." && (/^(?:sr|sra|dr|dra|art|arts|inc|n|no|num)$/.test(anterior) || anterior.length === 1)) continue;
     out.push({ inicio, fim: i }); inicio = i + 1;
   }
@@ -76,7 +97,38 @@ function acao(s: string) {
   if (!item) return { acao:"ciencia", descricao:"Ciência / comunicação" };
   return { acao:item[0], descricao:/proposta\b.{0,70}\bacordo/.test(s) ? "Manifestação sobre proposta de acordo" : item[1] };
 }
+// O resultado depende somente do texto. A chave muda automaticamente quando a
+// publicação é corrigida. Guarda apenas resultados compactos, nunca o texto completo.
+const MAX_CACHE_ORDENS_BYTES = 8 * 1024 * 1024;
+const MAX_CACHE_ORDENS_ENTRADAS = 2000;
+const cacheOrdens = new Map<string, { valor: OrdemProcessual[]; bytes: number }>();
+let bytesCacheOrdens = 0;
+const copiarOrdens = (ordens: OrdemProcessual[]) => ordens.map(ordem => ({ ...ordem }));
+
 export function identificarOrdensProcessuais(texto: string): OrdemProcessual[] {
+  const chave = createHash("sha256").update(texto, "utf16le").digest("hex");
+  const salvo = cacheOrdens.get(chave);
+  if (salvo) {
+    cacheOrdens.delete(chave);
+    cacheOrdens.set(chave, salvo);
+    return copiarOrdens(salvo.valor);
+  }
+  const resultado = identificarOrdensSemCache(texto);
+  const bytes = 128 + JSON.stringify(resultado).length * 2;
+  if (bytes <= MAX_CACHE_ORDENS_BYTES) {
+    cacheOrdens.set(chave, { valor: copiarOrdens(resultado), bytes });
+    bytesCacheOrdens += bytes;
+    while (cacheOrdens.size > MAX_CACHE_ORDENS_ENTRADAS || bytesCacheOrdens > MAX_CACHE_ORDENS_BYTES) {
+      const primeira = cacheOrdens.entries().next().value;
+      if (!primeira) break;
+      cacheOrdens.delete(primeira[0]);
+      bytesCacheOrdens -= primeira[1].bytes;
+    }
+  }
+  return resultado;
+}
+
+function identificarOrdensSemCache(texto: string): OrdemProcessual[] {
   const fonte = fonteNormalizada(texto); const s = fonte.normal; const saida: OrdemProcessual[] = [];
   for (const frase of sentencas(s)) {
     const trechoFrase = s.slice(frase.inicio, frase.fim);
