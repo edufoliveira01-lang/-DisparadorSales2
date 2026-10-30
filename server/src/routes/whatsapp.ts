@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { whatsappManager } from "../services/whatsappService";
 import { WhatsappSessionRecoveryError } from "../services/whatsappProfile";
-import { getUserById } from "../services/authService";
+import { getUserById, getSession } from "../services/authService";
 import { hasPermission } from "../services/accessService";
 
 export const whatsappRouter = Router();
@@ -53,21 +53,34 @@ whatsappRouter.get("/events", (req, res) => {
   });
   res.flushHeaders();
 
+  let closed = false;
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+  let unsubscribe = () => {};
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    if (heartbeat) clearInterval(heartbeat);
+    unsubscribe();
+    res.end();
+  };
+  const valid = () => {
+    const session = req.cookies?.session_id && getSession(req.cookies.session_id, false);
+    const user = session && getUserById(session.user_id);
+    return Boolean(user && user.id === req.accessUser?.id && hasPermission(user, "whatsapp.manage"));
+  };
   const send = () => {
-    const user = req.accessUser && getUserById(req.accessUser.id);
-    if (!user || !hasPermission(user, "whatsapp.manage")) { res.end(); return; }
+    if (closed) return;
+    if (!valid()) { close(); return; }
     res.write(`data: ${JSON.stringify(whatsappManager.getState())}\n\n`);
   };
   send();
-  const unsubscribe = whatsappManager.onChange(send);
+  if (closed) return;
+  unsubscribe = whatsappManager.onChange(send);
   // Comentários SSE mantêm o fluxo ativo mesmo quando o estado não muda por minutos.
-  const heartbeat = setInterval(() => res.write(": keep-alive\n\n"), 15000);
+  heartbeat = setInterval(() => { if (!valid()) close(); else res.write(": keep-alive\n\n"); }, 15000);
   heartbeat.unref();
 
-  req.on("close", () => {
-    clearInterval(heartbeat);
-    unsubscribe();
-    res.end();
-  });
+  req.on("close", close);
 });
+
 

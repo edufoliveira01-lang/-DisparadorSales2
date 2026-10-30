@@ -1,0 +1,34 @@
+name: Validar projeto
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+            client/package-lock.json
+      - run: npm ci
+      - run: npm ci --prefix server --include=optional
+      - run: npm ci --prefix client
+      - run: npm test --prefix server
+      - run: npm run build --prefix server
+      - run: npm run lint --prefix client
+      - run: npm run build --prefix client

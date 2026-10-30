@@ -96,7 +96,7 @@ export function classificarPublicacaoParaQuadro(texto: string): SinalEtapa | nul
 
 /** Reaproveita evidências já conferidas da análise DJEN, sem pedir outra execução do Codex. */
 export function classificarPublicacaoComHistorico(row: {
-  texto: string; categorias_json: string; evidencias_json: string; classe?: string;
+  texto: string; categorias_json: string; evidencias_json: string; classe?: string; revisada?: number;
 }): SinalEtapa | null {
   let literal = classificarPublicacaoParaQuadro(row.texto);
   // A classe processual ajuda a reconhecer atos da fase de execução. Ela sozinha
@@ -123,9 +123,30 @@ export function classificarPublicacaoComHistorico(row: {
   if (!Array.isArray(categorias) || !Array.isArray(evidencias)) return literal;
   const etapas: Record<string, EtapaAutomatica> = {
     sentenca: "sentenca", acordao: "acordao", laudo_juntado: "laudo_manifestacoes",
+    pericia: "pericia_agendada",
     cumprimento_sentenca: "cumprimento_sentenca", extincao_processo: "concluido",
     extincao_execucao: "concluido",
   };
+  // A revisão humana é a fonte da categoria, mesmo quando a IA não havia gerado
+  // evidência para ela. Não reutiliza a prova de uma categoria removida na revisão.
+  if (row.revisada) {
+    const confirmadas = categorias.map((c) => etapas[c]).filter(Boolean) as EtapaAutomatica[];
+    if (categorias.includes("rpv")) {
+      const rpv = literal && ["aguarda_expedicao_rpv", "rpv_expedida", "concluido"].includes(literal.codigo) ? literal.codigo : "aguarda_expedicao_rpv";
+      confirmadas.push(rpv);
+    }
+    if (confirmadas.length) {
+      const codigo = confirmadas.reduce((a, b) => ETAPAS_AUTOMATICAS.indexOf(a) > ETAPAS_AUTOMATICAS.indexOf(b) ? a : b);
+      return { codigo, evidencia: "Classificação revisada pelo usuário nesta publicação." };
+    }
+    const categoriaDaEtapa: Partial<Record<EtapaAutomatica, string>> = {
+      sentenca: "sentenca", acordao: "acordao", pericia_agendada: "pericia",
+      laudo_manifestacoes: "laudo_juntado", cumprimento_sentenca: "cumprimento_sentenca",
+      aguarda_expedicao_rpv: "rpv", rpv_expedida: "rpv",
+    };
+    if (literal && (literal.codigo === "concluido" || (categoriaDaEtapa[literal.codigo] && !categorias.includes(categoriaDaEtapa[literal.codigo])))) return null;
+    return literal;
+  }
   let melhor = literal;
   for (const item of evidencias) {
     if (!item || typeof item !== "object" || typeof item.categoria !== "string" ||
@@ -141,11 +162,14 @@ export function classificarPublicacaoComHistorico(row: {
   return melhor;
 }
 
-export function evidenciasDeCategorias(row: { texto: string; categorias_json: string; evidencias_json: string }): { categoria: string; evidencia: string }[] {
+export function evidenciasDeCategorias(row: { texto: string; categorias_json: string; evidencias_json: string; revisada?: number }): { categoria: string; evidencia: string }[] {
   try {
     const categorias = JSON.parse(row.categorias_json) as unknown;
     const evidencias = JSON.parse(row.evidencias_json) as unknown;
     if (!Array.isArray(categorias) || !Array.isArray(evidencias)) return [];
+    if (row.revisada) return categorias
+      .filter((c) => CATEGORIAS_LISTA_PERSONALIZADA.includes(c))
+      .map((categoria) => ({ categoria, evidencia: "Classificação revisada pelo usuário nesta publicação." }));
     const fonte = canon(row.texto);
     return evidencias.flatMap((item) => {
       if (!item || typeof item !== "object" || typeof item.categoria !== "string" || typeof item.trecho !== "string" ||
@@ -155,3 +179,4 @@ export function evidenciasDeCategorias(row: { texto: string; categorias_json: st
     });
   } catch { return []; }
 }
+

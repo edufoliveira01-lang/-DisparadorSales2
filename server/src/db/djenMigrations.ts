@@ -282,12 +282,11 @@ export function runDjenMigrations(db: Database.Database): void {
     BEGIN UPDATE djen_kanban_cartoes SET revisar_etapa=1 WHERE processo_chave=OLD.processo_chave; END;
     CREATE TABLE IF NOT EXISTS djen_kanban_meta (chave TEXT PRIMARY KEY, valor TEXT NOT NULL);
   `);
-  // A versão anterior deixava cartões em modo manual. Reprocessa uma vez todo o
-  // histórico já capturado; depois os gatilhos cuidam apenas dos processos alterados.
+  // Reavalia o histórico após mudanças no classificador, preservando escolhas manuais.
   const versaoQuadro = db.prepare("SELECT valor FROM djen_kanban_meta WHERE chave='classificador'").get() as { valor: string } | undefined;
-  if (versaoQuadro?.valor !== "2.50.0") db.transaction(() => {
-    db.exec("UPDATE djen_kanban_cartoes SET modo='automatico',etapa_publicacao_id=NULL,etapa_evidencia=NULL,revisar_etapa=1");
-    db.prepare("INSERT INTO djen_kanban_meta(chave,valor) VALUES ('classificador','2.50.0') ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor").run();
+  if (versaoQuadro?.valor !== "2.50.19") db.transaction(() => {
+    db.exec("UPDATE djen_kanban_cartoes SET revisar_etapa=1");
+    db.prepare("INSERT INTO djen_kanban_meta(chave,valor) VALUES ('classificador','2.50.19') ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor").run();
   })();
   // Reconcilia análises antigas somente quando o próprio texto comprova o fato.
   // Revisões humanas e registros sem análise permanecem intactos.
@@ -316,4 +315,5 @@ export function runDjenMigrations(db: Database.Database): void {
     }
   })();
 }
+
 

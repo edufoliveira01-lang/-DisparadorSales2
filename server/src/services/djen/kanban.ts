@@ -47,11 +47,11 @@ function sincronizarEtapasAutomaticas() {
   ).all() as { processo_chave: string; lista_id: number; modo: string; etapa_publicacao_id: number | null; codigo_atual: string | null; nome_atual: string }[];
   if (!cards.length) return;
   const rows = db.prepare(
-    `SELECT p.processo_chave,p.id,p.texto,p.classe,p.categorias_json,p.evidencias_json,p.data_disponibilizacao
+    `SELECT p.processo_chave,p.id,p.texto,p.classe,p.revisada,p.categorias_json,p.evidencias_json,p.data_disponibilizacao
        FROM djen_publicacoes p JOIN djen_kanban_cartoes k ON k.processo_chave=p.processo_chave
       WHERE p.cancelada=0 AND k.revisar_etapa=1
       ORDER BY p.processo_chave,p.data_disponibilizacao,p.id`,
-  ).all() as { processo_chave: string; id: number; texto: string; classe: string; categorias_json: string; evidencias_json: string; data_disponibilizacao: string }[];
+  ).all() as { processo_chave: string; id: number; texto: string; classe: string; revisada: number; categorias_json: string; evidencias_json: string; data_disponibilizacao: string }[];
   const candidatos = new Map<string, Candidato>();
   const sinaisPorId = new Map<number, string>();
   for (const pub of rows) {
@@ -73,13 +73,15 @@ function sincronizarEtapasAutomaticas() {
       candidatos.set(pub.processo_chave, { ...sinal, publicacao_id: pub.id, data: pub.data_disponibilizacao });
   }
   const atualizar = db.prepare("UPDATE djen_kanban_cartoes SET lista_id=?,entrou_em=CURRENT_TIMESTAMP,inicio_espera_em=?,etapa_publicacao_id=?,etapa_evidencia=?,updated_at=CURRENT_TIMESTAMP WHERE processo_chave=?");
-  const salvarSinal = db.prepare("UPDATE djen_kanban_cartoes SET modo='automatico',revisar_etapa=0,sugestao_codigo=?,sugestao_publicacao_id=?,sugestao_evidencia=? WHERE processo_chave=?");
+  const salvarSinal = db.prepare("UPDATE djen_kanban_cartoes SET revisar_etapa=0,sugestao_codigo=?,sugestao_publicacao_id=?,sugestao_evidencia=? WHERE processo_chave=?");
   const atualizarProva = db.prepare("UPDATE djen_kanban_cartoes SET etapa_publicacao_id=?,etapa_evidencia=? WHERE processo_chave=?");
   const historico = db.prepare("INSERT INTO djen_kanban_movimentos(processo_chave,origem,destino,origem_movimento) VALUES (?,?,?,'automatico')");
   db.transaction(() => {
     for (const card of cards) {
       const sinal = candidatos.get(card.processo_chave);
       salvarSinal.run(sinal?.codigo || null, sinal?.publicacao_id || null, sinal?.evidencia || null, card.processo_chave);
+      // A escolha humana permanece até o usuário reativar explicitamente o automático.
+      if (card.modo === "manual") continue;
       const provaRevogada = card.etapa_publicacao_id !== null && sinaisPorId.get(card.etapa_publicacao_id) !== (card.codigo_atual || `custom:${card.lista_id}`);
       if (!sinal) {
         const triagem = porCodigo.get("triagem");
@@ -148,7 +150,10 @@ export function listarKanban() {
         categorias = Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : [];
       } catch { /* Nenhuma categoria confiável. */ }
       const { destinatarios_json, ia_json, texto, categorias_json, ...resto } = c;
-      const sugestao = null;
+      const listaSugerida = colunas.find((l) => (l.codigo || `custom:${l.id}`) === c.sugestao_codigo);
+      const sugestao = c.modo === "manual" && listaSugerida && listaSugerida.id !== c.lista_id
+        ? { codigo: c.sugestao_codigo!, lista_nome: listaSugerida.nome, evidencia: c.sugestao_evidencia }
+        : null;
       return { ...resto, cliente_nome: nome, resumo: resumo.slice(0, 220), categorias, sugestao };
     }),
   };
@@ -221,8 +226,27 @@ export function excluirListaKanban(id: number) {
   return { ok: true };
 }
 
-export function moverCartaoKanban(_processo: string, _destino: number, _antesDe?: string) {
-  throw new DjenInputError("O quadro movimenta os cartões automaticamente conforme o histórico do DJEN.");
+export function moverCartaoKanban(processo: string, destino: number, antesDe?: string) {
+  incluirProcessosNovos();
+  const atual = db.prepare("SELECT k.*,l.nome AS origem FROM djen_kanban_cartoes k JOIN djen_kanban_listas l ON l.id=k.lista_id WHERE processo_chave=?").get(processo) as (Cartao & { origem: string }) | undefined;
+  const lista = listas().find((l) => l.id === destino);
+  if (!atual || !lista) throw new DjenInputError("Processo ou lista não encontrado no quadro.");
+  if (antesDe !== undefined && (typeof antesDe !== "string" || antesDe === processo)) throw new DjenInputError("Posição de destino inválida.");
+  const ordem = (db.prepare("SELECT processo_chave FROM djen_kanban_cartoes WHERE lista_id=? AND processo_chave<>? ORDER BY posicao,processo_chave").all(destino, processo) as { processo_chave: string }[]).map((c) => c.processo_chave);
+  const indice = antesDe === undefined ? ordem.length : ordem.indexOf(antesDe);
+  if (indice < 0) throw new DjenInputError("O cartão de referência não está na lista de destino. Atualize o quadro.");
+  ordem.splice(indice, 0, processo);
+  db.transaction(() => {
+    db.prepare(`UPDATE djen_kanban_cartoes SET lista_id=?,modo='manual',revisar_etapa=1,
+      entrou_em=CASE WHEN lista_id<>? THEN CURRENT_TIMESTAMP ELSE entrou_em END,
+      inicio_espera_em=?,etapa_publicacao_id=NULL,etapa_evidencia=NULL,updated_at=CURRENT_TIMESTAMP WHERE processo_chave=?`)
+      .run(destino, destino, lista.contar_dias ? (atual.lista_id === destino ? atual.inicio_espera_em || hoje() : hoje()) : null, processo);
+    const reposicionar = db.prepare("UPDATE djen_kanban_cartoes SET posicao=? WHERE processo_chave=?");
+    ordem.forEach((chave, posicao) => reposicionar.run(posicao, chave));
+    if (atual.lista_id !== destino || atual.modo !== "manual")
+      db.prepare("INSERT INTO djen_kanban_movimentos(processo_chave,origem,destino,origem_movimento) VALUES (?,?,?,'manual')").run(processo, atual.origem, lista.nome);
+  })();
+  return { ok: true };
 }
 
 export function ativarClassificacaoAutomatica(processo: string) {
@@ -234,8 +258,10 @@ export function ativarClassificacaoAutomatica(processo: string) {
   return { ok: true };
 }
 
-export function fixarEtapaManual(_processo: string) {
-  throw new DjenInputError("O quadro movimenta os cartões automaticamente conforme o histórico do DJEN.");
+export function fixarEtapaManual(processo: string) {
+  const atual = db.prepare("SELECT lista_id FROM djen_kanban_cartoes WHERE processo_chave=?").get(processo) as { lista_id: number } | undefined;
+  if (!atual) throw new DjenInputError("Processo não encontrado no quadro.");
+  return moverCartaoKanban(processo, atual.lista_id);
 }
 
 export function alterarInicioEsperaKanban(processo: string, data: unknown) {
@@ -255,3 +281,4 @@ export function historicoCartaoKanban(processo: string) {
     throw new DjenInputError("Processo não encontrado.");
   return db.prepare("SELECT origem,destino,origem_movimento,created_at FROM djen_kanban_movimentos WHERE processo_chave=? ORDER BY id DESC LIMIT 50").all(processo);
 }
+

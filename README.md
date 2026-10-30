@@ -1,190 +1,148 @@
-# Disparador de Perícias — WhatsApp + Trello
+# DisparaZap — Sales & Associados
 
-Aplicação web local para automatizar o envio de mensagens de WhatsApp para clientes com perícias
-agendadas, buscando os dados diretamente de cards do Trello.
+Sistema de comunicação com clientes e acompanhamento processual. **Versão 2.50.19.**
 
-O sistema lê os cards de uma lista do Trello, extrai da descrição os dados de cada perícia (uma ou
-duas por card), cruza o nome do cliente com uma agenda de contatos local, monta a mensagem a partir
-de um template personalizável e dispara pelo WhatsApp — com intervalo aleatório entre os envios e
-histórico completo de sucesso/falha.
+## Recursos atuais
 
-## Interface e serviços — v2.34.0
+- Avisos de perícias, audiências, cobranças e lembretes pelo WhatsApp, com templates, prévia, confirmação de envio e histórico.
+- Importação de cards do Trello e contatos CSV/vCard, vinculação de clientes e controle de remarcações.
+- Calendário semanal/mensal e Google Agenda com múltiplos destinos, reaproveitamento de eventos existentes e revisão de duplicidades.
+- Consulta e monitoramento DJEN por advogado, publicações agrupadas por processo, documentos, leitura e conclusão em lote.
+- Análise pelo Codex, revisão humana, exemplos de classificação, cache, lotes e paralelismo configurável.
+- Quadro/Kanban de etapas processuais, prazos com calendários oficiais e acompanhamentos separados de perícia sem laudo, juízo e obrigações de terceiros.
+- Equipe com perfis Administrador, Gestor, Advogado, Atendimento e Consulta, permissões na API e interface, auditoria e personalização do login.
+- Notificações por canais configurados, backup administrativo e atividade dos serviços em tempo real.
 
-A plataforma usa a identidade Sales & Associados. O serviço ativo é **Perícias e avisos**, com
-as integrações e os fluxos atuais do DisparaZap. O seletor identifica **Andamentos e prazos**
-como indisponível; esta versão não consulta DJEN, classifica sentenças ou controla prazos processuais.
+## Quadro/Kanban
 
-- Dashboard: resumo da operação, lembretes e cartões de avisos com prévia de envio e detalhes completos.
-- Agenda, Histórico e Pendentes: listas adaptadas a desktop e celular, com seleção e ações por cliente.
-- Calendário: visão semanal e mensal dos mesmos agendamentos, com busca global e edição manual.
-- Templates: categorias, modelos e edição com pré-visualização ao lado.
-- Configurações: acesso às ferramentas por cartões; voltar à lista preserva os campos ainda não salvos.
+O quadro utiliza **o histórico capturado do DJEN**, as categorias com evidências da análise e a revisão humana. Ele não consulta autos completos que não foram importados. Quando faltam sinais, o processo permanece em **Sem etapa identificada**.
 
-Os botões de envio e confirmação continuam ligados às APIs existentes. Não há migração de banco
-ou mudança de dependências nesta atualização.
+- **Mover**: escolha qualquer lista e salve. Em computador, também é possível arrastar o cartão entre listas.
+- A etapa escolhida fica **manual e mantida**, inclusive após novas publicações, análises, revisões e reinícios.
+- **Voltar ao automático**: aplica novamente a etapa sustentada pelo histórico disponível.
+- Se o histórico indicar outra etapa para um cartão manual, o quadro apresenta a sugestão sem mover o cartão.
+- Revisar uma categoria passa a valer para a etapa correspondente mesmo quando a IA não tinha produzido evidência para aquela categoria. A revisão não altera um cartão mantido manualmente.
+- Ensinar o Codex adiciona exemplos para **análises futuras**; não treina o modelo nem reanalisa automaticamente todas as publicações antigas. Para elas, salve a revisão ou solicite nova análise.
+- Uma categoria ampla não descreve todas as etapas possíveis: por exemplo, recurso, cálculos ou perícia realizada podem exigir evidência específica no texto ou ajuste manual.
+- As contagens de dias das listas são acompanhamento interno em dias corridos; não substituem prazos processuais.
 
-## Stack
+## Stack e armazenamento
 
-- **Backend:** Node.js + Express + WebSocket (Socket.io), SQLite (`better-sqlite3`), integração
-  oficial com a API do Trello e integração com o WhatsApp via `whatsapp-web.js` (QR Code, sessão
-  persistida em disco).
-- **Frontend:** React + Vite + TailwindCSS, consumindo a API do backend em `localhost`.
+Backend Node.js/TypeScript, Express, Socket.io, SQLite (`better-sqlite3`, WAL) e `whatsapp-web.js` com Puppeteer. Frontend React 18, TypeScript, Vite e TailwindCSS.
 
-## Estrutura
-
+```text
+server/src/db/          Banco, migrações e proteção de identidade do escritório
+server/src/services/    WhatsApp, agenda, notificações, DJEN e Codex
+server/src/routes/      APIs com autenticação e permissões
+server/tests/           Testes automatizados com SQLite temporário
+client/src/pages/       Telas e fluxos
+client/src/components/  Componentes compartilhados
+.github/workflows/      Validação e atualização seletiva do Ubuntu
 ```
-/server   -> API REST + WebSocket + banco SQLite
-/client   -> interface web (Dashboard, Agenda, Templates, Histórico, Configurações)
-```
 
-## Instalação
+A instalação atual atende uma equipe em uma base compartilhada. **Não existe suporte PostgreSQL no runtime nem hospedagem de vários escritórios no mesmo processo.** A preparação para expansão está em [docs/EXPANSAO_ESCRITORIOS.md](docs/EXPANSAO_ESCRITORIOS.md). Não configure `DATABASE_URL` esperando trocar o driver automaticamente.
 
-Requisitos: **Node.js 18+**.
+## Instalação e desenvolvimento
 
-> ⚠️ Este projeto **não tem um único `package.json` na raiz com o código da aplicação** — `/server`
-> e `/client` são dois projetos Node separados, cada um com suas próprias dependências. Rodar
-> `npm install`/`npm run dev` diretamente na pasta raiz do projeto (sem usar os scripts abaixo)
-> resulta em erro `ENOENT: no such file or directory, open '.../package.json'`.
+Use Node.js **22 LTS**, npm e as bibliotecas do Chromium/Puppeteer exigidas pelo sistema operacional.
 
-**Opção 1 — um único comando (recomendado):**
+Na raiz do projeto, execute um comando por vez:
 
 ```bash
-cp server/.env.example server/.env
-npm run install:all   # instala as dependências de /server e /client
-npm run dev            # sobe os dois ao mesmo tempo (backend:3333 + frontend:8081)
-```
-
-**Opção 2 — dois terminais separados:**
-
-```bash
-# Terminal 1
-cd server
 cp .env.example .env
-npm install
-npm run dev        # http://localhost:3333
-
-# Terminal 2
-cd client
-npm install
-npm run dev         # http://localhost:8081
 ```
 
-Abra `http://localhost:8081` no navegador. O banco SQLite e a sessão do WhatsApp são criados
-automaticamente em `server/data/` na primeira execução.
-
-> O pacote `whatsapp-web.js` usa Puppeteer, que baixa um Chromium próprio na primeira instalação
-> (pode levar alguns minutos). Em servidores Linux sem interface gráfica, pode ser necessário
-> instalar dependências do sistema do Chromium (ex: `libnss3`, `libatk1.0-0`, etc.) — veja a
-> documentação do Puppeteer caso o `npm install` ou a conexão falhem.
-
-## Testes automatizados
+Preencha uma `ENCRYPTION_KEY` estável e exclusiva. No desenvolvimento, mantenha `PORT=3333` e `APP_URL=http://localhost:8081`.
 
 ```bash
-cd server
-npm test
+npm run install:all
 ```
 
-Cobre o parser de descrição do card (1 e 2 perícias, campos fora de ordem, campos faltando,
-variações de acentuação), o motor de templates (Handlebars) e o matching de contatos.
-
-## Configuração inicial
-
-### 1. Trello — API Key e Token
-
-1. Acesse `trello.com/app-key` logado na sua conta Trello para obter a **API Key**.
-2. Na mesma página, gere um **Token** (permissão de leitura é suficiente).
-3. Na tela **Configurações** do sistema, cole a API Key e o Token e clique em **Validar
-   credenciais**.
-4. Selecione o **Board** e a **Lista** que contém os cards das perícias, e salve.
-
-### 2. Formato esperado do card no Trello
-
-A descrição do card deve conter um ou dois blocos, identificados pelos cabeçalhos `PERÍCIA
-MÉDICA:` e/ou `PERÍCIA SOCIAL:`, cada um com os campos `TIPO DE PERÍCIA`, `DATA`, `HORÁRIO`,
-`LOCAL` e `NOME`:
-
-```
-PERÍCIA MÉDICA:
-TIPO DE PERÍCIA: Psiquiátrica
-DATA: 15/07/2026
-HORÁRIO: 14:30
-LOCAL: Rua Exemplo, 123 - Centro
-NOME: Maria da Silva
-TELEFONE: (11) 99999-8888
-
-PERÍCIA SOCIAL:
-TIPO DE PERÍCIA: Assistente Social
-DATA: 16/07/2026
-HORÁRIO: 09:00
-LOCAL: Fórum Central, sala 4
-NOME: Maria da Silva
-TELEFONE: (11) 99999-8888
+```bash
+npm run dev
 ```
 
-Se não houver nenhum dos dois cabeçalhos, mas os 5 campos existirem soltos na descrição, o card é
-tratado como tendo **1 perícia genérica**. O parser é tolerante a maiúsculas/minúsculas, acentos
-opcionais (ex: `HORARIO` sem acento), `:` opcional, ordem dos campos e `;`/`,` no final de cada
-valor. O campo de tipo também aceita apenas `TIPO:` (com o valor já sendo o nome da perícia, ex:
-`TIPO: PERÍCIA MÉDICA`), em vez de `TIPO DE PERÍCIA:`.
+Frontend: `http://localhost:8081`. Backend: `http://localhost:3333`. O backend usa `PORT` quando configurado. O Vite encaminha as APIs ao backend de desenvolvimento.
 
-O campo `TELEFONE` é opcional e não afeta se a perícia é considerada completa, mas quando presente
-no formato `(XX) XXXXX-XXXX` é usado para **cadastrar o cliente automaticamente na agenda** (veja
-seção 3), sem precisar de nenhuma ação manual no Dashboard.
+O arquivo canônico é `.env` na raiz. Há compatibilidade com `.env` no diretório de execução para instalações antigas. Nunca publique credenciais no Git.
 
-Se a descrição colar o texto bruto do e-mail/intimação original após os campos estruturados, tudo
-a partir do marcador `EMAIL ORIGINAL:` é ignorado pelo parser — só o que vem antes é considerado.
+Por padrão, SQLite, sessão do WhatsApp e arquivos operacionais ficam em `server/data/`. O primeiro administrador é criado com `INITIAL_ADMIN_PASSWORD` (mínimo 12 caracteres) ou uma senha aleatória exibida uma única vez no log do primeiro início. Troque a senha após entrar.
 
-### 3. Agenda de contatos
+## Configuração operacional
 
-Na tela **Agenda**, cadastre os clientes com nome e telefone (digite no formato `(XX) XXXXX-XXXX`
-— o campo aplica a máscara automaticamente enquanto você digita; números antigos de 8 dígitos ficam
-`(XX) XXXX-XXXX`), edite ou exclua a qualquer momento. Internamente o telefone é sempre normalizado
-e salvo no formato internacional (`55DDDNÚMERO`), usado para o disparo no WhatsApp — a tela apenas
-exibe/edita no formato local. O sistema cruza automaticamente o campo `NOME` do card com a agenda
-(match exato ou aproximado); quando não encontra um contato mas o card traz o campo `TELEFONE`, o
-cliente é **cadastrado automaticamente** (nome do card + telefone normalizado). Quando não há
-`TELEFONE` no card e nenhum contato correspondente é encontrado, o Dashboard permite cadastrá-lo
-manualmente sem sair da tela.
+1. Configure Trello, listas e contatos; revise o formato dos cards antes de enviar.
+2. Personalize templates por categoria e confira a prévia.
+3. Conecte o WhatsApp pelo QR em Configurações. O fluxo reutiliza a sessão válida e oferece recuperação quando necessário.
+4. Configure Google OAuth e destinos de agenda. Analise conflitos antes de confirmar remoções de eventos manuais.
+5. Cadastre advogados e configure o período e a frequência das consultas DJEN.
+6. Para análise por IA, autentique o Codex como o mesmo usuário que executa o backend:
 
-Também é possível **importar contatos em massa** pelo botão "Importar CSV/vCard": aceita o CSV
-exportado do Google/Android (Contatos → Exportar) ou um arquivo vCard (`.vcf`). Contatos com o
-mesmo telefone de um já cadastrado são ignorados automaticamente na importação.
+```bash
+npm run codex:login --prefix server
+```
 
-### 4. Templates de mensagem
+7. Cadastre pessoas e permissões em Equipe. Não compartilhe a conta administrativa.
 
-Na tela **Templates**, edite o texto usando as variáveis `{{NOME}}`, `{{TIPO_PERICIA}}`,
-`{{DATA}}`, `{{HORARIO}}` e `{{LOCAL}}`. Para cards com 2 perícias, escolha entre enviar **1
-mensagem combinada** (usando o bloco `{{#each PERICIAS}}...{{/each}}`) ou **2 mensagens
-separadas**.
+Mais detalhes: [Acompanhamento DJEN](docs/ACOMPANHAMENTO_DJEN.md) e [Conexão WhatsApp](docs/WHATSAPP_CONEXAO.md).
 
-### 5. Conectar o WhatsApp
+## Variáveis principais
 
-Na tela **Configurações**, clique em **Conectar WhatsApp** e escaneie o QR Code exibido com o
-celular (WhatsApp → Aparelhos conectados → Conectar um aparelho). A sessão fica salva em
-`server/data/wwebjs_auth`, então não é necessário escanear novamente a cada reinício do servidor —
-apenas ao clicar em "Desconectar / trocar de sessão". Se a conexão falhar, o sistema tenta de novo
-automaticamente algumas vezes antes de pedir para você clicar em "Conectar" outra vez.
+| Variável | Uso |
+| --- | --- |
+| `PORT` | Porta do backend; padrão 3333. Preserve a configuração do PM2/Nginx existente. |
+| `APP_URL` | URL pública usada pelos fluxos de acesso e recuperação. |
+| `NODE_ENV` | Use `production` em produção HTTPS para cookies seguros. |
+| `DATA_DIR` | Caminho dos dados; padrão `server/data`. |
+| `ENCRYPTION_KEY` | Chave estável de criptografia dos tokens. Preserve-a nos backups seguros. |
+| `INITIAL_ADMIN_PASSWORD` | Senha inicial opcional; usada somente quando não há usuários. |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` | OAuth do Google Agenda. |
+| `DJEN_CODEX_HOME` | Diretório de autenticação do Codex; padrão `~/.disparador-codex`. |
+| `OFFICE_ID` | Identidade opcional para uma **nova instância isolada**; exige diretórios e chave próprios. |
 
-### 6. Enviar mensagens
+Credenciais de integrações também podem ser configuradas pela interface. SMTP e os canais de notificação dependem das configurações do servidor. Preserve `.env`, `DATA_DIR` e a autenticação do Codex ao migrar de máquina.
 
-No **Dashboard**, atualize a lista de cards, selecione um ou vários e clique em **Enviar**. Antes de
-confirmar, uma prévia da mensagem final é exibida. Em envios em lote, o sistema aguarda um
-intervalo aleatório (configurável em Configurações) entre cada mensagem para reduzir o risco de
-bloqueio da conta. Todo envio é registrado na tela **Histórico**, com opção de reenvio em caso de
-falha.
+## Validação
 
-## Variáveis de ambiente (`server/.env`)
+```bash
+npm test --prefix server
+```
 
-| Variável          | Descrição                                                              |
-| ----------------- | ----------------------------------------------------------------------- |
-| `PORT`            | Porta do servidor backend (padrão `3333`)                              |
-| `ENCRYPTION_KEY`  | Chave usada para cifrar o Token do Trello salvo no banco                |
-| `DATA_DIR`        | Diretório onde o SQLite e a sessão do WhatsApp são persistidos          |
+```bash
+npm run build --prefix server
+```
 
-## Notas
+```bash
+npm run lint --prefix client
+```
 
-- Aplicação 100% local — nenhum dado sobe para servidores externos além das chamadas às APIs
-  oficiais do Trello e do WhatsApp (via `whatsapp-web.js`, que se conecta diretamente aos
-  servidores do WhatsApp).
-- Se o Trello retornar erro de autenticação, a tela de Configurações exibe o motivo. Se o WhatsApp
-  desconectar durante um envio em lote, o envio é pausado e o usuário é notificado.
+```bash
+npm run build --prefix client
+```
+
+Os testes criam um diretório temporário próprio e recusam executar contra o banco operacional. O CI executa testes, verificação de tipos e builds em PRs e na `main`.
+
+## Atualização do Ubuntu
+
+O fluxo **Atualizar Ubuntu** publica a `main` no runner próprio da instalação `/home/dropsales/disparador-sales2`, com interface em `/var/www/disparazap` e serviço PM2 `disparador-backend`.
+
+- Compara os arquivos alterados e reutiliza as dependências quando não mudaram.
+- Documentação e testes, isoladamente, não reiniciam o serviço. O CI continua validando o código.
+- Antes de publicar código, executa os testes em dados temporários e a verificação de tipos do cliente.
+- Compila somente os módulos alterados, cria backups e publica os assets com `index.html` por último.
+- Se falhar após iniciar a publicação, tenta restaurar o commit anterior, os artefatos, as dependências substituídas e a interface, e reinicia o serviço anterior.
+- A restauração automática **preserva o banco em uso**. Ela não desfaz migrações destrutivas nem alterações em serviços externos. Mudanças futuras de schema devem permanecer compatíveis com a versão anterior ou ter procedimento próprio de restauração.
+- A checagem de saúde confirma disponibilidade da API, não autenticação do WhatsApp nem funcionamento de todas as integrações.
+
+Backups do deploy ficam em `/home/dropsales/disparazap-backups`. Mantenha cópias externas protegidas e confira o resultado no GitHub Actions após atualizar.
+
+Para entrar no servidor atual:
+
+```bash
+ssh dropsales@192.168.15.10
+```
+
+## Dados externos e limites
+
+O armazenamento principal é local, mas as integrações enviam os dados necessários a WhatsApp, Trello, Google e canais de notificação. Com análise habilitada, o conteúdo enviado ao Codex é processado pelo serviço conectado. Revise permissões e configurações antes de usar dados reais.
+
+A recuperação de confirmações consulta a mensagem exata. A recuperação de respostas percorre as pendências por cursor, sem o limite de 200 itens usado na listagem da tela. Reações perdidas durante uma desconexão têm limitações da biblioteca; não se deve presumir sua recuperação.

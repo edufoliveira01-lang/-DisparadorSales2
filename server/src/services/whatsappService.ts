@@ -25,7 +25,7 @@ import {
 import {
   findAwaitingByChatIdentifier,
   findAwaitingByWhatsappMessageId,
-  listPendingReplies,
+  listAwaitingRepliesPage,
   resolvePendingReplyIfAwaiting,
   updatePendingReplyAckByMessageId,
   type PendingReply,
@@ -670,17 +670,15 @@ class WhatsappManager {
     if (this.conferindoRespostas || this.client !== client || this.status !== "conectado") return;
     this.conferindoRespostas = true;
     try {
-      const pendentes = listPendingReplies().filter((item) => item.status === "aguardando");
+      let pendentes = listAwaitingRepliesPage(this.proximoPendenteConferido, 5);
+      if (!pendentes.length) pendentes = listAwaitingRepliesPage(0, 5);
       if (!pendentes.length) { this.proximoPendenteConferido = 0; return; }
-      const inicio = this.proximoPendenteConferido % pendentes.length;
-      const quantidade = Math.min(5, pendentes.length);
-      for (let i = 0; i < quantidade; i++) {
+      for (const pendente of pendentes) {
         if (this.client !== client || this.status !== "conectado") break;
-        const pendente = pendentes[(inicio + i) % pendentes.length];
         try { await this.verificarMensagemPerdida(client, pendente); }
         catch (error) { console.warn(`[WhatsApp] Falha ao conferir resposta do acompanhamento ${pendente.id}:`, error); }
+        this.proximoPendenteConferido = pendente.id;
       }
-      this.proximoPendenteConferido = (inicio + quantidade) % pendentes.length;
     } finally { this.conferindoRespostas = false; }
   }
 
@@ -1832,17 +1830,15 @@ class WhatsappManager {
     const client = this.client;
     if (!client) return;
 
-    const pendentes = listPendingReplies().filter(
-      (p) => p.status === "aguardando",
-    );
-    for (const pendente of pendentes) {
-      try {
-        await this.verificarMensagemPerdida(client, pendente);
-      } catch (err) {
-        console.error(
-          `Erro ao verificar mensagens perdidas do pendente ${pendente.id}:`,
-          err,
-        );
+    let cursor = 0;
+    while (this.client === client && this.status === "conectado") {
+      const pendentes = listAwaitingRepliesPage(cursor, 50);
+      if (!pendentes.length) break;
+      for (const pendente of pendentes) {
+        if (this.client !== client || this.status !== "conectado") return;
+        try { await this.verificarMensagemPerdida(client, pendente); }
+        catch (err) { console.error(`Erro ao verificar mensagens perdidas do pendente ${pendente.id}:`, err); }
+        cursor = pendente.id;
       }
     }
   }
@@ -1956,13 +1952,13 @@ class WhatsappManager {
     // O ID da mensagem enviada dentro desta conversa fornece um vínculo inequívoco.
     if (!pending) {
       try {
-        const aguardando = listPendingReplies().filter((item) => item.status === "aguardando" && item.whatsapp_message_id);
-        if (aguardando.length) {
-          const chat = await message.getChat();
-          const recentes = await chat.fetchMessages({ limit: 40 });
-          const idsEnviados = new Set(recentes.filter((item) => item.fromMe).flatMap((item) => whatsappMessageIdCandidates(item.id).map(whatsappMessageStableKey)));
-          pending = aguardando.find((item) => item.whatsapp_message_id && idsEnviados.has(whatsappMessageStableKey(item.whatsapp_message_id)) && message.timestamp * 1000 >= new Date(`${item.created_at.replace(" ", "T")}Z`).getTime());
-        }
+        const chat = await message.getChat();
+        const recentes = await chat.fetchMessages({ limit: 40 });
+        const correspondentes = recentes.filter((item) => item.fromMe)
+          .map((item) => findAwaitingByWhatsappMessageId(item.id._serialized))
+          .filter((item): item is PendingReply => Boolean(item && message.timestamp * 1000 >= new Date(`${item.created_at.replace(" ", "T")}Z`).getTime()))
+          .sort((a, b) => b.id - a.id);
+        pending = correspondentes[0];
       } catch (error) {
         console.warn("[WhatsApp] Não foi possível comparar a conversa com a mensagem enviada:", error);
       }
@@ -2009,4 +2005,5 @@ class WhatsappManager {
 }
 
 export const whatsappManager = new WhatsappManager();
+
 
