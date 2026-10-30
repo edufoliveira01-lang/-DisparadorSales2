@@ -1,4 +1,4 @@
-# Central de inteligência artificial — 2.51.0
+# Central de inteligência artificial — 2.51.2
 
 ## Configurar pelo painel
 
@@ -6,8 +6,8 @@ Abra **Configurações → Inteligência artificial** com permissão de gerencia
 
 1. Selecione **OpenAI · API**, **Anthropic · Claude API** ou **OpenAI · conta ChatGPT**.
 2. Para API, informe a chave da sua conta do provedor. O servidor exige `ENCRYPTION_KEY` estável com pelo menos 32 caracteres para salvar credenciais de IA. Uma chave já cadastrada nunca é exibida; o campo vazio a mantém.
-3. Use **Carregar modelos** ou informe o identificador. O catálogo pode incluir modelos sem acesso à inferência ou sem suporte a saída estruturada; confirme com o teste.
-4. Selecione o modelo principal. Isso aplica a escolha aos três modos. Em **Modelos por modo de análise**, ajuste econômico, equilibrado e máxima precisão separadamente se necessário.
+3. Os modelos são carregados automaticamente ao informar a chave, abrir a configuração com chave cadastrada ou conectar a conta ChatGPT. Escolha uma opção na lista de **Modelo principal**; não é necessário saber ou digitar identificadores. Use **Atualizar modelos** para consultar novamente. O catálogo pode incluir modelos sem acesso à inferência ou sem suporte a saída estruturada; confirme com o teste.
+4. Selecione o modelo principal. Isso aplica a escolha aos três modos. Em **Modelos por modo de análise**, ajuste econômico, equilibrado e máxima precisão nas listas se necessário. Identificadores manuais ficam na opção avançada. O carregamento preserva modelos já configurados e não escolhe um modelo pago por conta própria.
 5. Escolha o modo a testar e clique em **Testar conexão**. O teste faz uma pequena chamada ao modelo escolhido, sem texto de clientes. Pode consumir créditos ou limites da conta. Modelos diferentes devem ser testados separadamente.
 6. Salve. As próximas tarefas usam a conexão escolhida. Não há troca automática entre provedores. Caso o modelo econômico e o equilibrado sejam diferentes, casos econômicos inconclusivos podem usar o equilibrado do mesmo provedor.
 7. Em **Processos → Monitoramento**, configure a fila automática e retome-a quando estiver pronta.

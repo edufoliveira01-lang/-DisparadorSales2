@@ -25,6 +25,11 @@ export function AISettings() {
   const [models, setModels] = useState<Models>({ economico: "", equilibrado: "", precisao: "" });
   const [key, setKey] = useState("");
   const [catalog, setCatalog] = useState<{ id: string; name: string }[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState("");
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
+  const [catalogRefresh, setCatalogRefresh] = useState(0);
+  const [manualModels, setManualModels] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState("");
@@ -46,6 +51,25 @@ export function AISettings() {
   }, []);
   useEffect(() => { if (provider === "codex") void refreshChat(); }, [provider, refreshChat]);
   const authorizing = Boolean(chat && ["starting", "waiting", "busy"].includes(chat.login.state));
+  const canLoadModels = Boolean(config && !authorizing && (provider === "codex"
+    ? config.chatgpt_login_available && chat?.connection.conectado
+    : key.trim() || config.credentials[provider]));
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+    setCatalog([]); setCatalogError(""); setCatalogLoaded(false);
+    setCatalogLoading(canLoadModels);
+    if (!canLoadModels) return;
+    // Aguarda a digitação da chave e descarta respostas da conexão anterior.
+    const timer = setTimeout(() => {
+      void api.post<{ models: { id: string; name: string }[] }>("/ai/models", { provider, api_key: key.trim() || undefined }, { signal: controller.signal, background: true }).then((data) => {
+        if (!active) return;
+        setCatalog(data.models); setCatalogLoaded(true);
+      }).catch((e) => { if (active) setCatalogError(message(e)); })
+        .finally(() => { if (active) setCatalogLoading(false); });
+    }, key.trim() ? 800 : 0);
+    return () => { active = false; clearTimeout(timer); controller.abort(); };
+  }, [provider, key, canLoadModels, config?.revision, catalogRefresh]);
   useEffect(() => {
     if (!authorizing) return;
     let running = false;
@@ -57,7 +81,13 @@ export function AISettings() {
     try { await fn(); } catch (e) { if (mounted.current) setError(message(e)); }
     finally { if (mounted.current) setBusy(false); }
   }
-  function choose(value: Provider) { if (!config) return; setProvider(value); setModels({ ...config.models[value] }); setKey(""); setCatalog([]); setResult(""); setError(""); }
+  function choose(value: Provider) { if (!config) return; setProvider(value); setModels({ ...config.models[value] }); setKey(""); setCatalog([]); setManualModels(false); setResult(""); setError(""); }
+  function modelOptions(current: string) {
+    return <><option value="">Selecione um modelo</option>
+      {current && !catalog.some((m) => m.id === current) && <option value={current}>{current} (configurado; confirme a disponibilidade)</option>}
+      {catalog.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+    </>;
+  }
   const changed = Boolean(config && (provider !== config.provider || JSON.stringify(models) !== JSON.stringify(config.models[provider]) || key));
   return <section className="surface-panel space-y-5 p-5 sm:p-6" aria-label="Inteligência artificial">
     <div className="flex items-start gap-3"><span className="rounded-xl bg-violet-100 p-3 text-violet-700 dark:bg-violet-950 dark:text-violet-300"><BrainCircuit className="h-5 w-5" /></span><div>
@@ -95,16 +125,21 @@ export function AISettings() {
         {chat?.login.message && <p role="status" className="text-xs text-zinc-500">{chat.login.message}</p>}
       </div>}
       <div className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">Modelo</h3><Button size="sm" variant="outline" disabled={busy || authorizing || (provider !== "codex" && !key && !config.credentials[provider])} onClick={() => void action(async () => {
-          const data = await api.post<{ models: { id: string; name: string }[]; message: string }>("/ai/models", { provider, api_key: key.trim() || undefined }); setCatalog(data.models); setResult(data.models.length ? data.message : "Nenhum modelo foi listado. Informe o identificador e teste a conexão.");
-        })}><RefreshCw className="h-4 w-4" /> Carregar modelos</Button></div>
+        <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">Modelo</h3><Button size="sm" variant="outline" disabled={busy || catalogLoading || !canLoadModels} onClick={() => setCatalogRefresh((n) => n + 1)}><RefreshCw className={`h-4 w-4${catalogLoading ? " animate-spin" : ""}`} /> Atualizar modelos</Button></div>
+        {catalogLoading && <p role="status" className="text-xs text-violet-700 dark:text-violet-300">Buscando os modelos disponíveis na sua conta…</p>}
+        {!canLoadModels && <p role="status" className="text-xs text-zinc-500">{authorizing ? "Conclua a autorização para carregar os modelos automaticamente." : provider === "codex" ? "Conecte sua conta ChatGPT para exibir as opções de modelos automaticamente." : "Cole sua chave de API acima. As opções de modelos serão carregadas automaticamente, sem precisar salvar antes."}</p>}
+        {catalogError && <p role="alert" className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-200">Não foi possível carregar os modelos. {catalogError} Confira a chave e clique em Atualizar modelos para tentar novamente.</p>}
+        {catalogLoaded && !catalogLoading && <p role="status" className="text-xs text-zinc-500">{catalog.length ? `${catalog.length} modelo(s) listado(s). Escolha uma opção abaixo.` : "O provedor não listou modelos para esta conta. Confira o acesso da chave ou tente Atualizar modelos."}</p>}
         <Label htmlFor="ai-model">Modelo principal</Label>
-        <Input id="ai-model" list="ai-model-catalog" value={models.economico} disabled={busy} placeholder="Selecione no catálogo ou informe o identificador" onChange={(e) => { setModels({ economico: e.target.value, equilibrado: e.target.value, precisao: e.target.value }); setResult(""); }} />
-        <datalist id="ai-model-catalog">{catalog.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</datalist>
-        <p className="text-xs text-zinc-500">Alterar o modelo principal aplica a escolha aos três modos. O catálogo pode incluir modelos sem suporte a esta análise; confirme com o teste.</p>
+        {manualModels ? <Input id="ai-model" value={models.economico} disabled={busy} placeholder="Identificador fornecido pelo provedor" onChange={(e) => { setModels({ economico: e.target.value, equilibrado: e.target.value, precisao: e.target.value }); setResult(""); }} />
+          : <Select id="ai-model" value={models.economico} disabled={busy || catalogLoading || (!catalog.length && !models.economico)} onChange={(e) => { setModels({ economico: e.target.value, equilibrado: e.target.value, precisao: e.target.value }); setResult(""); }}>{modelOptions(models.economico)}</Select>}
+        <p className="text-xs text-zinc-500">A escolha do modelo principal vale para os três modos. O catálogo é consultado no provedor; confirme o suporte à análise com Testar conexão.</p>
         <details className="rounded-xl border border-zinc-200 p-3 text-sm dark:border-zinc-700"><summary className="cursor-pointer font-medium">Modelos por modo de análise</summary><div className="mt-3 grid gap-3">
-          {MODES.map((mode) => <div key={mode}><Label htmlFor={`ai-model-${mode}`}>{MODE_NAMES[mode]}</Label><Input id={`ai-model-${mode}`} list="ai-model-catalog" disabled={busy} value={models[mode]} onChange={(e) => { setModels((m) => ({ ...m, [mode]: e.target.value })); setResult(""); }} /></div>)}
+          {MODES.map((mode) => <div key={mode}><Label htmlFor={`ai-model-${mode}`}>{MODE_NAMES[mode]}</Label>{manualModels
+            ? <Input id={`ai-model-${mode}`} disabled={busy} value={models[mode]} onChange={(e) => { setModels((m) => ({ ...m, [mode]: e.target.value })); setResult(""); }} />
+            : <Select id={`ai-model-${mode}`} disabled={busy || catalogLoading || (!catalog.length && !models[mode])} value={models[mode]} onChange={(e) => { setModels((m) => ({ ...m, [mode]: e.target.value })); setResult(""); }}>{modelOptions(models[mode])}</Select>}</div>)}
           <p className="text-xs text-zinc-500">Os modos controlam lotes e revisão. Se escolher modelos diferentes, casos econômicos inconclusivos podem usar o modelo equilibrado do mesmo provedor.</p>
+          <label className="flex items-center gap-2 text-xs text-zinc-500"><input type="checkbox" checked={manualModels} disabled={busy} onChange={(e) => setManualModels(e.target.checked)} /> Informar identificadores manualmente (avançado)</label>
         </div></details>
       </div>
       <div className="flex flex-wrap items-end gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-700">
