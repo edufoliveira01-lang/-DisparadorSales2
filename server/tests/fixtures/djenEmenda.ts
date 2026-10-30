@@ -1,0 +1,7 @@
+// Caso reproduzido a partir do teor enviado pelo usuário, com identificadores reduzidos.
+export const EMENDA_ANDRADINA = `PODER JUDICIÁRIO 1ª Vara Gabinete JEF de Andradina
+PROCEDIMENTO DO JUIZADO ESPECIAL CÍVEL AUTOR: R. R. P. RÉU: I. N. D. S. - I.
+ATO ORDINATÓRIO Requer a parte autora em face do INSS a concessão/restabelecimento de benefício de incapacidade.
+Nos termos do artigo 7º, III, da Portaria ANDR-01V nº 190, de 11 de fevereiro de 2026, fica a parte autora regularmente intimada a promover EMENDA À INICIAL, no prazo improrrogável de 15 (quinze) dias, sob pena de indeferimento da inicial, nos termos do artigo 321, parágrafo único, do Código de Processo Civil: Comprovante de endereço que tenha o(a) autor(a) por titular e/ou documentos que comprovem a relação de parentesco ou dependência entre o(a) titular do comprovante de endereço e a parte autora (por exemplo, se o comprovante está no nome do cônjuge do(a) demandante, a certidão de casamento deve vir aos autos também).
+É essencial que o comprovante de endereço seja atual, com data de, no máximo, 180 (cento e oitenta) dias antes do ajuizamento da ação.
+OBS: Para adequado funcionamento do sistema PJE, a fim de que haja a correta certificação de decurso de eventuais prazos, evitando dispêndio de tempo dos servidores e acelerando a tramitação dos autos, solicita-se aos Advogados/Procuradores que, ao se manifestarem a respeito de despacho/decisão/sentença proferidos, o façam utilizando a opção "Responder" em seus expedientes.`;

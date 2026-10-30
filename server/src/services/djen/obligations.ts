@@ -1,3 +1,4 @@
+import { identificarOrdensProcessuais } from "./proceduralOrders";
 export const TIPOS_OBRIGACAO = [
   "perito_laudo",
   "perito_esclarecimentos",
@@ -11,53 +12,25 @@ export interface ObrigacaoDetectada {
   responsavel: string;
   trecho: string;
   prazo_citado_dias: number | null;
+  prazo_texto?: string | null;
+  alerta?: string | null;
 }
 
 const normalizar = (s: string) =>
   s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
-const palavras: Record<string, number> = {
-  cinco: 5, dez: 10, quinze: 15, vinte: 20, trinta: 30, quarenta: 40,
-  cinquenta: 50, sessenta: 60, noventa: 90, cento: 100,
-};
-function prazoCitado(s: string): number | null {
-  const m = /\b(?:prazo de|pelo prazo de|em|dentro de)\s+(\d{1,3}|cinco|dez|quinze|vinte|trinta|quarenta|cinquenta|sessenta|noventa|cento)\s*(?:\([^)]{1,40}\)\s*)?dias\b/.exec(s);
-  if (!m) return null;
-  const n = Number(m[1]) || palavras[m[1]];
-  return n >= 1 && n <= 365 ? n : null;
-}
-
 /** Somente intimações/ordens explícitas, no mesmo trecho do destinatário e da providência. */
 export function identificarObrigacoesExternas(texto: string): ObrigacaoDetectada[] {
   const saida = new Map<TipoObrigacao, ObrigacaoDetectada>();
-  for (const original of texto.replace(/\b(Sr|Sra|Dr|Dra)\.\s*/gi, "$1 ").split(/(?:[.;]\s+|\n+)/).filter(Boolean)) {
-    const s = normalizar(original);
-    if (!/\b(?:intime-se|intimem-se|intimad[oa]s?|intimar|intimacao|determino|determina-se|determinado)\b/.test(s)) continue;
-    if (/\b(?:caso seja|se for|eventual|solicitou a intimacao|requereu a intimacao|pedido de intimacao)\b/.test(s)) continue;
-    const alvo = /\b(?:intime-se|intimem-se|intimar|intimad[oa]|intimacao d[oa]|determino|determina-se)\s+(?:(?:o|a|ao|aos|as|os|que o|que a)\s+)?(?:(?:sr|sra|dr|dra|senhor|senhora)\s+)?(perit[oa]|calculista|contadoria|inss|parte re|parte contraria|reu|requerid[oa]|executad[oa]|autarquia)\b/.exec(s)?.[1]
-      || /\b(perit[oa]|calculista|contadoria|inss|parte re|parte contraria|reu|requerid[oa]|executad[oa]|autarquia)\b.{0,35}\b(?:foi|esta|fica|e)?\s*intimad[oa]\b/.exec(s)?.[1];
-    if (!alvo) continue;
-    let tipo: TipoObrigacao | null = null;
-    let responsavel = "";
-    if (/^(?:perit[oa]|calculista|contadoria)$/.test(alvo)) {
-      responsavel = "Perito";
-      if (/\b(?:calcul[oa]s?|calculista|contadoria|contabeis?)\b/.test(s) && /\b(?:apresent|junt|elabor|refac|retific|complement|manifest)\w*/.test(s)) {
-        tipo = "perito_calculos";
-        responsavel = "Perito de cálculos";
-      } else if (/\b(?:esclarec|complement|retific|manifest)\w*/.test(s)) {
-        tipo = "perito_esclarecimentos";
-      } else if (/\b(?:apresent|junt|entreg|elabor)\w*/.test(s) && /\blaudo\b/.test(s)) {
-        tipo = "perito_laudo";
-      }
-    } else if (alvo === "inss" && /\b(?:implant|restabelec|conced)\w*/.test(s) && /\b(?:beneficio|aposentadoria|pensao|auxilio)\b/.test(s)) {
-      tipo = "inss_implantacao";
-      responsavel = "INSS";
-    } else if (/\b(?:manifest|apresent|junt|cumpr|impugn|comprov|respond|contest)\w*/.test(s)) {
-      tipo = "parte_contraria";
-      responsavel = alvo === "inss" ? "INSS / parte contrária" : "Parte contrária";
-    }
-    if (tipo && !saida.has(tipo)) saida.set(tipo, {
-      tipo, responsavel, trecho: original.trim().slice(0, 500), prazo_citado_dias: prazoCitado(s),
-    });
+  for (const ordem of identificarOrdensProcessuais(texto)) {
+    if (["escritorio", "ambas_partes"].includes(ordem.responsavel) || ordem.tipo === "ciencia") continue;
+    let tipo: TipoObrigacao;
+    if (ordem.responsavel === "perito" || ordem.responsavel === "contadoria") {
+      if (ordem.acao === "calculos" || ordem.responsavel === "contadoria") tipo = "perito_calculos";
+      else if (ordem.acao === "esclarecimentos") tipo = "perito_esclarecimentos";
+      else if (ordem.acao === "laudo") tipo = "perito_laudo";
+      else continue;
+    } else tipo = ordem.acao === "implantacao" ? "inss_implantacao" : "parte_contraria";
+    if (!saida.has(tipo)) saida.set(tipo, { tipo, responsavel:ordem.destinatario, trecho:ordem.trecho, prazo_citado_dias:ordem.dias, prazo_texto:ordem.prazo_texto, alerta:ordem.alerta });
   }
   return [...saida.values()];
 }

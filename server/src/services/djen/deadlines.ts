@@ -1,3 +1,4 @@
+import { identificarOrdensProcessuais, ordemDoEscritorio } from "./proceduralOrders";
 import { identificarObrigacoesExternas } from "./obligations";
 import { db } from "../../db";
 import { getSetting, setSetting } from "../settingsService";
@@ -133,89 +134,8 @@ const canon = (s: string) =>
     .toLowerCase();
 /** Identifica somente ordens de manifestação com prazo explícito; nunca inventa prazo recursal. */
 export function identificarPrazos(texto: string) {
-  const mapa: Record<string, number> = {
-    um: 1,
-    dois: 2,
-    tres: 3,
-    quatro: 4,
-    cinco: 5,
-    seis: 6,
-    sete: 7,
-    oito: 8,
-    nove: 9,
-    dez: 10,
-    onze: 11,
-    doze: 12,
-    treze: 13,
-    quatorze: 14,
-    catorze: 14,
-    quinze: 15,
-    dezesseis: 16,
-    dezassete: 17,
-    dezessete: 17,
-    dezoito: 18,
-    dezenove: 19,
-    vinte: 20,
-    trinta: 30,
-    quarenta: 40,
-    cinquenta: 50,
-    sessenta: 60,
-    setenta: 70,
-    oitenta: 80,
-    noventa: 90,
-    cem: 100,
-    cento: 100,
-    duzentos: 200,
-    trezentos: 300,
-  };
-  const palavras = Object.keys(mapa)
-    .sort((a, b) => b.length - a.length)
-    .join("|");
-  const re = new RegExp(
-    String.raw`\b(\d{1,3}|(?:${palavras})(?:\s+e\s+(?:${palavras}))*)\s*(?:\([^)]{1,40}\)\s*)?dias(?:\s+(uteis|corridos))?\b`,
-    "g",
-  );
-  const normal = canon(texto),
-    result: {
-      dias: number;
-      trecho: string;
-      descricao: string;
-      unidade: string;
-      alerta: string;
-    }[] = [];
-  for (const m of normal.matchAll(re)) {
-    const anterior = Math.max(normal.lastIndexOf(".", m.index! - 1), normal.lastIndexOf(";", m.index! - 1), normal.lastIndexOf("\n", m.index! - 1));
-    const proximos = [".", ";", "\n"].map((c) => normal.indexOf(c, m.index! + m[0].length)).filter((i) => i >= 0);
-    const a = Math.max(0, anterior + 1),
-      b = Math.min(texto.length, proximos.length ? Math.min(...proximos) : texto.length);
-    const contexto = normal.slice(a, b),
-      valores = m[1].split(/\s+e\s+/).map((v) => mapa[v]);
-    const valido = valores.every(
-      (v, i) =>
-        v &&
-        (i === 0 || v < valores[i - 1]) &&
-        (i === valores.length - 1 || v >= 20),
-    );
-    const dias =
-      Number(m[1]) || (valido ? valores.reduce((n, v) => n + v, 0) : 0);
-    if (
-      !dias ||
-      dias > 365 ||
-      !ordemComPrazoDaParte(contexto)
-    )
-      continue;
-    result.push({
-      dias,
-      trecho: texto.slice(a, b).trim(),
-      descricao: /proposta[^.;]{0,70}acordo/.test(contexto)
-        ? "Manifestação sobre proposta de acordo"
-        : "Manifestação / providência processual",
-      unidade: m[2] === "corridos" ? "corridos" : "uteis",
-      alerta:
-        "Confira destinatário, regime processual e termo inicial. Não se presume prazo em dobro nem ciência pessoal.",
-    });
-  }
-  return result.slice(0, 20);
+  return identificarOrdensProcessuais(texto).filter((o) => ordemDoEscritorio(o) && o.tipo === "prazo_explicito" && o.dias !== null)
+    .map((o) => ({ dias:o.dias!, trecho:o.trecho, descricao:o.descricao, unidade:o.unidade!, alerta:o.alerta || "Confira destinatário, regime processual e termo inicial. Não se presume prazo em dobro nem ciência pessoal." }));
 }
 export function sugestoesPrazos(publicacao: {
   tribunal: string;
@@ -224,6 +144,7 @@ export function sugestoesPrazos(publicacao: {
 }) {
   return {
     candidatos: identificarPrazos(publicacao.texto),
+    ordens: identificarOrdensProcessuais(publicacao.texto),
     obrigacoes_externas: identificarObrigacoesExternas(publicacao.texto),
     calendarios: configPrazos()
       .calendarios.filter(

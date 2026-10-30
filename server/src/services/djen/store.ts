@@ -1,6 +1,6 @@
+import { identificarOrdensProcessuais, ordemDoEscritorio } from "./proceduralOrders";
 import { registrarHistoricoDjen } from "./history";
 import { dadosAcompanhamento } from "./workflow";
-import { identificarPrazos } from "./deadlines";
 import { db } from "../../db";
 import { getContact } from "../contactsService";
 import { normalizeProcesso } from "../../utils/processo";
@@ -365,13 +365,14 @@ export function apresentarPublicacao(p: PublicacaoRow, integral = false) {
   } = p;
   const analise = ia_json ? JSON.parse(String(ia_json)) : null;
   const providencia = analise?.providencia;
-  const prazoDoTexto = identificarPrazos(texto)[0];
+  const ordens = identificarOrdensProcessuais(texto);
+  const principal = ordens.find((o) => ordemDoEscritorio(o) && o.tipo === "prazo_explicito") || ordens.find((o) => ordemDoEscritorio(o) && o.tipo === "cumprimento");
   const prazoDoCodex = providencia?.tipo === "prazo_explicito" &&
     typeof providencia.prazo_texto === "string" &&
     ordemComPrazoDaParte(providencia.prazo_texto) &&
     ["escritorio", "cliente"].includes(providencia.responsavel);
-  const prazoExpresso = Boolean(prazoDoTexto || prazoDoCodex);
-  const cumprimento = providencia?.tipo === "cumprimento" &&
+  const prazoExpresso = Boolean(principal?.tipo === "prazo_explicito" || prazoDoCodex);
+  const cumprimento = principal?.tipo === "cumprimento" || providencia?.tipo === "cumprimento" &&
     ["escritorio", "cliente"].includes(providencia.responsavel);
   const destinatarios = JSON.parse(String(destinatarios_json || "[]")) as {
     nome?: string;
@@ -381,10 +382,12 @@ export function apresentarPublicacao(p: PublicacaoRow, integral = false) {
   return {
     ...dados,
     analise,
+    ordens_processuais: ordens,
     acao: {
+      fonte: principal ? "publicacao" : prazoDoCodex || cumprimento ? "ia" : "nao_confirmada",
       tipo: prazoExpresso ? "prazo_explicito" : cumprimento ? "cumprimento" : "ciencia",
-      descricao: prazoDoTexto?.descricao || (prazoDoCodex || cumprimento ? providencia.descricao : null),
-      prazo_texto: prazoDoTexto?.trecho || (prazoDoCodex ? providencia.prazo_texto : null),
+      descricao: principal?.descricao || (prazoDoCodex || cumprimento ? providencia.descricao : null),
+      prazo_texto: principal?.trecho || (prazoDoCodex ? providencia.prazo_texto : null),
     },
     parte_nome: parteNome,
     cliente_exibicao: dados.cliente_nome || parteNome,
@@ -441,9 +444,9 @@ function apresentarProcessoAgrupado(p: PublicacaoRow, arquivo: string) {
       periciaPublicacaoId = item.id;
     if (categoriasItem.includes("sentenca") && resultadoSentenca === "nao_identificado")
       resultadoSentenca = item.resultado;
-    const prazoDoTexto = identificarPrazos(item.texto)[0];
-    if (prazoDoTexto && acao.tipo !== "prazo_explicito")
-      acao = { tipo: "prazo_explicito", descricao: prazoDoTexto.descricao, prazo_texto: prazoDoTexto.trecho };
+    const ordens = identificarOrdensProcessuais(item.texto).filter(ordemDoEscritorio);
+    const principal = ordens.find((o) => o.tipo === "prazo_explicito") || ordens.find((o) => o.tipo === "cumprimento");
+    if (principal && acao.tipo !== "prazo_explicito") acao = { tipo:principal.tipo, descricao:principal.descricao, prazo_texto:principal.tipo === "prazo_explicito" ? principal.trecho : null };
     try {
       const providencia = item.ia_json ? JSON.parse(item.ia_json).providencia : null;
       if (providencia && ["escritorio", "cliente"].includes(providencia.responsavel)) {

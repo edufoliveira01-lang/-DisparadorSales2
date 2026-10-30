@@ -18,6 +18,7 @@ type CalendarioAutomatico = {
   atualizado_em: string | null;
   erro: string | null;
 };
+type Ordem = { responsavel: string; destinatario: string; tipo: string; descricao: string; trecho: string; dias: number | null; unidade: string | null; alerta: string | null };
 type Sugestao = {
   inicio: string;
   termino: string;
@@ -44,7 +45,9 @@ export function DeadlineSuggestion({
   const [calendario, setCalendario] = useState<CalendarioAutomatico | null>(
     null,
   );
-  const [externos, setExternos] = useState<{ tipo: string; responsavel: string; trecho: string; prazo_citado_dias: number | null }[]>([]);
+  const [ordens, setOrdens] = useState<Ordem[]>([]);
+  const ordensEscritorio = ordens.filter((o) => ["escritorio", "ambas_partes"].includes(o.responsavel) && o.tipo !== "ciencia");
+  const [externos, setExternos] = useState<{ tipo: string; responsavel: string; trecho: string; prazo_citado_dias: number | null; prazo_texto?: string | null; alerta?: string | null }[]>([]);
   const [candidatos, setCandidatos] = useState<Candidato[]>([]),
     [descricao, setDescricao] = useState("Manifestação processual"),
     [dias, setDias] = useState<number | "">(""),
@@ -75,12 +78,14 @@ export function DeadlineSuggestion({
       .get<{
         candidatos: Candidato[];
         obrigacoes_externas?: typeof externos;
+        ordens?: Ordem[];
         calendario_automatico: CalendarioAutomatico | null;
       }>(`/djen/publicacoes/${id}/prazos/sugestoes`)
       .then((r) => {
         if (ativo) {
           setCandidatos(r.candidatos);
           setExternos(r.obrigacoes_externas || []);
+          setOrdens(r.ordens || []);
           setCalendario(r.calendario_automatico);
           const principal = r.candidatos.length === 1 ? r.candidatos[0] : null;
           if (principal) {
@@ -149,8 +154,9 @@ export function DeadlineSuggestion({
   }, [base, dias, id, marco, prontoParaCalcular, unidade, divergente, confirmarDivergencia]);
   return (
     <section className="mt-5 space-y-4" aria-label="Identificação e cálculo de prazos">
-      <div className="grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-900 dark:bg-amber-950/20"><p className="text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">Escritório / parte representada</p><p className="mt-2 text-sm font-semibold">{!prontoParaCalcular ? (erro ? "Identificação indisponível" : "Consultando publicação…") : candidatos.length ? `${candidatos.length} prazo(s) expresso(s) identificado(s)` : "Nenhum prazo expresso identificado"}</p><p className="mt-1 text-xs text-zinc-500">{candidatos.length ? "Confira a ordem abaixo e registre a providência." : "Ciência ou acompanhamento não geram dias por padrão. Confira o inteiro teor."}</p></div><div className="rounded-xl border border-sky-200 bg-sky-50/60 p-4 dark:border-sky-900 dark:bg-sky-950/20"><p className="text-[10px] font-semibold uppercase tracking-wide text-sky-800 dark:text-sky-200">Parte contrária / terceiros</p><p className="mt-2 text-sm font-semibold">{prontoParaCalcular ? `${externos.length} obrigação(ões) identificada(s)` : erro ? "Não foi possível verificar" : "Consultando publicação…"}</p><p className="mt-1 text-xs text-zinc-500">Acompanhar o cumprimento. Estas ordens não são tratadas como prazo do escritório.</p></div></div>
-      {externos.map((e, i) => <article key={i} className="rounded-xl border border-sky-200 p-4 dark:border-sky-900"><p className="text-sm font-semibold">{e.responsavel} · {e.prazo_citado_dias ? `${e.prazo_citado_dias} dias mencionados` : "sem período expresso"}</p><p className="mt-2 text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">{e.trecho}</p><p className="mt-2 text-[11px] text-sky-700 dark:text-sky-300">Acompanhamento operacional em Aguardando retorno após o período de conferência, se não houver cumprimento identificado.</p></article>)}
+      <div className="grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-900 dark:bg-amber-950/20"><p className="text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">Escritório / parte representada</p><p className="mt-2 text-sm font-semibold">{!prontoParaCalcular ? (erro ? "Identificação indisponível" : "Consultando publicação…") : candidatos.length ? `${candidatos.length} prazo(s) expresso(s) identificado(s)` : ordensEscritorio.some((o) => o.tipo === "prazo_explicito") ? "Prazo expresso: período a conferir" : ordensEscritorio.length ? "Providência sem período expresso" : "Prazo não confirmado automaticamente"}</p><p className="mt-1 text-xs text-zinc-500">{candidatos.length ? "Confira a ordem abaixo e registre a providência." : "Confira as ordens e o inteiro teor. Ausência de identificação automática não confirma ausência de obrigação."}</p></div><div className="rounded-xl border border-sky-200 bg-sky-50/60 p-4 dark:border-sky-900 dark:bg-sky-950/20"><p className="text-[10px] font-semibold uppercase tracking-wide text-sky-800 dark:text-sky-200">Parte contrária / terceiros</p><p className="mt-2 text-sm font-semibold">{prontoParaCalcular ? `${externos.length} obrigação(ões) identificada(s)` : erro ? "Não foi possível verificar" : "Consultando publicação…"}</p><p className="mt-1 text-xs text-zinc-500">Acompanhar o cumprimento. Estas ordens não são tratadas como prazo do escritório.</p></div></div>
+      {ordensEscritorio.filter((o) => o.dias === null).map((o, i) => <article key={i} className="rounded-xl border border-amber-200 bg-amber-50/40 p-4 dark:border-amber-900 dark:bg-amber-950/20"><p className="text-sm font-semibold">{o.descricao} · {o.destinatario}</p><p className="mt-2 text-xs leading-relaxed">{o.trecho}</p><p className="mt-2 text-xs font-medium text-amber-800 dark:text-amber-200">{o.alerta || "A ordem exige providência, mas não traz período calculável identificado. Confira antes de cadastrar."}</p></article>)}
+      {externos.map((e, i) => <article key={i} className="rounded-xl border border-sky-200 p-4 dark:border-sky-900"><p className="text-sm font-semibold">{e.responsavel} · {e.prazo_citado_dias ? `${e.prazo_citado_dias} dias mencionados` : e.prazo_texto || "sem período expresso confirmado"}</p><p className="mt-2 text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">{e.trecho}</p>{e.alerta && <p className="mt-2 text-xs font-medium text-amber-800 dark:text-amber-200">{e.alerta}</p>}<p className="mt-2 text-[11px] text-sky-700 dark:text-sky-300">Acompanhamento operacional em Aguardando retorno após o período de conferência, se não houver cumprimento identificado.</p></article>)}
       <div className="mt-3 space-y-3">
 
         {calendario && (
@@ -173,9 +179,7 @@ export function DeadlineSuggestion({
                   Escritório · {c.descricao} · {c.dias} dias{" "}
                   {c.unidade === "uteis" ? "úteis" : "corridos"}
                 </p>
-                <p className="mt-2 whitespace-pre-wrap text-zinc-600 dark:text-zinc-300">
-                  “{c.trecho}”
-                </p>
+                <details open={c.trecho.length < 300} className="mt-2"><summary className="cursor-pointer font-medium text-accent-700 dark:text-accent-300">Ver trecho da ordem na publicação</summary><p className="mt-2 whitespace-pre-wrap leading-relaxed text-zinc-600 dark:text-zinc-300">“{c.trecho}”</p></details>
                 <p className="mt-2 text-amber-700">{c.alerta}</p>
                 <Button
                   size="sm"
@@ -198,7 +202,7 @@ export function DeadlineSuggestion({
             ))}
             {prontoParaCalcular && !candidatos.length && (
               <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
-                Nenhum prazo da parte foi reconhecido nesta publicação. Confira o texto e informe os dias manualmente; o sistema não preencherá 15 dias por padrão.
+                Nenhum período em dias foi confirmado para cálculo automático. Confira as ordens acima e o documento; datas ou unidades diferentes precisam ser conferidas, sem presumir 15 dias.
               </p>
             )}
             {candidatos.length > 1 && <p className="text-xs font-medium text-amber-800 dark:text-amber-300">Há mais de um prazo expresso. Selecione a ordem correta acima para calcular.</p>}
