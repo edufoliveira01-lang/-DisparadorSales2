@@ -4,7 +4,7 @@ import { coberturaHistorico, invalidarHistorico, solicitarHistorico } from '../s
 import { atualizarHistoricoProcesso, pararMonitorHistoricos } from '../src/services/djen/processHistory';
 import { importarPublicacoes, salvarAdvogado } from '../src/services/djen/store';
 import { normalizarPublicacao, hojeDjen, somarDias, type ContextoConsulta } from '../src/services/djen/api';
-import { listarObrigacoesExternas, atualizarObrigacaoExterna } from '../src/services/djen/externalFollowUp';
+import { listarObrigacoesExternas, listarObrigacoesExternasAsync, atualizarObrigacaoExterna } from '../src/services/djen/externalFollowUp';
 import { periodosAutomaticos } from '../src/services/djen/captureWindows';
 const processo='50007075020264036304', outro='50009722520264036313';
 const antiga=()=>somarDias(hojeDjen(),-45);
@@ -112,6 +112,16 @@ describe('histórico posterior por processo',()=>{
     const {p}=seed();expect(()=>atualizarObrigacaoExterna(p.id,'perito_laudo','resolvido',{cumprido_em:somarDias(hojeDjen(),1),observacoes:'Conferido'})).toThrow();
     expect(()=>atualizarObrigacaoExterna(p.id,'perito_laudo','resolvido',{cumprido_em:hojeDjen(),observacoes:''})).toThrow();
     expect(db.prepare('SELECT status FROM djen_acompanhamentos_obrigacoes WHERE publicacao_id=?').get(p.id)).toBeUndefined();
+  });
+  it('não marca como atualizada uma lista antiga se a consulta terminar durante a varredura',async()=>{
+    const {advogado}=seed();
+    for(let i=1;i<=11;i++) importarPublicacoes([normalizarPublicacao(raw('snapshot-'+i,undefined,antiga(),String(10000000000000000000n+BigInt(i))))],advogado,'oab');
+    const mudou=new Promise<void>(resolve=>setImmediate(()=>{
+      db.prepare("UPDATE djen_historico_consultas SET status='atualizado',fim=?,consultado_em=CURRENT_TIMESTAMP,revisao_conferida=revisao").run(hojeDjen());resolve();
+    }));
+    const itens=await listarObrigacoesExternasAsync();await mudou;
+    expect(itens).toHaveLength(12);expect(itens.every(p=>p.historico_djen.status==='pendente')).toBe(true);
+    expect(coberturaHistorico(processo).status).toBe('atualizado');
   });
   it('valida número de processo antes de enfileirar uma consulta',()=>{expect(()=>solicitarHistorico('processo-invalido')).toThrow()});
 });
