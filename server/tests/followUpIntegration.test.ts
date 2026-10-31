@@ -5,7 +5,7 @@ vi.mock('../src/db', async () => {
   const db = new Database(':memory:');
   db.exec(`CREATE TABLE djen_config(id INTEGER,aguardo_dias INTEGER);
     INSERT INTO djen_config VALUES(1,30);
-    CREATE TABLE djen_publicacoes(id INTEGER PRIMARY KEY,processo_chave TEXT,data_disponibilizacao TEXT,texto TEXT,situacao TEXT DEFAULT '',ia_json TEXT,tribunal TEXT DEFAULT 'TRF3',orgao TEXT DEFAULT 'Jundiai',cancelada INTEGER DEFAULT 0,concluida INTEGER DEFAULT 0,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+    CREATE TABLE djen_publicacoes(id INTEGER PRIMARY KEY,processo_chave TEXT,data_disponibilizacao TEXT,texto TEXT,situacao TEXT DEFAULT '',ia_json TEXT,tribunal TEXT DEFAULT 'TRF3',orgao TEXT DEFAULT 'Jundiai',cancelada INTEGER DEFAULT 0,concluida INTEGER DEFAULT 0,captured_at TEXT DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE djen_processos(chave TEXT,numero TEXT,cliente_id INTEGER);
     CREATE TABLE contacts(id INTEGER,nome TEXT,telefone TEXT);
     CREATE TABLE djen_acompanhamentos_obrigacoes(publicacao_id INTEGER,tipo TEXT,status TEXT,ultima_cobranca_em TEXT,PRIMARY KEY(publicacao_id,tipo));
@@ -62,7 +62,7 @@ describe('prazo expresso de acompanhamento', () => {
     expect(prazoDoAcompanhamento(o,pub,30,'2026-10-10').prazo_pendente).toBe(true);
   });
 });
-const inserir = (id:number,texto:string,data='2020-02-01',processo='p') => db.prepare('INSERT INTO djen_publicacoes(id,processo_chave,texto,data_disponibilizacao,created_at) VALUES (?,?,?,?,?)').run(id,processo,texto,data,'2020-01-01 15:00:00');
+const inserir = (id:number,texto:string,data='2020-02-01',processo='p') => db.prepare('INSERT INTO djen_publicacoes(id,processo_chave,texto,data_disponibilizacao,captured_at) VALUES (?,?,?,?,?)').run(id,processo,texto,data,'2020-01-01 15:00:00');
 describe('acompanhamentos cruzados por processo', () => {
   beforeEach(() => {
     db.prepare('INSERT INTO djen_processos VALUES(?,?,NULL)').run('p','5000707-50.2026.4.03.6304');

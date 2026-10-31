@@ -11,7 +11,7 @@ export function medirInatividade(criado: string, providencia: string | null, ago
 }
 /** Uma consulta agregada por tela; leitura e reclassificação automática não contam como providência. */
 export function atividadesProcessos(): Map<string, AtividadeProcesso> {
-  const rows = db.prepare(`SELECT p.processo_chave,MIN(p.created_at) AS criado FROM djen_publicacoes p
+  const rows = db.prepare(`SELECT p.processo_chave,MIN(p.captured_at) AS criado FROM djen_publicacoes p
     WHERE p.cancelada=0 AND p.concluida=0 GROUP BY p.processo_chave`).all() as { processo_chave: string; criado: string }[];
   const ultimas = db.prepare(`SELECT p.processo_chave,MAX(h.created_at) AS ultima FROM djen_historico h
     JOIN djen_publicacoes p ON p.id=h.publicacao_id WHERE p.cancelada=0
