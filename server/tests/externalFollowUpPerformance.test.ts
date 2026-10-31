@@ -12,6 +12,7 @@ vi.mock("../src/db", () => ({
         get: () => ({ aguardo_dias: 30 }),
         all: () => {
           if (sql.includes("FROM djen_acompanhamentos_obrigacoes")) return fixture.estados;
+          if (sql.includes("FROM djen_historico")) return [];
           fixture.leituras++;
           return fixture.publicacoes;
         },
@@ -60,3 +61,4 @@ it("atualiza o acompanhamento quando o texto da publicação é corrigido", asyn
   fixture.publicacoes[0].texto = "Intime-se a parte autora para ciência.";
   assert.equal((await listarObrigacoesExternasAsync()).length, 11);
 });
+

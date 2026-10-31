@@ -1,4 +1,4 @@
-import { dadosDoCumprimento, descricaoCumprimento } from "./fulfillment";
+import { dadosDoCumprimento, descricaoCumprimento, chaveDaOrdem } from "./fulfillment";
 import { coberturaHistorico, type CoberturaHistorico } from "./historyCoverage";
 import { instrucaoSuperada } from "./followUpPolicy";
 import { prazoDoAcompanhamento, type PrazoAcompanhamento } from "./followUpDeadline";
@@ -38,6 +38,16 @@ function* calcularObrigacoesExternas(): Generator<void, ObrigacaoExternaAcompanh
       publicacao_id: number; tipo: string; status: string; ultima_cobranca_em: string | null;
     }[]).map((r) => [`${r.publicacao_id}:${r.tipo}`, r] as const),
   );
+  const cumpridos = new Map<string, string>();
+  const conferencias = db.prepare(`SELECT p.processo_chave,h.dados_json FROM djen_historico h
+    JOIN djen_publicacoes p ON p.id=h.publicacao_id WHERE h.tipo='providencia' AND json_valid(h.dados_json)
+    AND json_extract(h.dados_json,'$.cumprido_em') IS NOT NULL`).all() as { processo_chave: string; dados_json: string }[];
+  for (const h of conferencias) {
+    const d = JSON.parse(h.dados_json) as { tipo?: string; ordem_chave?: string; cumprido_em?: string };
+    if (!d.tipo || !d.ordem_chave || !d.cumprido_em) continue;
+    const chave = `${h.processo_chave}:${d.tipo}:${d.ordem_chave}`;
+    if (d.cumprido_em > (cumpridos.get(chave) || '')) cumpridos.set(chave,d.cumprido_em);
+  }
   const posteriores = new Map<string, string[]>();
   const acompanhados = new Set<string>();
   const saida: ObrigacaoExternaAcompanhamento[] = [];
@@ -47,6 +57,10 @@ function* calcularObrigacoesExternas(): Generator<void, ObrigacaoExternaAcompanh
       const chave = `${row.processo_chave}:${ordem.tipo}:${ordem.trecho.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim()}`;
       if (acompanhados.has(chave)) continue;
       acompanhados.add(chave); // Reiteração idêntica reinicia; ordens diferentes seguem separadas.
+      // Repetição histórica capturada depois da conferência não reabre a mesma ordem.
+      // Uma nova ordem publicada após o cumprimento continua sendo acompanhada.
+      const cumpridoEm = cumpridos.get(`${row.processo_chave}:${ordem.tipo}:${chaveDaOrdem(ordem.trecho)}`);
+      if (cumpridoEm && cumpridoEm >= row.data_disponibilizacao.slice(0,10)) continue;
       const prazo = prazoDoAcompanhamento(ordem, row, config.aguardo_dias, hoje());
       const dias_decorridos = diasDesde(row.data_disponibilizacao);
       if (!prazo.exibir) continue;
@@ -118,7 +132,8 @@ export function atualizarObrigacaoExterna(publicacaoId: number, tipo: unknown, s
     throw new DjenInputError("Situação de acompanhamento inválida.");
   const confirmado = status === "resolvido" ? dadosDoCumprimento(dados) : null;
   const row = db.prepare("SELECT texto FROM djen_publicacoes WHERE id=? AND cancelada=0").get(publicacaoId) as { texto: string } | undefined;
-  if (!row || !identificarObrigacoesExternas(row.texto).some((ordem) => ordem.tipo === tipo))
+  const ordem = row && identificarObrigacoesExternas(row.texto).find((ordem) => ordem.tipo === tipo);
+  if (!row || !ordem)
     throw new DjenInputError("Obrigação não encontrada nesta publicação.");
   db.prepare(
     `INSERT INTO djen_acompanhamentos_obrigacoes(publicacao_id,tipo,status,ultima_cobranca_em)
@@ -127,7 +142,7 @@ export function atualizarObrigacaoExterna(publicacaoId: number, tipo: unknown, s
        status=excluded.status,
        ultima_cobranca_em=CASE WHEN excluded.status='cobrado' THEN CURRENT_TIMESTAMP ELSE djen_acompanhamentos_obrigacoes.ultima_cobranca_em END`,
   ).run(publicacaoId, tipo, status, status);
-  registrarHistoricoDjen(publicacaoId, "providencia", confirmado ? descricaoCumprimento(confirmado) : status === "cobrado" ? "Cobrança marcada como realizada pelo usuário; nenhum envio automático." : `Acompanhamento ${status} pelo usuário.`, { tipo, status, ...confirmado });
+  registrarHistoricoDjen(publicacaoId, "providencia", confirmado ? descricaoCumprimento(confirmado) : status === "cobrado" ? "Cobrança marcada como realizada pelo usuário; nenhum envio automático." : `Acompanhamento ${status} pelo usuário.`, { tipo, status, ...confirmado, ordem_chave: confirmado ? chaveDaOrdem(ordem.trecho) : undefined });
   return { ok: true };
 }
 

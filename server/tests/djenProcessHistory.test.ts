@@ -82,21 +82,31 @@ describe('histórico posterior por processo',()=>{
     await atualizarHistoricoProcesso(processo,ctx());expect(coberturaHistorico(processo).status).toBe('pendente');
   });
   it('recaptura idêntica preserva consulta; cobertura expirada exige atualização',async()=>{
-    const {original,advogado}=seed();vi.stubGlobal('fetch',vi.fn().mockResolvedValue(response([original])));
+    const {original,advogado}=seed();vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>response([original])));
     await atualizarHistoricoProcesso(processo,ctx());importarPublicacoes([normalizarPublicacao(original)],advogado,'oab');
     expect(coberturaHistorico(processo).status).toBe('atualizado');
     db.prepare("UPDATE djen_historico_consultas SET consultado_em=datetime('now','-7 hours')").run();expect(coberturaHistorico(processo).status).toBe('pendente');
   });
   it('nova publicação ou correção exige nova conferência',async()=>{
-    const {original,advogado}=seed();vi.stubGlobal('fetch',vi.fn().mockResolvedValue(response([original])));await atualizarHistoricoProcesso(processo,ctx());
+    const {original,advogado}=seed();vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>response([original])));await atualizarHistoricoProcesso(processo,ctx());
     importarPublicacoes([normalizarPublicacao({...original,texto:'Intime-se o perito para apresentar o laudo em 10 dias.'})],advogado,'oab');expect(coberturaHistorico(processo).status).toBe('pendente');
   });
   it('cumprimento manual tem data e observação e não reaparece na recaptura',async()=>{
-    const {original,p}=seed();vi.stubGlobal('fetch',vi.fn().mockResolvedValue(response([original])));await atualizarHistoricoProcesso(processo,ctx());
+    const {original,p}=seed();vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>response([original])));await atualizarHistoricoProcesso(processo,ctx());
     atualizarObrigacaoExterna(p.id,'perito_laudo','resolvido',{cumprido_em:hojeDjen(),observacoes:'Laudo conferido no evento 45 dos autos.'});
     const h=db.prepare("SELECT dados_json FROM djen_historico WHERE publicacao_id=? AND tipo='providencia' ORDER BY id DESC LIMIT 1").get(p.id) as {dados_json:string};
     expect(JSON.parse(h.dados_json)).toMatchObject({cumprido_em:hojeDjen(),observacoes:'Laudo conferido no evento 45 dos autos.'});
     await atualizarHistoricoProcesso(processo,ctx());expect(listarObrigacoesExternas()).toHaveLength(0);
+  });
+  it('não reabre repetição histórica já cumprida, mas mantém ordem posterior ao cumprimento',async()=>{
+    const {original,p}=seed();
+    atualizarObrigacaoExterna(p.id,'perito_laudo','resolvido',{cumprido_em:somarDias(hojeDjen(),-10),observacoes:'Laudo conferido nos autos.'});
+    const repetida=raw('repetida',original.texto,somarDias(hojeDjen(),-20));
+    vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>response([original,repetida])));
+    await atualizarHistoricoProcesso(processo,ctx());expect(listarObrigacoesExternas()).toHaveLength(0);
+    const nova=raw('nova-ordem',original.texto,somarDias(hojeDjen(),-5));
+    vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>response([original,repetida,nova])));
+    await atualizarHistoricoProcesso(processo,ctx());expect(listarObrigacoesExternas()).toHaveLength(1);
   });
   it('data futura ou nota vazia não encerram a obrigação',()=>{
     const {p}=seed();expect(()=>atualizarObrigacaoExterna(p.id,'perito_laudo','resolvido',{cumprido_em:somarDias(hojeDjen(),1),observacoes:'Conferido'})).toThrow();

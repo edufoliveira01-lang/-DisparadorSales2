@@ -908,7 +908,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
           secao === "publicacoes"
             ? "Decisões, acordos, pagamentos, perícias e demais andamentos dos processos."
             : secao === "aguardando"
-              ? "Ordens pendentes do juízo, peritos, INSS e parte contrária para conferência."
+              ? "Ordens do juízo, peritos, INSS e parte contrária com retorno ou cumprimento a conferir."
             : secao === "advogados"
               ? "Cadastre um ou mais advogados pelo nome completo, número da OAB e UF."
               : "Consulte o DJEN por período e acompanhe a execução de cada busca."

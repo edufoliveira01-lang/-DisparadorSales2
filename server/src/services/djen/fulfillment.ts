@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { dataValida, hojeDjen } from './api';
 import { DjenInputError } from './store';
 export function dadosDoCumprimento(data?: Record<string, unknown>) {
@@ -9,3 +10,5 @@ export function dadosDoCumprimento(data?: Record<string, unknown>) {
   return { cumprido_em: dia, observacoes };
 }
 export const descricaoCumprimento = (d: NonNullable<ReturnType<typeof dadosDoCumprimento>>) => `Cumprimento confirmado nos autos pelo usuário em ${d.cumprido_em}: ${d.observacoes}`;
+
+export const chaveDaOrdem = (trecho: string) => createHash('sha256').update(trecho.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim()).digest('hex');
