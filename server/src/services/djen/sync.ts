@@ -1,3 +1,5 @@
+import { periodosAutomaticos } from "./captureWindows";
+import { iniciarMonitorHistoricos, pararMonitorHistoricos } from "./processHistory";
 import { iniciarMonitorCalendarios, pararMonitorCalendarios, enfileirarCalendarios } from "./officialCalendars/service";
 import { db } from "../../db";
 import { atualizarKanbanComNovasPublicacoes } from "./kanban";
@@ -121,6 +123,8 @@ async function executarBusca(
           advogado.modo_busca === "ambos"
             ? ["oab", "nome"]
             : [advogado.modo_busca];
+        const periodos = origem === "automatico" ? periodosAutomaticos(inicioAdv,fimAdv,fim,config.janela_inicial_dias) : [{inicio:inicioAdv,fim:fimAdv}];
+        for (const periodo of periodos) {
         for (const modo of modos) {
           const numero = advogado.numero_oab,
             sufixo = /^(\d+)([A-Z])$/.exec(numero);
@@ -136,8 +140,8 @@ async function executarBusca(
             await consultarDjen(
               { ...advogado, numero_oab },
               modo,
-              inicioAdv,
-              fimAdv,
+              periodo.inicio,
+              periodo.fim,
               (items) => {
                 recebidas += items.length;
                 novas += importarPublicacoes(items, advogado, modo);
@@ -154,6 +158,7 @@ async function executarBusca(
               },
               ctx,
             );
+        }
         }
         db.prepare(
           "UPDATE djen_advogados SET ultimo_sucesso_em=CURRENT_TIMESTAMP,ultimo_erro=NULL,cursor_data=CASE WHEN ? THEN ? ELSE cursor_data END WHERE id=?",
@@ -206,6 +211,7 @@ async function executarBusca(
   }
 }
 export function iniciarMonitorDjen(): void {
+  iniciarMonitorHistoricos();
   iniciarMonitorCodex();
   iniciarMonitorCalendarios();
   db.prepare(
@@ -249,6 +255,7 @@ export function iniciarMonitorDjen(): void {
   timer.unref();
 }
 export function pararMonitorDjen(): void {
+  pararMonitorHistoricos();
   pararMonitorCodex();
   pararMonitorCalendarios();
   if (timer) clearInterval(timer);
@@ -262,3 +269,4 @@ export function excluirConsulta(id: number) {
   if (busca.status === "executando" || atual?.id === id) throw new DjenInputError("Aguarde a consulta terminar antes de excluir seu registro.");
   db.prepare("DELETE FROM djen_buscas WHERE id=?").run(id);
 }
+

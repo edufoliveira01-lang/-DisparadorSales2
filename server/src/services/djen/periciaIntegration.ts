@@ -1,3 +1,5 @@
+import { dadosDoCumprimento, descricaoCumprimento } from "./fulfillment";
+import { coberturaHistorico } from "./historyCoverage";
 import { instrucaoSuperada, laudoEfetivamenteJuntado } from "./followUpPolicy";
 import { db } from "../../db";
 import { normalizeProcesso } from "../../utils/processo";
@@ -283,7 +285,7 @@ export function listarPericiasSemLaudo(diasAposPericia = 60) {
     const posteriores = (porProcesso.get(p.processo_chave) || []).filter(pub => pub.data >= data).map(pub => pub.texto);
     // Supressão do alerta obsoleto; não altera a perícia nem afirma que houve laudo.
     return !instrucaoSuperada(posteriores) && !posteriores.some(laudoEfetivamenteJuntado);
-  });
+  }).map(p => ({ ...p, historico_djen: coberturaHistorico(p.processo_chave) }));
 }
 
 export function atualizarAcompanhamentoPericia(
@@ -295,7 +297,8 @@ export function atualizarAcompanhamentoPericia(
     throw new DjenInputError("Situação de acompanhamento inválida.");
   const existe = db.prepare("SELECT id FROM pericias_agendadas WHERE id=?").get(periciaId);
   if (!existe) throw new DjenInputError("Perícia não encontrada.");
-  const observacoes =
+  const confirmado = status === "resolvido" ? dadosDoCumprimento(data) : null;
+  const observacoes = confirmado ? descricaoCumprimento(confirmado) :
     typeof data.observacoes === "string" ? data.observacoes.trim().slice(0, 2000) : "";
   db.prepare(
     `INSERT INTO djen_acompanhamentos_pericia(pericia_id,status,ultima_cobranca_em,observacoes,updated_at)
@@ -308,9 +311,10 @@ export function atualizarAcompanhamentoPericia(
   ).run(periciaId, status, status, observacoes);
   const pub = db.prepare(`SELECT p.id FROM djen_publicacoes p JOIN pericias_agendadas pa ON pa.processo_chave=p.processo_chave
     WHERE pa.id=? AND p.cancelada=0 ORDER BY p.data_disponibilizacao DESC,p.id DESC LIMIT 1`).get(periciaId) as { id: number } | undefined;
-  if (pub) registrarHistoricoDjen(pub.id, "providencia", status === "cobrado" ? "Cobrança de laudo marcada como realizada; nenhum envio automático." : `Acompanhamento da perícia ${status} pelo usuário.`, { periciaId, status, observacoes });
+  if (pub) registrarHistoricoDjen(pub.id, "providencia", confirmado ? descricaoCumprimento(confirmado) : status === "cobrado" ? "Cobrança de laudo marcada como realizada; nenhum envio automático." : `Acompanhamento da perícia ${status} pelo usuário.`, { periciaId, status, observacoes, ...confirmado });
   return { ok: true };
 }
+
 
 
 

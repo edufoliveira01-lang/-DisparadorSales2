@@ -59,6 +59,12 @@ export function runDjenMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_djen_mensagens_publicacao ON djen_mensagens(publicacao_id, id DESC);
   `);
+  db.exec(`CREATE TABLE IF NOT EXISTS djen_historico_consultas (
+    processo_chave TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'pendente',
+    inicio TEXT, fim TEXT, consultado_em TEXT, erro TEXT,
+    revisao INTEGER NOT NULL DEFAULT 0, revisao_conferida INTEGER NOT NULL DEFAULT -1,
+    proxima_tentativa_em TEXT
+  );`);
   const columns = db.prepare("PRAGMA table_info(djen_publicacoes)").all() as {
     name: string;
   }[];
@@ -326,5 +332,6 @@ export function runDjenMigrations(db: Database.Database): void {
     }
   })();
 }
+
 
 

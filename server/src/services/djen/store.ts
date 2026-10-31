@@ -1,3 +1,4 @@
+import { coberturaHistorico, invalidarHistorico } from "./historyCoverage";
 import { atividadesProcessos, type AtividadeProcesso } from "./activity";
 import { identificarOrdensProcessuais, ordemDoEscritorio } from "./proceduralOrders";
 import { registrarHistoricoDjen } from "./history";
@@ -214,14 +215,17 @@ export function salvarConfiguracaoDjen(data: Record<string, unknown>) {
 }
 export function importarPublicacoes(
   items: PublicacaoDjen[],
-  advogado: AdvogadoDjen,
+  advogado: AdvogadoDjen | null,
   modo: "nome" | "oab",
+  processoDoHistorico?: string,
 ) {
   return db.transaction(() => {
     let novas = 0;
     for (const p of items) {
-      const correspondencia = correspondenciaAdvogado(p, advogado, modo);
-      if (!correspondencia) continue;
+      const correspondencia = advogado ? correspondenciaAdvogado(p, advogado, modo) : null;
+      const historicoDoProcesso = Boolean(processoDoHistorico && normalizeProcesso(p.processo) === processoDoHistorico);
+      if (processoDoHistorico && !historicoDoProcesso) throw new DjenInputError("O DJEN retornou outro processo; histórico não confirmado.");
+      if (!correspondencia && !historicoDoProcesso) continue;
       const chave =
         normalizeProcesso(p.processo) || `comunicacao:${p.comunicacao_id}`;
       db.prepare(
@@ -236,14 +240,14 @@ export function importarPublicacoes(
       };
       const atual = db
         .prepare(
-          "SELECT id,texto,tipo_documento,revisada FROM djen_publicacoes WHERE comunicacao_id=?",
+          "SELECT id,texto,tipo_documento,revisada,cancelada,data_disponibilizacao,processo_chave FROM djen_publicacoes WHERE comunicacao_id=?",
         )
         .get(p.comunicacao_id) as
         | {
             id: number;
             texto: string;
             tipo_documento: string;
-            revisada: number;
+            revisada: number; cancelada: number; data_disponibilizacao: string; processo_chave: string;
           }
         | undefined;
       const valores = [
@@ -306,7 +310,11 @@ export function importarPublicacoes(
         registrarHistoricoDjen(id!, "captura", "Publicação capturada do DJEN.");
         novas++;
       }
-      db.prepare(
+      if (!processoDoHistorico && (!atual || atual.texto !== p.texto || atual.tipo_documento !== p.tipo_documento || atual.cancelada !== (p.cancelada ? 1 : 0) || atual.data_disponibilizacao !== p.data || atual.processo_chave !== chave)) {
+        invalidarHistorico(chave);
+        if (atual && atual.processo_chave !== chave) invalidarHistorico(atual.processo_chave);
+      }
+      if (advogado && correspondencia) db.prepare(
         `INSERT INTO djen_publicacao_advogados(publicacao_id,advogado_id,correspondencia) VALUES (?,?,?)
         ON CONFLICT(publicacao_id,advogado_id) DO UPDATE SET correspondencia=CASE
         WHEN djen_publicacao_advogados.correspondencia='oab' OR excluded.correspondencia='oab' THEN 'oab'
@@ -382,6 +390,7 @@ export function apresentarPublicacao(p: PublicacaoRow, integral = false) {
   const parteNome = destinatarios.find((d) => d.nome)?.nome?.trim() || null;
   return {
     ...dados,
+    historico_djen: coberturaHistorico(p.processo_chave),
     analise,
     ordens_processuais: ordens,
     acao: {
@@ -804,6 +813,7 @@ export function listarAndamentosDoProcesso(id: number, pagina = 1) {
     .all(p.processo_chave, (pagina - 1) * 25);
   return { items, total, pagina, por_pagina: 25 };
 }
+
 
 
 
