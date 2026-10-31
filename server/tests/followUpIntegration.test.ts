@@ -36,7 +36,7 @@ beforeEach(() => {
 });
 describe('prazo expresso de acompanhamento', () => {
   it('5 dias úteis vencem pelo calendário, sem esperar o piso antigo de 30 dias', () => {
-    expect(prazoDoAcompanhamento(ordem(),pub,30,'2026-10-10')).toMatchObject({prazo_termino:'2026-10-09',dias_espera:null,exibir:true,prazo_pendente:false});
+    expect(prazoDoAcompanhamento(ordem(),pub,30,'2026-10-10')).toMatchObject({prazo_termino:'2026-10-09',dias_espera:5,exibir:true,prazo_pendente:false});
     expect(prazoDoAcompanhamento(ordem(),pub,30,'2026-10-09').exibir).toBe(false);
   });
   it('considera feriados do órgão', () => {
@@ -45,7 +45,7 @@ describe('prazo expresso de acompanhamento', () => {
   });
   it('sem calendário não inventa vencimento nem aplica 30 dias', () => {
     fixture.calendarios=[];
-    expect(prazoDoAcompanhamento(ordem(),pub,30,'2026-10-02')).toMatchObject({prazo_termino:null,dias_espera:null,prazo_pendente:true,exibir:true});
+    expect(prazoDoAcompanhamento(ordem(),pub,30,'2026-10-02')).toMatchObject({prazo_termino:null,dias_espera:5,prazo_pendente:true,exibir:true});
   });
   it('sem período expresso só usa o lembrete operacional', () => {
     const o=identificarObrigacoesExternas('Intime-se o perito para apresentar o laudo.')[0];

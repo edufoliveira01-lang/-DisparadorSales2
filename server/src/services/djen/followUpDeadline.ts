@@ -13,7 +13,7 @@ export function prazoDoAcompanhamento(ordem: ObrigacaoDetectada, pub: { tribunal
   const base = pub.data_disponibilizacao.slice(0, 10);
   const decorrido = Math.floor((Date.parse(hoje + 'T12:00:00Z') - Date.parse(base + 'T12:00:00Z')) / 86400000);
   const r: PrazoAcompanhamento = { prazo_texto: ordem.prazo_texto || null, prazo_unidade: ordem.unidade || null,
-    prazo_termino: null, prazo_pendente: false, dias_espera: null, exibir: false, prazo_observacao: '' };
+    prazo_termino: null, prazo_pendente: false, dias_espera: ordem.prazo_citado_dias, exibir: false, prazo_observacao: '' };
   if (!Number.isFinite(decorrido) || decorrido < 0) return r;
   if (!ordem.prazo_texto && !ordem.prazo_citado_dias) return { ...r, dias_espera: padrao, exibir: decorrido >= padrao,
     prazo_observacao: `Sem período expresso: lembrete operacional após ${padrao} dias corridos da disponibilização.` };
