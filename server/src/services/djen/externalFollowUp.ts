@@ -1,3 +1,5 @@
+import { dadosDoCumprimento, descricaoCumprimento } from "./fulfillment";
+import { coberturaHistorico, type CoberturaHistorico } from "./historyCoverage";
 import { instrucaoSuperada } from "./followUpPolicy";
 import { prazoDoAcompanhamento, type PrazoAcompanhamento } from "./followUpDeadline";
 import { registrarHistoricoDjen } from "./history";
@@ -10,6 +12,7 @@ const diasDesde = (data: string) =>
   Math.floor((Date.parse(`${hoje()}T12:00:00Z`) - Date.parse(`${data.slice(0, 10)}T12:00:00Z`)) / 86400000);
 
 export interface ObrigacaoExternaAcompanhamento extends PrazoAcompanhamento {
+  historico_djen: CoberturaHistorico; captured_at: string;
   publicacao_id: number; tipo: TipoObrigacao; responsavel: string; processo: string;
   cliente_nome: string | null; data_disponibilizacao: string; dias_decorridos: number;
   dias_espera: number | null; prazo_citado_dias: number | null; motivo: string; resumo: string;
@@ -20,14 +23,14 @@ export interface ObrigacaoExternaAcompanhamento extends PrazoAcompanhamento {
 function* calcularObrigacoesExternas(): Generator<void, ObrigacaoExternaAcompanhamento[], void> {
   const config = db.prepare("SELECT aguardo_dias FROM djen_config WHERE id=1").get() as { aguardo_dias: number };
   const rows = db.prepare(
-    `SELECT p.id,p.tribunal,p.orgao,p.processo_chave,p.data_disponibilizacao,p.texto,p.situacao,p.ia_json,
+    `SELECT p.id,p.captured_at,p.tribunal,p.orgao,p.processo_chave,p.data_disponibilizacao,p.texto,p.situacao,p.ia_json,
             pr.numero AS processo,c.nome AS cliente_nome
        FROM djen_publicacoes p JOIN djen_processos pr ON pr.chave=p.processo_chave
        LEFT JOIN contacts c ON c.id=pr.cliente_id
       WHERE p.cancelada=0
       ORDER BY p.processo_chave,p.data_disponibilizacao DESC,p.id DESC`,
   ).all() as {
-    id: number; tribunal: string; orgao: string; processo_chave: string; data_disponibilizacao: string; texto: string;
+    id: number; captured_at: string; tribunal: string; orgao: string; processo_chave: string; data_disponibilizacao: string; texto: string;
     situacao: string; ia_json: string | null; processo: string; cliente_nome: string | null;
   }[];
   const estados = new Map(
@@ -58,6 +61,7 @@ function* calcularObrigacoesExternas(): Generator<void, ObrigacaoExternaAcompanh
         if (typeof ia?.resumo === "string") resumo = ia.resumo;
       } catch { /* análise legada incompleta */ }
       saida.push({
+        historico_djen: coberturaHistorico(row.processo_chave), captured_at: row.captured_at,
         publicacao_id: row.id, tipo: ordem.tipo, responsavel: ordem.responsavel,
         processo: row.processo, cliente_nome: row.cliente_nome,
         data_disponibilizacao: row.data_disponibilizacao, dias_decorridos,
@@ -108,10 +112,11 @@ export function listarObrigacoesExternasAsync(): Promise<ObrigacaoExternaAcompan
   return consultaEmAndamento;
 }
 
-export function atualizarObrigacaoExterna(publicacaoId: number, tipo: unknown, status: unknown) {
+export function atualizarObrigacaoExterna(publicacaoId: number, tipo: unknown, status: unknown, dados?: Record<string, unknown>) {
   if (!TIPOS_OBRIGACAO.includes(tipo as TipoObrigacao)) throw new DjenInputError("Tipo de acompanhamento inválido.");
   if (status !== "pendente" && status !== "cobrado" && status !== "resolvido")
     throw new DjenInputError("Situação de acompanhamento inválida.");
+  const confirmado = status === "resolvido" ? dadosDoCumprimento(dados) : null;
   const row = db.prepare("SELECT texto FROM djen_publicacoes WHERE id=? AND cancelada=0").get(publicacaoId) as { texto: string } | undefined;
   if (!row || !identificarObrigacoesExternas(row.texto).some((ordem) => ordem.tipo === tipo))
     throw new DjenInputError("Obrigação não encontrada nesta publicação.");
@@ -122,7 +127,8 @@ export function atualizarObrigacaoExterna(publicacaoId: number, tipo: unknown, s
        status=excluded.status,
        ultima_cobranca_em=CASE WHEN excluded.status='cobrado' THEN CURRENT_TIMESTAMP ELSE djen_acompanhamentos_obrigacoes.ultima_cobranca_em END`,
   ).run(publicacaoId, tipo, status, status);
-  registrarHistoricoDjen(publicacaoId, "providencia", status === "cobrado" ? "Cobrança marcada como realizada pelo usuário; nenhum envio automático." : `Acompanhamento ${status} pelo usuário.`, { tipo, status });
+  registrarHistoricoDjen(publicacaoId, "providencia", confirmado ? descricaoCumprimento(confirmado) : status === "cobrado" ? "Cobrança marcada como realizada pelo usuário; nenhum envio automático." : `Acompanhamento ${status} pelo usuário.`, { tipo, status, ...confirmado });
   return { ok: true };
 }
+
 

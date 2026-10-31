@@ -1,3 +1,4 @@
+import { HistoryCoverage, RegisterFulfillment, instanteBR, type CoberturaHistorico } from "@/components/djen/HistoryCoverage";
 import { ActivityBadge, RegisterAction, type AtividadeProcesso } from "@/components/djen/ActivityBadge";
 import { ContactPicker } from "@/components/djen/ContactPicker";
 import { MultiSelect } from "@/components/ui/MultiSelect";
@@ -98,6 +99,8 @@ interface Advogado {
   correspondencia?: string;
 }
 interface Publicacao {
+  captured_at?: string;
+  historico_djen?: CoberturaHistorico;
   atividade?: AtividadeProcesso | null;
   id: number;
   comunicacao_id: string;
@@ -218,6 +221,7 @@ interface Publicacao {
   }[];
 }
 interface PericiaSemLaudo {
+  historico_djen?: CoberturaHistorico;
   pericia_id: number;
   nome: string;
   processo: string;
@@ -230,6 +234,8 @@ interface PericiaSemLaudo {
   observacoes: string;
 }
 interface AguardandoRetorno {
+  captured_at?: string;
+  historico_djen?: CoberturaHistorico;
   publicacao_id: number;
   tipo: "aguardo_juizo" | "perito_laudo" | "perito_esclarecimentos" | "perito_calculos" | "inss_implantacao" | "parte_contraria";
   responsavel: string;
@@ -261,6 +267,7 @@ interface Busca {
   finished_at: string | null;
 }
 interface Status {
+  historicos_djen?: { total: number; atualizados: number | null };
   ia: {
     executando: number | null;
     executando_ids: number[];
@@ -358,7 +365,7 @@ function PublicacoesConsulta() {
       <p className="text-xs text-zinc-500">{loading ? "Carregando…" : `${total} publicação(ões) encontrada(s)`}</p>
     </div>
     {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
-    <div className="space-y-3">{items.map((item) => <article key={item.id} className="surface-panel p-5"><div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">{item.cliente_exibicao || item.cliente_nome || item.processo}</strong><span className="text-xs text-zinc-500">{item.tribunal} · {item.data_disponibilizacao}</span></div><div className="mt-2"><ActivityBadge atividade={item.atividade} /></div><p className="mt-2 text-xs text-zinc-500">Processo {item.processo} · {item.situacao || "Em acompanhamento"}</p><p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">{item.resumo || item.analise?.resumo || "Resumo ainda não disponível."}</p></article>)}</div>
+    <div className="space-y-3">{items.map((item) => <article key={item.id} className="surface-panel p-5"><div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">{item.cliente_exibicao || item.cliente_nome || item.processo}</strong><span className="text-xs text-zinc-500">{item.tribunal} · {item.data_disponibilizacao}</span></div><div className="mt-2"><ActivityBadge atividade={item.atividade} /></div>{item.captured_at && <p className="mt-1 text-xs text-zinc-500">Capturada em {instanteBR(item.captured_at)}</p>}<HistoryCoverage historico={item.historico_djen} /><p className="mt-2 text-xs text-zinc-500">Processo {item.processo} · {item.situacao || "Em acompanhamento"}</p><p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">{item.resumo || item.analise?.resumo || "Resumo ainda não disponível."}</p></article>)}</div>
     {!loading && total > 25 && <div className="flex items-center justify-center gap-4"><Button variant="outline" disabled={page === 1} onClick={() => setPage(page - 1)}>Anterior</Button><span className="text-sm">Página {page}</span><Button variant="outline" disabled={page * 25 >= total} onClick={() => setPage(page + 1)}>Próxima</Button></div>}
   </div>;
 }
@@ -831,11 +838,12 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
             <p className="flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-200">
               <Clock3 className="h-4 w-4" /> {aguardando.length} acompanhamento(s) para conferir
             </p>
+            <p className="mt-2 text-xs font-medium text-amber-800">Publicação antiga não é pendência atual confirmada. O sistema consulta automaticamente as publicações posteriores por processo; falta de resposta ou captura incompleta mantém o histórico pendente.</p>
             <p className="mt-2 max-w-3xl text-xs leading-relaxed text-amber-800 dark:text-amber-300">
               O prazo expresso tem prioridade e não é ampliado para 30 dias. A previsão usa a unidade indicada e o calendário conferido; se depender de outro marco, ciência pessoal ou calendário pendente, o card pede conferência. Sem período expresso, o lembrete operacional aparece após {status?.config.aguardo_dias ?? 30} dias. Atos posteriores de cumprimento ou encerramento da instrução podem tornar uma ordem anterior superada. Confira os autos antes de cobrar. “Marcar cobrança realizada” só registra uma ação já feita; não envia mensagens nem peticiona.
             </p>
           </div>
-          {diagnostico && <p className="rounded-xl border border-zinc-200 p-3 text-xs text-zinc-500">Cobertura: {diagnostico.publicacoes} publicações consultadas · {diagnostico.ordens_externas} ordens externas identificadas. Os alertas só entram nesta lista após o período de conferência; ordens resolvidas não aparecem.</p>}
+          {diagnostico && <p className="rounded-xl border border-zinc-200 p-3 text-xs text-zinc-500">Cobertura: {diagnostico.publicacoes} publicações consultadas · {diagnostico.ordens_externas} ordens externas identificadas. A lista inclui históricos pendentes para conferência. Somente consultas atualizadas entram nos contadores de avisos; ordens resolvidas não aparecem.</p>}
           <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900 sm:flex-row">
             <Input aria-label="Buscar acompanhamento" placeholder="Buscar cliente, processo ou ordem…" value={buscaAguardando} onChange={(e) => setBuscaAguardando(e.target.value)} />
             <Select aria-label="Filtrar tipo de acompanhamento" className="sm:max-w-[260px]" value={tipoAguardando} onChange={(e) => setTipoAguardando(e.target.value)}>
@@ -855,28 +863,27 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                     {item.acompanhamento_status === "cobrado" && <Badge tone="info">Cobrança registrada</Badge>}
                   </div>
                   <h2 className="mt-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{item.cliente_nome || "Cliente não vinculado"}</h2>
-                  <p className="mt-1 text-xs text-zinc-500">Processo {item.processo} · {item.responsavel} · Ordem publicada em {dia(item.data_disponibilizacao)}</p>
+                  <p className="mt-1 text-xs text-zinc-500">Processo {item.processo} · {item.responsavel} · Disponibilizada no DJEN em {dia(item.data_disponibilizacao)}</p>
+                  {item.captured_at && <p className="mt-1 text-[11px] text-zinc-500">Capturada pelo sistema em {instanteBR(item.captured_at)}</p>}
+                  <HistoryCoverage historico={item.historico_djen} publicacaoId={item.publicacao_id} />
                   <p className="mt-3 whitespace-pre-wrap text-xs font-medium">{item.motivo}</p>
                   <p className="mt-1 line-clamp-3 max-w-3xl text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">{item.resumo}</p>
                   <div className="mt-2 space-y-1 text-[11px] text-zinc-500">
                     {item.prazo_texto && <p className="font-semibold text-amber-800 dark:text-amber-200">Prazo expresso: {item.prazo_texto}</p>}
-                    {item.prazo_termino && <p className="font-semibold text-red-700 dark:text-red-300">Data limite a conferir: {dia(item.prazo_termino)} · conferir cumprimento</p>}
+                    {item.prazo_termino && item.historico_djen?.status === "atualizado" && <p className="font-semibold text-red-700 dark:text-red-300">Data limite a conferir: {dia(item.prazo_termino)} · conferir cumprimento</p>}
                     {item.prazo_pendente && <p className="font-semibold text-amber-700">Conferir prazo e termo inicial — não substituído por 30 dias</p>}
                     <p>{item.prazo_observacao || `Conferir após ${item.dias_espera} dias desde a publicação.`}</p>
-                    <p>Cumprimento não identificado nas publicações capturadas; isso não comprova descumprimento nos autos.</p>
+                    <p>Cumprimento não confirmado. Confira os autos antes de cobrar; uma ordem antiga pode já ter sido cumprida sem publicação no DJEN.</p>
                     {item.ultima_cobranca_em && <p>Cobrança marcada como realizada em {dia(item.ultima_cobranca_em)}</p>}
                   </div>
                 </div>
                 <div className="flex shrink-0 flex-wrap items-start gap-2">
                   <Button size="sm" variant="outline" onClick={() => void abrir(item.publicacao_id)}>Ver processo <ArrowRight className="h-3.5 w-3.5" /></Button>
-                  <Button size="sm" variant="outline" disabled={salvando} onClick={() => void acao(async () => {
+                  <Button size="sm" variant="outline" disabled={salvando || item.historico_djen?.status !== "atualizado"} onClick={() => void acao(async () => {
                     await api.put(`/djen/aguardando/${item.publicacao_id}`, { tipo: item.tipo, status: "cobrado" });
                     await carregarAguardando(); await carregarStatus(); show("Cobrança marcada como realizada. Nenhuma mensagem foi enviada.", "success");
                   })} title="Apenas registra uma cobrança que você já realizou; não envia mensagens nem peticiona.">Marcar cobrança realizada</Button>
-                  <Button size="sm" variant="ghost" disabled={salvando} onClick={() => void acao(async () => {
-                    await api.put(`/djen/aguardando/${item.publicacao_id}`, { tipo: item.tipo, status: "resolvido" });
-                    await carregarAguardando(); await carregarStatus(); show("Acompanhamento concluído.", "success");
-                  })}>Concluir alerta</Button>
+                  <RegisterFulfillment endpoint={`/djen/aguardando/${item.publicacao_id}`} tipo={item.tipo} onSaved={async () => { await carregarAguardando(); await carregarStatus(); }} />
                 </div>
               </div>
             </article>
@@ -894,6 +901,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
   return (
     <div className="space-y-5">
       <div hidden={Boolean(detailId)} className="space-y-5">
+      {status?.historicos_djen && status.historicos_djen.total > (status.historicos_djen.atualizados || 0) && <p className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200">{status.historicos_djen.total - (status.historicos_djen.atualizados || 0)} histórico(s) aguardando atualização ou conferência no DJEN. Esses casos não são contados como atraso confirmado.</p>}
       <PageHeader
         title={titulo}
         description={
@@ -1174,6 +1182,8 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                         {p.tribunal} · {p.orgao} · Disponibilizada em{" "}
                         {dia(p.data_disponibilizacao)}
                       </p>
+                      {p.captured_at && <p className="mt-1 text-[11px] text-zinc-500">Capturada pelo sistema em {instanteBR(p.captured_at)}</p>}
+                      <HistoryCoverage historico={p.historico_djen} publicacaoId={p.id} />
                       {p.situacao && (
                         <p className="mt-2 text-xs font-medium text-zinc-700 dark:text-zinc-200">
                           {p.situacao}
@@ -1892,6 +1902,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                   <div>
                     <p className="text-sm font-semibold">{p.nome}</p>
                     <p className="mt-1 text-xs text-zinc-500">{p.processo}</p>
+                    <HistoryCoverage historico={p.historico_djen} />
                     <p className="mt-2 text-xs">
                       Perícia em {p.data}
                       {p.horario ? ` às ${p.horario}` : ""} ·{" "}
@@ -1910,7 +1921,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={salvando}
+                      disabled={salvando || p.historico_djen?.status !== "atualizado"}
                       onClick={() =>
                         void acao(async () => {
                           await api.put(
@@ -1925,24 +1936,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                     >
                       Marcar cobrança realizada
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={salvando}
-                      onClick={() =>
-                        void acao(async () => {
-                          await api.put(
-                            `/djen/pericias/${p.pericia_id}/acompanhamento`,
-                            { status: "resolvido", observacoes: p.observacoes || "" },
-                          );
-                          await carregarSemLaudo();
-                          await carregarStatus();
-                          show("Acompanhamento concluído.", "success");
-                        })
-                      }
-                    >
-                      Concluir
-                    </Button>
+                    <RegisterFulfillment endpoint={`/djen/pericias/${p.pericia_id}/acompanhamento`} onSaved={async () => { await carregarSemLaudo(); await carregarStatus(); }} />
                   </div>
                 </div>
               </article>
@@ -2011,6 +2005,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                   </Badge>
                 </div>
               </div>
+              <HistoryCoverage historico={detalhe.historico_djen} publicacaoId={detalhe.id} />
               <details className="mt-4 text-xs">
                 <summary className="cursor-pointer font-medium text-accent-600">
                   Ver dados do processo e links oficiais
@@ -2022,6 +2017,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                   ["Classe", detalhe.classe],
                   ["Tipo de documento", detalhe.tipo_documento],
                   ["Tipo de comunicação", detalhe.tipo_comunicacao],
+                  ["Captura pelo sistema", detalhe.captured_at ? instanteBR(detalhe.captured_at) : "Não informada"],
                   [
                     "Disponibilização no DJEN",
                     dia(detalhe.data_disponibilizacao),
@@ -2659,6 +2655,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     </div>
   );
 }
+
 
 
 

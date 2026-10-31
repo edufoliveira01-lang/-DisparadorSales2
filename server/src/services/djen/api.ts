@@ -153,6 +153,7 @@ export function parametrosConsulta(
   inicio: string,
   fim: string,
   pagina: number,
+  numeroProcesso?: string,
 ): URLSearchParams {
   const p = new URLSearchParams({
     pagina: String(pagina),
@@ -160,7 +161,10 @@ export function parametrosConsulta(
     dataDisponibilizacaoInicio: inicio,
     dataDisponibilizacaoFim: fim,
   });
-  if (modo === "oab") {
+  if (numeroProcesso) {
+    if (!/^\d{20}$/.test(numeroProcesso)) throw new DjenApiError("Número de processo inválido.");
+    p.set("numeroProcesso", numeroProcesso);
+  } else if (modo === "oab") {
     p.set("numeroOab", a.numero_oab);
     p.set("ufOab", a.uf_oab);
   } else p.set("nomeAdvogado", a.nome);
@@ -178,6 +182,7 @@ export async function consultarDjen(
   fim: string,
   onPage: (items: PublicacaoDjen[]) => void,
   ctx: ContextoConsulta,
+  numeroProcesso?: string,
 ): Promise<void> {
   const pause =
     ctx.pause || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
@@ -202,7 +207,7 @@ export async function consultarDjen(
       const timer = setTimeout(abort, 25000);
       try {
         const response = await fetch(
-          `${DJEN_API}/comunicacao?${parametrosConsulta(a, modo, inicio, fim, pagina)}`,
+          `${DJEN_API}/comunicacao?${parametrosConsulta(a, modo, inicio, fim, pagina, numeroProcesso)}`,
           {
             headers: { Accept: "application/json" },
             signal: controller.signal,
@@ -271,13 +276,13 @@ export async function consultarDjen(
       )
         .toISOString()
         .slice(0, 10);
-      await consultarDjen(a, modo, inicio, meio, onPage, ctx);
-      await consultarDjen(a, modo, somarDias(meio, 1), fim, onPage, ctx);
+      await consultarDjen(a, modo, inicio, meio, onPage, ctx, numeroProcesso);
+      await consultarDjen(a, modo, somarDias(meio, 1), fim, onPage, ctx, numeroProcesso);
       return;
     }
     const items = body.items.map(normalizarPublicacao);
     if (
-      items.some((p) => p.data < inicio || p.data > fim) ||
+      items.some((p) => p.data < inicio || p.data > fim || (numeroProcesso && p.processo.replace(/\D/g, "") !== numeroProcesso)) ||
       (items.length && count === 0)
     )
       throw new DjenApiError(
@@ -308,3 +313,4 @@ export async function consultarDjen(
     "Limite de páginas atingido. Reduza o período da busca.",
   );
 }
+

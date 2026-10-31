@@ -1,3 +1,5 @@
+import { processarHistoricos, resumoHistoricos } from "../services/djen/processHistory";
+import { solicitarHistorico, coberturaHistorico } from "../services/djen/historyCoverage";
 import { diagnosticoAcompanhamentos } from "../services/djen/followUpDiagnostics";
 import { selectedAiConnection } from "../services/ai/connection";
 import {
@@ -124,8 +126,9 @@ djenRouter.get(
       resumo: resumoDjen(),
       config: configuracaoDjen(),
       advogados: listarAdvogados(),
-      pericias_sem_laudo: listarPericiasSemLaudo().length,
-      aguardando_retorno: (await acompanhamentos()).length,
+      pericias_sem_laudo: listarPericiasSemLaudo().filter(p => p.historico_djen.status === "atualizado").length,
+      historicos_djen: resumoHistoricos(),
+      aguardando_retorno: (await acompanhamentos()).filter(p => p.historico_djen.status === "atualizado" && !p.prazo_pendente).length,
       ia: statusAnalisesCodex(),
       codex: statusAnalisesCodex(), // Compatibilidade com abas da versão anterior.
     }),
@@ -288,6 +291,13 @@ djenRouter.get(
     res.json(listarPericiasSemLaudo(dias));
   }),
 );
+djenRouter.post("/publicacoes/:id/atualizar-historico", wrap((req,res) => {
+  const p = db.prepare("SELECT processo_chave FROM djen_publicacoes WHERE id=? AND cancelada=0").get(id(req.params.id)) as { processo_chave: string } | undefined;
+  if (!p || !/^\d{20}$/.test(p.processo_chave)) throw new DjenInputError("A publicação precisa estar vinculada a um número CNJ válido.");
+  solicitarHistorico(p.processo_chave);
+  void processarHistoricos().catch(() => undefined);
+  changed(); res.status(202).json(coberturaHistorico(p.processo_chave));
+}));
 djenRouter.get(
   "/aguardando",
   wrap(async (_req, res) => res.json(await acompanhamentos())),
@@ -297,8 +307,8 @@ djenRouter.put(
   wrap((req, res) => {
     const tipo = req.body?.tipo || "aguardo_juizo";
     res.json(tipo === "aguardo_juizo"
-      ? atualizarAguardandoMovimentacao(id(req.params.id), req.body.status)
-      : atualizarObrigacaoExterna(id(req.params.id), tipo, req.body.status));
+      ? atualizarAguardandoMovimentacao(id(req.params.id), req.body.status, req.body)
+      : atualizarObrigacaoExterna(id(req.params.id), tipo, req.body.status, req.body));
     changed();
   }),
 );
@@ -586,6 +596,7 @@ djenRouter.post(
     changed();
   }),
 );
+
 
 
 

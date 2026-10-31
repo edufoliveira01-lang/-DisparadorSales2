@@ -1,3 +1,5 @@
+import { dadosDoCumprimento, descricaoCumprimento } from "./fulfillment";
+import { coberturaHistorico, type CoberturaHistorico } from "./historyCoverage";
 import { prazoDoAcompanhamento } from "./followUpDeadline";
 import { registrarHistoricoDjen } from "./history";
 import { contextoNaoAtual } from "./proceduralOrders";
@@ -18,7 +20,7 @@ const diasDesde = (data: string) =>
 export function listarAguardandoMovimentacao() {
   const config = db.prepare("SELECT aguardo_dias FROM djen_config WHERE id=1").get() as { aguardo_dias: number };
   const rows = db.prepare(
-    `SELECT p.id,p.tribunal,p.orgao,p.processo_chave,p.data_disponibilizacao,p.texto,p.situacao,p.ia_json,
+    `SELECT p.id,p.captured_at,p.tribunal,p.orgao,p.processo_chave,p.data_disponibilizacao,p.texto,p.situacao,p.ia_json,
             pr.numero AS processo,c.nome AS cliente_nome,
             COALESCE(a.status,'pendente') AS acompanhamento_status,a.ultima_cobranca_em
        FROM djen_publicacoes p
@@ -34,7 +36,7 @@ export function listarAguardandoMovimentacao() {
                OR (posterior.data_disponibilizacao=p.data_disponibilizacao AND posterior.id>p.id))
         )`,
   ).all() as {
-    id: number; tribunal: string; orgao: string; processo_chave: string; data_disponibilizacao: string;
+    id: number; captured_at: string; tribunal: string; orgao: string; processo_chave: string; data_disponibilizacao: string;
     texto: string; situacao: string; ia_json: string | null;
     processo: string; cliente_nome: string | null;
     acompanhamento_status: string; ultima_cobranca_em: string | null;
@@ -65,6 +67,7 @@ export function listarAguardandoMovimentacao() {
       resumo = analise?.resumo || resumo;
     } catch { /* análise legada incompleta */ }
     return [{
+      historico_djen: coberturaHistorico(row.processo_chave), captured_at: row.captured_at,
       publicacao_id: row.id,
       processo: row.processo,
       cliente_nome: row.cliente_nome,
@@ -79,9 +82,10 @@ export function listarAguardandoMovimentacao() {
   }).sort((a, b) => b.dias_sem_publicacao - a.dias_sem_publicacao);
 }
 
-export function atualizarAguardandoMovimentacao(id: number, status: unknown) {
+export function atualizarAguardandoMovimentacao(id: number, status: unknown, dados?: Record<string, unknown>) {
   if (status !== "cobrado" && status !== "resolvido" && status !== "pendente")
     throw new DjenInputError("Situação de acompanhamento inválida.");
+  const confirmado = status === "resolvido" ? dadosDoCumprimento(dados) : null;
   const existe = db.prepare("SELECT id FROM djen_publicacoes WHERE id=?").get(id);
   if (!existe) throw new DjenInputError("Publicação não encontrada.");
   db.prepare(
@@ -91,7 +95,8 @@ export function atualizarAguardandoMovimentacao(id: number, status: unknown) {
        status=excluded.status,
        ultima_cobranca_em=CASE WHEN excluded.status='cobrado' THEN CURRENT_TIMESTAMP ELSE djen_acompanhamentos_aguardo.ultima_cobranca_em END`,
   ).run(id, status, status);
-  registrarHistoricoDjen(id, "providencia", status === "cobrado" ? "Cobrança marcada como realizada; nenhum envio automático." : `Acompanhamento ${status} pelo usuário.`);
+  registrarHistoricoDjen(id, "providencia", confirmado ? descricaoCumprimento(confirmado) : status === "cobrado" ? "Cobrança marcada como realizada; nenhum envio automático." : `Acompanhamento ${status} pelo usuário.`, confirmado);
   return { ok: true };
 }
+
 
