@@ -1,3 +1,4 @@
+import { instrucaoSuperada, laudoEfetivamenteJuntado } from "./followUpPolicy";
 import { db } from "../../db";
 import { normalizeProcesso } from "../../utils/processo";
 import { parseBrazilianDate, type Pericia } from "../parserService";
@@ -248,9 +249,9 @@ export function adicionarPublicacaoAoControle(publicacaoId: number) {
 
 export function listarPericiasSemLaudo(diasAposPericia = 60) {
   const dias = Math.max(60, Math.min(180, Math.trunc(diasAposPericia) || 60));
-  return db
+  const candidatas = db
     .prepare(
-      `SELECT pa.id AS pericia_id,pa.nome,pa.processo,pa.data,pa.horario,pa.local,
+      `SELECT pa.processo_chave,pa.id AS pericia_id,pa.nome,pa.processo,pa.data,pa.horario,pa.local,
               pa.data_hora_ms,pa.ultimo_lembrete_em,pr.cliente_id,c.telefone,
               COALESCE(ac.status,'pendente') AS acompanhamento_status,
               ac.ultima_cobranca_em,ac.observacoes,
@@ -264,17 +265,25 @@ export function listarPericiasSemLaudo(diasAposPericia = 60) {
           AND pa.processo_chave<>''
           AND pa.data_hora_ms <= (strftime('%s','now')*1000 - ?*86400000)
           AND COALESCE(ac.status,'pendente')<>'resolvido'
-          AND NOT EXISTS (
-            SELECT 1
-              FROM djen_publicacoes pub,json_each(pub.categorias_json) cat
-             WHERE pub.processo_chave=pa.processo_chave
-               AND pub.cancelada=0
-               AND cat.value='laudo_juntado'
-               AND date(pub.data_disponibilizacao)>=date(pa.data_hora_ms/1000,'unixepoch')
-          )
         ORDER BY pa.data_hora_ms ASC`,
     )
-    .all(dias);
+    .all(dias) as { processo_chave: string; data_hora_ms: number; [key: string]: unknown }[];
+  if (!candidatas.length) return [];
+  const porProcesso = new Map<string, { texto: string; data: string }[]>();
+  const publicacoes = db.prepare(`SELECT processo_chave,texto,data_disponibilizacao FROM djen_publicacoes
+    WHERE cancelada=0 ORDER BY data_disponibilizacao DESC,id DESC`).all() as { processo_chave: string; texto: string; data_disponibilizacao: string }[];
+  const processos = new Set(candidatas.map(p => p.processo_chave));
+  for (const p of publicacoes) if (processos.has(p.processo_chave)) {
+    const lista = porProcesso.get(p.processo_chave) || [];
+    lista.push({ texto: p.texto, data: p.data_disponibilizacao.slice(0,10) });
+    porProcesso.set(p.processo_chave, lista);
+  }
+  return candidatas.filter(p => {
+    const data = new Date(p.data_hora_ms).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    const posteriores = (porProcesso.get(p.processo_chave) || []).filter(pub => pub.data >= data).map(pub => pub.texto);
+    // Supressão do alerta obsoleto; não altera a perícia nem afirma que houve laudo.
+    return !instrucaoSuperada(posteriores) && !posteriores.some(laudoEfetivamenteJuntado);
+  });
 }
 
 export function atualizarAcompanhamentoPericia(
@@ -297,7 +306,11 @@ export function atualizarAcompanhamentoPericia(
        observacoes=excluded.observacoes,
        updated_at=CURRENT_TIMESTAMP`,
   ).run(periciaId, status, status, observacoes);
+  const pub = db.prepare(`SELECT p.id FROM djen_publicacoes p JOIN pericias_agendadas pa ON pa.processo_chave=p.processo_chave
+    WHERE pa.id=? AND p.cancelada=0 ORDER BY p.data_disponibilizacao DESC,p.id DESC LIMIT 1`).get(periciaId) as { id: number } | undefined;
+  if (pub) registrarHistoricoDjen(pub.id, "providencia", status === "cobrado" ? "Cobrança de laudo marcada como realizada; nenhum envio automático." : `Acompanhamento da perícia ${status} pelo usuário.`, { periciaId, status, observacoes });
   return { ok: true };
 }
+
 
 

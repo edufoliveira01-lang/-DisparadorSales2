@@ -1,3 +1,4 @@
+import { atividadesProcessos } from "./activity";
 import { db } from "../../db";
 import { DjenInputError } from "./store";
 import { classificarPublicacaoComHistorico, evidenciasDeCategorias, CATEGORIAS_LISTA_PERSONALIZADA, ETAPAS_AUTOMATICAS, type EtapaAutomatica } from "./kanbanClassifier";
@@ -132,6 +133,7 @@ export function listarKanban() {
       ORDER BY k.lista_id,k.posicao,k.processo_chave`,
   ).all() as Cartao[];
   const colunas = listas();
+  const atividades = atividadesProcessos();
   return {
     listas: colunas,
     cartoes: cards.map((c) => {
@@ -154,7 +156,7 @@ export function listarKanban() {
       const sugestao = c.modo === "manual" && listaSugerida && listaSugerida.id !== c.lista_id
         ? { codigo: c.sugestao_codigo!, lista_nome: listaSugerida.nome, evidencia: c.sugestao_evidencia }
         : null;
-      return { ...resto, cliente_nome: nome, resumo: resumo.slice(0, 220), categorias, sugestao };
+      return { ...resto, atividade: atividades.get(c.processo_chave) || null, cliente_nome: nome, resumo: resumo.slice(0, 220), categorias, sugestao };
     }),
   };
 }
@@ -281,4 +283,5 @@ export function historicoCartaoKanban(processo: string) {
     throw new DjenInputError("Processo não encontrado.");
   return db.prepare("SELECT origem,destino,origem_movimento,created_at FROM djen_kanban_movimentos WHERE processo_chave=? ORDER BY id DESC LIMIT 50").all(processo);
 }
+
 

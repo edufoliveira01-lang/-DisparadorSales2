@@ -1,3 +1,4 @@
+import { ActivityBadge, RegisterAction, type AtividadeProcesso } from "@/components/djen/ActivityBadge";
 import { Acompanhamento } from "./Acompanhamento";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, ArrowRight, CalendarClock, Clock3, History, Pencil, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
@@ -15,6 +16,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 
 interface Lista { id: number; nome: string; posicao: number; contar_dias: number; codigo: string | null; regra_categoria: string | null }
 interface Cartao {
+  atividade?: AtividadeProcesso | null;
   processo_chave: string; lista_id: number; posicao: number; entrou_em: string;
   inicio_espera_em: string | null; modo: "automatico" | "manual";
   etapa_publicacao_id: number | null; etapa_evidencia: string | null;
@@ -159,6 +161,8 @@ export function QuadroProcessos() {
                     {card.categorias.slice(0, 1).map((c) => <span key={c} className="rounded bg-zinc-100 px-1.5 py-0.5 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">{c.replaceAll("_", " ")}</span>)}
                   </span>
                 </button>
+                <div className="mt-2"><ActivityBadge atividade={card.atividade} /></div>
+                {canManage && card.atividade && <RegisterAction publicacaoId={card.publicacao_id} onSaved={carregar} />}
                 <div className="mt-2 text-[10px] text-zinc-500">
                   <span className="inline-flex rounded-full bg-sky-50 px-2 py-0.5 font-medium text-sky-800 dark:bg-sky-950 dark:text-sky-300" title={card.etapa_evidencia || undefined}>
                     {card.modo === "manual" ? "Etapa manual · mantida" : card.etapa_publicacao_id ? "Etapa automática · DJEN" : "Fase processual ainda não identificada"}
@@ -221,5 +225,6 @@ export function QuadroProcessos() {
     </Modal>
   </div>;
 }
+
 
 

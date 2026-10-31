@@ -56,9 +56,9 @@ const alvo = /\b(ambas as partes|as partes|parte autora|autor(?:a|es|as)?|demand
 const chamada = /\b(?:intime-se|intimem-se|notifique-se|notifiquem-se|cite-se|citem-se|de-se vista|abra-se vista|intimad[oa]s?)\s+(?:(?:o|a|ao|aos|as|os)\s+)?(?:(?:sr\.?|sra\.?|dr\.?|dra\.?|senhor|senhora)\s+)?$/;
 const intimacaoDepois = /^\s+(?:(?:e|foi|foram|fica|ficam|esta|estao|resta|restam)\s+)?(?:(?:regularmente|devidamente|novamente|desde ja)\s+){0,2}intimad[oa]s?\b/;
 const ordemDepois = /^\s+(?:(?:devera|deverao)\s+(?:se\s+)?)?(?:cumpra|cumpram|devera|deverao|manifeste|manifestem|apresente|apresentem|junte|juntem|emende|emendem|regularize|regularizem|comprove|comprovem)\b/;
-const historicoOuHipotese = /\b(?:apos|quando|caso|se houver|se necessario|se nao|eventual|hipotese|anteriormente|despacho anterior|decisao anterior|ja havia|na ocasiao|transcrevo|precedente|jurisprudencia|requer(?:eu)? (?:a|seja|que)|solicita(?:ou)? (?:a|seja|que)|pedido de|revogad[oa]|sem efeito|cancelad[oa]|dispensad[oa]|nao determino|nao (?:se )?intime|sem necessidade)\b/;
+const historicoOuHipotese = /\b(?:interposto recurso|interposta apelacao|havendo recurso|sobrevindo recurso|em caso de recurso|apos|quando|caso|se houver|se necessario|se nao|eventual|hipotese|anteriormente|despacho anterior|decisao anterior|ja havia|na ocasiao|transcrevo|precedente|jurisprudencia|requer(?:eu)? (?:a|seja|que)|solicita(?:ou)? (?:a|seja|que)|pedido de|revogad[oa]|sem efeito|cancelad[oa]|dispensad[oa]|nao determino|nao (?:se )?intime|sem necessidade)\b/;
 /** Usado também pelas etapas: evita interpretar hipótese ou citação como ato atual. */
-export function contextoNaoAtual(texto: string) { return /^\s*(?:(?:conforme|segundo|em|nos termos de)\s+)?(?:apos|quando|caso|se houver|se necessario|eventual|hipotese|anteriormente|despacho anterior|decisao anterior|precedente|jurisprudencia|transcrevo)\b/.test(fonteNormalizada(texto).normal); }
+export function contextoNaoAtual(texto: string) { return /^\s*(?:(?:conforme|segundo|em|nos termos de)\s+)?(?:interposto recurso|interposta apelacao|havendo recurso|sobrevindo recurso|em caso de recurso|apos|quando|caso|se houver|se necessario|eventual|hipotese|anteriormente|despacho anterior|decisao anterior|precedente|jurisprudencia|transcrevo)\b/.test(fonteNormalizada(texto).normal); }
 function sentencas(s: string) {
   const out: { inicio: number; fim: number }[] = []; let inicio = 0;
   for (const m of s.matchAll(/[.;!?](?=\s|$)/g)) {
@@ -174,3 +174,4 @@ function identificarOrdensSemCache(texto: string): OrdemProcessual[] {
   return saida.slice(0,40);
 }
 export const ordemDoEscritorio = (o: OrdemProcessual) => o.responsavel==="escritorio" || o.responsavel==="ambas_partes";
+
