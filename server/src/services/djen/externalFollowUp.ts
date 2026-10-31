@@ -33,6 +33,10 @@ function* calcularObrigacoesExternas(): Generator<void, ObrigacaoExternaAcompanh
     id: number; captured_at: string; tribunal: string; orgao: string; processo_chave: string; data_disponibilizacao: string; texto: string;
     situacao: string; ia_json: string | null; processo: string; cliente_nome: string | null;
   }[];
+  // A cobertura acompanha o mesmo instante dos textos. Uma atualização concluída
+  // durante as pausas do gerador não pode validar uma lista de textos mais antiga.
+  const coberturas = new Map<string, CoberturaHistorico>();
+  for (const row of rows) if (!coberturas.has(row.processo_chave)) coberturas.set(row.processo_chave,coberturaHistorico(row.processo_chave));
   const estados = new Map(
     (db.prepare("SELECT publicacao_id,tipo,status,ultima_cobranca_em FROM djen_acompanhamentos_obrigacoes").all() as {
       publicacao_id: number; tipo: string; status: string; ultima_cobranca_em: string | null;
@@ -76,7 +80,7 @@ function* calcularObrigacoesExternas(): Generator<void, ObrigacaoExternaAcompanh
         if (typeof ia?.resumo === "string") resumo = ia.resumo;
       } catch { /* análise legada incompleta */ }
       saida.push({
-        historico_djen: coberturaHistorico(row.processo_chave), captured_at: row.captured_at,
+        historico_djen: coberturas.get(row.processo_chave)!, captured_at: row.captured_at,
         publicacao_id: row.id, tipo: ordem.tipo, responsavel: ordem.responsavel,
         processo: row.processo, cliente_nome: row.cliente_nome,
         data_disponibilizacao: row.data_disponibilizacao, dias_decorridos,
