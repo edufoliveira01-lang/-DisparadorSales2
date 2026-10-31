@@ -1,6 +1,6 @@
 import { dadosDoCumprimento, descricaoCumprimento, chaveDaOrdem } from "./fulfillment";
 import { coberturaHistorico, type CoberturaHistorico } from "./historyCoverage";
-import { instrucaoSuperada } from "./followUpPolicy";
+import { instrucaoSuperada, obrigacaoRevogada } from "./followUpPolicy";
 import { prazoDoAcompanhamento, type PrazoAcompanhamento } from "./followUpDeadline";
 import { registrarHistoricoDjen } from "./history";
 import { db } from "../../db";
@@ -66,6 +66,7 @@ function* calcularObrigacoesExternas(): Generator<void, ObrigacaoExternaAcompanh
       if (!prazo.exibir) continue;
       // Sentença supera a instrução anterior, mas não comprova implantação de benefício.
       if (ordem.tipo !== "inss_implantacao" && instrucaoSuperada(textosPosteriores)) continue;
+      if (obrigacaoRevogada(ordem.tipo, ordem.trecho, textosPosteriores)) continue;
       if (textosPosteriores.some((texto) => cumprimentoIdentificado(ordem.tipo, texto, ordem.trecho))) continue;
       const estado = estados.get(`${row.id}:${ordem.tipo}`);
       if (estado?.status === "resolvido") continue;

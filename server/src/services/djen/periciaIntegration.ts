@@ -1,6 +1,6 @@
 import { dadosDoCumprimento, descricaoCumprimento } from "./fulfillment";
 import { coberturaHistorico } from "./historyCoverage";
-import { instrucaoSuperada, laudoEfetivamenteJuntado } from "./followUpPolicy";
+import { instrucaoSuperada, laudoEfetivamenteJuntado, periciaSuperada } from "./followUpPolicy";
 import { db } from "../../db";
 import { normalizeProcesso } from "../../utils/processo";
 import { parseBrazilianDate, type Pericia } from "../parserService";
@@ -253,7 +253,7 @@ export function listarPericiasSemLaudo(diasAposPericia = 60) {
   const dias = Math.max(60, Math.min(180, Math.trunc(diasAposPericia) || 60));
   const candidatas = db
     .prepare(
-      `SELECT pa.processo_chave,pa.id AS pericia_id,pa.nome,pa.processo,pa.data,pa.horario,pa.local,
+      `SELECT pa.processo_chave,pa.origem,(SELECT COUNT(*) FROM pericias_agendadas outra WHERE outra.processo_chave=pa.processo_chave AND outra.status='ativa' AND COALESCE(outra.origem,'')<>'audiencia') AS ativas_no_processo,pa.id AS pericia_id,pa.nome,pa.processo,pa.data,pa.horario,pa.local,
               pa.data_hora_ms,pa.ultimo_lembrete_em,pr.cliente_id,c.telefone,
               COALESCE(ac.status,'pendente') AS acompanhamento_status,
               ac.ultima_cobranca_em,ac.observacoes,
@@ -284,7 +284,7 @@ export function listarPericiasSemLaudo(diasAposPericia = 60) {
     const data = new Date(p.data_hora_ms).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
     const posteriores = (porProcesso.get(p.processo_chave) || []).filter(pub => pub.data >= data).map(pub => pub.texto);
     // Supressão do alerta obsoleto; não altera a perícia nem afirma que houve laudo.
-    return !instrucaoSuperada(posteriores) && !posteriores.some(laudoEfetivamenteJuntado);
+    return !instrucaoSuperada(posteriores) && !posteriores.some(laudoEfetivamenteJuntado) && !periciaSuperada(posteriores,data,String(p.origem || ""),Number(p.ativas_no_processo));
   }).map(p => ({ ...p, historico_djen: coberturaHistorico(p.processo_chave) }));
 }
 
