@@ -32,10 +32,12 @@ describe("obrigações externas capturadas", () => {
     publicar("processo-a", "2000-03-01", "O perito apresentou esclarecimentos aos autos.");
     expect(listarObrigacoesExternas()).toEqual([]);
   });
-  it("nova intimação reinicia o acompanhamento e mantém estados por tipo", () => {
+  it("nova intimação substitui a antiga e pede conferência da ciência pessoal do INSS", () => {
     publicar("processo-b", "2000-01-01", "Intime-se o INSS para implantar o benefício em 30 dias.");
     const recente = publicar("processo-b", new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }), "Intime-se o INSS para implantar o benefício em 30 dias.");
-    expect(listarObrigacoesExternas()).toEqual([]);
+    // Sem ciência pessoal confirmada, não inventa vencimento nem oculta a pendência por 30 dias.
+    expect(listarObrigacoesExternas()).toMatchObject([{ publicacao_id: recente, prazo_pendente: true, prazo_termino: null, dias_espera: 30 }]);
+    expect(listarObrigacoesExternas()).toHaveLength(1);
     db.prepare("UPDATE djen_publicacoes SET data_disponibilizacao='2000-02-01' WHERE id=?").run(recente);
     expect(listarObrigacoesExternas()).toMatchObject([{ publicacao_id: recente, tipo: "inss_implantacao" }]);
     atualizarObrigacaoExterna(recente, "inss_implantacao", "cobrado");
@@ -65,3 +67,4 @@ describe("conclusão em lote", () => {
     expect(() => concluirProcessosSelecionados(selecionados.ids)).toThrow();
   });
 });
+

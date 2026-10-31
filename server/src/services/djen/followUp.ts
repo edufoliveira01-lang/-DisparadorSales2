@@ -1,3 +1,7 @@
+import { prazoDoAcompanhamento } from "./followUpDeadline";
+import { registrarHistoricoDjen } from "./history";
+import { contextoNaoAtual } from "./proceduralOrders";
+import { faseDaInstrucao } from "./followUpPolicy";
 import { db } from "../../db";
 import { normalizarTexto } from "./classifier";
 import { DjenInputError } from "./store";
@@ -14,7 +18,7 @@ const diasDesde = (data: string) =>
 export function listarAguardandoMovimentacao() {
   const config = db.prepare("SELECT aguardo_dias FROM djen_config WHERE id=1").get() as { aguardo_dias: number };
   const rows = db.prepare(
-    `SELECT p.id,p.processo_chave,p.data_disponibilizacao,p.texto,p.situacao,p.ia_json,
+    `SELECT p.id,p.tribunal,p.orgao,p.processo_chave,p.data_disponibilizacao,p.texto,p.situacao,p.ia_json,
             pr.numero AS processo,c.nome AS cliente_nome,
             COALESCE(a.status,'pendente') AS acompanhamento_status,a.ultima_cobranca_em
        FROM djen_publicacoes p
@@ -30,7 +34,7 @@ export function listarAguardandoMovimentacao() {
                OR (posterior.data_disponibilizacao=p.data_disponibilizacao AND posterior.id>p.id))
         )`,
   ).all() as {
-    id: number; processo_chave: string; data_disponibilizacao: string;
+    id: number; tribunal: string; orgao: string; processo_chave: string; data_disponibilizacao: string;
     texto: string; situacao: string; ia_json: string | null;
     processo: string; cliente_nome: string | null;
     acompanhamento_status: string; ultima_cobranca_em: string | null;
@@ -38,7 +42,7 @@ export function listarAguardandoMovimentacao() {
   return rows.flatMap((row) => {
     const texto = normalizarTexto(row.texto);
     const ordem = texto.match(/\b(?:aguarde-se|aguardem-se|aguarde|aguardar|sobrest[ea](?:-se)?|sobrestad[oa]|suspendo o feito|suspensao do processo)\b[^.;\n]{0,180}/);
-    if (!ordem) return [];
+    if (!ordem || contextoNaoAtual(ordem[0]) || faseDaInstrucao(row.texto) === "encerrada") return [];
     // Não interpreta prazo dirigido à parte como prazo de espera do juízo.
     if (/\b(?:autora?|parte autora|advogad[oa]|escritorio)\b[^.;]{0,80}\b(?:cumpra|manifeste|apresente|junte)\b/.test(ordem[0])) return [];
     const numero = ordem[0].match(/\b(\d{1,3})\s*(?:\([^)]*\)\s*)?dias\b/);
@@ -48,7 +52,13 @@ export function listarAguardandoMovimentacao() {
     if (!numero && !escrito && /\bdias\b/.test(ordem[0])) return [];
     const diasEspera = numero ? Math.min(365, Math.max(1, Number(numero[1]))) : escrito ? palavras[escrito[1]] + (escrito[2] ? palavras[escrito[2]] : 0) : config.aguardo_dias;
     const diasSemPublicacao = diasDesde(row.data_disponibilizacao);
-    if (!Number.isFinite(diasSemPublicacao) || diasSemPublicacao < diasEspera) return [];
+    const explicito = Boolean(numero || escrito);
+    const prazo = prazoDoAcompanhamento({ tipo: 'parte_contraria', responsavel: 'Juízo', trecho: ordem[0],
+      prazo_citado_dias: explicito ? diasEspera : null, prazo_texto: explicito ? (numero?.[0] || escrito?.[0] || null) : null,
+      unidade: /corridos/.test(ordem[0]) ? 'corridos' : 'uteis',
+      alerta: /(?:apos|a partir|a contar|contados? d)/.test(ordem[0]) ? 'Conferir o evento que inicia a espera.' : null,
+    }, row, config.aguardo_dias, hoje());
+    if (!prazo.exibir) return [];
     let resumo = row.situacao || "Aguardando movimentação";
     try {
       const analise = row.ia_json ? JSON.parse(row.ia_json) : null;
@@ -60,7 +70,7 @@ export function listarAguardandoMovimentacao() {
       cliente_nome: row.cliente_nome,
       data_disponibilizacao: row.data_disponibilizacao,
       dias_sem_publicacao: diasSemPublicacao,
-      dias_espera: diasEspera,
+      ...prazo,
       motivo: row.situacao || ordem[0].trim(),
       resumo,
       acompanhamento_status: row.acompanhamento_status,
@@ -81,5 +91,7 @@ export function atualizarAguardandoMovimentacao(id: number, status: unknown) {
        status=excluded.status,
        ultima_cobranca_em=CASE WHEN excluded.status='cobrado' THEN CURRENT_TIMESTAMP ELSE djen_acompanhamentos_aguardo.ultima_cobranca_em END`,
   ).run(id, status, status);
+  registrarHistoricoDjen(id, "providencia", status === "cobrado" ? "Cobrança marcada como realizada; nenhum envio automático." : `Acompanhamento ${status} pelo usuário.`);
   return { ok: true };
 }
+

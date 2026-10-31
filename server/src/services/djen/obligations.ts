@@ -1,3 +1,4 @@
+import { laudoEfetivamenteJuntado } from "./followUpPolicy";
 import { identificarOrdensProcessuais } from "./proceduralOrders";
 export const TIPOS_OBRIGACAO = [
   "perito_laudo",
@@ -12,6 +13,7 @@ export interface ObrigacaoDetectada {
   responsavel: string;
   trecho: string;
   prazo_citado_dias: number | null;
+  unidade?: "uteis" | "corridos" | "horas" | "meses" | "data_expressa" | null;
   prazo_texto?: string | null;
   alerta?: string | null;
 }
@@ -30,13 +32,14 @@ export function identificarObrigacoesExternas(texto: string): ObrigacaoDetectada
       else if (ordem.acao === "laudo") tipo = "perito_laudo";
       else continue;
     } else tipo = ordem.acao === "implantacao" ? "inss_implantacao" : "parte_contraria";
-    if (!saida.has(tipo)) saida.set(tipo, { tipo, responsavel:ordem.destinatario, trecho:ordem.trecho, prazo_citado_dias:ordem.dias, prazo_texto:ordem.prazo_texto, alerta:ordem.alerta });
+    if (!saida.has(tipo)) saida.set(tipo, { tipo, responsavel:ordem.destinatario, trecho:ordem.trecho, prazo_citado_dias:ordem.dias, unidade:ordem.unidade, prazo_texto:ordem.prazo_texto, alerta:ordem.alerta });
   }
   return [...saida.values()];
 }
 
 /** Fato posterior explícito; não encerra o alerta por mera publicação nova. */
 export function cumprimentoIdentificado(tipo: TipoObrigacao, texto: string, ordem = ""): boolean {
+  if (tipo === "perito_laudo") return laudoEfetivamenteJuntado(texto);
   const pedido = normalizar(ordem);
   for (const original of texto.split(/(?:[.;]\s+|\n+)/).filter(Boolean)) {
     const s = normalizar(original);
@@ -49,6 +52,7 @@ export function cumprimentoIdentificado(tipo: TipoObrigacao, texto: string, orde
       parte_contraria: /$^/,
     };
     if (tipo === "parte_contraria") {
+      if (/contrarrazo/.test(pedido) && /\bcontrarrazoes\b.{0,45}\b(?:apresentadas|juntadas)\b/.test(s)) return true;
       if (/\bmanifest\w*/.test(pedido) && /\b(?:(?:inss|parte re|reu|requerid[oa])\b.{0,60}\bse manifestou|manifestacao\b.{0,50}\b(?:do inss|da parte re|do reu)\b.{0,50}\b(?:juntada|apresentada))\b/.test(s)) return true;
       if (/\b(?:document|junt)\w*/.test(pedido) && /\b(?:(?:inss|parte re|reu|requerid[oa])\b.{0,60}\bjuntou\b.{0,40}\bdocumentos|documentos\b.{0,40}\bjuntados\b.{0,40}\b(?:pelo inss|pela parte re|pelo reu))\b/.test(s)) return true;
       if (/\bcontest\w*/.test(pedido) && /\bcontestacao\b.{0,50}\b(?:apresentada|juntada)\b/.test(s)) return true;
@@ -59,4 +63,5 @@ export function cumprimentoIdentificado(tipo: TipoObrigacao, texto: string, orde
   }
   return false;
 }
+
 

@@ -1,3 +1,4 @@
+import { ActivityBadge, RegisterAction, type AtividadeProcesso } from "@/components/djen/ActivityBadge";
 import { ContactPicker } from "@/components/djen/ContactPicker";
 import { MultiSelect } from "@/components/ui/MultiSelect";
 import {
@@ -97,6 +98,7 @@ interface Advogado {
   correspondencia?: string;
 }
 interface Publicacao {
+  atividade?: AtividadeProcesso | null;
   id: number;
   comunicacao_id: string;
   processo: string;
@@ -235,7 +237,11 @@ interface AguardandoRetorno {
   cliente_nome: string | null;
   data_disponibilizacao: string;
   dias_decorridos: number;
-  dias_espera: number;
+  dias_espera: number | null;
+  prazo_texto?: string | null;
+  prazo_termino?: string | null;
+  prazo_pendente?: boolean;
+  prazo_observacao?: string;
   prazo_citado_dias: number | null;
   motivo: string;
   resumo: string;
@@ -352,7 +358,7 @@ function PublicacoesConsulta() {
       <p className="text-xs text-zinc-500">{loading ? "Carregando…" : `${total} publicação(ões) encontrada(s)`}</p>
     </div>
     {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
-    <div className="space-y-3">{items.map((item) => <article key={item.id} className="surface-panel p-5"><div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">{item.cliente_exibicao || item.cliente_nome || item.processo}</strong><span className="text-xs text-zinc-500">{item.tribunal} · {item.data_disponibilizacao}</span></div><p className="mt-2 text-xs text-zinc-500">Processo {item.processo} · {item.situacao || "Em acompanhamento"}</p><p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">{item.resumo || item.analise?.resumo || "Resumo ainda não disponível."}</p></article>)}</div>
+    <div className="space-y-3">{items.map((item) => <article key={item.id} className="surface-panel p-5"><div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">{item.cliente_exibicao || item.cliente_nome || item.processo}</strong><span className="text-xs text-zinc-500">{item.tribunal} · {item.data_disponibilizacao}</span></div><div className="mt-2"><ActivityBadge atividade={item.atividade} /></div><p className="mt-2 text-xs text-zinc-500">Processo {item.processo} · {item.situacao || "Em acompanhamento"}</p><p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">{item.resumo || item.analise?.resumo || "Resumo ainda não disponível."}</p></article>)}</div>
     {!loading && total > 25 && <div className="flex items-center justify-center gap-4"><Button variant="outline" disabled={page === 1} onClick={() => setPage(page - 1)}>Anterior</Button><span className="text-sm">Página {page}</span><Button variant="outline" disabled={page * 25 >= total} onClick={() => setPage(page + 1)}>Próxima</Button></div>}
   </div>;
 }
@@ -826,7 +832,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
               <Clock3 className="h-4 w-4" /> {aguardando.length} acompanhamento(s) para conferir
             </p>
             <p className="mt-2 max-w-3xl text-xs leading-relaxed text-amber-800 dark:text-amber-300">
-              O sistema acompanha intimações e determinações capturadas no DJEN. Uma publicação posterior só encerra o alerta se trouxer indicação explícita de cumprimento; confira os autos antes de cobrar. O prazo citado não é contado como prazo processual nesta tela. Sem período expresso, o lembrete aparece após {status?.config.aguardo_dias ?? 30} dias.
+              O prazo expresso tem prioridade e não é ampliado para 30 dias. A previsão usa a unidade indicada e o calendário conferido; se depender de outro marco, ciência pessoal ou calendário pendente, o card pede conferência. Sem período expresso, o lembrete operacional aparece após {status?.config.aguardo_dias ?? 30} dias. Atos posteriores de cumprimento ou encerramento da instrução podem tornar uma ordem anterior superada. Confira os autos antes de cobrar. “Marcar cobrança realizada” só registra uma ação já feita; não envia mensagens nem peticiona.
             </p>
           </div>
           {diagnostico && <p className="rounded-xl border border-zinc-200 p-3 text-xs text-zinc-500">Cobertura: {diagnostico.publicacoes} publicações consultadas · {diagnostico.ordens_externas} ordens externas identificadas. Os alertas só entram nesta lista após o período de conferência; ordens resolvidas não aparecem.</p>}
@@ -852,14 +858,21 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                   <p className="mt-1 text-xs text-zinc-500">Processo {item.processo} · {item.responsavel} · Ordem publicada em {dia(item.data_disponibilizacao)}</p>
                   <p className="mt-3 whitespace-pre-wrap text-xs font-medium">{item.motivo}</p>
                   <p className="mt-1 line-clamp-3 max-w-3xl text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">{item.resumo}</p>
-                  <p className="mt-2 text-[11px] text-zinc-500">Conferir após {item.dias_espera} dias desde a publicação{item.prazo_citado_dias ? ` · prazo mencionado: ${item.prazo_citado_dias} dias` : ""} · cumprimento não identificado nas publicações capturadas</p>
+                  <div className="mt-2 space-y-1 text-[11px] text-zinc-500">
+                    {item.prazo_texto && <p className="font-semibold text-amber-800 dark:text-amber-200">Prazo expresso: {item.prazo_texto}</p>}
+                    {item.prazo_termino && <p className="font-semibold text-red-700 dark:text-red-300">Data limite a conferir: {dia(item.prazo_termino)} · conferir cumprimento</p>}
+                    {item.prazo_pendente && <p className="font-semibold text-amber-700">Conferir prazo e termo inicial — não substituído por 30 dias</p>}
+                    <p>{item.prazo_observacao || `Conferir após ${item.dias_espera} dias desde a publicação.`}</p>
+                    <p>Cumprimento não identificado nas publicações capturadas; isso não comprova descumprimento nos autos.</p>
+                    {item.ultima_cobranca_em && <p>Cobrança marcada como realizada em {dia(item.ultima_cobranca_em)}</p>}
+                  </div>
                 </div>
                 <div className="flex shrink-0 flex-wrap items-start gap-2">
                   <Button size="sm" variant="outline" onClick={() => void abrir(item.publicacao_id)}>Ver processo <ArrowRight className="h-3.5 w-3.5" /></Button>
                   <Button size="sm" variant="outline" disabled={salvando} onClick={() => void acao(async () => {
                     await api.put(`/djen/aguardando/${item.publicacao_id}`, { tipo: item.tipo, status: "cobrado" });
-                    await carregarAguardando(); await carregarStatus(); show("Cobrança registrada para acompanhamento.", "success");
-                  })}>Registrar cobrança</Button>
+                    await carregarAguardando(); await carregarStatus(); show("Cobrança marcada como realizada. Nenhuma mensagem foi enviada.", "success");
+                  })} title="Apenas registra uma cobrança que você já realizou; não envia mensagens nem peticiona.">Marcar cobrança realizada</Button>
                   <Button size="sm" variant="ghost" disabled={salvando} onClick={() => void acao(async () => {
                     await api.put(`/djen/aguardando/${item.publicacao_id}`, { tipo: item.tipo, status: "resolvido" });
                     await carregarAguardando(); await carregarStatus(); show("Acompanhamento concluído.", "success");
@@ -1066,7 +1079,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                   onFocus={(e) => { if (e.target === e.currentTarget) anteciparDetalhe(p.id); }}
                   onClick={(e) => {
                     if (
-                      !(e.target as HTMLElement).closest("button,a,input,label")
+                      !(e.target as HTMLElement).closest("button,a,input,label,textarea,[role=dialog]")
                     )
                       void abrir(p.id);
                   }}
@@ -1137,6 +1150,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                                       : "Dados da perícia incompletos"}
                           </Badge>
                         )}
+                        {!p.concluida && <ActivityBadge atividade={p.atividade} />}
                         {!p.lida && <Badge tone="accent">● Não lida</Badge>}
                         {Boolean(p.concluida) && <Badge tone="success">Concluída</Badge>}
                         {p.ia_status === "erro" && <Badge tone="danger">Análise pendente de revisão</Badge>}
@@ -1191,6 +1205,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                     </div>
                     <div className="flex shrink-0 flex-wrap items-start gap-2 sm:max-w-[200px] sm:flex-col sm:items-stretch">
                       <Button variant="outline" size="sm" onClick={() => void abrir(p.id)}>Abrir processo <ArrowRight className="h-3.5 w-3.5" /></Button>
+                      {!p.concluida && <RegisterAction publicacaoId={p.id} onSaved={carregarLista} />}
                       <Button
                         size="sm"
                         variant="outline"
@@ -1856,9 +1871,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
       >
         <div className="space-y-3">
           <p className="text-xs text-zinc-500">
-            Alerta operacional somente para perícias realizadas há pelo menos 60 dias sem
-            publicação de laudo identificada no mesmo processo. Não é contagem de
-            prazo jurídico.
+            Alerta operacional para perícias agendadas há pelo menos 60 dias, sem laudo juntado identificado e sem ato posterior de julgamento ou encerramento da instrução. A agenda não comprova o comparecimento e a ausência de publicação não comprova falta de laudo nos autos. Não é contagem de prazo jurídico.
           </p>
           {diagnostico && <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-xs dark:border-zinc-700 dark:bg-zinc-800"><p className="font-medium">Cobertura do acompanhamento</p><p className="mt-2">{diagnostico.pericias.ativas} registros ativos · {diagnostico.pericias.futuras} futuros · {diagnostico.pericias.menos_60_dias} realizados há menos de 60 dias.</p>{diagnostico.pericias.sem_processo > 0 && <p className="mt-2 text-amber-700">{diagnostico.pericias.sem_processo} registro(s) sem número de processo: complete o cadastro na agenda para permitir o cruzamento com os laudos do DJEN.</p>}<p className="mt-2 text-zinc-500">Somente registros presentes no controle de perícias podem gerar este alerta. Registros anteriormente excluídos não são reconstruídos por esta consulta.</p></div>}
           {carregandoSemLaudo ? (
@@ -1906,11 +1919,11 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                           );
                           await carregarSemLaudo();
                           await carregarStatus();
-                          show("Cobrança registrada.", "success");
+                          show("Cobrança marcada como realizada. Nenhuma mensagem foi enviada.", "success");
                         })
                       }
                     >
-                      Registrar cobrança
+                      Marcar cobrança realizada
                     </Button>
                     <Button
                       size="sm"
@@ -2646,6 +2659,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     </div>
   );
 }
+
 
 
 

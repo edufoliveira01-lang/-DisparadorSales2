@@ -1,3 +1,6 @@
+import { instrucaoSuperada } from "./followUpPolicy";
+import { prazoDoAcompanhamento, type PrazoAcompanhamento } from "./followUpDeadline";
+import { registrarHistoricoDjen } from "./history";
 import { db } from "../../db";
 import { DjenInputError } from "./store";
 import { cumprimentoIdentificado, identificarObrigacoesExternas, TIPOS_OBRIGACAO, type TipoObrigacao } from "./obligations";
@@ -6,10 +9,10 @@ const hoje = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/S
 const diasDesde = (data: string) =>
   Math.floor((Date.parse(`${hoje()}T12:00:00Z`) - Date.parse(`${data.slice(0, 10)}T12:00:00Z`)) / 86400000);
 
-export interface ObrigacaoExternaAcompanhamento {
+export interface ObrigacaoExternaAcompanhamento extends PrazoAcompanhamento {
   publicacao_id: number; tipo: TipoObrigacao; responsavel: string; processo: string;
   cliente_nome: string | null; data_disponibilizacao: string; dias_decorridos: number;
-  dias_espera: number; prazo_citado_dias: number | null; motivo: string; resumo: string;
+  dias_espera: number | null; prazo_citado_dias: number | null; motivo: string; resumo: string;
   acompanhamento_status: string; ultima_cobranca_em: string | null;
 }
 
@@ -17,14 +20,14 @@ export interface ObrigacaoExternaAcompanhamento {
 function* calcularObrigacoesExternas(): Generator<void, ObrigacaoExternaAcompanhamento[], void> {
   const config = db.prepare("SELECT aguardo_dias FROM djen_config WHERE id=1").get() as { aguardo_dias: number };
   const rows = db.prepare(
-    `SELECT p.id,p.processo_chave,p.data_disponibilizacao,p.texto,p.situacao,p.ia_json,
+    `SELECT p.id,p.tribunal,p.orgao,p.processo_chave,p.data_disponibilizacao,p.texto,p.situacao,p.ia_json,
             pr.numero AS processo,c.nome AS cliente_nome
        FROM djen_publicacoes p JOIN djen_processos pr ON pr.chave=p.processo_chave
        LEFT JOIN contacts c ON c.id=pr.cliente_id
       WHERE p.cancelada=0
       ORDER BY p.processo_chave,p.data_disponibilizacao DESC,p.id DESC`,
   ).all() as {
-    id: number; processo_chave: string; data_disponibilizacao: string; texto: string;
+    id: number; tribunal: string; orgao: string; processo_chave: string; data_disponibilizacao: string; texto: string;
     situacao: string; ia_json: string | null; processo: string; cliente_nome: string | null;
   }[];
   const estados = new Map(
@@ -41,9 +44,11 @@ function* calcularObrigacoesExternas(): Generator<void, ObrigacaoExternaAcompanh
       const chave = `${row.processo_chave}:${ordem.tipo}:${ordem.trecho.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim()}`;
       if (acompanhados.has(chave)) continue;
       acompanhados.add(chave); // Reiteração idêntica reinicia; ordens diferentes seguem separadas.
-      const dias_espera = Math.max(config.aguardo_dias, ordem.prazo_citado_dias || 0);
+      const prazo = prazoDoAcompanhamento(ordem, row, config.aguardo_dias, hoje());
       const dias_decorridos = diasDesde(row.data_disponibilizacao);
-      if (!Number.isFinite(dias_decorridos) || dias_decorridos < dias_espera) continue;
+      if (!prazo.exibir) continue;
+      // Sentença supera a instrução anterior, mas não comprova implantação de benefício.
+      if (ordem.tipo !== "inss_implantacao" && instrucaoSuperada(textosPosteriores)) continue;
       if (textosPosteriores.some((texto) => cumprimentoIdentificado(ordem.tipo, texto, ordem.trecho))) continue;
       const estado = estados.get(`${row.id}:${ordem.tipo}`);
       if (estado?.status === "resolvido") continue;
@@ -56,7 +61,7 @@ function* calcularObrigacoesExternas(): Generator<void, ObrigacaoExternaAcompanh
         publicacao_id: row.id, tipo: ordem.tipo, responsavel: ordem.responsavel,
         processo: row.processo, cliente_nome: row.cliente_nome,
         data_disponibilizacao: row.data_disponibilizacao, dias_decorridos,
-        dias_espera, prazo_citado_dias: ordem.prazo_citado_dias,
+        ...prazo, prazo_citado_dias: ordem.prazo_citado_dias,
         motivo: ordem.trecho, resumo,
         acompanhamento_status: estado?.status || "pendente",
         ultima_cobranca_em: estado?.ultima_cobranca_em || null,
@@ -117,5 +122,7 @@ export function atualizarObrigacaoExterna(publicacaoId: number, tipo: unknown, s
        status=excluded.status,
        ultima_cobranca_em=CASE WHEN excluded.status='cobrado' THEN CURRENT_TIMESTAMP ELSE djen_acompanhamentos_obrigacoes.ultima_cobranca_em END`,
   ).run(publicacaoId, tipo, status, status);
+  registrarHistoricoDjen(publicacaoId, "providencia", status === "cobrado" ? "Cobrança marcada como realizada pelo usuário; nenhum envio automático." : `Acompanhamento ${status} pelo usuário.`, { tipo, status });
   return { ok: true };
 }
+

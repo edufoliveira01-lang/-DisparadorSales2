@@ -495,6 +495,14 @@ djenRouter.delete(
     res.json({ ok: true });
   }),
 );
+djenRouter.post("/publicacoes/:id/providencia", wrap((req, res) => {
+  const n = id(req.params.id);
+  const nota = typeof req.body?.descricao === "string" ? req.body.descricao.trim() : "";
+  if (nota.length < 3 || nota.length > 2000) throw new DjenInputError("Descreva a providência realizada, de 3 a 2.000 caracteres.");
+  if (!db.prepare("SELECT id FROM djen_publicacoes WHERE id=? AND cancelada=0").get(n)) throw new DjenInputError("Publicação não encontrada.");
+  registrarHistoricoDjen(n, "providencia", nota);
+  changed(); res.json({ ok: true });
+}));
 djenRouter.post(
   "/publicacoes/:id/conclusao",
   wrap((req, res) => {
@@ -578,5 +586,6 @@ djenRouter.post(
     changed();
   }),
 );
+
 
 

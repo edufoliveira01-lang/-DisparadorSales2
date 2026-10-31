@@ -1,3 +1,4 @@
+import { atividadesProcessos, type AtividadeProcesso } from "./activity";
 import { identificarOrdensProcessuais, ordemDoEscritorio } from "./proceduralOrders";
 import { registrarHistoricoDjen } from "./history";
 import { dadosAcompanhamento } from "./workflow";
@@ -407,7 +408,7 @@ export function apresentarPublicacao(p: PublicacaoRow, integral = false) {
   };
 }
 
-function apresentarProcessoAgrupado(p: PublicacaoRow, arquivo: string) {
+function apresentarProcessoAgrupado(p: PublicacaoRow, arquivo: string, atividade?: AtividadeProcesso) {
   const escopo =
     arquivo === "ativos"
       ? " AND concluida=0"
@@ -473,6 +474,7 @@ function apresentarProcessoAgrupado(p: PublicacaoRow, arquivo: string) {
   const apresentada = apresentarPublicacao(p);
   return {
     ...apresentada,
+    atividade: atividade || null,
     categorias: CATEGORIAS_DJEN.filter((categoria) => categorias.has(categoria)),
     resultado: resultadoSentenca,
     acao,
@@ -645,8 +647,9 @@ export function listarPublicacoes(filtro: Record<string, string>) {
       )
       .get(...values, grupo.processo_chave) as PublicacaoRow;
   });
+  const atividades = atividadesProcessos();
   return {
-    items: rows.map((p) => apresentarProcessoAgrupado(p, arquivo)),
+    items: rows.map((p) => apresentarProcessoAgrupado(p, arquivo, atividades.get(p.processo_chave))),
     total,
     pagina,
     por_pagina: 25,
@@ -801,5 +804,6 @@ export function listarAndamentosDoProcesso(id: number, pagina = 1) {
     .all(p.processo_chave, (pagina - 1) * 25);
   return { items, total, pagina, por_pagina: 25 };
 }
+
 
 
