@@ -10,8 +10,8 @@ describe('histórico literal de instrução e laudo', () => {
     expect(instrucaoSuperada([extincao])).toBe(true);
     expect(laudoEfetivamenteJuntado(extincao)).toBe(false);
   });
-  it.each(['Julgo improcedente o pedido.', 'Julgo a ação parcialmente procedente.', 'Declaro a extinção do feito.', 'Homologo o acordo.'])('reconhece ato atual: %s', texto => expect(faseDaInstrucao(texto)).toBe('encerrada'));
-  it.each(['Caso haja desistência, julgo extinto o processo.', 'Conforme precedente: “julgo improcedente o pedido”.', 'A autora requereu: julgo extinto o processo.', 'Não julgo extinto o processo.', 'Na sentença anterior, julgo improcedente o pedido.'])('não encerra por hipótese, citação, pedido ou negação: %s', texto => expect(faseDaInstrucao(texto)).toBe(null));
+  it.each(['Julgo improcedente o pedido.', 'Julgo a ação parcialmente procedente.', 'Declaro a extinção do feito.', 'Homologo o acordo e julgo extinto o processo.'])('reconhece ato atual: %s', texto => expect(faseDaInstrucao(texto)).toBe('encerrada'));
+  it.each(['Caso haja desistência, julgo extinto o processo.', 'Conforme precedente: “julgo improcedente o pedido”.', 'A autora requereu: julgo extinto o processo.', 'Não julgo extinto o processo.', 'Na sentença anterior, julgo improcedente o pedido.', 'Homologo o acordo de honorários do perito.', 'Julgo procedente a impugnação aos honorários periciais.', 'Julgamento antecipado parcial do mérito: julgo procedente o pedido de danos morais.'])('não encerra por hipótese, citação, pedido ou negação: %s', texto => expect(faseDaInstrucao(texto)).toBe(null));
   it('ato novo de reabertura prevalece sobre sentença antiga', () => {
     expect(instrucaoSuperada(['Anulo a sentença. Reabro a instrução.', extincao])).toBe(false);
     expect(instrucaoSuperada([extincao, 'Anulo a sentença.'])).toBe(true);

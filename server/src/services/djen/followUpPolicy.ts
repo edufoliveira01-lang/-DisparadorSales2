@@ -13,7 +13,10 @@ function detectarFase(texto: string): 'encerrada' | 'reaberta' | null {
     if (/\b(?:nao|deixo de)\b.{0,35}\b(?:julgo|homologo|declaro|anulo|casso|desconstituo|determino|designo)\b/.test(s)) continue;
     if (/\b(?:anulo|casso|desconstituo|torno sem efeito)\b.{0,100}\b(?:sentenca|julgamento)|\b(?:reabro|reabra-se)\b.{0,60}\binstrucao|\b(?:determino|defiro|designo)\b.{0,70}\b(?:nova pericia|reabertura da instrucao)\b/.test(s)) { fase = 'reaberta'; continue; }
     if (/\b(?:nao|sem|deixo de)\b.{0,35}\b(?:julgo|homologo|declaro)\b/.test(s)) continue;
-    if (/\bjulgo\s+(?:(?:a|o|os|as)\s+)?(?:(?:pedido|pedidos|acao|demanda)\s+)?(?:procedente|improcedente|parcialmente procedente|extint[oa]s?)\b|\b(?:declaro|decreto)\b.{0,30}\bextincao\b.{0,35}\b(?:processo|feito|acao|execucao)\b|\bhomologo\b.{0,45}\b(?:desistencia|acordo)\b/.test(s)) fase = 'encerrada';
+    if (/\b(?:parcial do merito|homologacao parcial|acordo parcial|pedido incidental)\b/.test(s)) continue;
+    const merito = /\bjulgo\s+(?:(?:o|a|os|as)\s+)?(?:pedido|pedidos|acao|demanda|pretensao)\s+(?:parcialmente\s+)?(?:procedentes?|improcedentes?)\b|\bjulgo\s+(?:parcialmente\s+)?(?:procedentes?|improcedentes?)\s+(?:(?:o|a|os|as)\s+)?(?:pedido|pedidos|acao|demanda|pretensao)\b/;
+    const extincao = /\bjulgo\s+extint[oa]s?\s+(?:(?:o|a|os|as)\s+)?(?:processo|feito|acao|execucao)\b|\b(?:declaro|decreto)\b.{0,30}\bextincao\b.{0,35}\b(?:processo|feito|acao|execucao)\b/;
+    if (merito.test(s) || extincao.test(s)) fase = 'encerrada';
   }
   return fase;
 }
