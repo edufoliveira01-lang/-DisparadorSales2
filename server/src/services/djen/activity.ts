@@ -17,9 +17,12 @@ export function atividadesProcessos(): Map<string, AtividadeProcesso> {
     JOIN djen_publicacoes p ON p.id=h.publicacao_id WHERE p.cancelada=0
     AND h.tipo IN ('providencia','mensagem','envio','prazo','documento','pericia','processo','revisao','conclusao') GROUP BY p.processo_chave
     UNION ALL SELECT p.processo_chave,MAX(m.finished_at) AS ultima FROM djen_mensagens m JOIN djen_publicacoes p ON p.id=m.publicacao_id WHERE m.status='sucesso' AND p.cancelada=0 GROUP BY p.processo_chave
+    UNION ALL SELECT p.processo_chave,MAX(a.ultima_cobranca_em) AS ultima FROM djen_acompanhamentos_obrigacoes a JOIN djen_publicacoes p ON p.id=a.publicacao_id WHERE p.cancelada=0 GROUP BY p.processo_chave
+    UNION ALL SELECT p.processo_chave,MAX(a.ultima_cobranca_em) AS ultima FROM djen_acompanhamentos_aguardo a JOIN djen_publicacoes p ON p.id=a.publicacao_id WHERE p.cancelada=0 GROUP BY p.processo_chave
+    UNION ALL SELECT pa.processo_chave,MAX(a.ultima_cobranca_em) AS ultima FROM djen_acompanhamentos_pericia a JOIN pericias_agendadas pa ON pa.id=a.pericia_id GROUP BY pa.processo_chave
     UNION ALL SELECT processo_chave,MAX(created_at) AS ultima FROM djen_kanban_movimentos WHERE origem_movimento='manual' GROUP BY processo_chave`).all() as { processo_chave: string; ultima: string }[];
   const porProcesso = new Map<string, string>();
-  for (const h of ultimas) if (h.ultima > (porProcesso.get(h.processo_chave) || '')) porProcesso.set(h.processo_chave, h.ultima);
+  for (const h of ultimas) if (h.ultima && h.ultima > (porProcesso.get(h.processo_chave) || '')) porProcesso.set(h.processo_chave, h.ultima);
   const agora = new Date();
   const saida = new Map<string, AtividadeProcesso>();
   for (const p of rows) {

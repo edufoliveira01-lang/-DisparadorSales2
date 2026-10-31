@@ -9,6 +9,7 @@ vi.mock('../src/db', async () => {
     CREATE TABLE djen_processos(chave TEXT,numero TEXT,cliente_id INTEGER);
     CREATE TABLE contacts(id INTEGER,nome TEXT,telefone TEXT);
     CREATE TABLE djen_acompanhamentos_obrigacoes(publicacao_id INTEGER,tipo TEXT,status TEXT,ultima_cobranca_em TEXT,PRIMARY KEY(publicacao_id,tipo));
+    CREATE TABLE djen_acompanhamentos_aguardo(publicacao_id INTEGER,status TEXT,ultima_cobranca_em TEXT);
     CREATE TABLE pericias_agendadas(id INTEGER PRIMARY KEY,processo_chave TEXT,nome TEXT,processo TEXT,data TEXT,horario TEXT,local TEXT,data_hora_ms INTEGER,ultimo_lembrete_em TEXT,status TEXT DEFAULT 'ativa',origem TEXT DEFAULT 'medica');
     CREATE TABLE djen_acompanhamentos_pericia(pericia_id INTEGER,status TEXT,ultima_cobranca_em TEXT,observacoes TEXT);
     CREATE TABLE djen_historico(publicacao_id INTEGER,tipo TEXT,descricao TEXT,dados_json TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
@@ -32,7 +33,7 @@ const pub = { tribunal:'TRF3',orgao:'Jundiai',data_disponibilizacao:'2026-10-01'
 const ordem = (periodo='5 dias úteis') => identificarObrigacoesExternas(`Intime-se o perito para apresentar o laudo no prazo de ${periodo}.`)[0];
 beforeEach(() => {
   fixture.calendarios = [{tribunal:'TRF3',orgao:'Jundiai',inicio:'2020-01-01',fim:'2027-12-31',conferido:true,fonte:'https://www.trf3.jus.br/',feriados:[],suspensoes:[]}];
-  for (const table of ['djen_publicacoes','djen_processos','pericias_agendadas','djen_acompanhamentos_obrigacoes','djen_historico','djen_mensagens','djen_kanban_movimentos']) db.prepare(`DELETE FROM ${table}`).run();
+  for (const table of ['djen_publicacoes','djen_processos','pericias_agendadas','djen_acompanhamentos_obrigacoes','djen_acompanhamentos_aguardo','djen_acompanhamentos_pericia','djen_historico','djen_mensagens','djen_kanban_movimentos']) db.prepare(`DELETE FROM ${table}`).run();
 });
 describe('prazo expresso de acompanhamento', () => {
   it('5 dias úteis vencem pelo calendário, sem esperar o piso antigo de 30 dias', () => {
@@ -100,6 +101,9 @@ describe('acompanhamentos cruzados por processo', () => {
     expect(atividadesProcessos().get('p')?.dias).toBe(0);
     db.prepare('DELETE FROM djen_historico').run();
     db.prepare("INSERT INTO djen_mensagens VALUES(1,'sucesso',CURRENT_TIMESTAMP)").run();
+    expect(atividadesProcessos().get('p')?.dias).toBe(0);
+    db.prepare('DELETE FROM djen_mensagens').run();
+    db.prepare("INSERT INTO djen_acompanhamentos_obrigacoes VALUES(1,'perito_laudo','cobrado',CURRENT_TIMESTAMP)").run();
     expect(atividadesProcessos().get('p')?.dias).toBe(0);
     db.prepare('UPDATE djen_publicacoes SET concluida=1').run();
     expect(atividadesProcessos().has('p')).toBe(false);
