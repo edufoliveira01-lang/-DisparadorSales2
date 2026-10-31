@@ -24,6 +24,7 @@ describe('cancelamento e substituição explícitos',()=>{
   it('não encerra outra data ou outra espécie de perícia',()=>{
     expect(periciaSuperada(['Cancelo a perícia marcada para 02/09/2026.'],'2026-09-01','medica',1)).toBe(false);
     expect(periciaSuperada(['Cancelo a perícia social.'],'2026-09-01','medica',1)).toBe(false);
+    expect(periciaSuperada(['Cancelo a perícia social e mantenho a perícia médica.'],'2026-09-01','medica',1)).toBe(false);
     expect(periciaSuperada(['A perícia foi cancelada.'],'2026-09-01','medica',2)).toBe(false);
     expect(periciaSuperada(['Cancelo a perícia marcada para 01/09/2026.'],'2026-09-01','medica',2)).toBe(true);
   });

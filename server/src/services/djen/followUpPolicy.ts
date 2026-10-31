@@ -55,13 +55,13 @@ export const laudoEfetivamenteJuntado = (texto: string) => fatos(texto).laudo;
 export function obrigacaoRevogada(tipo: string, ordem: string, posteriores: string[]): boolean {
   const objeto = /\b(?:revogo|cancelo|dispenso|torno sem efeito)\s+(?:(?:a|o|as|os)\s+)?(?:intimacao|ordem|determinacao|exigencia|apresentacao|entrega|juntada|pericia|exame pericial|tutela|implantacao|esclarecimentos|calculos)\b|\b(?:intimacao|ordem|determinacao|exigencia|pericia|tutela)\b.{0,55}\b(?:fica|foi|esta)\s+(?:cancelad[oa]|revogad[oa]|dispensad[oa]|sem efeito)\b/;
   const alvos: Record<string, RegExp> = {
-    perito_laudo: /\b(?:laudo|pericia|exame pericial)\b/,
+    perito_laudo: /\blaudo\b/,
     perito_esclarecimentos: /\b(?:esclarecimentos|complementacao|laudo complementar)\b/,
     perito_calculos: /\b(?:calculos|contadoria)\b/,
     inss_implantacao: /\b(?:implantacao|restabelecimento)\b/,
   };
   const pedido = normal(ordem);
-  for (const texto of posteriores) for (const s of frasesAtuais(texto)) {
+  for (const texto of posteriores) for (const s of /(?:revog|cancel|dispens|sem efeito)/i.test(texto) ? frasesAtuais(texto) : []) {
     if (!objeto.test(s) || /\b(?:nao|deixo de)\b.{0,35}\b(?:revogo|cancelo|dispenso|torno sem efeito)\b/.test(s)) continue;
     if (/\bsocial\b/.test(pedido) && /\bmedic[ao]\b/.test(s) && !/\bsocial\b/.test(s) || /\bmedic[ao]\b/.test(pedido) && /\bsocial\b/.test(s) && !/\bmedic[ao]\b/.test(s)) continue;
     if (tipo !== 'parte_contraria') { if (alvos[tipo]?.test(s)) return true; continue; }
@@ -74,9 +74,9 @@ export function obrigacaoRevogada(tipo: string, ordem: string, posteriores: stri
 
 /** Redesignação/cancelamento não significa perícia realizada sem laudo. */
 export function periciaSuperada(posteriores: string[], data: string, origem: string, ativasNoProcesso: number): boolean {
-  for (const texto of posteriores) for (const s of frasesAtuais(texto)) {
+  for (const texto of posteriores) for (const s of /(?:cancel|dispens|sem efeito|redesign|remarc)/i.test(texto) ? frasesAtuais(texto) : []) {
     if (/\b(?:nao|deixo de)\b.{0,30}\b(?:cancelo|dispenso|redesigno|revogo|torno sem efeito)\b/.test(s)) continue;
-    if (origem === 'social' && /pericia medica/.test(s) && !/pericia social/.test(s) || origem === 'medica' && /pericia social/.test(s) && !/pericia medica/.test(s)) continue;
+    if (origem === 'social' && /pericia medica/.test(s) || origem === 'medica' && /pericia social/.test(s)) continue;
     const cancelada = /\b(?:cancelo|dispenso|torno sem efeito)\s+(?:(?:a|o)\s+)?(?:pericia|exame pericial)\b|\bpericia\b.{0,70}\b(?:fica|foi|esta)\s+(?:cancelada|dispensada|sem efeito)\b/.test(s);
     const remarcada = /\b(?:redesigno|remarco)\s+(?:(?:a|o)\s+)?(?:pericia|exame pericial)\b|\bpericia\b.{0,70}\b(?:foi|fica|esta)\s+(?:redesignada|remarcada)\b/.test(s);
     if (!cancelada && !remarcada) continue;
