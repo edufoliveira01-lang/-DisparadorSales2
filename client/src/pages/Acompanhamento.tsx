@@ -67,8 +67,18 @@ const TIPOS = {
   decisao_interlocutoria: "Decisão interlocutória",
   despacho: "Despacho",
   intimacao: "Intimação",
+  recurso: "Recurso / contrarrazões",
+  transito_julgado: "Trânsito em julgado",
+  emenda_inicial: "Emenda à inicial",
+  citacao_contestacao: "Citação / contestação",
+  audiencia: "Audiência",
+  implantacao_beneficio: "Implantação do benefício",
+  calculos: "Cálculos / contadoria",
+  vista_laudo: "Vista do laudo",
+  arquivamento: "Arquivamento",
 };
 const FILTROS = { ...TIPOS, outros: "Outros" };
+const ROTULO_SITUACAO: Record<string, string> = { vigente: "Em aberto", decorrido: "Prazo decorrido", cumprida: "Cumprida", superada: "Superada por andamento posterior", revogada: "Revogada" };
 const FILTROS_RAPIDOS = [
   ["sentenca", "Sentença"],
   ["acordao", "Acórdão"],
@@ -192,6 +202,11 @@ interface Publicacao {
     tipo: "ciencia" | "cumprimento" | "prazo_explicito";
     descricao: string | null;
     prazo_texto: string | null;
+    publicacao_id?: number;
+    data_disponibilizacao?: string;
+    situacao?: "vigente" | "decorrido" | "cumprida" | "superada" | "revogada";
+    situacao_motivo?: string;
+    encerradas?: { publicacao_id?: number; descricao: string | null; situacao: string; motivo: string; evidencia?: string | null; data: string | null }[];
   };
   observacoes: string;
   link: string | null;
@@ -232,6 +247,18 @@ interface PericiaSemLaudo {
   acompanhamento_status: "pendente" | "cobrado";
   ultima_cobranca_em: string | null;
   observacoes: string;
+  publicacoes_posteriores?: number;
+  ultima_publicacao_em?: string | null;
+}
+interface PericiaSuperada {
+  pericia_id: number;
+  nome: string;
+  processo: string;
+  data: string;
+  horario: string | null;
+  motivo: string;
+  andamento: string | null;
+  data_andamento: string | null;
 }
 interface AguardandoRetorno {
   captured_at?: string;
@@ -331,6 +358,15 @@ const tons = {
   decisao_interlocutoria: "violet",
   despacho: "neutral",
   intimacao: "warning",
+  recurso: "info",
+  transito_julgado: "neutral",
+  emenda_inicial: "warning",
+  citacao_contestacao: "violet",
+  audiencia: "violet",
+  implantacao_beneficio: "success",
+  calculos: "accent",
+  vista_laudo: "warning",
+  arquivamento: "neutral",
 } as const;
 const UFS =
   "AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO".split(
@@ -458,6 +494,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
   const [mostrarSemLaudo, setMostrarSemLaudo] = useState(false);
   const [diagnostico, setDiagnostico] = useState<{ pericias: { ativas: number; sem_processo: number; futuras: number; menos_60_dias: number }; publicacoes: number; ordens_externas: number; aguardo_dias: number } | null>(null);
   const [periciasSemLaudo, setPericiasSemLaudo] = useState<PericiaSemLaudo[]>([]);
+  const [periciasSuperadas, setPericiasSuperadas] = useState<PericiaSuperada[]>([]);
   const [aguardando, setAguardando] = useState<AguardandoRetorno[]>([]);
   const [tipoAguardando, setTipoAguardando] = useState("");
   const [buscaAguardando, setBuscaAguardando] = useState("");
@@ -498,9 +535,12 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     setCarregandoSemLaudo(true);
     void api.get<NonNullable<typeof diagnostico>>("/djen/acompanhamentos/diagnostico").then(setDiagnostico).catch(() => setDiagnostico(null));
     try {
-      setPericiasSemLaudo(
-        await api.get<PericiaSemLaudo[]>("/djen/pericias/sem-laudo?dias=60"),
-      );
+      const [alertas, superadas] = await Promise.all([
+        api.get<PericiaSemLaudo[]>("/djen/pericias/sem-laudo?dias=60"),
+        api.get<PericiaSuperada[]>("/djen/pericias/sem-laudo/superadas?dias=60").catch(() => [] as PericiaSuperada[]),
+      ]);
+      setPericiasSemLaudo(alertas);
+      setPericiasSuperadas(superadas);
     } finally {
       setCarregandoSemLaudo(false);
     }
@@ -1195,6 +1235,8 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                       {!p.proximo_prazo && p.acao?.tipo === "prazo_explicito" && <p className="mt-2 text-xs font-semibold text-amber-700 dark:text-amber-300">Prazo expresso na publicação · conferir e calcular</p>}
                       {!p.proximo_prazo && p.acao?.tipo === "cumprimento" && <p className="mt-2 text-xs font-semibold text-amber-700 dark:text-amber-300">Providência para o escritório · sem prazo expresso</p>}
                       {!p.proximo_prazo && (!p.acao || p.acao.tipo === "ciencia") && <p className="mt-2 text-xs text-zinc-500">Ciência / acompanhamento · sem prazo identificado para a parte</p>}
+                      {p.acao?.situacao === "decorrido" && <p className="mt-1 text-xs font-semibold text-red-700 dark:text-red-300">Publicação posterior menciona decurso do prazo · conferir se foi cumprido</p>}
+                      {!!p.acao?.encerradas?.length && <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300" title={p.acao.encerradas.map((e) => `${ROTULO_SITUACAO[e.situacao] || e.situacao}: ${e.motivo}`).join("\n")}>{p.acao.encerradas.length} providência(s) anterior(es) encerrada(s): {[...new Set(p.acao.encerradas.map((e) => (ROTULO_SITUACAO[e.situacao] || e.situacao).toLowerCase()))].join(", ")}</p>}
                       <p className="mt-3 line-clamp-3 whitespace-pre-line break-words text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
                         {p.resumo}
                       </p>
@@ -1881,7 +1923,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
       >
         <div className="space-y-3">
           <p className="text-xs text-zinc-500">
-            Alerta operacional para perícias agendadas há pelo menos 60 dias, sem laudo juntado identificado e sem ato posterior de julgamento ou encerramento da instrução. A agenda não comprova o comparecimento e a ausência de publicação não comprova falta de laudo nos autos. Não é contagem de prazo jurídico.
+            Alerta operacional para perícias agendadas há pelo menos 60 dias, sem laudo juntado identificado e sem andamento posterior (sentença, recurso, acórdão, trânsito, cumprimento ou cancelamento da perícia). A agenda não comprova o comparecimento e a ausência de publicação não comprova falta de laudo nos autos. Não é contagem de prazo jurídico.
           </p>
           {diagnostico && <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-xs dark:border-zinc-700 dark:bg-zinc-800"><p className="font-medium">Cobertura do acompanhamento</p><p className="mt-2">{diagnostico.pericias.ativas} registros ativos · {diagnostico.pericias.futuras} futuros · {diagnostico.pericias.menos_60_dias} realizados há menos de 60 dias.</p>{diagnostico.pericias.sem_processo > 0 && <p className="mt-2 text-amber-700">{diagnostico.pericias.sem_processo} registro(s) sem número de processo: complete o cadastro na agenda para permitir o cruzamento com os laudos do DJEN.</p>}<p className="mt-2 text-zinc-500">Somente registros presentes no controle de perícias podem gerar este alerta. Registros anteriormente excluídos não são reconstruídos por esta consulta.</p></div>}
           {carregandoSemLaudo ? (
@@ -1893,10 +1935,16 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
               description="Não há perícias vencidas sem laudo identificado neste momento."
             />
           ) : (
-            periciasSemLaudo.map((p) => (
+            <>
+              {periciasSemLaudo.some((p) => p.historico_djen?.status !== "atualizado") && (
+                <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                  Registros com histórico do DJEN ainda não conferido aparecem por último: a publicação posterior (sentença, recurso, laudo) pode ainda não ter sido capturada. Atualize o histórico antes de cobrar.
+                </p>
+              )}
+              {[...periciasSemLaudo].sort((a, b) => Number(a.historico_djen?.status !== "atualizado") - Number(b.historico_djen?.status !== "atualizado")).map((p) => (
               <article
                 key={p.pericia_id}
-                className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800"
+                className={`rounded-xl border p-4 ${p.historico_djen?.status === "atualizado" ? "border-zinc-200 dark:border-zinc-800" : "border-dashed border-zinc-300 opacity-80 dark:border-zinc-700"}`}
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -1907,6 +1955,11 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                       Perícia em {p.data}
                       {p.horario ? ` às ${p.horario}` : ""} ·{" "}
                       {p.dias_decorridos} dia(s) decorridos
+                    </p>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {p.publicacoes_posteriores
+                        ? `${p.publicacoes_posteriores} publicação(ões) posterior(es) capturada(s), sem sentença, recurso ou laudo identificado · última em ${p.ultima_publicacao_em ? dia(p.ultima_publicacao_em) : "—"}`
+                        : "Nenhuma publicação posterior à perícia capturada no DJEN"}
                     </p>
                     {p.local && (
                       <p className="mt-1 text-xs text-zinc-500">{p.local}</p>
@@ -1940,7 +1993,24 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                   </div>
                 </div>
               </article>
-            ))
+              ))}
+            </>
+          )}
+          {!carregandoSemLaudo && periciasSuperadas.length > 0 && (
+            <details className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 text-xs dark:border-emerald-900 dark:bg-emerald-950/20">
+              <summary className="cursor-pointer font-semibold text-emerald-800 dark:text-emerald-300">
+                {periciasSuperadas.length} perícia(s) ocultada(s) por andamento posterior
+              </summary>
+              <p className="mt-2 text-zinc-500">Estes registros não geram cobrança porque o processo avançou (sentença, recurso, acórdão, laudo etc.) ou a perícia foi cancelada/redesignada. Confira nos autos se necessário.</p>
+              <ul className="mt-2 space-y-2">
+                {periciasSuperadas.map((p) => (
+                  <li key={p.pericia_id} className="rounded-lg bg-white p-2 dark:bg-zinc-900">
+                    <strong>{p.nome}</strong> · {p.processo}
+                    <br />Perícia em {p.data}{p.horario ? ` às ${p.horario}` : ""} — {p.motivo}{p.data_andamento ? ` (publicado em ${dia(p.data_andamento)})` : ""}
+                  </li>
+                ))}
+              </ul>
+            </details>
           )}
         </div>
       </Modal>
@@ -2096,6 +2166,16 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                   {detalhe.acao?.fonte === "publicacao" && <p className="mt-2 text-[11px] font-medium text-accent-700 dark:text-accent-300">Providência identificada no texto da publicação · confira o trecho e o termo inicial.</p>}
                   {detalhe.acao?.tipo === "prazo_explicito" && (
                     <Button size="sm" variant="outline" className="mt-3" onClick={() => setAbaDetalhe("prazos")}>Conferir e calcular prazo <ArrowRight className="h-3.5 w-3.5" /></Button>
+                  )}
+                  {detalhe.acao?.situacao === "decorrido" && <p className="mt-2 text-[11px] font-semibold text-red-700 dark:text-red-300">{detalhe.acao.situacao_motivo}</p>}
+                  {!!detalhe.acao?.encerradas?.length && (
+                    <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/70 p-3 text-[11px] dark:border-emerald-900 dark:bg-emerald-950/20">
+                      <p className="font-semibold text-emerald-800 dark:text-emerald-300">Ordens desta publicação já encerradas por andamento posterior</p>
+                      <ul className="mt-1 space-y-1 text-zinc-600 dark:text-zinc-300">
+                        {detalhe.acao.encerradas.map((e, i) => <li key={i}><strong>{ROTULO_SITUACAO[e.situacao] || e.situacao}</strong>{e.data ? ` em ${dia(e.data)}` : ""}: {e.descricao || "Providência"} — {e.motivo}{e.evidencia ? ` (“${e.evidencia}”)` : ""}</li>)}
+                      </ul>
+                      <p className="mt-1 text-zinc-500">Análise operacional pelas publicações capturadas; confirme nos autos antes de deixar de agir.</p>
+                    </div>
                   )}
                 </section>
                 <section>

@@ -1,6 +1,7 @@
 import { dadosDoCumprimento, descricaoCumprimento } from "./fulfillment";
 import { coberturaHistorico } from "./historyCoverage";
 import { instrucaoSuperada, laudoEfetivamenteJuntado, periciaSuperada } from "./followUpPolicy";
+import { primeiroAndamentoPosterior, type PublicacaoParaAndamento } from "./andamentos";
 import { db } from "../../db";
 import { normalizeProcesso } from "../../utils/processo";
 import { parseBrazilianDate, type Pericia } from "../parserService";
@@ -249,7 +250,23 @@ export function adicionarPublicacaoAoControle(publicacaoId: number) {
   };
 }
 
-export function listarPericiasSemLaudo(diasAposPericia = 60) {
+export interface PericiaSuperada {
+  pericia_id: number;
+  nome: string;
+  processo: string;
+  data: string;
+  horario: string | null;
+  motivo: string;
+  andamento: string | null;
+  data_andamento: string | null;
+}
+
+/**
+ * Perícias realizadas há pelo menos 60 dias separadas em alertas e em registros
+ * ocultos por andamento posterior (sentença, recurso, acórdão, laudo etc.).
+ * O alerta é operacional: não afirma falta de laudo nos autos.
+ */
+export function analisarPericiasSemLaudo(diasAposPericia = 60) {
   const dias = Math.max(60, Math.min(180, Math.trunc(diasAposPericia) || 60));
   const candidatas = db
     .prepare(
@@ -270,22 +287,47 @@ export function listarPericiasSemLaudo(diasAposPericia = 60) {
         ORDER BY pa.data_hora_ms ASC`,
     )
     .all(dias) as { processo_chave: string; data_hora_ms: number; [key: string]: unknown }[];
-  if (!candidatas.length) return [];
-  const porProcesso = new Map<string, { texto: string; data: string }[]>();
-  const publicacoes = db.prepare(`SELECT processo_chave,texto,data_disponibilizacao FROM djen_publicacoes
-    WHERE cancelada=0 ORDER BY data_disponibilizacao DESC,id DESC`).all() as { processo_chave: string; texto: string; data_disponibilizacao: string }[];
+  if (!candidatas.length) return { alertas: [], superadas: [] as PericiaSuperada[] };
+  const porProcesso = new Map<string, (PublicacaoParaAndamento & { data: string })[]>();
+  const publicacoes = db.prepare(`SELECT processo_chave,texto,data_disponibilizacao,categorias_json,tipo_documento,classe FROM djen_publicacoes
+    WHERE cancelada=0 ORDER BY data_disponibilizacao DESC,id DESC`).all() as {
+    processo_chave: string; texto: string; data_disponibilizacao: string;
+    categorias_json: string; tipo_documento: string | null; classe: string | null;
+  }[];
   const processos = new Set(candidatas.map(p => p.processo_chave));
   for (const p of publicacoes) if (processos.has(p.processo_chave)) {
     const lista = porProcesso.get(p.processo_chave) || [];
-    lista.push({ texto: p.texto, data: p.data_disponibilizacao.slice(0,10) });
+    let categorias: string[] = [];
+    try { categorias = JSON.parse(p.categorias_json || "[]"); } catch { /* categoria legada inválida */ }
+    lista.push({ texto: p.texto, data: p.data_disponibilizacao.slice(0,10), categorias, tipo_documento: p.tipo_documento, classe: p.classe });
     porProcesso.set(p.processo_chave, lista);
   }
-  return candidatas.filter(p => {
+  const alertas: typeof candidatas = [];
+  const superadas: PericiaSuperada[] = [];
+  for (const p of candidatas) {
     const data = new Date(p.data_hora_ms).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-    const posteriores = (porProcesso.get(p.processo_chave) || []).filter(pub => pub.data >= data).map(pub => pub.texto);
+    const posteriores = (porProcesso.get(p.processo_chave) || []).filter(pub => pub.data >= data);
+    const textos = posteriores.map(pub => pub.texto);
+    const registro = (motivo: string, andamento: string | null = null, dataAndamento: string | null = null) =>
+      superadas.push({ pericia_id: Number(p.pericia_id), nome: String(p.nome || ""), processo: String(p.processo || ""), data: String(p.data || ""),
+        horario: p.horario ? String(p.horario) : null, motivo, andamento, data_andamento: dataAndamento });
     // Supressão do alerta obsoleto; não altera a perícia nem afirma que houve laudo.
-    return !instrucaoSuperada(posteriores) && !posteriores.some(laudoEfetivamenteJuntado) && !periciaSuperada(posteriores,data,String(p.origem || ""),Number(p.ativas_no_processo));
-  }).map(p => ({ ...p, historico_djen: coberturaHistorico(p.processo_chave) }));
+    if (periciaSuperada(textos, data, String(p.origem || ""), Number(p.ativas_no_processo))) { registro("Perícia cancelada ou redesignada por ato posterior."); continue; }
+    const andamento = primeiroAndamentoPosterior(posteriores);
+    if (andamento) { registro(`Andamento posterior identificado: ${andamento.rotulo}.`, andamento.rotulo, andamento.data); continue; }
+    if (instrucaoSuperada(textos)) { registro("Instrução encerrada ou sentença posterior à perícia."); continue; }
+    if (textos.some(laudoEfetivamenteJuntado)) { registro("Laudo identificado em publicação posterior.", "Laudo juntado"); continue; }
+    alertas.push({ ...p, publicacoes_posteriores: posteriores.length, ultima_publicacao_em: posteriores[0]?.data || null });
+  }
+  return { alertas: alertas.map(p => ({ ...p, historico_djen: coberturaHistorico(p.processo_chave) })), superadas };
+}
+
+export function listarPericiasSemLaudo(diasAposPericia = 60) {
+  return analisarPericiasSemLaudo(diasAposPericia).alertas;
+}
+
+export function listarPericiasSuperadas(diasAposPericia = 60) {
+  return analisarPericiasSemLaudo(diasAposPericia).superadas;
 }
 
 export function atualizarAcompanhamentoPericia(

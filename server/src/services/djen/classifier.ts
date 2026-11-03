@@ -1,4 +1,5 @@
 import { identificarOrdensProcessuais, ordemDoEscritorio } from "./proceduralOrders";
+import { classificarComplementar } from "./classificacaoComplementar";
 export const CATEGORIAS_DJEN = [
   "sentenca",
   "acordao",
@@ -15,6 +16,15 @@ export const CATEGORIAS_DJEN = [
   "decisao_interlocutoria",
   "despacho",
   "intimacao",
+  "recurso",
+  "transito_julgado",
+  "emenda_inicial",
+  "citacao_contestacao",
+  "audiencia",
+  "implantacao_beneficio",
+  "calculos",
+  "vista_laudo",
+  "arquivamento",
 ] as const;
 export type CategoriaDjen = (typeof CATEGORIAS_DJEN)[number];
 export const RESULTADOS_DJEN = [
@@ -53,7 +63,7 @@ export function normalizarTexto(value: string): string {
     .toLowerCase();
 }
 
-export const VERSAO_CLASSIFICADOR = "2.53.0";
+export const VERSAO_CLASSIFICADOR = "2.54.0";
 export class ErroAnaliseCodex extends Error {}
 export interface ContextoPublicacao {
   classe?: string;
@@ -159,6 +169,15 @@ CATEGORIAS (podem coexistir apenas se houver fatos efetivos distintos):
 - decisao_interlocutoria: decisão incidental como deferimento/indeferimento de tutela, prova ou nomeação de perito; detalhe a providência em situacao. Perícia apenas determinada continua FORA de pericia (agendada).
 - despacho: providência de expediente efetivamente determinada, quando não houver categoria mais específica.
 - intimacao: comunicação de ato para manifestação, quando não houver categoria mais específica. O campo tipoComunicacao=Intimação por si só NÃO justifica marcar esta categoria: quase todo DJEN é intimação.
+- recurso: recurso efetivamente interposto, recebido, admitido ou julgado (recurso inominado, apelação, embargos de declaração, agravo), ou intimação para contrarrazões. Aviso de cabimento ("cabe recurso") e hipótese ("havendo recurso") NÃO bastam.
+- transito_julgado: certidão ou declaração de trânsito em julgado já ocorrido. "Após o trânsito" é futuro e não vale.
+- emenda_inicial: determinação de emenda ou regularização da petição inicial (documentos, procuração, comprovante de residência) dirigida à parte autora. Informe o prazo no campo providência.
+- citacao_contestacao: citação do réu/INSS, contestação apresentada, réplica ou intimação para manifestar-se sobre a contestação.
+- audiencia: audiência efetivamente designada, redesignada, realizada ou cancelada (conciliação, instrução, julgamento). Perícia continua em "pericia".
+- implantacao_beneficio: ordem ao INSS/CEAB para implantar, restabelecer ou cumprir tutela, ou comprovação da implantação. Condenação genérica de implantar em sentença não cria esta categoria sozinha.
+- calculos: remessa à contadoria, apresentação, impugnação ou homologação de cálculos/planilha de liquidação.
+- vista_laudo: intimação das partes para ciência, manifestação ou impugnação de laudo já juntado. Não use para ordem ao perito de entregar o laudo.
+- arquivamento: arquivamento ou baixa definitiva dos autos efetivamente determinados. Arquivamento provisório/sobrestamento não.
 Não acumule despacho/intimacao genéricos com categorias específicas. Podem coexistir categorias específicas realmente comunicadas no mesmo ato. A NATUREZA e a FASE do andamento prevalecem sobre o nome formal do documento.
 RESULTADO DA SENTENÇA: JULGO PARCIALMENTE PROCEDENTES os pedidos + JULGO IMPROCEDENTE um pedido específico (ex. dano moral) é PARCIAL, não conflito. O resultado global parcialmente procedente prevalece sobre capítulos individuais. Sem julgamento de mérito, use nao_identificado e a situação específica.
 SITUACAO: título curto e descritivo do fato, por exemplo "RPV paga · execução extinta", "Acordo homologado · pagamento parcelado", "Perícia determinada · aguardando agendamento", "Sentença parcialmente procedente". Serve para detalhar inclusive fatos que fiquem em Outros.
@@ -438,6 +457,15 @@ export function validarAnaliseCodex(
           extincao_processo: /extint[ao]|extincao/,
           cumprimento_sentenca: /cumprimento (?:de|da) sentenca/,
           levantamento_valores: /levantamento|alvara|liberacao de valores/,
+          recurso: /recurso|apelacao|contrarrazo|embargos|agravo|provimento/,
+          transito_julgado: /transito em julgado|transitou|baixa definitiva/,
+          emenda_inicial: /emend|regulariz/,
+          citacao_contestacao: /cit(?:e|em|acao|ad[oa])|contest|replica/,
+          audiencia: /audiencia/,
+          implantacao_beneficio: /implant|restabelec|tutela|cumprimento|beneficio/,
+          calculos: /calcul|contadoria|planilha/,
+          vista_laudo: /laudo/,
+          arquivamento: /arquiv|baixa definitiva/,
         };
         if (
           [
@@ -476,6 +504,16 @@ export function validarAnaliseCodex(
   for (const categoria of refinada.categorias)
     if (!categorias.includes(categoria)) categorias.push(categoria);
   a.evidencias = [...a.evidencias, ...refinada.evidencias];
+  // Categorias complementares comprovadas literalmente reduzem o volume em "Outros".
+  const complementar = classificarComplementar(texto, contexto);
+  const complementares = new Set<CategoriaDjen>();
+  for (const categoria of complementar.categorias) {
+    if (categorias.includes(categoria)) continue;
+    categorias.push(categoria);
+    complementares.add(categoria);
+    const prova = complementar.evidencias.find((e) => e.categoria === categoria);
+    if (prova) a.evidencias.push(prova);
+  }
   if (categorias.includes("pericia") && !a.agendamento.horario && remarcacaoComHorarioMantido(texto))
     alertas.push("Remarcação com horário anterior mantido; confira o horário no evento original antes de agendar.");
   const evidenceText = canon(a.evidencias.map((e) => e.trecho).join(" "));
@@ -533,7 +571,7 @@ export function validarAnaliseCodex(
     categorias = categorias.filter(
       (c) => !["despacho", "intimacao"].includes(c),
     );
-  if (categorias.length !== new Set(a.categorias).size)
+  if (categorias.filter((c) => !complementares.has(c)).length !== new Set(a.categorias).size)
     alertas.push(
       "Uma classificação sugerida foi removida por falta de evidência ou de dados obrigatórios. Confira o inteiro teor.",
     );

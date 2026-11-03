@@ -63,6 +63,7 @@ import {
   statusControlePericia,
   adicionarPublicacaoAoControle,
   listarPericiasSemLaudo,
+  listarPericiasSuperadas,
   atualizarAcompanhamentoPericia,
 } from "../services/djen/periciaIntegration";
 import { listarAguardandoMovimentacao, atualizarAguardandoMovimentacao } from "../services/djen/followUp";
@@ -289,6 +290,14 @@ djenRouter.get(
     const dias =
       typeof req.query.dias === "string" ? Number(req.query.dias) : 60;
     res.json(listarPericiasSemLaudo(dias));
+  }),
+);
+djenRouter.get(
+  "/pericias/sem-laudo/superadas",
+  wrap((req, res) => {
+    const dias =
+      typeof req.query.dias === "string" ? Number(req.query.dias) : 60;
+    res.json(listarPericiasSuperadas(dias));
   }),
 );
 djenRouter.post("/publicacoes/:id/atualizar-historico", wrap((req,res) => {

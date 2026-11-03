@@ -187,9 +187,13 @@ describe("evidência e significado da classificação", () => {
       validarAnaliseCodex(analise(texto, [categoria]), texto).categorias,
     ).toEqual([]);
   });
-  it("mantém Outros quando decisão interlocutória não contém julgamento", () => {
+  it("decisão interlocutória sem julgamento não vira sentença; a citação determinada é reconhecida", () => {
     const texto =
       "Vistos. Indefiro a tutela e determino a citação da parte ré.";
+    expect(validarAnaliseCodex(analise(texto), texto).categorias).toEqual(["citacao_contestacao"]);
+  });
+  it("mantém Outros quando não há ato classificável", () => {
+    const texto = "Vistos. Indefiro a tutela de urgência por ora.";
     expect(validarAnaliseCodex(analise(texto), texto).categorias).toEqual([]);
   });
   it("não classifica resultado do recurso como procedência do pedido", () => {

@@ -6,7 +6,7 @@ vi.mock('../src/db', async () => {
   db.exec(`CREATE TABLE djen_historico_consultas(processo_chave TEXT PRIMARY KEY,status TEXT DEFAULT 'pendente',inicio TEXT,fim TEXT,consultado_em TEXT,erro TEXT,revisao INTEGER DEFAULT 0,revisao_conferida INTEGER DEFAULT -1,proxima_tentativa_em TEXT);
     CREATE TABLE djen_config(id INTEGER,aguardo_dias INTEGER);
     INSERT INTO djen_config VALUES(1,30);
-    CREATE TABLE djen_publicacoes(id INTEGER PRIMARY KEY,processo_chave TEXT,data_disponibilizacao TEXT,texto TEXT,situacao TEXT DEFAULT '',ia_json TEXT,tribunal TEXT DEFAULT 'TRF3',orgao TEXT DEFAULT 'Jundiai',cancelada INTEGER DEFAULT 0,concluida INTEGER DEFAULT 0,captured_at TEXT DEFAULT CURRENT_TIMESTAMP);
+    CREATE TABLE djen_publicacoes(id INTEGER PRIMARY KEY,processo_chave TEXT,data_disponibilizacao TEXT,texto TEXT,situacao TEXT DEFAULT '',ia_json TEXT,tribunal TEXT DEFAULT 'TRF3',orgao TEXT DEFAULT 'Jundiai',cancelada INTEGER DEFAULT 0,concluida INTEGER DEFAULT 0,captured_at TEXT DEFAULT CURRENT_TIMESTAMP,categorias_json TEXT DEFAULT '[]',tipo_documento TEXT,classe TEXT);
     CREATE TABLE djen_processos(chave TEXT,numero TEXT,cliente_id INTEGER);
     CREATE TABLE contacts(id INTEGER,nome TEXT,telefone TEXT);
     CREATE TABLE djen_acompanhamentos_obrigacoes(publicacao_id INTEGER,tipo TEXT,status TEXT,ultima_cobranca_em TEXT,PRIMARY KEY(publicacao_id,tipo));

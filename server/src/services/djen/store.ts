@@ -1,3 +1,5 @@
+import { classificarComplementar } from "./classificacaoComplementar";
+import { situacaoDaOrdem, ordemAtiva, type SituacaoDaOrdem, type PublicacaoPosterior } from "./orderStatus";
 import { coberturaHistorico, invalidarHistorico } from "./historyCoverage";
 import { atividadesProcessos, type AtividadeProcesso } from "./activity";
 import { identificarOrdensProcessuais, ordemDoEscritorio } from "./proceduralOrders";
@@ -232,10 +234,12 @@ export function importarPublicacoes(
         "INSERT OR IGNORE INTO djen_processos(chave,numero) VALUES (?,?)",
       ).run(chave, p.processo);
       vincularProcessoAutomaticamente(chave, p.destinatarios);
-      // Até a análise da IA, permanece em Outros; não há inferência por palavras-chave.
+      // Até a análise da IA só entram categorias complementares comprovadas por trecho
+      // literal (recurso, emenda, audiência etc.). Tudo o mais permanece em Outros.
+      const previa = classificarComplementar(p.texto, { classe: p.classe });
       const classificacao = {
-        categorias: [],
-        evidencias: [],
+        categorias: previa.categorias as string[],
+        evidencias: previa.evidencias as unknown[],
         resultado: "nao_identificado",
       };
       const atual = db
@@ -357,6 +361,42 @@ export function publicacaoPorId(id: number): PublicacaoRow | undefined {
     | PublicacaoRow
     | undefined;
 }
+export interface AcaoProcesso {
+  tipo: string;
+  descricao: string | null;
+  prazo_texto: string | null;
+  publicacao_id?: number;
+  data_disponibilizacao?: string;
+  situacao?: string;
+  situacao_motivo?: string;
+  encerradas: { publicacao_id: number; descricao: string | null; situacao: string; motivo: string; data: string | null }[];
+}
+/** Prazos salvos pelo usuário por publicação, para saber se ele já os concluiu. */
+function prazosPorPublicacao(ids: number[]) {
+  const mapa = new Map<number, { total: number; abertos: number; concluidos: number }>();
+  if (!ids.length) return mapa;
+  const linhas = db.prepare(
+    `SELECT publicacao_id,COUNT(*) AS total,SUM(status='aberto') AS abertos,SUM(status='concluido') AS concluidos
+       FROM djen_prazos WHERE publicacao_id IN (${ids.map(() => "?").join(",")}) GROUP BY publicacao_id`,
+  ).all(...ids) as { publicacao_id: number; total: number; abertos: number | null; concluidos: number | null }[];
+  for (const l of linhas) mapa.set(l.publicacao_id, { total: l.total, abertos: l.abertos || 0, concluidos: l.concluidos || 0 });
+  return mapa;
+}
+/** Publicações do mesmo processo disponibilizadas depois desta. */
+function publicacoesPosteriores(p: { id: number; processo_chave: string; data_disponibilizacao: string }): PublicacaoPosterior[] {
+  const rows = db.prepare(
+    `SELECT texto,data_disponibilizacao,categorias_json,tipo_documento,classe FROM djen_publicacoes
+      WHERE processo_chave=? AND cancelada=0
+        AND (data_disponibilizacao>? OR (data_disponibilizacao=? AND id>?))`,
+  ).all(p.processo_chave, p.data_disponibilizacao, p.data_disponibilizacao, p.id) as {
+    texto: string; data_disponibilizacao: string; categorias_json: string; tipo_documento: string | null; classe: string | null }[];
+  return rows.map((r) => {
+    let categorias: string[] = [];
+    try { categorias = JSON.parse(r.categorias_json || "[]"); } catch { /* legado inválido */ }
+    return { texto: r.texto, data: r.data_disponibilizacao.slice(0, 10), categorias, tipo_documento: r.tipo_documento, classe: r.classe };
+  });
+}
+
 export function apresentarPublicacao(p: PublicacaoRow, integral = false) {
   const advogados = db
     .prepare(
@@ -374,14 +414,23 @@ export function apresentarPublicacao(p: PublicacaoRow, integral = false) {
   } = p;
   const analise = ia_json ? JSON.parse(String(ia_json)) : null;
   const providencia = analise?.providencia;
-  const ordens = identificarOrdensProcessuais(texto);
-  const principal = ordens.find((o) => ordemDoEscritorio(o) && o.tipo === "prazo_explicito") || ordens.find((o) => ordemDoEscritorio(o) && o.tipo === "cumprimento");
-  const prazoDoCodex = providencia?.tipo === "prazo_explicito" &&
+  const posterioresDaOrdem = publicacoesPosteriores(p);
+  const prazosDaPublicacao = prazosPorPublicacao([p.id]).get(p.id);
+  const ordens = identificarOrdensProcessuais(texto).map((o) => {
+    if (!ordemDoEscritorio(o) || o.tipo === "ciencia") return { ...o, situacao: null as SituacaoDaOrdem | null };
+    return { ...o, situacao: situacaoDaOrdem(o, posterioresDaOrdem, { prazosDoUsuario: prazosDaPublicacao }) };
+  });
+  const vigentes = ordens.filter((o) => ordemDoEscritorio(o) && (!o.situacao || ordemAtiva(o.situacao)));
+  const principal = vigentes.find((o) => o.tipo === "prazo_explicito") || vigentes.find((o) => o.tipo === "cumprimento");
+  const ordensEncerradas = ordens.filter((o) => o.situacao && !ordemAtiva(o.situacao));
+  // Ordem já encerrada por ato posterior não é reativada pelo resumo da IA.
+  const ordemEncerrada = !principal && ordensEncerradas.length > 0;
+  const prazoDoCodex = !ordemEncerrada && providencia?.tipo === "prazo_explicito" &&
     typeof providencia.prazo_texto === "string" &&
     ordemComPrazoDaParte(providencia.prazo_texto) &&
     ["escritorio", "cliente"].includes(providencia.responsavel);
   const prazoExpresso = Boolean(principal?.tipo === "prazo_explicito" || prazoDoCodex);
-  const cumprimento = principal?.tipo === "cumprimento" || providencia?.tipo === "cumprimento" &&
+  const cumprimento = principal?.tipo === "cumprimento" || !ordemEncerrada && providencia?.tipo === "cumprimento" &&
     ["escritorio", "cliente"].includes(providencia.responsavel);
   const destinatarios = JSON.parse(String(destinatarios_json || "[]")) as {
     nome?: string;
@@ -398,6 +447,9 @@ export function apresentarPublicacao(p: PublicacaoRow, integral = false) {
       tipo: prazoExpresso ? "prazo_explicito" : cumprimento ? "cumprimento" : "ciencia",
       descricao: principal?.descricao || (prazoDoCodex || cumprimento ? providencia.descricao : null),
       prazo_texto: principal?.trecho || (prazoDoCodex ? providencia.prazo_texto : null),
+      situacao: principal?.situacao?.situacao || (principal ? "vigente" : undefined),
+      situacao_motivo: principal?.situacao?.motivo,
+      encerradas: ordensEncerradas.map((o) => ({ descricao: o.descricao, situacao: o.situacao!.situacao, motivo: o.situacao!.motivo, evidencia: o.situacao!.evidencia, data: o.situacao!.data })),
     },
     parte_nome: parteNome,
     cliente_exibicao: dados.cliente_nome || parteNome,
@@ -426,7 +478,8 @@ function apresentarProcessoAgrupado(p: PublicacaoRow, arquivo: string, atividade
         : "";
   const publicacoes = db
     .prepare(
-      `SELECT id,texto,categorias_json,lida,revisada,concluida,ia_status,ia_json,resultado
+      `SELECT id,texto,categorias_json,lida,revisada,concluida,ia_status,ia_json,resultado,
+              data_disponibilizacao,tipo_documento,classe
          FROM djen_publicacoes
         WHERE processo_chave=? AND cancelada=0${escopo}
         ORDER BY data_disponibilizacao DESC,id DESC`,
@@ -441,11 +494,19 @@ function apresentarProcessoAgrupado(p: PublicacaoRow, arquivo: string, atividade
     ia_status: string;
     ia_json: string | null;
     resultado: string;
+    data_disponibilizacao: string;
+    tipo_documento: string | null;
+    classe: string | null;
   }[];
   const categorias = new Set<CategoriaDjen>();
   let periciaPublicacaoId: number | null = null;
-  let acao: { tipo: string; descricao: string | null; prazo_texto: string | null } = { tipo: "ciencia", descricao: null, prazo_texto: null };
+  let acao: AcaoProcesso = { tipo: "ciencia", descricao: null, prazo_texto: null, encerradas: [] };
   let resultadoSentenca = "nao_identificado";
+  const prazosSalvos = prazosPorPublicacao(publicacoes.map((item) => item.id));
+  // Percorre do mais novo ao mais antigo; "posteriores" acumula o que veio depois.
+  const posteriores: PublicacaoPosterior[] = [];
+  let ativaPrazo: AcaoProcesso | null = null;
+  let ativaCumprimento: AcaoProcesso | null = null;
   for (const item of publicacoes) {
     const categoriasItem = JSON.parse(item.categorias_json || "[]") as CategoriaDjen[];
     for (const categoria of categoriasItem)
@@ -455,21 +516,34 @@ function apresentarProcessoAgrupado(p: PublicacaoRow, arquivo: string, atividade
     if (categoriasItem.includes("sentenca") && resultadoSentenca === "nao_identificado")
       resultadoSentenca = item.resultado;
     const ordens = identificarOrdensProcessuais(item.texto).filter(ordemDoEscritorio);
+    const candidatas: { tipo: string; acao: string; descricao: string | null; prazo_texto: string | null; trecho: string }[] = [];
     const principal = ordens.find((o) => o.tipo === "prazo_explicito") || ordens.find((o) => o.tipo === "cumprimento");
-    if (principal && acao.tipo !== "prazo_explicito") acao = { tipo:principal.tipo, descricao:principal.descricao, prazo_texto:principal.tipo === "prazo_explicito" ? principal.trecho : null };
-    try {
-      const providencia = item.ia_json ? JSON.parse(item.ia_json).providencia : null;
-      if (providencia && ["escritorio", "cliente"].includes(providencia.responsavel)) {
-        const prazoValido = providencia.tipo === "prazo_explicito" &&
-          typeof providencia.prazo_texto === "string" &&
-          ordemComPrazoDaParte(providencia.prazo_texto);
-        if (prazoValido && acao.tipo !== "prazo_explicito")
-          acao = { tipo: "prazo_explicito", descricao: providencia.descricao, prazo_texto: providencia.prazo_texto };
-        else if (providencia.tipo === "cumprimento" && acao.tipo === "ciencia")
-          acao = { tipo: "cumprimento", descricao: providencia.descricao, prazo_texto: null };
-      }
-    } catch { /* análise antiga incompleta */ }
+    for (const o of ordens.filter((o) => o.tipo !== "ciencia")) candidatas.push({ tipo: o.tipo, acao: o.acao, descricao: o.descricao, prazo_texto: o.tipo === "prazo_explicito" ? o.trecho : null, trecho: o.trecho });
+    if (!principal) {
+      try {
+        const providencia = item.ia_json ? JSON.parse(item.ia_json).providencia : null;
+        if (providencia && ["escritorio", "cliente"].includes(providencia.responsavel)) {
+          const prazoValido = providencia.tipo === "prazo_explicito" &&
+            typeof providencia.prazo_texto === "string" &&
+            ordemComPrazoDaParte(providencia.prazo_texto);
+          if (prazoValido) candidatas.push({ tipo: "prazo_explicito", acao: "manifestacao", descricao: providencia.descricao, prazo_texto: providencia.prazo_texto, trecho: providencia.prazo_texto });
+          else if (providencia.tipo === "cumprimento") candidatas.push({ tipo: "cumprimento", acao: "manifestacao", descricao: providencia.descricao, prazo_texto: null, trecho: providencia.descricao || "" });
+        }
+      } catch { /* análise antiga incompleta */ }
+    }
+    for (const c of candidatas) {
+      const situacao = situacaoDaOrdem({ acao: c.acao, trecho: c.trecho }, posteriores, { prazosDoUsuario: prazosSalvos.get(item.id) });
+      const registro: AcaoProcesso = { tipo: c.tipo, descricao: c.descricao, prazo_texto: c.prazo_texto, publicacao_id: item.id,
+        data_disponibilizacao: item.data_disponibilizacao.slice(0, 10), situacao: situacao.situacao, situacao_motivo: situacao.motivo, encerradas: [] };
+      if (!ordemAtiva(situacao)) { acao.encerradas.push({ publicacao_id: item.id, descricao: c.descricao, situacao: situacao.situacao, motivo: situacao.motivo, data: situacao.data }); continue; }
+      if (c.tipo === "prazo_explicito") ativaPrazo = ativaPrazo || registro;
+      else ativaCumprimento = ativaCumprimento || registro;
+    }
+    posteriores.push({ texto: item.texto, data: item.data_disponibilizacao.slice(0, 10), categorias: categoriasItem, tipo_documento: item.tipo_documento, classe: item.classe });
   }
+  const encerradas = acao.encerradas;
+  const vigente = ativaPrazo || ativaCumprimento;
+  acao = vigente ? { ...vigente, encerradas } : { ...acao, encerradas };
   const ids = publicacoes.map((item) => item.id);
   const prazos = ids.length
     ? (db

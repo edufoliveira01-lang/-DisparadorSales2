@@ -5,6 +5,7 @@ import { prazoDoAcompanhamento, type PrazoAcompanhamento } from "./followUpDeadl
 import { registrarHistoricoDjen } from "./history";
 import { db } from "../../db";
 import { DjenInputError } from "./store";
+import { primeiroAndamentoPosterior, type PublicacaoParaAndamento } from "./andamentos";
 import { cumprimentoIdentificado, identificarObrigacoesExternas, TIPOS_OBRIGACAO, type TipoObrigacao } from "./obligations";
 
 const hoje = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
@@ -24,7 +25,7 @@ function* calcularObrigacoesExternas(): Generator<void, ObrigacaoExternaAcompanh
   const config = db.prepare("SELECT aguardo_dias FROM djen_config WHERE id=1").get() as { aguardo_dias: number };
   const rows = db.prepare(
     `SELECT p.id,p.captured_at,p.tribunal,p.orgao,p.processo_chave,p.data_disponibilizacao,p.texto,p.situacao,p.ia_json,
-            pr.numero AS processo,c.nome AS cliente_nome
+            pr.numero AS processo,c.nome AS cliente_nome,p.categorias_json,p.tipo_documento,p.classe
        FROM djen_publicacoes p JOIN djen_processos pr ON pr.chave=p.processo_chave
        LEFT JOIN contacts c ON c.id=pr.cliente_id
       WHERE p.cancelada=0
@@ -32,6 +33,7 @@ function* calcularObrigacoesExternas(): Generator<void, ObrigacaoExternaAcompanh
   ).all() as {
     id: number; captured_at: string; tribunal: string; orgao: string; processo_chave: string; data_disponibilizacao: string; texto: string;
     situacao: string; ia_json: string | null; processo: string; cliente_nome: string | null;
+    categorias_json: string; tipo_documento: string | null; classe: string | null;
   }[];
   // A cobertura acompanha o mesmo instante dos textos. Uma atualização concluída
   // durante as pausas do gerador não pode validar uma lista de textos mais antiga.
@@ -53,10 +55,12 @@ function* calcularObrigacoesExternas(): Generator<void, ObrigacaoExternaAcompanh
     if (d.cumprido_em > (cumpridos.get(chave) || '')) cumpridos.set(chave,d.cumprido_em);
   }
   const posteriores = new Map<string, string[]>();
+  const posterioresDetalhados = new Map<string, PublicacaoParaAndamento[]>();
   const acompanhados = new Set<string>();
   const saida: ObrigacaoExternaAcompanhamento[] = [];
   for (const row of rows) {
     const textosPosteriores = posteriores.get(row.processo_chave) || [];
+    const detalhesPosteriores = posterioresDetalhados.get(row.processo_chave) || [];
     for (const ordem of identificarObrigacoesExternas(row.texto)) {
       const chave = `${row.processo_chave}:${ordem.tipo}:${ordem.trecho.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim()}`;
       if (acompanhados.has(chave)) continue;
@@ -70,6 +74,12 @@ function* calcularObrigacoesExternas(): Generator<void, ObrigacaoExternaAcompanh
       if (!prazo.exibir) continue;
       // Sentença supera a instrução anterior, mas não comprova implantação de benefício.
       if (ordem.tipo !== "inss_implantacao" && instrucaoSuperada(textosPosteriores)) continue;
+      // Detecção mais robusta: sentença com dispositivo longo, acórdão, trânsito ou acordo
+      // posteriores encerram obrigações da fase de instrução. Implantação e cálculos seguem à parte.
+      if (["perito_laudo", "perito_esclarecimentos", "parte_contraria"].includes(ordem.tipo)) {
+        const avanco = primeiroAndamentoPosterior(detalhesPosteriores);
+        if (avanco && ["sentenca", "acordao", "transito_julgado", "acordo"].includes(avanco.tipo) && !/contrarrazo|recurso|apela/.test(ordem.trecho.toLowerCase())) continue;
+      }
       if (obrigacaoRevogada(ordem.tipo, ordem.trecho, textosPosteriores)) continue;
       if (textosPosteriores.some((texto) => cumprimentoIdentificado(ordem.tipo, texto, ordem.trecho))) continue;
       const estado = estados.get(`${row.id}:${ordem.tipo}`);
@@ -92,6 +102,10 @@ function* calcularObrigacoesExternas(): Generator<void, ObrigacaoExternaAcompanh
     }
     textosPosteriores.push(row.texto);
     posteriores.set(row.processo_chave, textosPosteriores);
+    let categoriasRow: string[] = [];
+    try { categoriasRow = JSON.parse(row.categorias_json || "[]"); } catch { /* legado inválido */ }
+    detalhesPosteriores.push({ texto: row.texto, data: row.data_disponibilizacao.slice(0, 10), categorias: categoriasRow, tipo_documento: row.tipo_documento, classe: row.classe });
+    posterioresDetalhados.set(row.processo_chave, detalhesPosteriores);
     yield;
   }
   return saida.sort((a, b) => b.dias_decorridos - a.dias_decorridos);

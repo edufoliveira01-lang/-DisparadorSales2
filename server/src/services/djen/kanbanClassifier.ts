@@ -12,6 +12,7 @@ export type SinalEtapa = { codigo: EtapaAutomatica; evidencia: string };
 export const CATEGORIAS_LISTA_PERSONALIZADA = [
   "proposta_acordo", "homologacao_acordo", "precatorio", "extincao_execucao",
   "extincao_processo", "levantamento_valores", "decisao_interlocutoria", "despacho", "intimacao",
+  "audiencia", "citacao_contestacao", "vista_laudo", "transito_julgado", "arquivamento",
 ] as const;
 const canon = (s: string) => normalizarTexto(s).replace(/\s+/g, " ").trim();
 const riscoFuturo = /\b(?:apos|quando|caso|se houver|eventual|hipotese|ainda nao|nao houve|nao foi|nao ha|nao consta|devera|deverao|sera|serao|a ser|para ser|aguarde-se)\b/;
@@ -128,7 +129,8 @@ export function classificarPublicacaoComHistorico(row: {
     sentenca: "sentenca", acordao: "acordao", laudo_juntado: "laudo_manifestacoes",
     pericia: "pericia_agendada",
     cumprimento_sentenca: "cumprimento_sentenca", extincao_processo: "concluido",
-    extincao_execucao: "concluido",
+    extincao_execucao: "concluido", recurso: "recurso", emenda_inicial: "emenda_inicial",
+    calculos: "calculos", implantacao_beneficio: "aguarda_implantacao",
   };
   // A revisão humana é a fonte da categoria, mesmo quando a IA não havia gerado
   // evidência para ela. Não reutiliza a prova de uma categoria removida na revisão.
@@ -145,7 +147,8 @@ export function classificarPublicacaoComHistorico(row: {
     const categoriaDaEtapa: Partial<Record<EtapaAutomatica, string>> = {
       sentenca: "sentenca", acordao: "acordao", pericia_agendada: "pericia",
       laudo_manifestacoes: "laudo_juntado", cumprimento_sentenca: "cumprimento_sentenca",
-      aguarda_expedicao_rpv: "rpv", rpv_expedida: "rpv",
+      aguarda_expedicao_rpv: "rpv", rpv_expedida: "rpv", recurso: "recurso", emenda_inicial: "emenda_inicial",
+      calculos: "calculos", aguarda_implantacao: "implantacao_beneficio",
     };
     if (literal && (literal.codigo === "concluido" || (categoriaDaEtapa[literal.codigo] && !categorias.includes(categoriaDaEtapa[literal.codigo])))) return null;
     return literal;

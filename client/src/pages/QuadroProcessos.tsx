@@ -38,6 +38,8 @@ const regras = [
   ["precatorio", "Precatório"], ["extincao_execucao", "Execução extinta"],
   ["extincao_processo", "Processo extinto"], ["levantamento_valores", "Levantamento de valores"],
   ["decisao_interlocutoria", "Decisão interlocutória"], ["despacho", "Despacho"], ["intimacao", "Intimação"],
+  ["audiencia", "Audiência"], ["citacao_contestacao", "Citação / contestação"], ["vista_laudo", "Vista do laudo"],
+  ["transito_julgado", "Trânsito em julgado"], ["arquivamento", "Arquivamento"],
 ] as const;
 
 export function QuadroProcessos() {

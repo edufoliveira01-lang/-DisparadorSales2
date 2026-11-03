@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { refinarCategoriasDaAnalise, type AnaliseCodex } from "../services/djen/classifier";
+import { classificarComplementar } from "../services/djen/classificacaoComplementar";
 
 /** Dados do acompanhamento processual não usam as tabelas de perícias, envios ou prazos. */
 export function runDjenMigrations(db: Database.Database): void {
@@ -331,6 +332,34 @@ export function runDjenMigrations(db: Database.Database): void {
       }
     }
   })();
+  // 2.54.0: classificação complementar local (sem custo de IA) para publicações ainda em
+  // "Outros". Só adiciona categorias comprovadas por trecho literal; revisões humanas e
+  // publicações que já têm categoria permanecem intactas. Executa uma única vez.
+  const complementarFeito = db.prepare("SELECT valor FROM djen_kanban_meta WHERE chave='classificacao_complementar'").get() as { valor: string } | undefined;
+  if (complementarFeito?.valor !== "2.54.0") {
+    const pendentes = db.prepare(
+      "SELECT id,texto,classe,ia_json FROM djen_publicacoes WHERE revisada=0 AND cancelada=0 AND categorias_json='[]'",
+    ).all() as { id: number; texto: string; classe: string | null; ia_json: string | null }[];
+    const gravar = db.prepare("UPDATE djen_publicacoes SET categorias_json=?,evidencias_json=?,ia_json=COALESCE(?,ia_json),updated_at=CURRENT_TIMESTAMP WHERE id=? AND revisada=0 AND categorias_json='[]'");
+    db.transaction(() => {
+      for (const row of pendentes) {
+        try {
+          const c = classificarComplementar(row.texto, { classe: row.classe || "" });
+          if (!c.categorias.length) continue;
+          let iaAtualizada: string | null = null;
+          if (row.ia_json) {
+            const analise = JSON.parse(row.ia_json) as AnaliseCodex;
+            if (Array.isArray(analise.categorias) && Array.isArray(analise.evidencias))
+              iaAtualizada = JSON.stringify({ ...analise, categorias: c.categorias, evidencias: c.evidencias });
+          }
+          gravar.run(JSON.stringify(c.categorias), JSON.stringify(c.evidencias), iaAtualizada, row.id);
+        } catch {
+          // Um registro legado inválido nunca bloqueia a abertura do banco.
+        }
+      }
+      db.prepare("INSERT INTO djen_kanban_meta(chave,valor) VALUES ('classificacao_complementar','2.54.0') ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor").run();
+    })();
+  }
 }
 
 
