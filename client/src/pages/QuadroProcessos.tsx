@@ -1,7 +1,7 @@
 import { ActivityBadge, RegisterAction, type AtividadeProcesso } from "@/components/djen/ActivityBadge";
 import { Acompanhamento } from "./Acompanhamento";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, ArrowRight, CalendarClock, Clock3, History, Pencil, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, CalendarClock, Clock3, History, Pencil, Plus, RefreshCw, Search, Sparkles, Trash2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
 import { useToast } from "@/components/ui/Toast";
@@ -61,6 +61,9 @@ export function QuadroProcessos() {
   const [movendo, setMovendo] = useState<Cartao | null>(null);
   const [destino, setDestino] = useState("");
   const [arrastando, setArrastando] = useState<string | null>(null);
+  const [foco, setFoco] = useState<number | null>(null);
+  const [selecionados, setSelecionados] = useState<string[]>([]);
+  const [destinoLote, setDestinoLote] = useState("");
 
   const carregar = useCallback(async () => {
     try { setQuadro(await api.get<Quadro>("/djen/kanban")); setErro(""); }
@@ -89,29 +92,66 @@ export function QuadroProcessos() {
     void acao(() => api.put("/djen/kanban/listas/ordem", { ids }));
   }
 
+  const codigoDa = (c: Cartao) => quadro?.listas.find((l) => l.id === c.lista_id)?.codigo;
   const termo = normal(busca.trim());
   const filtrados = quadro?.cartoes.filter((c) =>
     (!termo || normal(`${c.cliente_nome || ""} ${c.numero} ${c.resumo}`).includes(termo)) &&
     (filtro === "todos" || (filtro === "prazos" && c.prazos_abertos > 0) || (filtro === "nao_lidos" && c.publicacoes_nao_lidas > 0)
-      || (filtro === "manual" && c.modo === "manual") || (filtro === "triagem" && quadro?.listas.find((l) => l.id === c.lista_id)?.codigo === "triagem")),
+      || (filtro === "manual" && c.modo === "manual") || (filtro === "automatico" && c.modo === "automatico")
+      || (filtro === "com_atividade" && Boolean(c.atividade))
+      || (filtro === "triagem" && codigoDa(c) === "triagem") || (filtro === "sem_etapa" && codigoDa(c) === "aguarda_juizo")
+      || (filtro === "escritorio" && codigoDa(c) === "prov_escritorio") || (filtro === "terceiros" && codigoDa(c) === "aguarda_terceiros")),
   ) || [];
+  const listasVisiveis = quadro?.listas.filter((l) => foco === null || l.id === foco) || [];
+  const alternar = (chave: string) => setSelecionados((atual) => atual.includes(chave) ? atual.filter((c) => c !== chave) : [...atual, chave]);
+  const moverLote = () => {
+    if (!selecionados.length || !destinoLote) return;
+    void acao(async () => {
+      const r = await api.post<{ movidos: number }>("/djen/kanban/mover-lote", { processos: selecionados, lista_id: Number(destinoLote) });
+      show(`${r.movidos} processo(s) movido(s) como etapa manual.`, "success");
+      setSelecionados([]); setDestinoLote("");
+    });
+  };
   return <div className="space-y-5">
     <PageHeader title="Quadro de processos" description="Etapas pelo histórico do DJEN. Arraste um cartão ou use Mover para corrigir sua etapa; a escolha fica mantida até você voltar ao automático."
-      actions={<><Button variant="outline" onClick={() => void carregar()}><RefreshCw className="h-4 w-4" /> Atualizar</Button></>} />
+      actions={<>
+        {canManage && <Button variant="outline" disabled={busy} title="Reavalia o histórico de todos os cartões automáticos. Etapas escolhidas manualmente não são alteradas." onClick={() => void acao(async () => {
+          const r = await api.post<{ movidos: number; triagem_antes: number; triagem_depois: number }>("/djen/kanban/reclassificar", {});
+          show(`Reclassificação concluída: ${r.movidos} cartão(ões) movido(s). Sem etapa identificada: ${r.triagem_antes} → ${r.triagem_depois}.`, "success");
+        })}><Sparkles className="h-4 w-4" /> Reclassificar</Button>}
+        <Button variant="outline" onClick={() => void carregar()}><RefreshCw className="h-4 w-4" /> Atualizar</Button></>} />
     <div className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
       <div className="relative min-w-[220px] flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
         <Input aria-label="Buscar processos no quadro" placeholder="Buscar cliente, processo ou andamento…" className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
       </div>
       <Select aria-label="Filtrar cartões" className="w-auto min-w-[180px]" value={filtro} onChange={(e) => setFiltro(e.target.value)}>
-        <option value="todos">Todos os processos</option><option value="triagem">Sem etapa identificada</option><option value="manual">Etapa manual</option><option value="prazos">Com prazo em aberto</option><option value="nao_lidos">Com publicação não lida</option>
+        <option value="todos">Todos os processos</option><option value="triagem">Sem etapa identificada</option><option value="sem_etapa">Sem etapa específica (aguardando juízo)</option><option value="escritorio">Providência do escritório</option><option value="terceiros">Aguardando outra parte / terceiros</option><option value="automatico">Etapa automática</option><option value="manual">Etapa manual</option><option value="prazos">Com prazo em aberto</option><option value="nao_lidos">Com publicação não lida</option><option value="com_atividade">Com dias sem providência</option>
       </Select>
       <span className="text-xs text-zinc-500">{filtrados.length} de {quadro?.cartoes.length ?? 0} processos</span>
     </div>
+    {quadro && <div className="flex flex-wrap items-center gap-2" aria-label="Resumo por lista">
+      <button type="button" onClick={() => setFoco(null)} aria-pressed={foco === null} className={`rounded-full border px-3 py-1 text-xs font-medium transition ${foco === null ? "border-accent-600 bg-accent-600 text-white" : "border-zinc-200 bg-white text-zinc-600 hover:border-accent-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"}`}>Todas as listas</button>
+      {quadro.listas.map((l) => {
+        const n = filtrados.filter((c) => c.lista_id === l.id).length;
+        return <button key={l.id} type="button" onClick={() => setFoco(foco === l.id ? null : l.id)} aria-pressed={foco === l.id} disabled={!n && foco !== l.id}
+          className={`rounded-full border px-3 py-1 text-xs transition disabled:opacity-40 ${foco === l.id ? "border-accent-600 bg-accent-600 text-white" : "border-zinc-200 bg-white text-zinc-600 hover:border-accent-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"}`}>{l.nome} <strong className="ml-1">{n}</strong></button>;
+      })}
+    </div>}
+    {canManage && selecionados.length > 0 && <div role="region" aria-label="Ações em lote" className="sticky top-20 z-20 flex flex-wrap items-center gap-2 rounded-xl border border-accent-300 bg-accent-50 p-3 shadow-sm dark:border-accent-800 dark:bg-accent-950">
+      <strong className="text-xs">{selecionados.length} processo(s) selecionado(s)</strong>
+      <Select aria-label="Lista de destino do lote" className="w-auto min-w-[220px]" value={destinoLote} onChange={(e) => setDestinoLote(e.target.value)}>
+        <option value="">Mover para…</option>{quadro?.listas.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
+      </Select>
+      <Button size="sm" disabled={busy || !destinoLote} onClick={moverLote}>Mover selecionados</Button>
+      <Button size="sm" variant="ghost" onClick={() => setSelecionados([])}>Limpar seleção</Button>
+      <span className="text-[11px] text-zinc-500">O lote vira etapa manual e permanece até você voltar ao automático.</span>
+    </div>}
     {erro && <p role="alert" className="rounded-lg bg-red-50 p-3 text-xs text-red-700">{erro}</p>}
     {!quadro && !erro && <p className="text-sm text-zinc-500">Carregando quadro…</p>}
     {quadro && <div className="-mx-4 overflow-x-auto px-4 pb-5 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
       <div className="flex min-h-[420px] w-max items-start gap-3">
-        {quadro.listas.map((lista, indice) => {
+        {listasVisiveis.map((lista) => {
+          const indice = quadro.listas.findIndex((l) => l.id === lista.id);
           const cartoes = filtrados.filter((c) => c.lista_id === lista.id);
           const totalNaLista = quadro.cartoes.filter((c) => c.lista_id === lista.id).length;
           return <section key={lista.id} aria-label={`${lista.nome}: ${cartoes.length} processos`}
@@ -134,7 +174,11 @@ export function QuadroProcessos() {
               <div className="flex gap-2"><Button size="sm" disabled={busy} type="submit">Salvar</Button><Button size="sm" variant="ghost" type="button" onClick={() => setEditando(null)}>Cancelar</Button></div>
             </form> : <div className="mb-3 flex items-center justify-between gap-1 px-1">
               <h2 className="min-w-0 truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100" title={lista.nome}>{lista.nome}</h2>
-              <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800">{cartoes.length}</span>
+              <span className="flex shrink-0 items-center gap-2">
+                {canManage && cartoes.length > 0 && <label className="flex items-center gap-1 text-[10px] text-zinc-500" title="Selecionar todos desta lista"><Checkbox aria-label={`Selecionar todos de ${lista.nome}`} checked={cartoes.every((c) => selecionados.includes(c.processo_chave))}
+                  onChange={(e) => setSelecionados((atual) => e.target.checked ? [...new Set([...atual, ...cartoes.map((c) => c.processo_chave)])] : atual.filter((c) => !cartoes.some((x) => x.processo_chave === c)))} /></label>}
+                <span className="rounded-full bg-white px-2 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800">{cartoes.length}</span>
+              </span>
             </div>}
             {canManage && editando !== lista.id && <div className="mb-3 flex items-center gap-1 border-b border-zinc-200 pb-2 dark:border-zinc-800">
               {lista.regra_categoria
@@ -153,6 +197,7 @@ export function QuadroProcessos() {
                 onDragStart={(e) => { e.dataTransfer.setData("application/x-disparazap-processo", card.processo_chave); e.dataTransfer.effectAllowed = "move"; setArrastando(card.processo_chave); }}
                 onDragEnd={() => setArrastando(null)}
                 className={`rounded-xl border bg-white p-4 shadow-soft transition-[border-color,box-shadow] hover:shadow-card hover:border-accent-400 dark:bg-zinc-950 ${card.publicacoes_nao_lidas ? "border-l-4 border-l-accent-600 dark:border-zinc-800" : "border-zinc-200 dark:border-zinc-800"}`}>
+                {canManage && <label className="mb-2 flex items-center gap-2 text-[10px] text-zinc-500"><Checkbox aria-label={`Selecionar processo ${card.numero}`} checked={selecionados.includes(card.processo_chave)} onChange={() => alternar(card.processo_chave)} /> Selecionar</label>}
                 <button type="button" onClick={() => setPublicacaoAberta(card.publicacao_id)} className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500">
                   <span className="flex items-start justify-between gap-2"><strong className="line-clamp-2 text-xs leading-snug text-zinc-900 dark:text-zinc-100">{card.cliente_nome || "Nome a conferir"}</strong></span>
                   <span className="mt-1 block text-[11px] text-zinc-500">{card.numero}</span>

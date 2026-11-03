@@ -261,6 +261,30 @@ export function runDjenMigrations(db: Database.Database): void {
       db.prepare("INSERT INTO djen_kanban_listas(nome,posicao,codigo) VALUES ('Distribuição',2,'distribuicao')").run();
     }
   })();
+  // 2.56.0: etapas adicionais para reduzir a triagem. Idempotente; renomes e ordem escolhidos pelo
+  // usuário são preservados (só se cria a lista ausente, ou adota uma lista de mesmo nome sem código).
+  const novasEtapas: { codigo: string; nome: string; depois: string; contar: number }[] = [
+    { codigo: "aguarda_juizo", nome: "Aguardando juízo", depois: "triagem", contar: 1 },
+    { codigo: "sobrestado", nome: "Sobrestado / suspenso", depois: "aguarda_juizo", contar: 0 },
+    { codigo: "aguarda_terceiros", nome: "Aguardando outra parte / terceiros", depois: "sobrestado", contar: 1 },
+    { codigo: "prov_escritorio", nome: "Providência do escritório", depois: "aguarda_terceiros", contar: 1 },
+    { codigo: "citacao_contestacao", nome: "Citação / contestação", depois: "emenda_inicial", contar: 0 },
+    { codigo: "audiencia", nome: "Audiência", depois: "citacao_contestacao", contar: 0 },
+    { codigo: "conclusos_sentenca", nome: "Conclusos para sentença", depois: "laudo_manifestacoes", contar: 0 },
+    { codigo: "acordo", nome: "Acordo (proposta / homologação)", depois: "sentenca", contar: 0 },
+    { codigo: "transito_julgado", nome: "Trânsito em julgado", depois: "acordao", contar: 0 },
+  ];
+  db.transaction(() => {
+    for (const etapa of novasEtapas) {
+      if (db.prepare("SELECT id FROM djen_kanban_listas WHERE codigo=?").get(etapa.codigo)) continue;
+      const homonima = db.prepare("SELECT id FROM djen_kanban_listas WHERE nome=? COLLATE NOCASE AND codigo IS NULL").get(etapa.nome) as { id: number } | undefined;
+      if (homonima) { db.prepare("UPDATE djen_kanban_listas SET codigo=?,regra_categoria=NULL WHERE id=?").run(etapa.codigo, homonima.id); continue; }
+      const ancora = db.prepare("SELECT posicao FROM djen_kanban_listas WHERE codigo=?").get(etapa.depois) as { posicao: number } | undefined;
+      const posicao = ancora ? ancora.posicao + 1 : (db.prepare("SELECT COALESCE(MAX(posicao),-1)+1 AS n FROM djen_kanban_listas").get() as { n: number }).n;
+      if (ancora) db.prepare("UPDATE djen_kanban_listas SET posicao=posicao+1 WHERE posicao>=?").run(posicao);
+      db.prepare("INSERT INTO djen_kanban_listas(nome,posicao,codigo,contar_dias) VALUES (?,?,?,?)").run(etapa.nome, posicao, etapa.codigo, etapa.contar);
+    }
+  })();
   db.prepare("UPDATE OR IGNORE djen_kanban_listas SET nome='Sem etapa identificada' WHERE codigo='triagem' AND nome='A classificar'").run();
   const colunasCartoes = db.prepare("PRAGMA table_info(djen_kanban_cartoes)").all() as { name: string }[];
   if (!colunasCartoes.some((c) => c.name === "modo")) {
@@ -294,9 +318,9 @@ export function runDjenMigrations(db: Database.Database): void {
   `);
   // Reavalia o histórico após mudanças no classificador, preservando escolhas manuais.
   const versaoQuadro = db.prepare("SELECT valor FROM djen_kanban_meta WHERE chave='classificador'").get() as { valor: string } | undefined;
-  if (versaoQuadro?.valor !== "2.53.0") db.transaction(() => {
+  if (versaoQuadro?.valor !== "2.56.0") db.transaction(() => {
     db.exec("UPDATE djen_kanban_cartoes SET revisar_etapa=1");
-    db.prepare("INSERT INTO djen_kanban_meta(chave,valor) VALUES ('classificador','2.53.0') ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor").run();
+    db.prepare("INSERT INTO djen_kanban_meta(chave,valor) VALUES ('classificador','2.56.0') ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor").run();
   })();
   // Metadados de origem da análise. Preserva o JSON e as revisões já existentes.
   const publicationAiColumns = db.prepare("PRAGMA table_info(djen_publicacoes)").all() as { name: string }[];

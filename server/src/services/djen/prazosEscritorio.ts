@@ -14,6 +14,7 @@ import { prazoDoAcompanhamento } from "./followUpDeadline";
 import { andamentoDaPublicacao } from "./andamentos";
 import { dadosDoCumprimento, descricaoCumprimento } from "./fulfillment";
 import { registrarHistoricoDjen } from "./history";
+import { marcarEtapaParaRevisao } from "./kanbanRevisao";
 import { DjenInputError } from "./store";
 
 const hoje = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
@@ -126,6 +127,7 @@ export function atualizarPrazoEscritorio(publicacaoId: number, status: unknown, 
     ON CONFLICT(publicacao_id) DO UPDATE SET status=excluded.status,cumprido_em=excluded.cumprido_em,observacoes=excluded.observacoes,updated_at=CURRENT_TIMESTAMP`)
     .run(publicacaoId, status, confirmado?.cumprido_em ?? null, confirmado?.observacoes ?? "");
   registrarHistoricoDjen(publicacaoId, "providencia", confirmado ? descricaoCumprimento(confirmado) : "Prazo do escritório reaberto pelo usuário.", confirmado);
+  marcarEtapaParaRevisao(publicacaoId);
   memoPrazos.limpar();
   memoParados.limpar();
   return { ok: true };

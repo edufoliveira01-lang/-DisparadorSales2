@@ -1,12 +1,21 @@
 import { identificarOrdensProcessuais, ordemDoEscritorio, contextoNaoAtual } from "./proceduralOrders";
 import { normalizarTexto } from "./classifier";
+import { classificarComplementar } from "./classificacaoComplementar";
 
+/**
+ * A ordem é o "avanço" do processo: a etapa mais adiantada comprovada no histórico prevalece.
+ * As quatro etapas situacionais logo após a triagem só valem quando o histórico não prova
+ * nenhuma etapa processual (ver kanbanSituacao.ts); qualquer etapa real as supera.
+ */
 export const ETAPAS_AUTOMATICAS = [
-  "triagem", "peticao_inicial", "distribuicao", "emenda_inicial", "perito_designado", "pericia_agendada",
-  "pericia_realizada", "laudo_manifestacoes", "sentenca", "recurso", "acordao",
+  "triagem", "aguarda_juizo", "sobrestado", "aguarda_terceiros", "prov_escritorio",
+  "peticao_inicial", "distribuicao", "emenda_inicial", "citacao_contestacao", "audiencia",
+  "perito_designado", "pericia_agendada", "pericia_realizada", "laudo_manifestacoes",
+  "conclusos_sentenca", "sentenca", "acordo", "recurso", "acordao", "transito_julgado",
   "cumprimento_sentenca", "aguarda_implantacao", "calculos", "aguarda_expedicao_rpv",
   "rpv_expedida", "concluido",
 ] as const;
+export const ETAPAS_SITUACIONAIS = ["aguarda_juizo", "sobrestado", "aguarda_terceiros", "prov_escritorio"] as const;
 export type EtapaAutomatica = (typeof ETAPAS_AUTOMATICAS)[number];
 export type SinalEtapa = { codigo: EtapaAutomatica; evidencia: string };
 export const CATEGORIAS_LISTA_PERSONALIZADA = [
@@ -84,6 +93,27 @@ export function classificarPublicacaoParaQuadro(texto: string): SinalEtapa | nul
         !/\b(?:arquivamento provis[oa]rio|desarquivamento|futura extincao)\b/.test(s))
       adicionar("concluido", trecho);
   }
+  // Categorias comprovadas literalmente pelo classificador complementar (mesma evidência da lista de publicações).
+  const complementar = classificarComplementar(texto);
+  const daCategoria: Partial<Record<string, EtapaAutomatica>> = {
+    citacao_contestacao: "citacao_contestacao", audiencia: "audiencia", transito_julgado: "transito_julgado",
+    recurso: "recurso", calculos: "calculos", implantacao_beneficio: "aguarda_implantacao",
+    vista_laudo: "laudo_manifestacoes",
+  };
+  for (const e of complementar.evidencias) {
+    const codigo = daCategoria[e.categoria];
+    if (codigo && !(codigo === "calculos" && !/\b(?:contadoria|calculos?)\b/.test(canon(e.trecho)))) adicionar(codigo, e.trecho);
+  }
+  for (const trecho of partes) {
+    const s = canon(trecho);
+    if (s.length < 8 || contextoNaoAtual(s)) continue;
+    if (fatoAtual(s, /\b(?:homologo|homologad[oa])\b.{0,100}\b(?:acordo|transacao)\b|\b(?:acordo|transacao)\b.{0,60}\bhomologad[oa]\b|\bproposta\s+de\s+acordo\b.{0,80}\b(?:apresentad|ofertad|formulad|aceit)\w*|\b(?:apresentou|ofereceu|formulou)\b.{0,40}\bproposta\s+de\s+acordo\b/) &&
+        !/\b(?:nao houve acordo|sem acordo|inexito)\b/.test(s))
+      adicionar("acordo", trecho);
+    if (/\b(?:autos?|processo|feito)\s+conclus[oa]s?\s+(?:para|a|ao)\s+(?:sentenca|julgamento|decisao final|juiz)\b|\bconclusos?\s+para\s+(?:sentenca|julgamento)\b/.test(s) &&
+        !/\b(?:apos|quando|caso|se houver|eventual|sera|devera)\b/.test(s))
+      adicionar("conclusos_sentenca", trecho);
+  }
   // Data, horário e local precisam constar do próprio texto; decisão que apenas
   // determina a perícia nunca vira agendamento (nem perícia realizada por passar a data).
   const s = canon(texto);
@@ -131,6 +161,8 @@ export function classificarPublicacaoComHistorico(row: {
     cumprimento_sentenca: "cumprimento_sentenca", extincao_processo: "concluido",
     extincao_execucao: "concluido", recurso: "recurso", emenda_inicial: "emenda_inicial",
     calculos: "calculos", implantacao_beneficio: "aguarda_implantacao",
+    citacao_contestacao: "citacao_contestacao", audiencia: "audiencia", transito_julgado: "transito_julgado",
+    proposta_acordo: "acordo", homologacao_acordo: "acordo", vista_laudo: "laudo_manifestacoes",
   };
   // A revisão humana é a fonte da categoria, mesmo quando a IA não havia gerado
   // evidência para ela. Não reutiliza a prova de uma categoria removida na revisão.
@@ -149,7 +181,9 @@ export function classificarPublicacaoComHistorico(row: {
       laudo_manifestacoes: "laudo_juntado", cumprimento_sentenca: "cumprimento_sentenca",
       aguarda_expedicao_rpv: "rpv", rpv_expedida: "rpv", recurso: "recurso", emenda_inicial: "emenda_inicial",
       calculos: "calculos", aguarda_implantacao: "implantacao_beneficio",
+      citacao_contestacao: "citacao_contestacao", audiencia: "audiencia", transito_julgado: "transito_julgado",
     };
+    if (literal?.codigo === "acordo" && !categorias.some((c: unknown) => c === "proposta_acordo" || c === "homologacao_acordo")) return null;
     if (literal && (literal.codigo === "concluido" || (categoriaDaEtapa[literal.codigo] && !categorias.includes(categoriaDaEtapa[literal.codigo])))) return null;
     return literal;
   }

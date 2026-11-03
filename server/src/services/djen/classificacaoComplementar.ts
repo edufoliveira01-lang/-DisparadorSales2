@@ -43,7 +43,7 @@ const REGRAS: Record<Exclude<CategoriaComplementar, "recurso" | "transito_julgad
     veto: /\b(?:nao foi implantad|ainda nao implantad|indefiro a implantacao)\b/,
   },
   calculos: {
-    re: /\b(?:contadoria|calculos?)\b[^.;]{0,80}\b(?:apresentad|elaborad|homologad|juntad|remet|intim|impugn|conferenc|atualiz)\w*|\b(?:remetam-se|encaminhem-se|ao)\b[^.;]{0,30}\bcontadoria\b|\bplanilha de calculos\b|\bapresentar\s+(?:os\s+)?calculos\b/,
+    re: /\b(?:contadoria|calculos)\b[^.;]{0,80}\b(?:apresentad|elaborad|homologad|juntad|remet|intim|impugn|conferenc|atualiz)\w*|\b(?:remetam-se|encaminhem-se|ao)\b[^.;]{0,30}\bcontadoria\b|\bplanilha de calculos\b|\bapresentar\s+(?:os\s+)?calculos\b/,
   },
   arquivamento: {
     re: /\barquiv(?:em-se|e-se|amento)\b[^.;]{0,60}\b(?:autos|processo|feito|definitiv)\w*|\b(?:autos|processo|feito)\b[^.;]{0,40}\barquivad[oa]s?\b|\bbaixa definitiva\b/,

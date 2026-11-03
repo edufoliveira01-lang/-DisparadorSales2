@@ -3,6 +3,7 @@ import { coberturaHistorico, type CoberturaHistorico } from "./historyCoverage";
 import { instrucaoSuperada, obrigacaoRevogada } from "./followUpPolicy";
 import { prazoDoAcompanhamento, type PrazoAcompanhamento } from "./followUpDeadline";
 import { registrarHistoricoDjen } from "./history";
+import { marcarEtapaParaRevisao } from "./kanbanRevisao";
 import { db } from "../../db";
 import { DjenInputError } from "./store";
 import { primeiroAndamentoPosterior, type PublicacaoParaAndamento } from "./andamentos";
@@ -162,6 +163,7 @@ export function atualizarObrigacaoExterna(publicacaoId: number, tipo: unknown, s
        ultima_cobranca_em=CASE WHEN excluded.status='cobrado' THEN CURRENT_TIMESTAMP ELSE djen_acompanhamentos_obrigacoes.ultima_cobranca_em END`,
   ).run(publicacaoId, tipo, status, status);
   registrarHistoricoDjen(publicacaoId, "providencia", confirmado ? descricaoCumprimento(confirmado) : status === "cobrado" ? "Cobrança marcada como realizada pelo usuário; nenhum envio automático." : `Acompanhamento ${status} pelo usuário.`, { tipo, status, ...confirmado, ordem_chave: confirmado ? chaveDaOrdem(ordem.trecho) : undefined });
+  marcarEtapaParaRevisao(publicacaoId);
   return { ok: true };
 }
 

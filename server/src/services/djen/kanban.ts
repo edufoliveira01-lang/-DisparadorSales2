@@ -1,6 +1,7 @@
 import { atividadesProcessos } from "./activity";
 import { db } from "../../db";
-import { DjenInputError } from "./store";
+import { DjenInputError, prazosPorPublicacao, cumpridasManualmente } from "./store";
+import { classificarSituacaoProcesso, type PublicacaoSituacao } from "./kanbanSituacao";
 import { classificarPublicacaoComHistorico, evidenciasDeCategorias, CATEGORIAS_LISTA_PERSONALIZADA, ETAPAS_AUTOMATICAS, type EtapaAutomatica } from "./kanbanClassifier";
 
 type Lista = { id: number; nome: string; posicao: number; contar_dias: number; codigo: string | null; regra_categoria: string | null };
@@ -48,11 +49,11 @@ function sincronizarEtapasAutomaticas() {
   ).all() as { processo_chave: string; lista_id: number; modo: string; etapa_publicacao_id: number | null; codigo_atual: string | null; nome_atual: string }[];
   if (!cards.length) return;
   const rows = db.prepare(
-    `SELECT p.processo_chave,p.id,p.texto,p.classe,p.revisada,p.categorias_json,p.evidencias_json,p.data_disponibilizacao
+    `SELECT p.processo_chave,p.id,p.texto,p.classe,p.revisada,p.categorias_json,p.evidencias_json,p.data_disponibilizacao,p.tipo_documento,p.concluida
        FROM djen_publicacoes p JOIN djen_kanban_cartoes k ON k.processo_chave=p.processo_chave
       WHERE p.cancelada=0 AND k.revisar_etapa=1
       ORDER BY p.processo_chave,p.data_disponibilizacao,p.id`,
-  ).all() as { processo_chave: string; id: number; texto: string; classe: string; revisada: number; categorias_json: string; evidencias_json: string; data_disponibilizacao: string }[];
+  ).all() as { processo_chave: string; id: number; texto: string; classe: string; revisada: number; categorias_json: string; evidencias_json: string; data_disponibilizacao: string; tipo_documento: string | null; concluida: number }[];
   const candidatos = new Map<string, Candidato>();
   const sinaisPorId = new Map<number, string>();
   for (const pub of rows) {
@@ -73,13 +74,33 @@ function sincronizarEtapasAutomaticas() {
       : ETAPAS_AUTOMATICAS.indexOf(sinal.codigo as EtapaAutomatica) >= ETAPAS_AUTOMATICAS.indexOf(antigo.codigo as EtapaAutomatica)))
       candidatos.set(pub.processo_chave, { ...sinal, publicacao_id: pub.id, data: pub.data_disponibilizacao });
   }
+  // Publicações por processo, da mais recente para a mais antiga, para a leitura situacional.
+  const porProcesso = new Map<string, PublicacaoSituacao[]>();
+  for (const pub of rows) {
+    let categorias: string[] = [];
+    try { categorias = JSON.parse(pub.categorias_json || "[]"); } catch { /* categoria legada inválida */ }
+    const lista = porProcesso.get(pub.processo_chave) || [];
+    lista.unshift({ id: pub.id, texto: pub.texto, data: pub.data_disponibilizacao.slice(0, 10), categorias, tipo_documento: pub.tipo_documento, classe: pub.classe, concluida: pub.concluida });
+    porProcesso.set(pub.processo_chave, lista);
+  }
+  const todosIds = rows.map((r) => r.id);
+  const prazosSalvos = prazosPorPublicacao(todosIds);
+  const baixados = cumpridasManualmente(todosIds);
   const atualizar = db.prepare("UPDATE djen_kanban_cartoes SET lista_id=?,entrou_em=CURRENT_TIMESTAMP,inicio_espera_em=?,etapa_publicacao_id=?,etapa_evidencia=?,updated_at=CURRENT_TIMESTAMP WHERE processo_chave=?");
   const salvarSinal = db.prepare("UPDATE djen_kanban_cartoes SET revisar_etapa=0,sugestao_codigo=?,sugestao_publicacao_id=?,sugestao_evidencia=? WHERE processo_chave=?");
   const atualizarProva = db.prepare("UPDATE djen_kanban_cartoes SET etapa_publicacao_id=?,etapa_evidencia=? WHERE processo_chave=?");
   const historico = db.prepare("INSERT INTO djen_kanban_movimentos(processo_chave,origem,destino,origem_movimento) VALUES (?,?,?,'automatico')");
   db.transaction(() => {
     for (const card of cards) {
-      const sinal = candidatos.get(card.processo_chave);
+      let sinal: { codigo: string; evidencia: string; publicacao_id: number; data: string } | undefined = candidatos.get(card.processo_chave);
+      // Sem etapa processual provada: indica quem deve agir agora (escritório, terceiros, juízo).
+      if (!sinal && card.modo !== "manual") {
+        const situacional = classificarSituacaoProcesso(porProcesso.get(card.processo_chave) || [], hoje(), prazosSalvos, baixados);
+        if (situacional && porCodigo.has(situacional.codigo)) {
+          sinal = situacional;
+          sinaisPorId.set(situacional.publicacao_id, situacional.codigo);
+        }
+      }
       salvarSinal.run(sinal?.codigo || null, sinal?.publicacao_id || null, sinal?.evidencia || null, card.processo_chave);
       // A escolha humana permanece até o usuário reativar explicitamente o automático.
       if (card.modo === "manual") continue;
@@ -249,6 +270,30 @@ export function moverCartaoKanban(processo: string, destino: number, antesDe?: s
       db.prepare("INSERT INTO djen_kanban_movimentos(processo_chave,origem,destino,origem_movimento) VALUES (?,?,?,'manual')").run(processo, atual.origem, lista.nome);
   })();
   return { ok: true };
+}
+
+const naTriagem = () => (db.prepare(`SELECT COUNT(*) AS n FROM djen_kanban_cartoes k JOIN djen_kanban_listas l ON l.id=k.lista_id WHERE l.codigo='triagem'`).get() as { n: number }).n;
+
+/** Reavalia todos os cartões automáticos; cartões manuais nunca são movidos. */
+export function reclassificarKanban() {
+  incluirProcessosNovos();
+  const antes = naTriagem();
+  const movidosAntes = (db.prepare("SELECT COUNT(*) AS n FROM djen_kanban_movimentos WHERE origem_movimento='automatico'").get() as { n: number }).n;
+  db.prepare("UPDATE djen_kanban_cartoes SET revisar_etapa=1 WHERE modo='automatico'").run();
+  sincronizarEtapasAutomaticas();
+  const movidosDepois = (db.prepare("SELECT COUNT(*) AS n FROM djen_kanban_movimentos WHERE origem_movimento='automatico'").get() as { n: number }).n;
+  const depois = naTriagem();
+  return { movidos: movidosDepois - movidosAntes, triagem_antes: antes, triagem_depois: depois };
+}
+
+/** Move vários cartões para uma lista como escolha manual (mesma regra de moverCartaoKanban). */
+export function moverCartoesLoteKanban(processos: unknown, destino: unknown) {
+  if (!Array.isArray(processos) || !processos.length || processos.length > 500 || processos.some((p) => typeof p !== "string" || !p))
+    throw new DjenInputError("Selecione de 1 a 500 processos.");
+  if (!Number.isSafeInteger(destino)) throw new DjenInputError("Escolha a lista de destino.");
+  const unicos = [...new Set(processos as string[])];
+  db.transaction(() => { for (const chave of unicos) moverCartaoKanban(chave, destino as number); })();
+  return { ok: true, movidos: unicos.length };
 }
 
 export function ativarClassificacaoAutomatica(processo: string) {

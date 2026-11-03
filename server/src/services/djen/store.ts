@@ -372,7 +372,7 @@ export interface AcaoProcesso {
   encerradas: { publicacao_id: number; descricao: string | null; situacao: string; motivo: string; data: string | null }[];
 }
 /** Prazos salvos pelo usuário por publicação, para saber se ele já os concluiu. */
-function prazosPorPublicacao(ids: number[]) {
+export function prazosPorPublicacao(ids: number[]) {
   const mapa = new Map<number, { total: number; abertos: number; concluidos: number }>();
   if (!ids.length) return mapa;
   const linhas = db.prepare(

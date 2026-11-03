@@ -1,6 +1,7 @@
 import { db } from "../../db";
 import { dataValida } from "./api";
 import { registrarHistoricoDjen } from "./history";
+import { marcarEtapaParaRevisao } from "./kanbanRevisao";
 export class WorkflowInputError extends Error {}
 function existente(id: number) {
   if (!db.prepare("SELECT id FROM djen_publicacoes WHERE id=?").get(id))
@@ -28,7 +29,7 @@ export function dadosAcompanhamento(
       .all(processoChave),
   };
 }
-export function salvarPrazo(
+function salvarPrazoBase(
   publicacaoId: number,
   data: Record<string, unknown>,
   prazoId?: number,
@@ -118,7 +119,7 @@ export function salvarPrazo(
     return prazoId;
   })();
 }
-export function excluirPrazo(publicacaoId: number, prazoId: number) {
+function excluirPrazoBase(publicacaoId: number, prazoId: number) {
   return db.transaction(() => {
     const p = db
       .prepare("SELECT * FROM djen_prazos WHERE id=? AND publicacao_id=?")
@@ -200,3 +201,14 @@ export function excluirDocumento(publicacaoId: number, documentoId: number) {
   })();
 }
 
+
+export function salvarPrazo(publicacaoId: number, data: Record<string, unknown>, prazoId?: number) {
+  const resultado = salvarPrazoBase(publicacaoId, data, prazoId);
+  marcarEtapaParaRevisao(publicacaoId);
+  return resultado;
+}
+export function excluirPrazo(publicacaoId: number, prazoId: number) {
+  const resultado = excluirPrazoBase(publicacaoId, prazoId);
+  marcarEtapaParaRevisao(publicacaoId);
+  return resultado;
+}

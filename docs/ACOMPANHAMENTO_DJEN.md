@@ -186,3 +186,15 @@ A apresentação de registros antigos é recalculada a partir do texto capturado
 - A reanálise em massa por IA das publicações antigas continua manual e opcional, por consumir créditos do provedor.
 
 **2.55.1.** Os cartões "Aguardando retorno" e "Perícias sem laudo" passam a mostrar o total de alertas, com a quantidade de históricos já conferidos logo abaixo (antes só contavam os conferidos e ficavam em 0 com a lista cheia). O alerta de prazos do escritório usa, quando não há calendário conferido, uma estimativa conservadora de vencimento (identificada como "estimativa"). Botões dos cartões e dos modais foram reorganizados em um rodapé de ações padronizado.
+
+
+## Quadro de processos: menos cartões sem etapa — 2.56.0
+
+- **Novas listas padrão** (criadas uma vez, sem alterar nomes ou ordem já escolhidos; uma lista existente com o mesmo nome é adotada): Aguardando juízo, Sobrestado / suspenso, Aguardando outra parte / terceiros, Providência do escritório (logo após *Sem etapa identificada*), Citação / contestação, Audiência, Conclusos para sentença, Acordo (proposta / homologação) e Trânsito em julgado.
+- **Etapas processuais** vêm de atos literais e atuais (mesmo classificador complementar da lista de publicações) ou de categorias revisadas. A etapa mais adiantada comprovada prevalece. Hipótese, pedido e advertência de cabimento não movem o cartão.
+- **Etapas situacionais** só entram quando nenhuma etapa processual é provada: ordem vigente do escritório (usa a mesma avaliação de cumprimento/revogação/sentença dos prazos), ordem a perito, INSS, parte contrária ou terceiro sem resposta identificada, suspensão/sobrestamento e, por fim, aguardando juízo. A evidência fica no cartão. É leitura operacional do DJEN capturado, não prova do que consta nos autos.
+- Baixar um prazo do escritório, concluir um prazo salvo ou registrar cumprimento de obrigação externa pede nova leitura do cartão automaticamente. Cartões em etapa manual nunca são movidos.
+- **Reclassificar** (botão no topo) reavalia todos os cartões automáticos e informa quantos foram movidos e a variação de *Sem etapa identificada*. `POST /djen/kanban/reclassificar`.
+- **Mover em lote**: selecione cartões (ou todos de uma lista) e escolha a lista de destino; vira etapa manual. `POST /djen/kanban/mover-lote`.
+- Filtros novos: sem etapa específica, providência do escritório, aguardando terceiros, etapa automática e com dias sem providência; chips com a contagem por lista focam uma coluna.
+- O quadro é reavaliado uma vez após a atualização para aplicar as novas etapas.

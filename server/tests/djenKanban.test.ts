@@ -94,7 +94,7 @@ describe("quadro processual", () => {
   it("corrigir uma classificação humana tira o card da triagem sem depender de evidência antiga da IA", () => {
     const id = publicar("revisao-sem-prova", "2026-10-01", "Decisão com redação atípica disponível para revisão.");
     const primeiro = listarKanban();
-    expect(primeiro.cartoes[0].lista_id).toBe(primeiro.listas.find((l) => l.codigo === "triagem")!.id);
+    expect(primeiro.cartoes[0].lista_id).toBe(primeiro.listas.find((l) => l.codigo === "aguarda_juizo")!.id);
     revisarPublicacao(id, { categorias: ["acordao"], resultado: "nao_identificado" });
     const depois = listarKanban();
     expect(depois.cartoes[0]).toMatchObject({ lista_id: depois.listas.find((l) => l.codigo === "acordao")!.id, etapa_publicacao_id: id });
@@ -109,7 +109,7 @@ describe("quadro processual", () => {
     expect(listarKanban().cartoes[0].lista_id).toBe(lista.id);
     revisarPublicacao(id, { categorias: [], resultado: "nao_identificado" });
     const quadro = listarKanban();
-    expect(quadro.cartoes[0].lista_id).toBe(quadro.listas.find((l) => l.codigo === "triagem")!.id);
+    expect(quadro.cartoes[0].lista_id).toBe(quadro.listas.find((l) => l.codigo === "aguarda_juizo")!.id);
   });
   it("reaproveita a categoria de perícia validada pelo Codex mesmo com local em outra publicação", () => {
     const texto = "A perícia médica foi remarcada para 22/10/2026, às 10h, mantidas as demais orientações.";
@@ -119,7 +119,7 @@ describe("quadro processual", () => {
     const quadro = listarKanban();
     expect(quadro.cartoes[0].lista_id).toBe(quadro.listas.find((l) => l.codigo === "pericia_agendada")!.id);
     db.prepare("UPDATE djen_publicacoes SET evidencias_json='[]' WHERE id=?").run(id);
-    expect(listarKanban().cartoes[0].lista_id).toBe(quadro.listas.find((l) => l.codigo === "triagem")!.id);
+    expect(listarKanban().cartoes[0].lista_id).toBe(quadro.listas.find((l) => l.codigo === "aguarda_juizo")!.id);
   });
   it("valida destinos e reposiciona cartões sem afetar prazos ou publicações", () => {
     publicar("mover-a", "2026-10-01", "Ciência.");
@@ -223,7 +223,7 @@ describe("quadro processual", () => {
     publicar("auto-3", "2026-09-01", "Notificação de ciência, sem nova providência.");
     const atualizado = listarKanban();
     expect(atualizado.cartoes.find((c) => c.processo_chave === "auto-3")!.lista_id)
-      .toBe(atualizado.listas.find((l) => l.codigo === "triagem")!.id);
+      .toBe(atualizado.listas.find((l) => l.codigo === "aguarda_juizo")!.id);
   });
 
   it("mantém um cartão por processo e não desloca etapas quando chega publicação nova", () => {
@@ -269,7 +269,7 @@ describe("quadro processual", () => {
     ordenarListasKanban([criada.id, ...ids.filter((id) => id !== criada.id)]);
     expect(listarKanban().listas[0].id).toBe(criada.id);
     publicar("500006", "2026-10-02", "Nova publicação.");
-    expect(listarKanban().cartoes.find((c) => c.processo_chave === "500006")!.lista_id).toBe(quadro.listas[0].id);
+    expect(listarKanban().cartoes.find((c) => c.processo_chave === "500006")!.lista_id).toBe(quadro.listas.find((l) => l.codigo === "aguarda_juizo")!.id);
     db.prepare("UPDATE djen_kanban_cartoes SET lista_id=? WHERE processo_chave=?").run(criada.id, "500005");
     expect(() => excluirListaKanban(criada.id)).toThrow(/Mova/);
     db.prepare("UPDATE djen_kanban_cartoes SET lista_id=? WHERE processo_chave=?").run(quadro.listas[0].id, "500005");
