@@ -63,9 +63,11 @@ const REVOGACAO =
 export function situacaoDaOrdem(
   ordem: Pick<OrdemProcessual, "acao" | "trecho">,
   posteriores: PublicacaoPosterior[],
-  opcoes: { prazosDoUsuario?: { total: number; abertos: number; concluidos: number } } = {},
+  opcoes: { prazosDoUsuario?: { total: number; abertos: number; concluidos: number }; cumpridaManual?: boolean } = {},
 ): SituacaoDaOrdem {
   const vigente: SituacaoDaOrdem = { situacao: "vigente", motivo: "Nenhum andamento posterior capturado encerra esta ordem.", evidencia: null, data: null };
+  if (opcoes.cumpridaManual)
+    return { situacao: "cumprida", motivo: "Cumprimento conferido nos autos e registrado pelo usuário.", evidencia: null, data: null };
   const prazos = opcoes.prazosDoUsuario;
   if (prazos && prazos.total > 0 && prazos.abertos === 0 && prazos.concluidos > 0)
     return { situacao: "cumprida", motivo: "Todos os prazos salvos para esta publicação foram concluídos pelo usuário.", evidencia: null, data: null };

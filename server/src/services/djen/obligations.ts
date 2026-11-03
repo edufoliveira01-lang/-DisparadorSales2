@@ -1,11 +1,13 @@
 import { laudoEfetivamenteJuntado } from "./followUpPolicy";
 import { identificarOrdensProcessuais } from "./proceduralOrders";
+import { antes, emHipotese } from "./andamentos";
 export const TIPOS_OBRIGACAO = [
   "perito_laudo",
   "perito_esclarecimentos",
   "perito_calculos",
   "inss_implantacao",
   "parte_contraria",
+  "terceiro_oficio",
 ] as const;
 export type TipoObrigacao = (typeof TIPOS_OBRIGACAO)[number];
 export interface ObrigacaoDetectada {
@@ -20,6 +22,34 @@ export interface ObrigacaoDetectada {
 
 const normalizar = (s: string) =>
   s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+const semAcento = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+const OFICIO = /\b(?:oficie-se|oficiem-se|expeca-se\s+(?:o\s+)?(?:oficio|mandado)\s+(?:a|ao|para)|encaminhe-se\s+(?:o\s+)?oficio\s+(?:a|ao|para))\s+(?:(?:a|o|as|os|ao|aos|para)\s+)?([^,.;]{3,90})/;
+/** Ofícios a terceiros (empresa, cartório, hospital, órgão público). Ordem ao INSS/CEAB para implantar continua sendo implantação. */
+export function identificarOficios(texto: string): ObrigacaoDetectada[] {
+  const saida: ObrigacaoDetectada[] = [];
+  for (const original of texto.split(/(?<=[.;])\s+|\n+/)) {
+    const frase = semAcento(original);
+    const m = OFICIO.exec(frase);
+    if (!m || emHipotese(antes(frase, m.index)) || /\b(?:dispenso|desnecessari|indefiro|nao ha necessidade|sem necessidade)\b/.test(frase)) continue;
+    const destino = m[1].replace(/\s+(?:para|a fim|que|solicitando|requisitando|requerendo|com|visando)\b.*$/, "").trim();
+    if (destino.length < 3) continue;
+    const previdencia = /^(?:inss|ceab|ceabdj|autarquia|agencia da previdencia|aps)\b/.test(destino);
+    const implantacao = previdencia && /\b(?:implant|restabelec|tutela|cumpr|concess)\w*/.test(frase);
+    if (previdencia && !implantacao && !/\b(?:processo administrativo|copia|informac|documento|prontuario)\w*/.test(frase)) continue;
+    const prazo = /\b(?:prazo\s+de\s+|no\s+prazo\s+de\s+|em\s+)(\d{1,3})\s*(?:\([^)]*\)\s*)?dias?(?:\s+(uteis|corridos))?/.exec(frase);
+    saida.push({
+      tipo: implantacao ? "inss_implantacao" : "terceiro_oficio",
+      responsavel: implantacao ? "INSS / autarquia" : `Terceiro oficiado: ${destino.slice(0, 60)}`,
+      trecho: original.trim().slice(0, 600),
+      prazo_citado_dias: prazo ? Math.min(365, Number(prazo[1])) : null,
+      unidade: prazo ? (prazo[2] === "corridos" ? "corridos" : "uteis") : null,
+      prazo_texto: prazo ? prazo[0].trim() : null,
+      alerta: null,
+    });
+  }
+  return saida;
+}
+
 /** Somente intimações/ordens explícitas, no mesmo trecho do destinatário e da providência. */
 export function identificarObrigacoesExternas(texto: string): ObrigacaoDetectada[] {
   const saida = new Map<TipoObrigacao, ObrigacaoDetectada>();
@@ -34,6 +64,7 @@ export function identificarObrigacoesExternas(texto: string): ObrigacaoDetectada
     } else tipo = ordem.acao === "implantacao" ? "inss_implantacao" : "parte_contraria";
     if (!saida.has(tipo)) saida.set(tipo, { tipo, responsavel:ordem.destinatario, trecho:ordem.trecho, prazo_citado_dias:ordem.dias, unidade:ordem.unidade, prazo_texto:ordem.prazo_texto, alerta:ordem.alerta });
   }
+  for (const oficio of identificarOficios(texto)) if (!saida.has(oficio.tipo)) saida.set(oficio.tipo, oficio);
   return [...saida.values()];
 }
 
@@ -50,6 +81,7 @@ export function cumprimentoIdentificado(tipo: TipoObrigacao, texto: string, orde
       perito_calculos: /\b(?:calculos\b.{0,60}\b(?:juntados|apresentados|elaborados)|perit[oa]\b.{0,70}\b(?:juntou|apresentou)\b.{0,30}\bcalculos)\b/,
       inss_implantacao: /\b(?:inss\b.{0,70}\bcomprovou\b.{0,50}\bimplantacao|beneficio\b.{0,40}\b(?:foi implantado|implantado|implementado|restabelecido))\b/,
       parte_contraria: /$^/,
+      terceiro_oficio: /\bjuntad[oa]s?\b.{0,40}\b(?:resposta|informacoes|oficio)\b|\b(?:resposta|informacoes|oficio respondido|documentos?)\b.{0,60}\b(?:juntad[oa]s?|apresentad[oa]s?|prestad[oa]s?|recebid[oa]s?)\b|\b(?:oficiad[oa]|empresa|cartorio|hospital|empregador)\b.{0,60}\b(?:respondeu|juntou|apresentou|prestou|encaminhou)\b/,
     };
     if (tipo === "parte_contraria") {
       if (/contrarrazo/.test(pedido) && /\bcontrarrazoes\b.{0,45}\b(?:apresentadas|juntadas)\b/.test(s)) return true;

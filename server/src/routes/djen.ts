@@ -1,5 +1,6 @@
 import { processarHistoricos, resumoHistoricos } from "../services/djen/processHistory";
 import { solicitarHistorico, coberturaHistorico } from "../services/djen/historyCoverage";
+import { listarPrazosEscritorio, atualizarPrazoEscritorio, listarProcessosParados } from "../services/djen/prazosEscritorio";
 import { diagnosticoAcompanhamentos } from "../services/djen/followUpDiagnostics";
 import { selectedAiConnection } from "../services/ai/connection";
 import {
@@ -128,6 +129,8 @@ djenRouter.get(
       config: configuracaoDjen(),
       advogados: listarAdvogados(),
       pericias_sem_laudo: listarPericiasSemLaudo().filter(p => p.historico_djen.status === "atualizado").length,
+      prazos_escritorio: listarPrazosEscritorio().length,
+      processos_parados: listarProcessosParados().length,
       historicos_djen: resumoHistoricos(),
       aguardando_retorno: (await acompanhamentos()).filter(p => p.historico_djen.status === "atualizado" && !p.prazo_pendente).length,
       ia: statusAnalisesCodex(),
@@ -300,6 +303,24 @@ djenRouter.get(
     res.json(listarPericiasSuperadas(dias));
   }),
 );
+djenRouter.get("/prazos/escritorio", wrap((_req, res) => res.json(listarPrazosEscritorio())));
+djenRouter.put("/prazos/escritorio/:id", wrap((req, res) => {
+  const resultado = atualizarPrazoEscritorio(id(req.params.id), req.body?.status, req.body);
+  changed();
+  res.json(resultado);
+}));
+djenRouter.get("/processos/parados", wrap((req, res) => {
+  const dias = typeof req.query.dias === "string" ? Number(req.query.dias) : 60;
+  res.json(listarProcessosParados(dias));
+}));
+djenRouter.post("/pericias/:id/atualizar-historico", wrap((req, res) => {
+  const p = db.prepare("SELECT processo_chave FROM pericias_agendadas WHERE id=?").get(id(req.params.id)) as { processo_chave: string } | undefined;
+  if (!p || !/^\d{20}$/.test(p.processo_chave)) throw new DjenInputError("A perícia precisa ter um número de processo CNJ válido para consultar o histórico.");
+  solicitarHistorico(p.processo_chave);
+  void processarHistoricos().catch(() => undefined);
+  changed();
+  res.status(202).json(coberturaHistorico(p.processo_chave));
+}));
 djenRouter.post("/publicacoes/:id/atualizar-historico", wrap((req,res) => {
   const p = db.prepare("SELECT processo_chave FROM djen_publicacoes WHERE id=? AND cancelada=0").get(id(req.params.id)) as { processo_chave: string } | undefined;
   if (!p || !/^\d{20}$/.test(p.processo_chave)) throw new DjenInputError("A publicação precisa estar vinculada a um número CNJ válido.");

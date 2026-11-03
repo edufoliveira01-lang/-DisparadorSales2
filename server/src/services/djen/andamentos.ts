@@ -65,7 +65,7 @@ const RESSALVA_PROXIMA =
 const RESSALVA_AMPLA =
   /\b(?:havendo|sobrevindo|em caso de|se houver|hipotese|precedente|jurisprudencia|anteriormente|prazo para)\b[^.;!?]{0,70}$/;
 export const emHipotese = (janela: string) =>
-  RESSALVA_PROXIMA.test(janela.replace(/\b(?:neste|nesse|no|em tal|em todo|nos termos d[oe])\s+caso\b/g, " ")) || RESSALVA_AMPLA.test(janela);
+  RESSALVA_PROXIMA.test(janela.replace(/[,:]/g, " ").replace(/\b(?:neste|nesse|no|em tal|em todo|nos termos d[oe])\s+caso\b/g, " ")) || RESSALVA_AMPLA.test(janela);
 
 interface Regra {
   tipo: TipoAndamento;

@@ -59,6 +59,7 @@ export function obrigacaoRevogada(tipo: string, ordem: string, posteriores: stri
     perito_esclarecimentos: /\b(?:esclarecimentos|complementacao|laudo complementar)\b/,
     perito_calculos: /\b(?:calculos|contadoria)\b/,
     inss_implantacao: /\b(?:implantacao|restabelecimento)\b/,
+    terceiro_oficio: /\b(?:oficio|oficie|mandado)\b/,
   };
   const pedido = normal(ordem);
   for (const texto of posteriores) for (const s of /(?:revog|cancel|dispens|sem efeito)/i.test(texto) ? frasesAtuais(texto) : []) {

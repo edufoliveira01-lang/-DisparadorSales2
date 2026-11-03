@@ -250,6 +250,16 @@ interface PericiaSemLaudo {
   publicacoes_posteriores?: number;
   ultima_publicacao_em?: string | null;
 }
+interface PrazoEscritorio {
+  publicacao_id: number; processo: string; cliente_nome: string | null; descricao: string; prazo_texto: string;
+  data_disponibilizacao: string; termino: string | null; origem_data: "salvo" | "previsto" | "decorrido";
+  dias_para_vencer: number | null; urgencia: "vencido" | "vence_em_breve" | "decorrido";
+  situacao: string; situacao_motivo: string; historico_djen: CoberturaHistorico;
+}
+interface ProcessoParado {
+  publicacao_id: number; processo: string; cliente_nome: string | null; ultima_publicacao_em: string; dias_parado: number;
+  ultimo_andamento: string; ultimo_tipo: string | null; historico_djen: CoberturaHistorico;
+}
 interface PericiaSuperada {
   pericia_id: number;
   nome: string;
@@ -264,7 +274,7 @@ interface AguardandoRetorno {
   captured_at?: string;
   historico_djen?: CoberturaHistorico;
   publicacao_id: number;
-  tipo: "aguardo_juizo" | "perito_laudo" | "perito_esclarecimentos" | "perito_calculos" | "inss_implantacao" | "parte_contraria";
+  tipo: "aguardo_juizo" | "perito_laudo" | "perito_esclarecimentos" | "perito_calculos" | "inss_implantacao" | "parte_contraria" | "terceiro_oficio";
   responsavel: string;
   processo: string;
   cliente_nome: string | null;
@@ -320,6 +330,8 @@ interface Status {
   resumo: Record<string, number>;
   advogados: Advogado[];
   pericias_sem_laudo: number;
+  prazos_escritorio?: number;
+  processos_parados?: number;
   aguardando_retorno: number;
   config: {
     automatico: number;
@@ -495,6 +507,11 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
   const [diagnostico, setDiagnostico] = useState<{ pericias: { ativas: number; sem_processo: number; futuras: number; menos_60_dias: number }; publicacoes: number; ordens_externas: number; aguardo_dias: number } | null>(null);
   const [periciasSemLaudo, setPericiasSemLaudo] = useState<PericiaSemLaudo[]>([]);
   const [periciasSuperadas, setPericiasSuperadas] = useState<PericiaSuperada[]>([]);
+  const [prazosEscritorio, setPrazosEscritorio] = useState<PrazoEscritorio[]>([]);
+  const [processosParados, setProcessosParados] = useState<ProcessoParado[]>([]);
+  const [alertaAberto, setAlertaAberto] = useState<"prazos" | "parados" | null>(null);
+  const [carregandoAlerta, setCarregandoAlerta] = useState(false);
+  const [diasParado, setDiasParado] = useState(60);
   const [aguardando, setAguardando] = useState<AguardandoRetorno[]>([]);
   const [tipoAguardando, setTipoAguardando] = useState("");
   const [buscaAguardando, setBuscaAguardando] = useState("");
@@ -563,6 +580,16 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     parametros.delete("semLaudo");
     navigate({ pathname, search: parametros.toString() }, { replace: true });
   }, [search, pathname, navigate, carregarSemLaudo]);
+  const carregarAlerta = useCallback(async (tipo: "prazos" | "parados", dias = 60) => {
+    setAlertaAberto(tipo);
+    setCarregandoAlerta(true);
+    try {
+      if (tipo === "prazos") setPrazosEscritorio(await api.get<PrazoEscritorio[]>("/djen/prazos/escritorio"));
+      else setProcessosParados(await api.get<ProcessoParado[]>(`/djen/processos/parados?dias=${dias}`));
+    } finally {
+      setCarregandoAlerta(false);
+    }
+  }, []);
   const carregarAguardando = useCallback(async () => {
     void api.get<NonNullable<typeof diagnostico>>("/djen/acompanhamentos/diagnostico").then(setDiagnostico).catch(() => setDiagnostico(null));
     setAguardando(await api.get<AguardandoRetorno[]>("/djen/aguardando"));
@@ -680,7 +707,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
   const tiposAguardando: Record<AguardandoRetorno["tipo"], string> = {
     aguardo_juizo: "Aguardando juízo", perito_laudo: "Laudo pelo perito",
     perito_esclarecimentos: "Esclarecimentos do perito", perito_calculos: "Cálculos periciais",
-    inss_implantacao: "Implantação pelo INSS", parte_contraria: "Manifestação da outra parte",
+    inss_implantacao: "Implantação pelo INSS", parte_contraria: "Manifestação da outra parte", terceiro_oficio: "Resposta de terceiro (ofício)",
   };
   const aguardandoVisiveis = aguardando.filter((item) =>
     (!tipoAguardando || item.tipo === tipoAguardando) &&
@@ -1022,12 +1049,14 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
       {secao === "aguardando" && conteudoAguardando}
       {secao === "publicacoes" && (
         <div className="process-workbench"><aside className="process-filter-rail"><div className="process-summary">
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
             {[
               { label: "Processos na lista", value: total, Icon: FolderOpen, action: () => filtrar("categoria", "") },
               { label: "Processos não lidos", value: status?.resumo.nao_lidas ?? 0, Icon: FileCheck2, action: () => filtrar("situacao", "nao_lidas") },
               { label: "Aguardando retorno", value: status?.aguardando_retorno ?? 0, Icon: Clock3, action: () => { setAguardandoAberto(true); void carregarAguardando().catch(e => show(erro(e), "error")); } },
               { label: "Perícias sem laudo · 60 dias", value: status?.pericias_sem_laudo ?? 0, Icon: AlertCircle, action: () => { setMostrarSemLaudo(true); void carregarSemLaudo(); } },
+              { label: "Prazos do escritório · vencidos ou a vencer", value: status?.prazos_escritorio ?? 0, Icon: AlertCircle, action: () => void carregarAlerta("prazos").catch((e) => show(erro(e), "error")) },
+              { label: "Processos parados", value: status?.processos_parados ?? 0, Icon: Clock3, action: () => void carregarAlerta("parados", diasParado).catch((e) => show(erro(e), "error")) },
             ].map(({ label, value, Icon, action }) => (
               <button key={label} type="button" onClick={action} className="group rounded-2xl border border-zinc-200 bg-white p-4 text-left shadow-sm transition hover:border-accent-400 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900">
                 <span className="flex items-center justify-between gap-2 text-[11px] font-medium text-zinc-500"><span>{label}</span><Icon className="h-4 w-4 text-accent-600" /></span>
@@ -1788,6 +1817,61 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
             </div>
           </section>
       </Modal>
+      <Modal open={alertaAberto === "prazos"} onClose={() => setAlertaAberto(null)} title="Prazos do escritório vencidos ou a vencer" maxWidth="max-w-4xl"
+        footer={<Button variant="outline" onClick={() => setAlertaAberto(null)}>Fechar</Button>}>
+        <div className="space-y-3">
+          <p className="text-xs text-zinc-500">Ordens com prazo expresso dirigidas ao escritório, ainda sem cumprimento, revogação ou sentença posterior identificados no DJEN. A data vem do prazo salvo ou da previsão pelo calendário conferido; confirme o termo inicial e o cumprimento nos autos. Não é contagem de prazo jurídico.</p>
+          {carregandoAlerta ? <p className="text-sm text-zinc-500">Carregando…</p> : !prazosEscritorio.length ? (
+            <EmptyState icon={FileCheck2} title="Nenhum prazo em risco" description="Não há prazos do escritório vencidos ou nos próximos 3 dias sem cumprimento identificado." />
+          ) : prazosEscritorio.map((p) => (
+            <article key={p.publicacao_id} className={`rounded-xl border p-4 ${p.urgencia === "vencido" || p.urgencia === "decorrido" ? "border-red-200 dark:border-red-900" : "border-amber-200 dark:border-amber-900"}`}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">{p.cliente_nome || p.processo}</p>
+                  <p className="mt-1 text-xs text-zinc-500">{p.processo} · publicado em {dia(p.data_disponibilizacao)}</p>
+                  <p className="mt-2 text-xs font-semibold text-red-700 dark:text-red-300">
+                    {p.termino ? `${p.urgencia === "vencido" ? `Vencido há ${Math.abs(p.dias_para_vencer ?? 0)} dia(s)` : p.dias_para_vencer === 0 ? "Vence hoje" : `Vence em ${p.dias_para_vencer} dia(s)`} · ${dia(p.termino)} (${p.origem_data === "salvo" ? "prazo salvo" : "previsão pelo calendário"})` : "Decurso de prazo mencionado em publicação posterior"}
+                  </p>
+                  <p className="mt-2 text-xs"><strong>{p.descricao}</strong>: {p.prazo_texto}</p>
+                  {p.situacao === "decorrido" && <p className="mt-1 text-[11px] text-red-700 dark:text-red-300">{p.situacao_motivo}</p>}
+                  <HistoryCoverage historico={p.historico_djen} publicacaoId={p.publicacao_id} />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" onClick={() => { setAlertaAberto(null); void abrir(p.publicacao_id); }}>Ver processo <ArrowRight className="h-3.5 w-3.5" /></Button>
+                  <RegisterFulfillment endpoint={`/djen/prazos/escritorio/${p.publicacao_id}`} onSaved={async () => { await carregarAlerta("prazos"); await carregarStatus(); }} />
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      </Modal>
+      <Modal open={alertaAberto === "parados"} onClose={() => setAlertaAberto(null)} title="Processos parados" maxWidth="max-w-4xl"
+        footer={<Button variant="outline" onClick={() => setAlertaAberto(null)}>Fechar</Button>}>
+        <div className="space-y-3">
+          <p className="text-xs text-zinc-500">Processos ativos sem nenhuma publicação capturada no período, excluindo os que têm trânsito, arquivamento, extinção, RPV/precatório ou perícia futura. A ausência de publicação no DJEN não comprova que o processo esteja parado nos autos.</p>
+          <label className="flex items-center gap-2 text-xs">Parado há pelo menos
+            <select className="rounded-lg border bg-transparent px-2 py-1" value={diasParado} onChange={(e) => { const v = Number(e.target.value); setDiasParado(v); void carregarAlerta("parados", v).catch((er) => show(erro(er), "error")); }}>
+              {[30, 45, 60, 90, 120, 180].map((n) => <option key={n} value={n}>{n} dias</option>)}
+            </select>
+          </label>
+          {carregandoAlerta ? <p className="text-sm text-zinc-500">Carregando…</p> : !processosParados.length ? (
+            <EmptyState icon={FileCheck2} title="Nenhum processo parado" description="Todos os processos ativos tiveram publicação dentro do período escolhido." />
+          ) : processosParados.map((p) => (
+            <article key={p.publicacao_id} className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">{p.cliente_nome || p.processo}</p>
+                  <p className="mt-1 text-xs text-zinc-500">{p.processo}</p>
+                  <p className="mt-2 text-xs font-semibold text-amber-700 dark:text-amber-300">Sem publicação há {p.dias_parado} dias · última em {dia(p.ultima_publicacao_em)}{p.ultimo_tipo ? ` · ${p.ultimo_tipo}` : ""}</p>
+                  <p className="mt-2 line-clamp-3 text-xs text-zinc-600 dark:text-zinc-300">{p.ultimo_andamento}</p>
+                  <HistoryCoverage historico={p.historico_djen} publicacaoId={p.publicacao_id} />
+                </div>
+                <Button size="sm" variant="outline" onClick={() => { setAlertaAberto(null); void abrir(p.publicacao_id); }}>Ver processo <ArrowRight className="h-3.5 w-3.5" /></Button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </Modal>
       <Modal open={aguardandoAberto} onClose={() => setAguardandoAberto(false)} title="Acompanhamentos aguardando retorno" maxWidth="max-w-3xl">{conteudoAguardando}</Modal>
       <Modal
         open={Boolean(formAdv)}
@@ -1951,6 +2035,13 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                     <p className="text-sm font-semibold">{p.nome}</p>
                     <p className="mt-1 text-xs text-zinc-500">{p.processo}</p>
                     <HistoryCoverage historico={p.historico_djen} />
+                    {p.historico_djen?.status !== "atualizado" && p.historico_djen?.status !== "verificando" && (
+                      <Button size="sm" variant="outline" disabled={salvando} onClick={() => void acao(async () => {
+                        await api.post(`/djen/pericias/${p.pericia_id}/atualizar-historico`, {});
+                        show("Consulta do histórico enfileirada. O alerta será reavaliado ao terminar.", "success");
+                        await carregarSemLaudo();
+                      })}>Atualizar histórico do DJEN</Button>
+                    )}
                     <p className="mt-2 text-xs">
                       Perícia em {p.data}
                       {p.horario ? ` às ${p.horario}` : ""} ·{" "}

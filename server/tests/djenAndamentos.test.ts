@@ -92,3 +92,20 @@ describe("obrigações externas superadas por sentença com dispositivo longo", 
     expect(listarObrigacoesExternas()).toHaveLength(0);
   });
 });
+
+import { identificarObrigacoesExternas, identificarOficios, cumprimentoIdentificado } from "../src/services/djen/obligations";
+describe("ofícios a terceiros", () => {
+  it("identifica o terceiro e o prazo; ordem à CEAB para implantar continua sendo implantação", () => {
+    const o = identificarOficios("Oficie-se à empresa Alfa Ltda., para apresentar o PPP no prazo de 15 (quinze) dias.");
+    expect(o[0]).toMatchObject({ tipo: "terceiro_oficio", prazo_citado_dias: 15 });
+    expect(o[0].responsavel).toMatch(/alfa/i);
+    expect(identificarOficios("Oficie-se à CEAB para implantar o benefício em 30 dias.")[0].tipo).toBe("inss_implantacao");
+    expect(identificarObrigacoesExternas("Oficie-se ao Cartório de Registro Civil para encaminhar a certidão.").map((x) => x.tipo)).toEqual(["terceiro_oficio"]);
+  });
+  it("hipótese e dispensa não geram acompanhamento; resposta posterior cumpre", () => {
+    expect(identificarOficios("Caso necessário, oficie-se à empresa Alfa.")).toEqual([]);
+    expect(identificarOficios("Dispenso o ofício à empresa.")).toEqual([]);
+    expect(cumprimentoIdentificado("terceiro_oficio", "Juntada a resposta da empresa ao ofício.")).toBe(true);
+    expect(cumprimentoIdentificado("terceiro_oficio", "Oficie-se à empresa para resposta.")).toBe(false);
+  });
+});

@@ -186,7 +186,7 @@ export function runDjenMigrations(db: Database.Database): void {
     );
     CREATE TABLE IF NOT EXISTS djen_acompanhamentos_obrigacoes (
       publicacao_id INTEGER NOT NULL REFERENCES djen_publicacoes(id) ON DELETE CASCADE,
-      tipo TEXT NOT NULL CHECK(tipo IN ('perito_laudo','perito_esclarecimentos','perito_calculos','inss_implantacao','parte_contraria')),
+      tipo TEXT NOT NULL CHECK(tipo IN ('perito_laudo','perito_esclarecimentos','perito_calculos','inss_implantacao','parte_contraria','terceiro_oficio')),
       status TEXT NOT NULL DEFAULT 'pendente' CHECK(status IN ('pendente','cobrado','resolvido')),
       ultima_cobranca_em TEXT,
       PRIMARY KEY(publicacao_id,tipo)
@@ -332,6 +332,29 @@ export function runDjenMigrations(db: Database.Database): void {
       }
     }
   })();
+  // 2.55.0: acompanhamento de ofícios a terceiros. O CHECK antigo não aceita o novo tipo;
+  // a tabela é recriada preservando todas as linhas.
+  const obrigacoesSql = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='djen_acompanhamentos_obrigacoes'").get() as { sql: string } | undefined)?.sql || "";
+  if (obrigacoesSql && !obrigacoesSql.includes("terceiro_oficio")) db.transaction(() => {
+    db.exec(`ALTER TABLE djen_acompanhamentos_obrigacoes RENAME TO djen_acompanhamentos_obrigacoes_antiga;
+      CREATE TABLE djen_acompanhamentos_obrigacoes (
+        publicacao_id INTEGER NOT NULL REFERENCES djen_publicacoes(id) ON DELETE CASCADE,
+        tipo TEXT NOT NULL CHECK(tipo IN ('perito_laudo','perito_esclarecimentos','perito_calculos','inss_implantacao','parte_contraria','terceiro_oficio')),
+        status TEXT NOT NULL DEFAULT 'pendente' CHECK(status IN ('pendente','cobrado','resolvido')),
+        ultima_cobranca_em TEXT,
+        PRIMARY KEY(publicacao_id,tipo)
+      );
+      INSERT INTO djen_acompanhamentos_obrigacoes(publicacao_id,tipo,status,ultima_cobranca_em)
+        SELECT publicacao_id,tipo,status,ultima_cobranca_em FROM djen_acompanhamentos_obrigacoes_antiga;
+      DROP TABLE djen_acompanhamentos_obrigacoes_antiga;`);
+  })();
+  // 2.55.0: baixa manual de prazos do escritório conferidos nos autos.
+  db.exec(`CREATE TABLE IF NOT EXISTS djen_prazos_escritorio_estado (
+    publicacao_id INTEGER PRIMARY KEY REFERENCES djen_publicacoes(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'pendente' CHECK(status IN ('pendente','resolvido')),
+    cumprido_em TEXT, observacoes TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`);
   // 2.54.0: classificação complementar local (sem custo de IA) para publicações ainda em
   // "Outros". Só adiciona categorias comprovadas por trecho literal; revisões humanas e
   // publicações que já têm categoria permanecem intactas. Executa uma única vez.

@@ -382,6 +382,13 @@ function prazosPorPublicacao(ids: number[]) {
   for (const l of linhas) mapa.set(l.publicacao_id, { total: l.total, abertos: l.abertos || 0, concluidos: l.concluidos || 0 });
   return mapa;
 }
+/** Publicações cujo cumprimento do prazo do escritório foi registrado manualmente. */
+export function cumpridasManualmente(ids: number[]) {
+  if (!ids.length) return new Set<number>();
+  return new Set((db.prepare(
+    `SELECT publicacao_id FROM djen_prazos_escritorio_estado WHERE status='resolvido' AND publicacao_id IN (${ids.map(() => "?").join(",")})`,
+  ).all(...ids) as { publicacao_id: number }[]).map((r) => r.publicacao_id));
+}
 /** Publicações do mesmo processo disponibilizadas depois desta. */
 function publicacoesPosteriores(p: { id: number; processo_chave: string; data_disponibilizacao: string }): PublicacaoPosterior[] {
   const rows = db.prepare(
@@ -416,9 +423,10 @@ export function apresentarPublicacao(p: PublicacaoRow, integral = false) {
   const providencia = analise?.providencia;
   const posterioresDaOrdem = publicacoesPosteriores(p);
   const prazosDaPublicacao = prazosPorPublicacao([p.id]).get(p.id);
+  const cumpridaManual = cumpridasManualmente([p.id]).has(p.id);
   const ordens = identificarOrdensProcessuais(texto).map((o) => {
     if (!ordemDoEscritorio(o) || o.tipo === "ciencia") return { ...o, situacao: null as SituacaoDaOrdem | null };
-    return { ...o, situacao: situacaoDaOrdem(o, posterioresDaOrdem, { prazosDoUsuario: prazosDaPublicacao }) };
+    return { ...o, situacao: situacaoDaOrdem(o, posterioresDaOrdem, { prazosDoUsuario: prazosDaPublicacao, cumpridaManual }) };
   });
   const vigentes = ordens.filter((o) => ordemDoEscritorio(o) && (!o.situacao || ordemAtiva(o.situacao)));
   const principal = vigentes.find((o) => o.tipo === "prazo_explicito") || vigentes.find((o) => o.tipo === "cumprimento");
@@ -503,6 +511,7 @@ function apresentarProcessoAgrupado(p: PublicacaoRow, arquivo: string, atividade
   let acao: AcaoProcesso = { tipo: "ciencia", descricao: null, prazo_texto: null, encerradas: [] };
   let resultadoSentenca = "nao_identificado";
   const prazosSalvos = prazosPorPublicacao(publicacoes.map((item) => item.id));
+  const manuais = cumpridasManualmente(publicacoes.map((item) => item.id));
   // Percorre do mais novo ao mais antigo; "posteriores" acumula o que veio depois.
   const posteriores: PublicacaoPosterior[] = [];
   let ativaPrazo: AcaoProcesso | null = null;
@@ -532,7 +541,7 @@ function apresentarProcessoAgrupado(p: PublicacaoRow, arquivo: string, atividade
       } catch { /* análise antiga incompleta */ }
     }
     for (const c of candidatas) {
-      const situacao = situacaoDaOrdem({ acao: c.acao, trecho: c.trecho }, posteriores, { prazosDoUsuario: prazosSalvos.get(item.id) });
+      const situacao = situacaoDaOrdem({ acao: c.acao, trecho: c.trecho }, posteriores, { prazosDoUsuario: prazosSalvos.get(item.id), cumpridaManual: manuais.has(item.id) });
       const registro: AcaoProcesso = { tipo: c.tipo, descricao: c.descricao, prazo_texto: c.prazo_texto, publicacao_id: item.id,
         data_disponibilizacao: item.data_disponibilizacao.slice(0, 10), situacao: situacao.situacao, situacao_motivo: situacao.motivo, encerradas: [] };
       if (!ordemAtiva(situacao)) { acao.encerradas.push({ publicacao_id: item.id, descricao: c.descricao, situacao: situacao.situacao, motivo: situacao.motivo, data: situacao.data }); continue; }
