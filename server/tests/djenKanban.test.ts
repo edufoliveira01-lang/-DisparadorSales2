@@ -83,8 +83,13 @@ describe("evidência para etapas automáticas", () => {
       texto: "Executados intimados a se manifestar sobre cálculos.", classe: "Cumprimento de sentença",
       categorias_json: "[]", evidencias_json: "[]",
     })?.codigo).toBe("calculos");
+    // Sem ato específico, a própria classe comprova a fase de cumprimento; fora dessa classe nada se infere.
     expect(classificarPublicacaoComHistorico({
       texto: "Aguarde-se o prazo de cálculo, sem nova intimação.", classe: "Cumprimento de sentença",
+      categorias_json: "[]", evidencias_json: "[]",
+    })).toMatchObject({ codigo: "cumprimento_sentenca", evidencia: "Classe processual: Cumprimento de sentença" });
+    expect(classificarPublicacaoComHistorico({
+      texto: "Aguarde-se o prazo de cálculo, sem nova intimação.", classe: "Procedimento Comum Cível",
       categorias_json: "[]", evidencias_json: "[]",
     })).toBeNull();
   });

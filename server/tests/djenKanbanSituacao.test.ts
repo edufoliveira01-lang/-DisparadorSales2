@@ -156,3 +156,34 @@ describe("proposta de acordo e homologação", () => {
     expect(codigoDe("ac-2")).toBe("proposta_acordo");
   });
 });
+
+describe("fase de cumprimento pela classe processual", () => {
+  const publicarClasse = (processo: string, data: string, texto: string, classe: string) => {
+    db.prepare("INSERT OR IGNORE INTO djen_processos(chave,numero) VALUES (?,?)").run(processo, processo);
+    db.prepare(`INSERT INTO djen_publicacoes(comunicacao_id,processo_chave,tribunal,orgao,classe,tipo_documento,tipo_comunicacao,data_disponibilizacao,texto)
+      VALUES (?,?,?,?,?,?,?,?,?)`).run(`kc-${++serial}`, processo, "TJSP", "Foro Central - Fazenda Pública", classe, "Despacho", "Intimação", data, texto);
+  };
+  it("intimação curta em processo de Cumprimento de Sentença contra a Fazenda vai para Cumprimento de sentença", () => {
+    publicarClasse("c-1", dias(5), "Expedida a intimação. Aguarde-se.", "CUMPRIMENTO DE SENTENÇA CONTRA A FAZENDA PÚBLICA");
+    const q = listarKanban();
+    const card = q.cartoes.find((c) => c.processo_chave === "c-1")!;
+    expect(q.listas.find((l) => l.id === card.lista_id)!.codigo).toBe("cumprimento_sentenca");
+    expect(card.etapa_evidencia).toMatch(/^Classe processual:/);
+    expect(card).toMatchObject({ classe: "CUMPRIMENTO DE SENTENÇA CONTRA A FAZENDA PÚBLICA", tribunal: "TJSP" });
+  });
+  it("etapa mais adiantada da execução prevalece sobre a classe (RPV expedida)", () => {
+    publicarClasse("c-2", dias(5), "Foi expedido o ofício requisitório (RPV) no valor apurado.", "Cumprimento de Sentença contra a Fazenda Pública");
+    expect(codigoDe("c-2")).toBe("rpv_expedida");
+  });
+  it("outras classes sem ato específico seguem a leitura situacional", () => {
+    publicarClasse("c-3", dias(5), "Vistos. Aguarde-se.", "Procedimento do Juizado Especial da Fazenda Pública");
+    expect(codigoDe("c-3")).toBe("aguarda_juizo");
+  });
+  it("a classe vale mesmo se a publicação foi revisada sem categorias", () => {
+    publicarClasse("c-4", dias(5), "Vistos. Aguarde-se.", "Cumprimento de Sentença");
+    listarKanban();
+    db.prepare("UPDATE djen_publicacoes SET revisada=1,categorias_json='[]' WHERE processo_chave='c-4'").run();
+    db.prepare("UPDATE djen_kanban_cartoes SET revisar_etapa=1 WHERE processo_chave='c-4'").run();
+    expect(codigoDe("c-4")).toBe("cumprimento_sentenca");
+  });
+});

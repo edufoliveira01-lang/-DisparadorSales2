@@ -14,6 +14,7 @@ type Cartao = {
   destinatarios_json: string; publicacao_id: number; data_disponibilizacao: string;
   situacao: string; texto: string; ia_json: string | null; categorias_json: string;
   publicacoes_total: number; prazos_abertos: number; publicacoes_nao_lidas: number;
+  classe: string | null; tribunal: string | null; orgao: string | null;
 };
 const hoje = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 const listas = () => db.prepare("SELECT id,nome,posicao,contar_dias,codigo,regra_categoria FROM djen_kanban_listas ORDER BY posicao,id").all() as Lista[];
@@ -140,7 +141,7 @@ export function listarKanban() {
   atualizarKanbanComNovasPublicacoes();
   const cards = db.prepare(
     `SELECT k.*,pr.numero,c.nome AS cliente_nome,p.destinatarios_json,p.id AS publicacao_id,
-            p.data_disponibilizacao,p.situacao,p.texto,p.ia_json,p.categorias_json,
+            p.data_disponibilizacao,p.situacao,p.texto,p.ia_json,p.categorias_json,p.classe,p.tribunal,p.orgao,
             (SELECT COUNT(*) FROM djen_publicacoes q WHERE q.processo_chave=k.processo_chave AND q.cancelada=0) AS publicacoes_total,
             (SELECT COUNT(*) FROM djen_publicacoes q WHERE q.processo_chave=k.processo_chave AND q.cancelada=0 AND q.lida=0) AS publicacoes_nao_lidas,
             (SELECT COUNT(*) FROM djen_prazos d JOIN djen_publicacoes q ON q.id=d.publicacao_id

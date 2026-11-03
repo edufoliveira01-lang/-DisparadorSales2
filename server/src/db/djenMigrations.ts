@@ -333,9 +333,9 @@ export function runDjenMigrations(db: Database.Database): void {
   `);
   // Reavalia o histórico após mudanças no classificador, preservando escolhas manuais.
   const versaoQuadro = db.prepare("SELECT valor FROM djen_kanban_meta WHERE chave='classificador'").get() as { valor: string } | undefined;
-  if (versaoQuadro?.valor !== "2.57.0") db.transaction(() => {
+  if (versaoQuadro?.valor !== "2.58.0") db.transaction(() => {
     db.exec("UPDATE djen_kanban_cartoes SET revisar_etapa=1");
-    db.prepare("INSERT INTO djen_kanban_meta(chave,valor) VALUES ('classificador','2.57.0') ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor").run();
+    db.prepare("INSERT INTO djen_kanban_meta(chave,valor) VALUES ('classificador','2.58.0') ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor").run();
   })();
   // Metadados de origem da análise. Preserva o JSON e as revisões já existentes.
   const publicationAiColumns = db.prepare("PRAGMA table_info(djen_publicacoes)").all() as { name: string }[];

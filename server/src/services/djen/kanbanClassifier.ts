@@ -138,11 +138,13 @@ export function classificarPublicacaoComHistorico(row: {
   texto: string; categorias_json: string; evidencias_json: string; classe?: string; revisada?: number;
 }): SinalEtapa | null {
   let literal = classificarPublicacaoParaQuadro(row.texto);
-  // A classe processual ajuda a reconhecer atos da fase de execução. Ela sozinha
-  // não move o cartão: exige um ato concreto na publicação.
+  // A classe processual informada pelo DJEN define a fase do processo: um processo cuja classe é
+  // "Cumprimento de Sentença" (ou execução contra a Fazenda) já está na fase de cumprimento, mesmo
+  // que a intimação seja curta (expedição, ciência etc.). Atos mais específicos do texto (cálculos,
+  // RPV, extinção) continuam prevalecendo por estarem mais adiantados na ordem das etapas.
   const classe = canon(row.classe || "");
   const ato = canon(row.texto);
-  if (/\b(?:cumprimento de sentenca|execucao de sentenca)\b/.test(classe)) {
+  if (/\b(?:cumprimento (?:provisorio )?de sentenca|execucao (?:de sentenca|contra a fazenda|de titulo))\b/.test(classe)) {
     let contextual: SinalEtapa | null = null;
     if (/\b(?:intimad[oa]s?|intime-se|manifestar|manifestacao|impugnacao|apresentad[oa]s?|homologad[oa]s?)\b/.test(ato) &&
         /\bcalculos\b/.test(ato))
@@ -150,9 +152,15 @@ export function classificarPublicacaoComHistorico(row: {
     else if (/\b(?:exequente|executad[oa]s?|impugnacao|cumprimento de sentenca)\b/.test(ato) &&
              /\b(?:intimad[oa]s?|intime-se|manifestar|impugnacao|iniciado|prosseguimento)\b/.test(ato))
       contextual = { codigo: "cumprimento_sentenca", evidencia: row.texto.slice(0, 230) };
+    // Sem ato específico: a própria classe comprova a fase (evidência identificada como classe processual).
+    if (!contextual && !/\b(?:distribuicao|distribuid[oa]|peticao inicial)\b/.test(ato))
+      contextual = { codigo: "cumprimento_sentenca", evidencia: `Classe processual: ${row.classe}` };
     if (contextual && (!literal || ETAPAS_AUTOMATICAS.indexOf(contextual.codigo) > ETAPAS_AUTOMATICAS.indexOf(literal.codigo)))
       literal = contextual;
   }
+  // Fase indicada pela classe vale mesmo quando a classificação da publicação foi revisada
+  // à mão (a revisão trata do ato publicado, não da classe do processo).
+  const porClasse = Boolean(literal?.evidencia.startsWith("Classe processual:"));
   let categorias: unknown;
   let evidencias: unknown;
   try {
@@ -172,6 +180,7 @@ export function classificarPublicacaoComHistorico(row: {
   // A revisão humana é a fonte da categoria, mesmo quando a IA não havia gerado
   // evidência para ela. Não reutiliza a prova de uma categoria removida na revisão.
   if (row.revisada) {
+    if (porClasse && literal) return literal;
     const confirmadas = categorias.map((c) => etapas[c]).filter(Boolean) as EtapaAutomatica[];
     if (categorias.includes("rpv")) {
       const rpv = literal && ["aguarda_expedicao_rpv", "rpv_expedida", "concluido"].includes(literal.codigo) ? literal.codigo : "aguarda_expedicao_rpv";

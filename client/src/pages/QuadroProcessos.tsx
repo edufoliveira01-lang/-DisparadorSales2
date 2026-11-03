@@ -25,6 +25,7 @@ interface Cartao {
   publicacao_id: number; data_disponibilizacao: string; situacao: string;
   resumo: string; categorias: string[]; publicacoes_total: number;
   publicacoes_nao_lidas: number; prazos_abertos: number;
+  classe: string | null; tribunal: string | null; orgao: string | null;
 }
 interface Quadro { listas: Lista[]; cartoes: Cartao[] }
 interface Movimento { origem: string | null; destino: string; origem_movimento: "automatico" | "manual"; created_at: string }
@@ -62,6 +63,7 @@ export function QuadroProcessos() {
   const [destino, setDestino] = useState("");
   const [arrastando, setArrastando] = useState<string | null>(null);
   const [foco, setFoco] = useState<number | null>(null);
+  const [classeFiltro, setClasseFiltro] = useState("");
   const [selecionados, setSelecionados] = useState<string[]>([]);
   const [destinoLote, setDestinoLote] = useState("");
   // A roda do mouse rola o quadro na horizontal. Uma coluna que ainda pode rolar na vertical
@@ -118,6 +120,7 @@ export function QuadroProcessos() {
   const codigoDa = (c: Cartao) => quadro?.listas.find((l) => l.id === c.lista_id)?.codigo;
   const termo = normal(busca.trim());
   const filtrados = quadro?.cartoes.filter((c) =>
+    (!classeFiltro || (c.classe || "Sem classe informada") === classeFiltro) &&
     (!termo || normal(`${c.cliente_nome || ""} ${c.numero} ${c.resumo}`).includes(termo)) &&
     (filtro === "todos" || (filtro === "prazos" && c.prazos_abertos > 0) || (filtro === "nao_lidos" && c.publicacoes_nao_lidas > 0)
       || (filtro === "manual" && c.modo === "manual") || (filtro === "automatico" && c.modo === "automatico")
@@ -125,6 +128,14 @@ export function QuadroProcessos() {
       || (filtro === "triagem" && codigoDa(c) === "triagem") || (filtro === "sem_etapa" && codigoDa(c) === "aguarda_juizo")
       || (filtro === "escritorio" && codigoDa(c) === "prov_escritorio") || (filtro === "terceiros" && codigoDa(c) === "aguarda_terceiros")),
   ) || [];
+  // Classes processuais presentes nos cartões (com contagem), para agrupar e mover de uma vez.
+  const classes = (() => {
+    const mapa = new Map<string, number>();
+    for (const c of quadro?.cartoes || []) if (foco === null || c.lista_id === foco) { const k = c.classe || "Sem classe informada"; mapa.set(k, (mapa.get(k) || 0) + 1); }
+    return [...mapa.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pt-BR"));
+  })();
+  const alvoLote = filtrados.filter((c) => foco === null || c.lista_id === foco).slice(0, 500);
+  const filtrando = Boolean(termo) || filtro !== "todos" || Boolean(classeFiltro) || foco !== null;
   const listasVisiveis = quadro?.listas.filter((l) => foco === null || l.id === foco) || [];
   const alternar = (chave: string) => setSelecionados((atual) => atual.includes(chave) ? atual.filter((c) => c !== chave) : [...atual, chave]);
   const moverLote = () => {
@@ -150,6 +161,13 @@ export function QuadroProcessos() {
       <Select aria-label="Filtrar cartões" className="w-auto min-w-[180px]" value={filtro} onChange={(e) => setFiltro(e.target.value)}>
         <option value="todos">Todos os processos</option><option value="triagem">Sem etapa identificada</option><option value="sem_etapa">Sem etapa específica (aguardando juízo)</option><option value="escritorio">Providência do escritório</option><option value="terceiros">Aguardando outra parte / terceiros</option><option value="automatico">Etapa automática</option><option value="manual">Etapa manual</option><option value="prazos">Com prazo em aberto</option><option value="nao_lidos">Com publicação não lida</option><option value="com_atividade">Com dias sem providência</option>
       </Select>
+      <Select aria-label="Filtrar por classe processual" className="w-auto min-w-[200px] max-w-[320px]" value={classeFiltro} onChange={(e) => setClasseFiltro(e.target.value)}>
+        <option value="">Todas as classes processuais</option>
+        {classes.map(([nome, n]) => <option key={nome} value={nome}>{nome} ({n})</option>)}
+        {classeFiltro && !classes.some(([nome]) => nome === classeFiltro) && <option value={classeFiltro}>{classeFiltro} (0)</option>}
+      </Select>
+      {canManage && filtrando && alvoLote.length > 0 && <Button size="sm" variant="outline" onClick={() => setSelecionados(alvoLote.map((c) => c.processo_chave))}>Selecionar todos os {alvoLote.length} filtrados</Button>}
+      {(classeFiltro || termo || filtro !== "todos") && <Button size="sm" variant="ghost" onClick={() => { setClasseFiltro(""); setBusca(""); setFiltro("todos"); }}>Limpar filtros</Button>}
       <span className="text-xs text-zinc-500">{filtrados.length} de {quadro?.cartoes.length ?? 0} processos</span>
     </div>
     {quadro && <div className="flex flex-wrap items-center gap-2" aria-label="Resumo por lista">
@@ -224,6 +242,7 @@ export function QuadroProcessos() {
                 <button type="button" onClick={() => setPublicacaoAberta(card.publicacao_id)} className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500">
                   <span className="flex items-start justify-between gap-2"><strong className="line-clamp-2 text-xs leading-snug text-zinc-900 dark:text-zinc-100">{card.cliente_nome || "Nome a conferir"}</strong></span>
                   <span className="mt-1 block text-[11px] text-zinc-500">{card.numero}</span>
+                  {card.classe && <span className="mt-0.5 block truncate text-[10px] text-zinc-400" title={`${card.classe}${card.tribunal ? ` · ${card.tribunal}` : ""}`}>{card.classe}{card.tribunal ? ` · ${card.tribunal}` : ""}</span>}
                   <span className="mt-2 line-clamp-2 block text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-300">{card.situacao || card.resumo}</span>
                   <span className="mt-2 flex flex-wrap gap-1 text-[10px]">
                     {card.publicacoes_nao_lidas > 0 && <span className="rounded bg-accent-50 px-1.5 py-0.5 font-semibold text-accent-700">{card.publicacoes_nao_lidas} não lida(s)</span>}
