@@ -47,20 +47,37 @@ if [ "$SIMULAR" != "1" ]; then
 fi
 
 cat > "$DIR/nginx.exemplo.conf" <<CONF
-# Exemplo para https://$SLUG.$DOMINIO_BASE  (ajuste os caminhos do certificado, se usar certificado de origem)
+# Exemplo para https://$SLUG.$DOMINIO_BASE
+# A interface (arquivos estáticos) é a mesma de todos os escritórios, em /var/www/disparazap;
+# só /api/ e /socket.io/ vão para a instância deste escritório. Ajuste "listen" para a porta
+# que o seu Nginx já usa (ex.: 8081 atrás do Cloudflare Tunnel).
 server {
   listen 80;
   server_name $SLUG.$DOMINIO_BASE;
   client_max_body_size 25m;
+  root /var/www/disparazap;
+  index index.html;
+
   location / {
+    try_files \$uri \$uri/ /index.html;
+  }
+
+  location /api/ {
+    proxy_pass http://127.0.0.1:$PORTA;
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+    client_max_body_size 25m;
+  }
+
+  location /socket.io/ {
     proxy_pass http://127.0.0.1:$PORTA;
     proxy_http_version 1.1;
     proxy_set_header Upgrade \$http_upgrade;
     proxy_set_header Connection "upgrade";
     proxy_set_header Host \$host;
-    proxy_set_header X-Forwarded-For \$http_cf_connecting_ip;
-    proxy_set_header X-Forwarded-Proto https;
-    proxy_buffering off;
     proxy_read_timeout 3600s;
   }
 }
