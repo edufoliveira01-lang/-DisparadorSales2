@@ -1,4 +1,5 @@
 import { periodosAutomaticos } from "./captureWindows";
+import { licencaPermiteOperar } from "../../licenca/cliente";
 import { iniciarMonitorHistoricos, pararMonitorHistoricos } from "./processHistory";
 import { iniciarMonitorCalendarios, pararMonitorCalendarios, enfileirarCalendarios } from "./officialCalendars/service";
 import { db } from "../../db";
@@ -231,6 +232,7 @@ export function iniciarMonitorDjen(): void {
   );
   if (timer) return;
   const verificar = () => {
+    if (!licencaPermiteOperar()) return; // assinatura inativa: sem captura automática
     const config = configuracaoDjen();
     if (!config.automatico) {
       proximaExecucao = 0;

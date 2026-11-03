@@ -13,6 +13,9 @@ import { teamRouter } from "./routes/team";
 import { brandingRouter } from "./routes/branding";
 import { backupRouter } from "./routes/backup";
 import { authenticatedApi } from "./middleware/access";
+import { licencaSomenteLeitura } from "./middleware/licenca";
+import { licenseRouter } from "./routes/license";
+import { licenca, licencaPermiteOperar } from "./licenca/cliente";
 import { contactsRouter } from "./routes/contacts";
 import { logsRouter } from "./routes/logs";
 import { pendingRepliesRouter } from "./routes/pendingReplies";
@@ -43,10 +46,14 @@ app.use(express.json({ limit: "2mb" }));
 // Rotas públicas
 app.use("/api/auth", authRouter);
 
+// Assinatura inativa: somente leitura (login, logout e consulta da licença continuam)
+app.use("/api", licencaSomenteLeitura);
+
 // Middleware de autenticação para as demais rotas
 app.use("/api", authenticatedApi);
 
 app.use("/api", notifyDashboardChanges);
+app.use("/api/license", licenseRouter);
 app.use("/api/djen", djenRouter);
 app.use("/api/ai", aiRouter);
 app.use("/api/settings", settingsRouter);
@@ -90,6 +97,7 @@ initWebsocket(httpServer);
 const port = Number(process.env.PORT) || 3333;
 httpServer.listen(port, () => {
   console.log(`Servidor do Disparador de Perícias rodando em http://localhost:${port}`);
+  try { licenca().iniciar(); } catch (error) { console.error("[Licença]", (error as Error).message); }
   try {
     const remarcacoesCorrigidas = reconciliarRemarcacoesAntigas();
     if (remarcacoesCorrigidas > 0) {
@@ -108,7 +116,7 @@ httpServer.listen(port, () => {
 // A rotina tem trava interna para não sobrepor consultas e envios de canais lentos.
 const INTERVALO_VERIFICACAO_MS = 15_000;
 setTimeout(
-  () => verificarNotificacoesPendentes("inicializacao").catch((err) => {
+  () => !licencaPermiteOperar() ? Promise.resolve() : verificarNotificacoesPendentes("inicializacao").catch((err) => {
     console.error("[Notificações] Erro na verificação inicial:", err);
     recordSystemLog({
       nivel: "erro",
@@ -122,7 +130,7 @@ setTimeout(
   5_000
 );
 setInterval(
-  () => verificarNotificacoesPendentes("periodica").catch((err) => {
+  () => !licencaPermiteOperar() ? Promise.resolve() : verificarNotificacoesPendentes("periodica").catch((err) => {
     console.error("[Notificações] Erro na verificação periódica:", err);
     recordSystemLog({
       nivel: "erro",

@@ -14,6 +14,7 @@ import { Sidebar } from "./Sidebar";
 import { QuickNavigation } from "./QuickNavigation";
 import { GlobalServiceActivity } from "./GlobalServiceActivity";
 import { ProcessAlerts } from "./ProcessAlerts";
+import { LicencaAviso } from "./LicencaAviso";
 import { useActiveService } from "@/context/ActiveServiceContext";
 import { useWhatsapp } from "@/context/WhatsappContext";
 import { useTheme } from "@/context/ThemeContext";
@@ -216,6 +217,7 @@ export function Layout({ children }: { children: ReactNode }) {
         >
           <div className="global-status-rail">
             <GlobalServiceActivity />
+            <LicencaAviso />
             {can("processes.view") && <ProcessAlerts />}
           </div>
           <div

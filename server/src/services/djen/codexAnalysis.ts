@@ -1,4 +1,5 @@
 import { chatgptLoginBusy } from "../ai/chatgptAuth";
+import { licencaPermiteOperar, recursoLiberadoNaLicenca } from "../../licenca/cliente";
 import { aiProfile, profileIdentity, type AiProfile } from "../ai/config";
 import { createHash } from "node:crypto";
 import { db } from "../../db";
@@ -478,6 +479,7 @@ export function iniciarMonitorCodex() {
     "UPDATE djen_publicacoes SET ia_status='pendente' WHERE ia_status='analisando'",
   ).run();
   timer = setInterval(() => {
+    if (!licencaPermiteOperar() || !recursoLiberadoNaLicenca("ia_habilitada")) return; // sem licença ou plano sem IA: não consome
     void processarFilaCodex();
   }, 30000);
   timer.unref();

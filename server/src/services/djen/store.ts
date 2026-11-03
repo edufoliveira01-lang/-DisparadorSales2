@@ -1,4 +1,5 @@
 import { classificarComplementar } from "./classificacaoComplementar";
+import { mensagemSeExcederLimite } from "../../licenca/cliente";
 import { situacaoDaOrdem, ordemAtiva, type SituacaoDaOrdem, type PublicacaoPosterior } from "./orderStatus";
 import { coberturaHistorico, invalidarHistorico } from "./historyCoverage";
 import { atividadesProcessos, type AtividadeProcesso } from "./activity";
@@ -146,7 +147,9 @@ export function salvarAdvogado(
     db.prepare(
       `UPDATE djen_advogados SET nome=?, modo_busca=?, ativo=?, cursor_data=CASE WHEN nome<>? OR modo_busca<>? THEN NULL ELSE cursor_data END WHERE id=?`,
     ).run(nome, modo, ativo, nome, modo, id);
-  else
+  else {
+    const limite = ativo ? mensagemSeExcederLimite("max_advogados", (db.prepare("SELECT COUNT(*) AS n FROM djen_advogados WHERE ativo=1").get() as { n: number }).n) : null;
+    if (limite) throw new DjenInputError(limite);
     id = Number(
       db
         .prepare(
@@ -154,6 +157,7 @@ export function salvarAdvogado(
         )
         .run(nome, numero, uf, modo, ativo).lastInsertRowid,
     );
+  }
   return db
     .prepare("SELECT * FROM djen_advogados WHERE id = ?")
     .get(id) as AdvogadoDjen;

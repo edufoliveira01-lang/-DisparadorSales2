@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { mensagemSeExcederLimite } from "../licenca/cliente";
 import { db } from "../db";
 import { hashPassword, getUserById, type User } from "../services/authService";
 import {
@@ -50,6 +51,10 @@ teamRouter.get("/audit", (_req, res) => {
 teamRouter.post("/", (req, res) => {
   try {
     const input = parseInput(req.body || {});
+    if (input.active) {
+      const limite = mensagemSeExcederLimite("max_usuarios", (db.prepare("SELECT COUNT(*) AS n FROM users WHERE active=1").get() as { n: number }).n);
+      if (limite) return res.status(402).json({ error: limite, codigo: "limite_do_plano" });
+    }
     const password = req.body?.password;
     if (typeof password !== "string" || password.length < 12) return res.status(400).json({ error: "Informe uma senha inicial de pelo menos 12 caracteres." });
     const info = db.prepare(`INSERT INTO users (username, display_name, email, role, permissions_json, active, password_hash)
@@ -75,6 +80,10 @@ teamRouter.put("/:id", (req, res) => {
     if (existing.role === "administrador" && (!input.active || input.role !== "administrador")) {
       const others = db.prepare("SELECT count(*) AS total FROM users WHERE role = 'administrador' AND active = 1 AND id != ?").get(id) as { total: number };
       if (!others.total) return res.status(400).json({ error: "É necessário manter ao menos um administrador ativo." });
+    }
+    if (input.active && !existing.active) { // reativar também conta para o limite do plano
+      const limite = mensagemSeExcederLimite("max_usuarios", (db.prepare("SELECT COUNT(*) AS n FROM users WHERE active=1").get() as { n: number }).n);
+      if (limite) return res.status(402).json({ error: limite, codigo: "limite_do_plano" });
     }
     db.prepare(`UPDATE users SET username = ?, display_name = ?, email = ?, role = ?, permissions_json = ?, active = ? WHERE id = ?`)
       .run(input.username, input.displayName, input.email, input.role, JSON.stringify(input.permissions), input.active ? 1 : 0, id);

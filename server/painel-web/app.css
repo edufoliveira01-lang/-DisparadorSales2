@@ -1,0 +1,31 @@
+:root{--bg:#f6f5fb;--card:#fff;--tx:#18181b;--mut:#6b7280;--bd:#e5e7eb;--ac:#6d28d9;--ac2:#5b21b6;--ok:#047857;--okbg:#d1fae5;--wr:#92400e;--wrbg:#fef3c7;--er:#b91c1c;--erbg:#fee2e2;--in:#1d4ed8;--inbg:#dbeafe}
+@media(prefers-color-scheme:dark){:root{--bg:#0f0f14;--card:#18181f;--tx:#f4f4f5;--mut:#a1a1aa;--bd:#2a2a35;--okbg:#064e3b;--ok:#6ee7b7;--wrbg:#451a03;--wr:#fcd34d;--erbg:#450a0a;--er:#fca5a5;--inbg:#172554;--in:#93c5fd}}
+*{box-sizing:border-box}body{margin:0;font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--tx)}
+header.top{display:flex;align-items:center;gap:12px;padding:14px 20px;background:var(--card);border-bottom:1px solid var(--bd);position:sticky;top:0;z-index:5}
+header.top h1{font-size:16px;margin:0;flex:1}header.top nav{display:flex;gap:6px}
+main{max-width:1180px;margin:0 auto;padding:20px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.tile{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px}.tile b{display:block;font-size:26px}.tile span{color:var(--mut);font-size:12px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+input,select,textarea{font:inherit;color:inherit;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:8px 10px;min-height:38px}
+input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+button{font:inherit;border-radius:10px;border:1px solid var(--bd);background:var(--card);color:inherit;padding:8px 12px;min-height:38px;cursor:pointer}
+button.pri{background:var(--ac);border-color:var(--ac);color:#fff}button.pri:hover{background:var(--ac2)}button.dg{color:var(--er)}button:disabled{opacity:.5;cursor:not-allowed}
+button.ghost{border-color:transparent;background:transparent}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;overflow:auto}
+table{width:100%;border-collapse:collapse}th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--bd);white-space:nowrap}th{font-size:12px;color:var(--mut);font-weight:600}
+tr.row{cursor:pointer}tr.row:hover{background:color-mix(in srgb,var(--ac) 6%,transparent)}
+.badge{display:inline-block;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600}
+.b-ativa{background:var(--okbg);color:var(--ok)}.b-teste{background:var(--inbg);color:var(--in)}.b-carencia{background:var(--wrbg);color:var(--wr)}.b-suspensa,.b-cancelada{background:var(--erbg);color:var(--er)}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;justify-content:flex-end;z-index:20}
+.panel{background:var(--bg);width:min(720px,100%);height:100%;overflow:auto;padding:20px;border-left:1px solid var(--bd)}
+.modal{margin:auto;background:var(--bg);width:min(720px,94%);max-height:92vh;overflow:auto;padding:20px;border-radius:16px;border:1px solid var(--bd)}
+.overlay.center{justify-content:center;align-items:center}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:600px){.grid{grid-template-columns:1fr}}
+label{display:block;font-size:12px;color:var(--mut);margin-bottom:4px}label+input,label+select,label+textarea{width:100%}
+.field{margin-bottom:10px}.sec{margin:18px 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut)}
+pre{background:#0b0b10;color:#e5e7eb;border-radius:10px;padding:12px;overflow:auto;font-size:12px;white-space:pre-wrap;word-break:break-all;margin:6px 0}
+.note{padding:10px 12px;border-radius:10px;background:var(--wrbg);color:var(--wr);margin:8px 0;font-size:13px}.err{background:var(--erbg);color:var(--er)}
+.row2{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.mut{color:var(--mut)}.sm{font-size:12px}
+.login{max-width:340px;margin:12vh auto;background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:22px}.login h1{font-size:18px;margin:0 0 14px}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:10px 16px;border-radius:10px;z-index:50}

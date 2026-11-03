@@ -1,4 +1,5 @@
 import { db } from '../../db';
+import { licencaPermiteOperar } from "../../licenca/cliente";
 import { emitEvent } from '../../websocket';
 import { consultarDjen, DjenApiError, hojeDjen, type AdvogadoDjen, type ContextoConsulta } from './api';
 import { importarPublicacoes } from './store';
@@ -84,7 +85,7 @@ export function processarHistoricos(): Promise<void> {
 export function iniciarMonitorHistoricos() {
   if (timer) return;
   db.prepare("UPDATE djen_historico_consultas SET status='pendente' WHERE status='verificando'").run();
-  const executar = () => { void processarHistoricos().catch(e => console.error('[DJEN] Falha ao atualizar históricos:', e instanceof Error ? e.message : 'Falha interna')); };
+  const executar = () => { if (!licencaPermiteOperar()) return; void processarHistoricos().catch(e => console.error('[DJEN] Falha ao atualizar históricos:', e instanceof Error ? e.message : 'Falha interna')); };
   primeiro=setTimeout(executar,15000); primeiro.unref();
   timer=setInterval(executar,60000); timer.unref();
 }

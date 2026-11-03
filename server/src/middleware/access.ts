@@ -10,6 +10,8 @@ declare global {
 
 function permissionsFor(path: string, method: string): Permission[] {
   const read = method === "GET" || method === "HEAD";
+  if (path === "/license/status") return []; // qualquer pessoa autenticada vê o aviso da assinatura
+  if (path.startsWith("/license")) return ["team.manage"];
   if (path === "/ai" || path.startsWith("/ai/")) return ["integrations.manage"];
   if (path.startsWith("/team")) return ["team.manage"];
   if (path.startsWith("/branding")) return ["team.manage"];
