@@ -148,9 +148,10 @@ Opcional: apague os arquivos antigos por escritório (o script lista os comandos
 ### 5.2 Criar um escritório
 
 1. No painel → **Planos** → edite “Escritório” e defina o preço mensal (planos com preço 0 não geram cobrança automática).
-2. **Novo escritório**: nome, e-mail, plano, dias de teste. O endereço sai do nome e a porta é automática.
-3. Ao clicar em **Criar escritório**, o painel cria a instância, registra o endereço no Nginx, cria a cobrança no Asaas e mostra o **link e a senha inicial** (botão “Copiar mensagem de acesso” para enviar ao cliente). A senha só aparece nessa tela; peça para trocar no primeiro acesso.
-4. Se algo falhar (por exemplo, o build do sistema ausente), o escritório fica cadastrado e a tela diz o motivo. Abra o escritório e use **Criar/ativar sistema no servidor** para tentar de novo.
+2. **Novo escritório**: nome, e-mail, plano, dias de teste e o **acesso do administrador** (usuário, padrão `admin`, e senha inicial; deixe a senha em branco para o painel gerar uma, ou use **Gerar**). O endereço sai do nome e a porta é automática.
+3. Ao clicar em **Criar escritório**, o painel cria a instância, registra o endereço no Nginx, cria a cobrança no Asaas e mostra o **link, o usuário e a senha inicial** (botão “Copiar mensagem de acesso” para enviar ao cliente). A senha só aparece nessa tela e não fica guardada no painel.
+4. **No primeiro acesso**, o sistema do escritório pede que a pessoa crie a própria senha (12+ caracteres) antes de liberar qualquer tela. O mesmo vale para pessoas que o administrador do escritório cadastrar ou cujas senhas ele redefinir na tela Equipe.
+5. Se algo falhar (por exemplo, o build do sistema ausente), o escritório fica cadastrado e a tela diz o motivo. Abra o escritório e use **Criar/ativar sistema no servidor** para tentar de novo.
 
 ### 5.3 No dia a dia
 

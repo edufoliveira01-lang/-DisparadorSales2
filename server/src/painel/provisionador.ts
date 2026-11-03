@@ -28,7 +28,7 @@ export const executorReal: Executor = (cmd, args, opcoes = {}) =>
 
 export class ErroProvisionamento extends Error {}
 export type StatusInstancia = "online" | "parada" | "ausente";
-export interface ResultadoCriacao { url: string; porta: number; senhaInicial: string | null; adotada: boolean; avisos: string[] }
+export interface ResultadoCriacao { url: string; porta: number; usuarioInicial: string | null; senhaInicial: string | null; adotada: boolean; avisos: string[] }
 
 const SLUG = /^[a-z0-9][a-z0-9-]{2,40}[a-z0-9]$/;
 const limpar = (s: string) => s.replace(/\s+/g, " ").trim().slice(0, 400);
@@ -152,7 +152,8 @@ export class Provisionador {
     try { await this.alterarMapa((m) => { m.set(this.host(slug), porta); }); }
     catch (e) { throw new ErroProvisionamento(`Instância criada, mas o endereço não foi ativado: ${(e as Error).message}`); }
     const senha = /^INITIAL_ADMIN_PASSWORD=(.+)$/m.exec(envTexto)?.[1] ?? null;
-    return { url: `https://${this.host(slug)}`, porta, senhaInicial: senha, adotada: false, avisos };
+    const usuario = /^INITIAL_ADMIN_USERNAME=(.+)$/m.exec(envTexto)?.[1] ?? "admin";
+    return { url: `https://${this.host(slug)}`, porta, usuarioInicial: usuario, senhaInicial: senha, adotada: false, avisos };
   }
 
   /** Instância que já existe no disco: preserva o .env, garante mapa e PM2. */
@@ -166,7 +167,7 @@ export class Provisionador {
     }
     try { await this.alterarMapa((m) => { m.set(this.host(slug), porta); }); }
     catch (e) { throw new ErroProvisionamento(`Instância existente encontrada, mas o endereço não foi ativado: ${(e as Error).message}`); }
-    return { url: `https://${this.host(slug)}`, porta, senhaInicial: null, adotada: true, avisos };
+    return { url: `https://${this.host(slug)}`, porta, usuarioInicial: null, senhaInicial: null, adotada: true, avisos };
   }
 
   /** Para a instância e tira o endereço do ar. Os dados do escritório NÃO são apagados. */

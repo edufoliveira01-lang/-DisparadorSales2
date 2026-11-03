@@ -27,6 +27,7 @@ export interface AccessUser {
   role: Role;
   permissions_json: string | null;
   active: number;
+  must_change_password?: number;
 }
 
 export function isRole(value: unknown): value is Role {
@@ -57,6 +58,7 @@ export function publicUser(user: AccessUser) {
     id: user.id, username: user.username, display_name: user.display_name,
     email: user.email, role: user.role, active: Boolean(user.active),
     permissions: effectivePermissions(user),
+    must_change_password: Boolean(user.must_change_password),
   };
 }
 

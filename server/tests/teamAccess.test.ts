@@ -42,7 +42,19 @@ describe("equipe e controle de acesso", () => {
     const login = await request("/auth/login", { method: "POST", body: JSON.stringify({ username, password: "senha-inicial-segura" }) });
     expect(login.status).toBe(200);
     const cookie = login.headers.get("set-cookie")!.split(";")[0];
+    // Senha definida pelo administrador: nada abre até a pessoa criar a própria.
+    const bloqueada = await request("/contacts", {}, cookie);
+    expect(bloqueada.status).toBe(403);
+    expect((await bloqueada.json() as { codigo: string }).codigo).toBe("troca_de_senha_obrigatoria");
+    expect(((await (await request("/auth/me", {}, cookie)).json()) as { user: { must_change_password: boolean } }).user.must_change_password).toBe(true);
+    expect((await request("/auth/trocar-senha-inicial", { method: "POST", body: JSON.stringify({ currentPassword: "errada-errada-12", newPassword: "minha-senha-pessoal-1" }) }, cookie)).status).toBe(401);
+    expect((await request("/auth/trocar-senha-inicial", { method: "POST", body: JSON.stringify({ currentPassword: "senha-inicial-segura", newPassword: "curta" }) }, cookie)).status).toBe(400);
+    expect((await request("/auth/trocar-senha-inicial", { method: "POST", body: JSON.stringify({ currentPassword: "senha-inicial-segura", newPassword: "senha-inicial-segura" }) }, cookie)).status).toBe(400);
+    expect((await request("/auth/trocar-senha-inicial", { method: "POST", body: JSON.stringify({ currentPassword: "senha-inicial-segura", newPassword: "minha-senha-pessoal-1" }) }, cookie)).status).toBe(200);
     expect((await request("/contacts", {}, cookie)).status).toBe(200);
+    // a senha antiga deixa de valer; a nova entra direto, sem nova troca
+    expect((await request("/auth/login", { method: "POST", body: JSON.stringify({ username, password: "senha-inicial-segura" }) })).status).toBe(401);
+    expect((await request("/auth/login", { method: "POST", body: JSON.stringify({ username, password: "minha-senha-pessoal-1" }) })).status).toBe(200);
     expect((await request("/settings", {}, cookie)).status).toBe(403);
     expect((await request("/team", {}, cookie)).status).toBe(403);
     expect((await request("/djen/codex/exemplos", {}, cookie)).status).toBe(403);
@@ -51,6 +63,6 @@ describe("equipe e controle de acesso", () => {
     const disabled = await request(`/team/${person.id}`, { method: "PUT", body: JSON.stringify({ active: false }) }, adminCookie);
     expect(disabled.status).toBe(200);
     expect((await request("/contacts", {}, cookie)).status).toBe(401);
-    expect((await request("/auth/login", { method: "POST", body: JSON.stringify({ username, password: "senha-inicial-segura" }) })).status).toBe(401);
+    expect((await request("/auth/login", { method: "POST", body: JSON.stringify({ username, password: "minha-senha-pessoal-1" }) })).status).toBe(401);
   });
 });

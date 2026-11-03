@@ -57,8 +57,8 @@ teamRouter.post("/", (req, res) => {
     }
     const password = req.body?.password;
     if (typeof password !== "string" || password.length < 12) return res.status(400).json({ error: "Informe uma senha inicial de pelo menos 12 caracteres." });
-    const info = db.prepare(`INSERT INTO users (username, display_name, email, role, permissions_json, active, password_hash)
-      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(input.username, input.displayName, input.email, input.role,
+    const info = db.prepare(`INSERT INTO users (username, display_name, email, role, permissions_json, active, password_hash, must_change_password)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1)`).run(input.username, input.displayName, input.email, input.role,
         JSON.stringify(input.permissions), input.active ? 1 : 0, hashPassword(password));
     const user = getUserById(Number(info.lastInsertRowid))!;
     auditAccess("pessoa_criada", req.accessUser!.id, user.id, { perfil: user.role, permissoes: input.permissions });
@@ -103,8 +103,9 @@ teamRouter.put("/:id/password", (req, res) => {
   if (!user) return res.status(404).json({ error: "Pessoa não encontrada." });
   const password = req.body?.password;
   if (typeof password !== "string" || password.length < 12) return res.status(400).json({ error: "Informe uma senha de pelo menos 12 caracteres." });
-  db.prepare("UPDATE users SET password_hash = ?, recovery_token = NULL, recovery_expires = NULL WHERE id = ?")
-    .run(hashPassword(password), id);
+  // Quem teve a senha definida por outra pessoa cria a própria no próximo acesso.
+  db.prepare("UPDATE users SET password_hash = ?, recovery_token = NULL, recovery_expires = NULL, must_change_password = ? WHERE id = ?")
+    .run(hashPassword(password), id === req.accessUser!.id ? 0 : 1, id);
   invalidateUserSessions(id);
   disconnectUserSockets(id);
   auditAccess("senha_redefinida", req.accessUser!.id, id);

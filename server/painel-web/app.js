@@ -102,13 +102,16 @@ function abrirNovo() {
   const form = h('form', { onsubmit: async (e) => {
     e.preventDefault(); erro.hidden = true;
     try {
-      const r = await api('POST', '/escritorios', { nome: f.nome.value, slug: f.slug.value, email: f.email.value, documento: f.documento.value, telefone: f.telefone.value, plano_id: planos.value, teste_dias: f.teste.value, cortesia: cortesia.checked, porta: f.porta.value, entitlements: limites.valor() });
+      const r = await api('POST', '/escritorios', { nome: f.nome.value, slug: f.slug.value, email: f.email.value, documento: f.documento.value, telefone: f.telefone.value, plano_id: planos.value, teste_dias: f.teste.value, cortesia: cortesia.checked, porta: f.porta.value, admin_usuario: f.admin_usuario.value, admin_senha: f.admin_senha.value, entitlements: limites.valor() });
       m.fechar(); await carregar(); mostrarProvisionamento(r);
     } catch (x) { erro.textContent = x.message; erro.hidden = false; }
   } }, erro,
     h('div', { class: 'grid' }, campo('nome', 'Nome do escritório', { required: true, oninput: () => { if (!f.slug.dataset.manual) f.slug.value = slugDe(f.nome.value); } }), campo('slug', 'Endereço (subdomínio)', { required: true, pattern: '[a-z0-9][a-z0-9\\-]{2,40}[a-z0-9]', oninput: () => { f.slug.dataset.manual = '1'; } }),
       campo('email', 'E-mail do responsável', { type: 'email', required: true }), campo('documento', 'CNPJ/CPF'), campo('telefone', 'Telefone'), h('div', { class: 'field' }, h('label', {}, 'Plano'), planos),
       campo('teste', 'Dias de teste', { type: 'number', min: 0, max: 365, value: String(state.config.teste_padrao_dias) }), campo('porta', state.config.provisionamento_automatico ? 'Porta (deixe vazio: automática)' : 'Porta da instância (servidor)', { type: 'number', min: 1024, max: 65535, value: state.config.provisionamento_automatico ? '' : '3400' })),
+    h('div', { class: 'sec' }, 'Acesso do administrador do escritório'),
+    h('div', { class: 'grid' }, campo('admin_usuario', 'Usuário', { value: 'admin', pattern: '[A-Za-z0-9._@\\-]{3,60}', autocomplete: 'off' }), h('div', { class: 'field' }, h('label', { for: 'admin_senha' }, 'Senha inicial (12+ caracteres; vazio = gerar)'), h('div', { class: 'row2' }, f.admin_senha = h('input', { id: 'admin_senha', type: 'text', autocomplete: 'off', minlength: 12, maxlength: 100, placeholder: 'gerada automaticamente' }), h('button', { type: 'button', onclick: () => { const a = new Uint8Array(12); crypto.getRandomValues(a); f.admin_senha.value = Array.from(a, (b) => 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'[b % 56]).join('') + '7'; } }, 'Gerar')))),
+    h('p', { class: 'mut sm' }, 'No primeiro acesso, o sistema pede que a pessoa crie a própria senha. A senha inicial não fica guardada no painel.'),
     h('div', { class: 'field' }, h('label', {}, cortesia, ' Cortesia (sem teste, sem vencimento e sem cobrança)')),
     h('div', { class: 'sec' }, 'Ajustes de limites deste escritório (opcional)'), limites.el,
     h('button', { class: 'pri' }, 'Criar escritório'));

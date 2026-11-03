@@ -16,6 +16,7 @@ import { sendRecoveryEmail } from "../services/emailService";
 import { getSetting } from "../services/settingsService";
 import { enviarMensagemTelegram } from "../services/telegramService";
 import { auditAccess, invalidateUserSessions, publicUser } from "../services/accessService";
+import { db } from "../db";
 import { loginBranding, loginImage } from "./branding";
 import { disconnectUserSockets, disconnectSessionSockets } from "../websocket";
 
@@ -81,6 +82,25 @@ authRouter.get("/me", (req, res) => {
   res.json({ user: publicUser(user) });
 });
 
+/** Primeiro acesso com senha definida por outra pessoa: cria a senha própria e libera o sistema. */
+authRouter.post("/trocar-senha-inicial", (req, res) => {
+  const sessionId = req.cookies.session_id;
+  if (!sessionId) return res.status(401).json({ error: "Não autenticado." });
+  const session = getSession(sessionId);
+  if (!session) return res.status(401).json({ error: "Sessão expirada." });
+  const user = getUserById(session.user_id);
+  if (!user || !user.active) return res.status(404).json({ error: "Usuário não encontrado." });
+  const { currentPassword, newPassword } = req.body || {};
+  if (typeof currentPassword !== "string" || !verifyPassword(currentPassword, user.password_hash)) return res.status(401).json({ error: "A senha recebida está incorreta." });
+  if (typeof newPassword !== "string" || newPassword.length < 12) return res.status(400).json({ error: "A nova senha deve ter pelo menos 12 caracteres." });
+  if (newPassword === currentPassword) return res.status(400).json({ error: "Escolha uma senha diferente da recebida." });
+  updateUser(user.id, { password_hash: hashPassword(newPassword), must_change_password: 0 });
+  // Encerra as outras sessões; esta continua aberta.
+  db.prepare("DELETE FROM sessions WHERE user_id = ? AND id <> ?").run(user.id, sessionId);
+  auditAccess("senha_inicial_trocada", user.id, user.id);
+  res.json({ ok: true });
+});
+
 authRouter.put("/update", (req, res) => {
   const sessionId = req.cookies.session_id;
   if (!sessionId) return res.status(401).json({ error: "Não autenticado." });
@@ -104,7 +124,7 @@ authRouter.put("/update", (req, res) => {
   const updateData: any = {};
   if (username && typeof username === "string") updateData.username = username.trim();
   if (email !== undefined) updateData.email = typeof email === "string" ? email.trim() || null : null;
-  if (password) updateData.password_hash = hashPassword(password);
+  if (password) { updateData.password_hash = hashPassword(password); updateData.must_change_password = 0; }
   
   if (Object.keys(updateData).length > 0) {
     try { updateUser(user.id, updateData); }
@@ -176,7 +196,7 @@ authRouter.post("/reset-password", (req, res) => {
   const user = getUserByRecoveryToken(token);
   if (!user) return res.status(400).json({ error: "Token inválido ou expirado." });
   
-  updateUser(user.id, { password_hash: hashPassword(password) });
+  updateUser(user.id, { password_hash: hashPassword(password), must_change_password: 0 });
   clearRecoveryToken(user.id);
   invalidateUserSessions(user.id);
   disconnectUserSockets(user.id);

@@ -161,6 +161,19 @@ describe("API do painel com provisionamento automático", () => {
     expect(fs.readFileSync(path.join(cfg.instanciasDir, "banca-gama", ".env"), "utf8")).toContain("PORT=3402");
   });
 
+  it("usa o usuário e a senha inicial informados e exige a troca no primeiro acesso", async () => {
+    const c = await entrar();
+    const ruim = await adm(c, "POST", "/escritorios", { ...novo, admin_senha: "curta" });
+    expect(ruim.status).toBe(400);
+    expect((await adm(c, "POST", "/escritorios", { ...novo, admin_usuario: "a b" })).status).toBe(400);
+    const j = await (await adm(c, "POST", "/escritorios", { ...novo, admin_usuario: "dra.maria", admin_senha: "SenhaTemporaria99" })).json() as { instancia: { ok: boolean; usuario: string; senha_inicial: string } };
+    expect(j.instancia).toMatchObject({ ok: true, usuario: "dra.maria", senha_inicial: "SenhaTemporaria99" });
+    const env = fs.readFileSync(path.join(cfg.instanciasDir, "banca-beta", ".env"), "utf8");
+    expect(env).toContain("INITIAL_ADMIN_USERNAME=dra.maria");
+    expect(env).toContain("INITIAL_ADMIN_PASSWORD=SenhaTemporaria99");
+    expect(env).toContain("INITIAL_ADMIN_MUST_CHANGE=1");
+  });
+
   it("se a criação falhar, o escritório continua cadastrado e dá para tentar de novo", async () => {
     const c = await entrar();
     falhas["bash"] = { code: 1, stderr: "ERRO: build ausente" };

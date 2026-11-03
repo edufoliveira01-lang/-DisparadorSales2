@@ -201,6 +201,8 @@ export function runMigrations(db: Database.Database): void {
     ["role", "TEXT NOT NULL DEFAULT 'administrador'"],
     ["permissions_json", "TEXT"],
     ["active", "INTEGER NOT NULL DEFAULT 1"],
+    // 1 = a senha foi definida por outra pessoa (administrador/painel): exige criar uma própria no 1º acesso.
+    ["must_change_password", "INTEGER NOT NULL DEFAULT 0"],
   ]) {
     if (!userColumns.includes(name)) db.exec(`ALTER TABLE users ADD COLUMN ${name} ${definition}`);
   }
@@ -674,13 +676,17 @@ export function runMigrations(db: Database.Database): void {
   const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get() as { count: number };
   if (userCount.count === 0) {
     const configuredPassword = process.env.INITIAL_ADMIN_PASSWORD?.trim();
+    const configuredUser = process.env.INITIAL_ADMIN_USERNAME?.trim();
+    const initialUser = configuredUser && /^[A-Za-z0-9._@-]{3,60}$/.test(configuredUser) ? configuredUser : "admin";
     const initialPassword = configuredPassword && configuredPassword.length >= 12
       ? configuredPassword
       : crypto.randomBytes(24).toString("base64url");
     const hash = crypto.createHash("sha256").update(initialPassword).digest("hex");
-    db.prepare("INSERT INTO users (username, password_hash) VALUES (?, ?)").run("admin", hash);
+    // Senha temporária (aleatória ou definida pelo painel de assinaturas) exige troca no primeiro acesso.
+    const exigirTroca = !configuredPassword || configuredPassword.length < 12 || process.env.INITIAL_ADMIN_MUST_CHANGE === "1";
+    db.prepare("INSERT INTO users (username, password_hash, must_change_password) VALUES (?, ?, ?)").run(initialUser, hash, exigirTroca ? 1 : 0);
     if (!configuredPassword || configuredPassword.length < 12) {
-      console.warn(`[Configuração inicial] Usuário admin criado com senha temporária: ${initialPassword}`);
+      console.warn(`[Configuração inicial] Usuário ${initialUser} criado com senha temporária: ${initialPassword}`);
       console.warn("[Configuração inicial] Altere essa senha após o primeiro acesso.");
     }
   }

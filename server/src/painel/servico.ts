@@ -131,6 +131,15 @@ export class ServicoPainel {
   }
   slugDe(id: string): string { return this.linha(id).slug; }
 
+  /** Usuário e senha iniciais do administrador do escritório (a senha nunca fica guardada no painel). */
+  validarAdminInicial(usuario: unknown, senha: unknown): { adminUsuario: string; adminSenha?: string } {
+    const u = typeof usuario === "string" && usuario.trim() ? usuario.trim() : "admin";
+    if (!/^[A-Za-z0-9._@-]{3,60}$/.test(u)) throw new ErroPainel("O usuário do administrador deve ter de 3 a 60 caracteres (letras, números, ponto, hífen, sublinhado ou @).");
+    if (senha === undefined || senha === null || senha === "") return { adminUsuario: u };
+    if (typeof senha !== "string" || senha.length < 12 || senha.length > 100 || /\s/.test(senha)) throw new ErroPainel("A senha inicial deve ter de 12 a 100 caracteres, sem espaços (ou deixe em branco para o painel gerar uma).");
+    return { adminUsuario: u, adminSenha: senha };
+  }
+
   novaChave() { return `dz_${randomBytes(24).toString("base64url")}`; }
 
   async criarEscritorio(d: Record<string, unknown>) {
@@ -249,7 +258,7 @@ export class ServicoPainel {
   }
 
   /** Instruções de implantação. A chave de criptografia dos dados é gerada aqui e NÃO fica guardada no painel. */
-  provisionamento(id: string, chave: string, opcoes: { novaInstancia: boolean; porta?: number; chavePublicaPem: string }) {
+  provisionamento(id: string, chave: string, opcoes: { novaInstancia: boolean; porta?: number; chavePublicaPem: string; adminUsuario?: string; adminSenha?: string }) {
     const l = this.linha(id);
     const dir = `${this.cfg.instanciasDir}/${l.slug}`;
     const porta = opcoes.porta && Number.isInteger(opcoes.porta) ? opcoes.porta : 3400;
@@ -267,7 +276,9 @@ export class ServicoPainel {
       `APP_URL=https://${l.slug}.${this.cfg.baseDomain}`,
       "NODE_ENV=production",
       `ENCRYPTION_KEY=${randomBytes(32).toString("hex")}`,
-      `INITIAL_ADMIN_PASSWORD=${randomBytes(15).toString("base64url")}`,
+      `INITIAL_ADMIN_USERNAME=${opcoes.adminUsuario || "admin"}`,
+      `INITIAL_ADMIN_PASSWORD=${opcoes.adminSenha || randomBytes(15).toString("base64url")}`,
+      "INITIAL_ADMIN_MUST_CHANGE=1",
       ...licenca,
     ].join("\n");
     const pm2 = [

@@ -101,18 +101,19 @@ export function criarAppPainel(deps: DepsPainel) {
   admin.get("/escritorios", rota(() => servico.listarEscritorios()));
   admin.post("/escritorios", rota(async (req, res) => {
     const pedida = Number(req.body?.porta) || undefined;
+    const admin = servico.validarAdminInicial(req.body?.admin_usuario, req.body?.admin_senha);
     if (prov) { try { prov.alocarPorta(pedida, servico.portasRegistradas()); } catch (e) { if (e instanceof ErroProvisionamento) throw new ErroPainel(e.message); throw e; } }
     const r = await servico.criarEscritorio(req.body || {});
     res.status(201);
-    if (!prov) return { ...r, provisionamento: servico.provisionamento(r.escritorio.id, r.chave, { novaInstancia: true, porta: pedida, chavePublicaPem: deps.chavePublicaPem }) };
+    if (!prov) return { ...r, provisionamento: servico.provisionamento(r.escritorio.id, r.chave, { novaInstancia: true, porta: pedida, chavePublicaPem: deps.chavePublicaPem, ...admin }) };
     const slug = r.escritorio.slug;
     let porta = pedida ?? 0;
     try {
       porta = prov.alocarPorta(pedida, servico.portasRegistradas());
-      const blocos = servico.provisionamento(r.escritorio.id, r.chave, { novaInstancia: true, porta, chavePublicaPem: deps.chavePublicaPem });
+      const blocos = servico.provisionamento(r.escritorio.id, r.chave, { novaInstancia: true, porta, chavePublicaPem: deps.chavePublicaPem, ...admin });
       const c = await prov.criarInstancia(slug, porta, blocos.env);
       servico.definirInstancia(r.escritorio.id, c.porta, "instancia_criada", { automatica: true });
-      return { ...r, instancia: { ok: true, url: c.url, usuario: "admin", senha_inicial: c.senhaInicial, avisos: c.avisos } };
+      return { ...r, instancia: { ok: true, url: c.url, usuario: c.usuarioInicial || admin.adminUsuario, senha_inicial: c.senhaInicial, avisos: c.avisos } };
     } catch (e) {
       const msg = e instanceof ErroProvisionamento ? e.message : (e as Error).message;
       servico.definirInstancia(r.escritorio.id, null, "instancia_erro", { erro: msg });
@@ -142,12 +143,13 @@ export function criarAppPainel(deps: DepsPainel) {
       servico.definirInstancia(id, c.porta, "instancia_adotada");
       return { ok: true, url: c.url, adotada: true, avisos: c.avisos, senha_inicial: null };
     }
+    const admin = servico.validarAdminInicial(req.body?.admin_usuario, req.body?.admin_senha);
     const porta = p.alocarPorta(Number(req.body?.porta) || undefined, servico.portasRegistradas());
     const { chave } = servico.rotacionarChave(id);
-    const blocos = servico.provisionamento(id, chave, { novaInstancia: true, porta, chavePublicaPem: deps.chavePublicaPem });
+    const blocos = servico.provisionamento(id, chave, { novaInstancia: true, porta, chavePublicaPem: deps.chavePublicaPem, ...admin });
     const c = await p.criarInstancia(slug, porta, blocos.env);
     servico.definirInstancia(id, c.porta, "instancia_criada", { automatica: true });
-    return { ok: true, url: c.url, adotada: c.adotada, avisos: c.avisos, senha_inicial: c.senhaInicial };
+    return { ok: true, url: c.url, adotada: c.adotada, avisos: c.avisos, usuario: c.usuarioInicial, senha_inicial: c.senhaInicial };
   })));
   admin.post("/escritorios/:id/instancia/reiniciar", rota((req) => comoErro(async () => { await exigirProv().reiniciar(servico.slugDe(String(req.params.id))); return { ok: true }; })));
   admin.post("/escritorios/:id/instancia/remover", rota((req) => comoErro(async () => {

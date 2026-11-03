@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { socket } from "@/lib/socket";
+import { TrocaSenhaObrigatoria } from "@/components/TrocaSenhaObrigatoria";
 
 export type Permission =
   | "dashboard.view" | "calendar.view" | "calendar.manage" | "templates.view" | "templates.manage"
@@ -10,7 +11,7 @@ export type Permission =
 export type Role = "administrador" | "gestor" | "advogado" | "atendimento" | "consulta";
 export interface TeamUser {
   id: number; username: string; display_name: string | null; email: string | null;
-  role: Role; active: boolean; permissions: Permission[];
+  role: Role; active: boolean; permissions: Permission[]; must_change_password?: boolean;
 }
 
 const Context = createContext<{ user: TeamUser; can: (permission: Permission) => boolean } | null>(null);
@@ -27,7 +28,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (response.status === 401) { window.location.replace("/login"); return; }
         if (!response.ok) throw new Error("Não foi possível verificar a sessão.");
         const data = await response.json() as { user: TeamUser };
-        if (active) { setUser(data.user); setLoading(false); socket.connect(); }
+        if (active) { setUser(data.user); setLoading(false); if (!data.user.must_change_password) socket.connect(); }
       } catch {
         if (active) window.location.replace("/login");
       }
@@ -38,6 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { active = false; socket.disconnect(); window.removeEventListener("focus", focus); };
   }, []);
   if (loading || !user) return <div role="status" className="flex min-h-screen items-center justify-center text-sm text-slate-500">Preparando seu espaço de trabalho…</div>;
+  if (user.must_change_password) return <TrocaSenhaObrigatoria usuario={user.username} aoConcluir={() => window.location.replace("/")} />;
   return <Context.Provider value={{ user, can }}>{children}</Context.Provider>;
 }
 

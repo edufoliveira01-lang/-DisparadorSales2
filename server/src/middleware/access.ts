@@ -51,6 +51,8 @@ export const authenticatedApi: RequestHandler = (req, res, next) => {
   const user = session && getUserById(session.user_id);
   if (!user || !user.active) return res.status(401).json({ error: "Sessão expirada." });
   req.accessUser = user;
+  // Senha definida por outra pessoa: nada funciona até a pessoa criar a própria (POST /api/auth/trocar-senha-inicial).
+  if (user.must_change_password) return res.status(403).json({ error: "Crie sua senha pessoal para continuar.", codigo: "troca_de_senha_obrigatoria" });
   const missing = permissionsFor(req.path, req.method).filter((permission) => !hasPermission(user, permission));
   if (missing.length) return res.status(403).json({ error: "Você não tem permissão para esta área ou ação." });
   if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
