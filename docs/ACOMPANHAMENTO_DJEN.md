@@ -190,7 +190,7 @@ A apresentação de registros antigos é recalculada a partir do texto capturado
 
 ## Quadro de processos: menos cartões sem etapa — 2.56.0
 
-- **Novas listas padrão** (criadas uma vez, sem alterar nomes ou ordem já escolhidos; uma lista existente com o mesmo nome é adotada): Aguardando juízo, Sobrestado / suspenso, Aguardando outra parte / terceiros, Providência do escritório (logo após *Sem etapa identificada*), Citação / contestação, Audiência, Conclusos para sentença, Acordo (proposta / homologação) e Trânsito em julgado.
+- **Novas listas padrão** (criadas uma vez, sem alterar nomes ou ordem já escolhidos; uma lista existente com o mesmo nome é adotada): Aguardando juízo, Sobrestado / suspenso, Aguardando outra parte / terceiros, Providência do escritório (logo após *Sem etapa identificada*), Citação / contestação, Audiência, Proposta de acordo (logo após Laudo / manifestações), Conclusos para sentença e Trânsito em julgado.
 - **Etapas processuais** vêm de atos literais e atuais (mesmo classificador complementar da lista de publicações) ou de categorias revisadas. A etapa mais adiantada comprovada prevalece. Hipótese, pedido e advertência de cabimento não movem o cartão.
 - **Etapas situacionais** só entram quando nenhuma etapa processual é provada: ordem vigente do escritório (usa a mesma avaliação de cumprimento/revogação/sentença dos prazos), ordem a perito, INSS, parte contrária ou terceiro sem resposta identificada, suspensão/sobrestamento e, por fim, aguardando juízo. A evidência fica no cartão. É leitura operacional do DJEN capturado, não prova do que consta nos autos.
 - Baixar um prazo do escritório, concluir um prazo salvo ou registrar cumprimento de obrigação externa pede nova leitura do cartão automaticamente. Cartões em etapa manual nunca são movidos.
@@ -200,3 +200,5 @@ A apresentação de registros antigos é recalculada a partir do texto capturado
 - O quadro é reavaliado uma vez após a atualização para aplicar as novas etapas.
 
 **2.56.1.** No Quadro de processos, a roda do mouse rola as listas na horizontal. Dentro de uma coluna que ainda tem cartões para rolar, a roda continua rolando a coluna na vertical; ao chegar ao fim dela (ou nas pontas do quadro) a rolagem volta ao normal. Ctrl+roda (zoom) e Shift+roda não são alterados.
+
+**2.57.0.** A lista "Acordo (proposta / homologação)" foi dividida pelo momento do processo: **Proposta de acordo** fica logo depois de *Laudo / manifestações* (o INSS ou a parte contrária propõe e o escritório precisa se manifestar), e a **homologação do acordo passa a contar como Sentença**. A lista criada na 2.56.0 é convertida automaticamente em Proposta de acordo (mesmos cartões, nova posição; nome preservado se você o alterou) e o quadro é reavaliado uma vez: cartões com acordo já homologado seguem para Sentença. Uma lista personalizada sua ligada à categoria de proposta de acordo continua tendo prioridade.

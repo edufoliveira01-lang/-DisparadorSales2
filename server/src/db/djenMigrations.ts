@@ -271,9 +271,24 @@ export function runDjenMigrations(db: Database.Database): void {
     { codigo: "citacao_contestacao", nome: "Citação / contestação", depois: "emenda_inicial", contar: 0 },
     { codigo: "audiencia", nome: "Audiência", depois: "citacao_contestacao", contar: 0 },
     { codigo: "conclusos_sentenca", nome: "Conclusos para sentença", depois: "laudo_manifestacoes", contar: 0 },
-    { codigo: "acordo", nome: "Acordo (proposta / homologação)", depois: "sentenca", contar: 0 },
+    { codigo: "proposta_acordo", nome: "Proposta de acordo", depois: "laudo_manifestacoes", contar: 0 },
     { codigo: "transito_julgado", nome: "Trânsito em julgado", depois: "acordao", contar: 0 },
   ];
+  // 2.57.0: a lista "Acordo (proposta / homologação)" da 2.56.0 vira "Proposta de acordo", logo após
+  // o laudo (o INSS ou a parte contrária propõe e o escritório precisa se manifestar). A homologação
+  // passa a pertencer à etapa Sentença. Preserva o nome se o usuário já o tiver alterado.
+  db.transaction(() => {
+    const antiga = db.prepare("SELECT id,posicao,nome FROM djen_kanban_listas WHERE codigo='acordo'").get() as { id: number; posicao: number; nome: string } | undefined;
+    if (!antiga) return;
+    if (db.prepare("SELECT id FROM djen_kanban_listas WHERE codigo='proposta_acordo'").get()) return;
+    const laudo = db.prepare("SELECT posicao FROM djen_kanban_listas WHERE codigo='laudo_manifestacoes'").get() as { posicao: number } | undefined;
+    if (laudo && laudo.posicao < antiga.posicao) {
+      db.prepare("UPDATE djen_kanban_listas SET posicao=posicao+1 WHERE posicao>? AND posicao<?").run(laudo.posicao, antiga.posicao);
+      db.prepare("UPDATE djen_kanban_listas SET posicao=? WHERE id=?").run(laudo.posicao + 1, antiga.id);
+    }
+    const nomeNovo = antiga.nome === "Acordo (proposta / homologação)" && !db.prepare("SELECT id FROM djen_kanban_listas WHERE nome='Proposta de acordo' COLLATE NOCASE AND id<>?").get(antiga.id) ? "Proposta de acordo" : antiga.nome;
+    db.prepare("UPDATE djen_kanban_listas SET codigo='proposta_acordo',nome=? WHERE id=?").run(nomeNovo, antiga.id);
+  })();
   db.transaction(() => {
     for (const etapa of novasEtapas) {
       if (db.prepare("SELECT id FROM djen_kanban_listas WHERE codigo=?").get(etapa.codigo)) continue;
@@ -318,9 +333,9 @@ export function runDjenMigrations(db: Database.Database): void {
   `);
   // Reavalia o histórico após mudanças no classificador, preservando escolhas manuais.
   const versaoQuadro = db.prepare("SELECT valor FROM djen_kanban_meta WHERE chave='classificador'").get() as { valor: string } | undefined;
-  if (versaoQuadro?.valor !== "2.56.0") db.transaction(() => {
+  if (versaoQuadro?.valor !== "2.57.0") db.transaction(() => {
     db.exec("UPDATE djen_kanban_cartoes SET revisar_etapa=1");
-    db.prepare("INSERT INTO djen_kanban_meta(chave,valor) VALUES ('classificador','2.56.0') ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor").run();
+    db.prepare("INSERT INTO djen_kanban_meta(chave,valor) VALUES ('classificador','2.57.0') ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor").run();
   })();
   // Metadados de origem da análise. Preserva o JSON e as revisões já existentes.
   const publicationAiColumns = db.prepare("PRAGMA table_info(djen_publicacoes)").all() as { name: string }[];

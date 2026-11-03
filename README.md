@@ -1,6 +1,6 @@
 # DisparaZap — Sales & Associados
 
-Sistema de comunicação com clientes e acompanhamento processual. **Versão 2.56.1.**
+Sistema de comunicação com clientes e acompanhamento processual. **Versão 2.57.0.**
 
 ## Recursos atuais
 
@@ -25,7 +25,7 @@ O quadro utiliza **o histórico capturado do DJEN**, as categorias com evidênci
 - Ensinar a IA adiciona exemplos para **análises futuras**; não treina o modelo nem reanalisa automaticamente todas as publicações antigas. Para elas, salve a revisão ou solicite nova análise.
 - Uma categoria ampla não descreve todas as etapas possíveis: por exemplo, recurso, cálculos ou perícia realizada podem exigir evidência específica no texto ou ajuste manual.
 - As contagens de dias das listas são acompanhamento interno em dias corridos; não substituem prazos processuais.
-- **Etapas situacionais (2.56.0):** quando o histórico não prova nenhuma etapa processual, o cartão deixa de ficar em *Sem etapa identificada* e vai para a lista que indica quem deve agir: **Providência do escritório** (ordem vigente), **Aguardando outra parte / terceiros** (perito, INSS, parte contrária, ofícios sem resposta), **Sobrestado / suspenso** ou **Aguardando juízo** (sem ordem pendente). Qualquer etapa processual comprovada (perícia, sentença, recurso etc.) prevalece sobre elas. Novas etapas: Citação / contestação, Audiência, Conclusos para sentença, Acordo e Trânsito em julgado.
+- **Etapas situacionais (2.56.0):** quando o histórico não prova nenhuma etapa processual, o cartão deixa de ficar em *Sem etapa identificada* e vai para a lista que indica quem deve agir: **Providência do escritório** (ordem vigente), **Aguardando outra parte / terceiros** (perito, INSS, parte contrária, ofícios sem resposta), **Sobrestado / suspenso** ou **Aguardando juízo** (sem ordem pendente). Qualquer etapa processual comprovada (perícia, sentença, recurso etc.) prevalece sobre elas. Novas etapas: Citação / contestação, Audiência, Proposta de acordo (logo após o laudo), Conclusos para sentença e Trânsito em julgado.
 - **Reclassificar** reavalia todos os cartões automáticos (etapas manuais não mudam). Os chips mostram a contagem por lista e focam uma coluna; é possível selecionar vários cartões e **mover em lote** (vira etapa manual).
 
 ## Stack e armazenamento

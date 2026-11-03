@@ -30,8 +30,10 @@ describe("etapas literais novas", () => {
     ["Designo audiência de instrução para 10/12/2026, às 14h.", "audiencia"],
     ["Certifico o trânsito em julgado da sentença.", "transito_julgado"],
     ["Os autos estão conclusos para sentença.", "conclusos_sentenca"],
-    ["Homologo o acordo celebrado entre as partes.", "acordo"],
-    ["O INSS apresentou proposta de acordo nos autos.", "acordo"],
+    ["Homologo o acordo celebrado entre as partes.", "sentenca"],
+    ["Acordo homologado por sentença; extinto o feito.", "sentenca"],
+    ["O INSS apresentou proposta de acordo nos autos.", "proposta_acordo"],
+    ["Intime-se a parte autora para manifestar-se sobre a proposta de acordo.", "proposta_acordo"],
   ])("%s → %s", (texto, esperado) => {
     expect(classificarPublicacaoParaQuadro(texto)?.codigo).toBe(esperado);
   });
@@ -109,11 +111,48 @@ describe("reclassificação e movimentação em lote", () => {
       expect(codigos.slice(0, 5)).toEqual(["triagem", "aguarda_juizo", "sobrestado", "aguarda_terceiros", "prov_escritorio"]);
       expect(codigos.indexOf("citacao_contestacao")).toBe(codigos.indexOf("emenda_inicial") + 1);
       expect(codigos.indexOf("transito_julgado")).toBe(codigos.indexOf("acordao") + 1);
-      expect(codigos.indexOf("conclusos_sentenca")).toBe(codigos.indexOf("laudo_manifestacoes") + 1);
+      expect(codigos.indexOf("proposta_acordo")).toBe(codigos.indexOf("laudo_manifestacoes") + 1);
+      expect(codigos.indexOf("conclusos_sentenca")).toBe(codigos.indexOf("proposta_acordo") + 1);
+      expect(codigos).not.toContain("acordo");
       // Idempotente: reexecutar não duplica listas.
       const total = codigos.length;
       runDjenMigrations(novo);
       expect((novo.prepare("SELECT COUNT(*) AS n FROM djen_kanban_listas").get() as { n: number }).n).toBe(total);
     } finally { novo.close(); }
+  });
+});
+
+describe("proposta de acordo e homologação", () => {
+  it("converte a lista Acordo da 2.56.0 em Proposta de acordo, logo após o laudo, sem perder cartões", () => {
+    const antigo = new Database(":memory:");
+    try {
+      runMigrations(antigo);
+      runDjenMigrations(antigo);
+      // Simula o estado da 2.56.0: lista 'acordo' depois de Sentença.
+      antigo.exec("UPDATE djen_kanban_listas SET codigo='acordo',nome='Acordo (proposta / homologação)' WHERE codigo='proposta_acordo'");
+      antigo.exec("DELETE FROM djen_kanban_meta WHERE chave='classificador'");
+      const antes = antigo.prepare("SELECT id FROM djen_kanban_listas WHERE codigo='acordo'").get() as { id: number };
+      antigo.exec(`UPDATE djen_kanban_listas SET posicao=posicao+100 WHERE codigo IS NOT NULL;`);
+      const sent = antigo.prepare("SELECT posicao FROM djen_kanban_listas WHERE codigo='sentenca'").get() as { posicao: number };
+      antigo.prepare("UPDATE djen_kanban_listas SET posicao=? WHERE id=?").run(sent.posicao + 1, antes.id);
+      runDjenMigrations(antigo);
+      const l = antigo.prepare("SELECT id,nome,codigo FROM djen_kanban_listas WHERE codigo='proposta_acordo'").get() as { id: number; nome: string };
+      expect(l).toMatchObject({ id: antes.id, nome: "Proposta de acordo" });
+      const ordem = (antigo.prepare("SELECT codigo FROM djen_kanban_listas ORDER BY posicao,id").all() as { codigo: string }[]).map((x) => x.codigo);
+      expect(ordem.indexOf("proposta_acordo")).toBe(ordem.indexOf("laudo_manifestacoes") + 1);
+      expect(ordem).not.toContain("acordo");
+    } finally { antigo.close(); }
+  });
+  it("proposta fica em Proposta de acordo; homologação vai para Sentença", () => {
+    publicar("ac-1", dias(10), "O INSS apresentou proposta de acordo nos autos. Intime-se a parte autora para manifestar-se.");
+    expect(codigoDe("ac-1")).toBe("proposta_acordo");
+    publicar("ac-1", dias(2), "Homologo o acordo celebrado entre as partes e julgo extinto o processo.");
+    expect(codigoDe("ac-1")).toBe("sentenca");
+  });
+  it("proposta aparece depois do laudo e antes da sentença", () => {
+    publicar("ac-2", dias(30), "O laudo pericial foi juntado aos autos.");
+    expect(codigoDe("ac-2")).toBe("laudo_manifestacoes");
+    publicar("ac-2", dias(5), "A parte ré apresentou proposta de acordo; manifeste-se a parte autora.");
+    expect(codigoDe("ac-2")).toBe("proposta_acordo");
   });
 });

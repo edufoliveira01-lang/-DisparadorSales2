@@ -10,8 +10,8 @@ import { classificarComplementar } from "./classificacaoComplementar";
 export const ETAPAS_AUTOMATICAS = [
   "triagem", "aguarda_juizo", "sobrestado", "aguarda_terceiros", "prov_escritorio",
   "peticao_inicial", "distribuicao", "emenda_inicial", "citacao_contestacao", "audiencia",
-  "perito_designado", "pericia_agendada", "pericia_realizada", "laudo_manifestacoes",
-  "conclusos_sentenca", "sentenca", "acordo", "recurso", "acordao", "transito_julgado",
+  "perito_designado", "pericia_agendada", "pericia_realizada", "laudo_manifestacoes", "proposta_acordo",
+  "conclusos_sentenca", "sentenca", "recurso", "acordao", "transito_julgado",
   "cumprimento_sentenca", "aguarda_implantacao", "calculos", "aguarda_expedicao_rpv",
   "rpv_expedida", "concluido",
 ] as const;
@@ -107,9 +107,14 @@ export function classificarPublicacaoParaQuadro(texto: string): SinalEtapa | nul
   for (const trecho of partes) {
     const s = canon(trecho);
     if (s.length < 8 || contextoNaoAtual(s)) continue;
-    if (fatoAtual(s, /\b(?:homologo|homologad[oa])\b.{0,100}\b(?:acordo|transacao)\b|\b(?:acordo|transacao)\b.{0,60}\bhomologad[oa]\b|\bproposta\s+de\s+acordo\b.{0,80}\b(?:apresentad|ofertad|formulad|aceit)\w*|\b(?:apresentou|ofereceu|formulou)\b.{0,40}\bproposta\s+de\s+acordo\b/) &&
+    // Homologação do acordo é decidida em sentença: entra na etapa Sentença.
+    if (fatoAtual(s, /\b(?:homologo|homologad[oa])\b.{0,100}\b(?:acordo|transacao)\b|\b(?:acordo|transacao)\b.{0,60}\bhomologad[oa]\b/) &&
+        !/\b(?:nao houve acordo|sem acordo|inexito|nao homologo|indefiro a homologacao)\b/.test(s))
+      adicionar("sentenca", trecho);
+    // Proposta de acordo apresentada (INSS ou parte contrária): o escritório precisa se manifestar.
+    else if (fatoAtual(s, /\bproposta\s+de\s+acordo\b.{0,80}\b(?:apresentad|ofertad|formulad|aceit)\w*|\b(?:apresentou|ofereceu|formulou)\b.{0,40}\bproposta\s+de\s+acordo\b|\bmanifest\w+\b.{0,60}\bproposta\s+de\s+acordo\b/) &&
         !/\b(?:nao houve acordo|sem acordo|inexito)\b/.test(s))
-      adicionar("acordo", trecho);
+      adicionar("proposta_acordo", trecho);
     if (/\b(?:autos?|processo|feito)\s+conclus[oa]s?\s+(?:para|a|ao)\s+(?:sentenca|julgamento|decisao final|juiz)\b|\bconclusos?\s+para\s+(?:sentenca|julgamento)\b/.test(s) &&
         !/\b(?:apos|quando|caso|se houver|eventual|sera|devera)\b/.test(s))
       adicionar("conclusos_sentenca", trecho);
@@ -162,7 +167,7 @@ export function classificarPublicacaoComHistorico(row: {
     extincao_execucao: "concluido", recurso: "recurso", emenda_inicial: "emenda_inicial",
     calculos: "calculos", implantacao_beneficio: "aguarda_implantacao",
     citacao_contestacao: "citacao_contestacao", audiencia: "audiencia", transito_julgado: "transito_julgado",
-    proposta_acordo: "acordo", homologacao_acordo: "acordo", vista_laudo: "laudo_manifestacoes",
+    proposta_acordo: "proposta_acordo", homologacao_acordo: "sentenca", vista_laudo: "laudo_manifestacoes",
   };
   // A revisão humana é a fonte da categoria, mesmo quando a IA não havia gerado
   // evidência para ela. Não reutiliza a prova de uma categoria removida na revisão.
@@ -182,8 +187,9 @@ export function classificarPublicacaoComHistorico(row: {
       aguarda_expedicao_rpv: "rpv", rpv_expedida: "rpv", recurso: "recurso", emenda_inicial: "emenda_inicial",
       calculos: "calculos", aguarda_implantacao: "implantacao_beneficio",
       citacao_contestacao: "citacao_contestacao", audiencia: "audiencia", transito_julgado: "transito_julgado",
+      proposta_acordo: "proposta_acordo",
     };
-    if (literal?.codigo === "acordo" && !categorias.some((c: unknown) => c === "proposta_acordo" || c === "homologacao_acordo")) return null;
+    if (literal?.codigo === "proposta_acordo" && !categorias.some((c: unknown) => c === "proposta_acordo")) return null;
     if (literal && (literal.codigo === "concluido" || (categoriaDaEtapa[literal.codigo] && !categorias.includes(categoriaDaEtapa[literal.codigo])))) return null;
     return literal;
   }

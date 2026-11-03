@@ -138,7 +138,7 @@ describe("quadro processual", () => {
     const id = publicar("acordo-custom", "2026-07-01", texto);
     db.prepare("UPDATE djen_publicacoes SET categorias_json=?,evidencias_json=? WHERE id=?")
       .run('["proposta_acordo"]', JSON.stringify([{ categoria: "proposta_acordo", trecho: texto }]), id);
-    const lista = criarListaKanban({ nome: "Proposta de acordo", regra_categoria: "proposta_acordo" }) as { id: number };
+    const lista = criarListaKanban({ nome: "Negociação do acordo", regra_categoria: "proposta_acordo" }) as { id: number };
     expect(listarKanban().cartoes.find((c) => c.processo_chave === "acordo-custom")!.lista_id).toBe(lista.id);
     publicar("acordo-custom", "2026-08-01", "SENTENÇA. Julgo procedente o pedido da autora.");
     const quadro = listarKanban();
@@ -262,7 +262,7 @@ describe("quadro processual", () => {
   it("permite criar, editar, ordenar e excluir somente listas vazias", () => {
     publicar("500005", "2026-10-01", "Proposta de acordo.");
     const quadro = listarKanban();
-    const criada = criarListaKanban({ nome: "Proposta de acordo", contar_dias: true, regra_categoria: "proposta_acordo" }) as { id: number; contar_dias: number };
+    const criada = criarListaKanban({ nome: "Negociação do acordo", contar_dias: true, regra_categoria: "proposta_acordo" }) as { id: number; contar_dias: number };
     expect(criada.contar_dias).toBe(1);
     alterarListaKanban(criada.id, { nome: "Acordo em negociação", contar_dias: false, regra_categoria: "proposta_acordo" });
     const ids = listarKanban().listas.map((l) => l.id);
