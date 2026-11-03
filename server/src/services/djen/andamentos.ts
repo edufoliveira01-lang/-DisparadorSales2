@@ -8,6 +8,7 @@
  * reconhecidos. Citações entre aspas nunca contam como ato atual.
  */
 import { laudoEfetivamenteJuntado } from "./followUpPolicy";
+import { memoTexto } from "./cache";
 
 export type TipoAndamento =
   | "sentenca"
@@ -125,6 +126,9 @@ function inicioDaFrase(fonte: string, indice: number) {
 
 /** Retorna o primeiro fato de avanço processual comprovado literalmente no texto. */
 export function andamentosNoTexto(texto: string): AndamentoIdentificado[] {
+  return memoTexto("andamentos", texto, andamentosNoTextoSemCache);
+}
+function andamentosNoTextoSemCache(texto: string): AndamentoIdentificado[] {
   const fonte = normal(semCitacoes(texto));
   const saida: AndamentoIdentificado[] = [];
   for (const regra of REGRAS) {

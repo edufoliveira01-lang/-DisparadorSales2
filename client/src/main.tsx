@@ -4,9 +4,11 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { ToastProvider } from "./components/ui/Toast";
 import { applyTheme, getInitialTheme, ThemeProvider } from "./context/ThemeContext";
+import { aplicarModoLeve } from "./lib/desempenho";
 import "./index.css";
 
 applyTheme(getInitialTheme());
+aplicarModoLeve();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

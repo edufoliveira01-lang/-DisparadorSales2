@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { ActiveServiceProvider } from "@/context/ActiveServiceContext";
 import { Route, Routes, useLocation } from "react-router-dom";
 import { Layout } from "@/components/Layout";
@@ -59,6 +59,27 @@ const Login = lazy(() =>
 const Team = lazy(() => import("@/pages/Team").then((module) => ({ default: module.Team })));
 const Account = lazy(() => import("@/pages/Account").then((module) => ({ default: module.Account })));
 
+/** Módulos das páginas, pré-carregados quando o navegador está ocioso para a troca de página ser imediata. */
+const PAGINAS_PARA_PRECARREGAR = [
+  () => import("@/pages/Acompanhamento"), () => import("@/pages/QuadroProcessos"), () => import("@/pages/Dashboard"),
+  () => import("@/pages/Agenda"), () => import("@/pages/Calendario"), () => import("@/pages/Historico"),
+  () => import("@/pages/PendentesResposta"), () => import("@/pages/CalendariosPrazos"), () => import("@/pages/Templates"),
+  () => import("@/pages/Logs"), () => import("@/pages/Configuracoes"),
+];
+function usePrecarregarPaginas() {
+  useEffect(() => {
+    let cancelado = false;
+    const ocioso = (window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback
+      ?? ((cb: () => void) => window.setTimeout(cb, 400));
+    const proximo = (i: number) => {
+      if (cancelado || i >= PAGINAS_PARA_PRECARREGAR.length) return;
+      ocioso(() => { void PAGINAS_PARA_PRECARREGAR[i]().catch(() => undefined).finally(() => proximo(i + 1)); }, { timeout: 4000 });
+    };
+    const inicio = window.setTimeout(() => proximo(0), 1500);
+    return () => { cancelado = true; window.clearTimeout(inicio); };
+  }, []);
+}
+
 export default function App() {
   const location = useLocation();
   const isLoginPage = location.pathname === "/login";
@@ -88,6 +109,7 @@ function AccessRoute({ permission, children }: { permission: Permission; childre
 
 function AuthenticatedApp() {
   const { can, user } = useAuth();
+  usePrecarregarPaginas();
   return (
     <ActiveServiceProvider>
       <WhatsappProvider>

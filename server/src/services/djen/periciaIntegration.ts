@@ -1,6 +1,7 @@
 import { dadosDoCumprimento, descricaoCumprimento } from "./fulfillment";
 import { coberturaHistorico } from "./historyCoverage";
 import { instrucaoSuperada, laudoEfetivamenteJuntado, periciaSuperada } from "./followUpPolicy";
+import { memoDjen } from "./cache";
 import { primeiroAndamentoPosterior, type PublicacaoParaAndamento } from "./andamentos";
 import { db } from "../../db";
 import { normalizeProcesso } from "../../utils/processo";
@@ -250,6 +251,7 @@ export function adicionarPublicacaoAoControle(publicacaoId: number) {
   };
 }
 
+const formatadorDiaSP = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' });
 export interface PericiaSuperada {
   pericia_id: number;
   nome: string;
@@ -268,6 +270,9 @@ export interface PericiaSuperada {
  */
 export function analisarPericiasSemLaudo(diasAposPericia = 60) {
   const dias = Math.max(60, Math.min(180, Math.trunc(diasAposPericia) || 60));
+  return memoDjen(`pericias-sem-laudo:${dias}`, 60_000, () => analisarPericiasSemLaudoSemCache(dias));
+}
+function analisarPericiasSemLaudoSemCache(dias: number) {
   const candidatas = db
     .prepare(
       `SELECT pa.processo_chave,pa.origem,(SELECT COUNT(*) FROM pericias_agendadas outra WHERE outra.processo_chave=pa.processo_chave AND outra.status='ativa' AND COALESCE(outra.origem,'')<>'audiencia') AS ativas_no_processo,pa.id AS pericia_id,pa.nome,pa.processo,pa.data,pa.horario,pa.local,
@@ -305,7 +310,7 @@ export function analisarPericiasSemLaudo(diasAposPericia = 60) {
   const alertas: typeof candidatas = [];
   const superadas: PericiaSuperada[] = [];
   for (const p of candidatas) {
-    const data = new Date(p.data_hora_ms).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    const data = formatadorDiaSP.format(new Date(p.data_hora_ms));
     const posteriores = (porProcesso.get(p.processo_chave) || []).filter(pub => pub.data >= data);
     const textos = posteriores.map(pub => pub.texto);
     const registro = (motivo: string, andamento: string | null = null, dataAndamento: string | null = null) =>

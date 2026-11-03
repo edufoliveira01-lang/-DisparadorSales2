@@ -1,7 +1,10 @@
-import { createHash } from 'node:crypto';
+import { memoTexto } from './cache';
 /** Evidências literais do ato atual, sem usar o resumo/categoria da IA como prova. */
 const normal = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 export function frasesAtuais(texto: string): string[] {
+  return memoTexto('frases', texto, frasesAtuaisSemCache);
+}
+function frasesAtuaisSemCache(texto: string): string[] {
   // Texto entre aspas e blocos identificados como precedente não é dispositivo atual.
   return texto.replace(/[“«][\s\S]*?[”»]/g, ' ').replace(/"[^"\n]*"/g, ' ')
     .split(/(?:[.;!?]\s+|\n+)/).map(normal).filter(s => s &&
@@ -37,16 +40,9 @@ function detectarLaudo(texto: string): boolean {
   });
 }
 
-// Cache limitado de fatos derivados de texto, sem guardar autos ou dados mutáveis.
-const cache = new Map<string, { fase: ReturnType<typeof detectarFase>; laudo: boolean }>();
+// Fatos derivados somente do texto, em cache limitado (sem guardar autos ou dados mutáveis).
 function fatos(texto: string) {
-  const chave = createHash('sha256').update(texto, 'utf16le').digest('hex');
-  const anterior = cache.get(chave);
-  if (anterior) return anterior;
-  const valor = { fase: detectarFase(texto), laudo: detectarLaudo(texto) };
-  if (cache.size >= 2000) cache.delete(cache.keys().next().value!);
-  cache.set(chave, valor);
-  return valor;
+  return memoTexto('fatos', texto, (t) => ({ fase: detectarFase(t), laudo: detectarLaudo(t) }));
 }
 export const faseDaInstrucao = (texto: string) => fatos(texto).fase;
 export const laudoEfetivamenteJuntado = (texto: string) => fatos(texto).laudo;

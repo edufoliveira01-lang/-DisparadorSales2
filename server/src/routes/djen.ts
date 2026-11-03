@@ -1,5 +1,6 @@
 import { processarHistoricos, resumoHistoricos } from "../services/djen/processHistory";
 import { solicitarHistorico, coberturaHistorico } from "../services/djen/historyCoverage";
+import { memoDjen, memoDjenAsync } from "../services/djen/cache";
 import { listarPrazosEscritorio, atualizarPrazoEscritorio, listarProcessosParados } from "../services/djen/prazosEscritorio";
 import { diagnosticoAcompanhamentos } from "../services/djen/followUpDiagnostics";
 import { selectedAiConnection } from "../services/ai/connection";
@@ -104,13 +105,13 @@ const id = (value: string) => {
   return n;
 };
 const changed = () => emitEvent("djen:changed", {});
-const acompanhamentos = async () => [
+const acompanhamentos = () => memoDjenAsync("acompanhamentos", 60_000, async () => [
   ...listarAguardandoMovimentacao().map((item) => ({
     ...item, tipo: "aguardo_juizo", responsavel: "Juízo", prazo_citado_dias: null,
     dias_decorridos: item.dias_sem_publicacao,
   })),
   ...await listarObrigacoesExternasAsync(),
-];
+]);
 const filtroPublicacoes = (req: import("express").Request) => {
   const filtro: Record<string, string> = {};
   for (const key of ["arquivo", "categoria", "resultado", "advogado_id", "situacao", "busca", "inicio", "fim", "pagina"])
@@ -127,7 +128,7 @@ djenRouter.get(
     const semLaudo = listarPericiasSemLaudo();
     res.json({
       ...statusBuscas(),
-      resumo: resumoDjen(),
+      resumo: memoDjen("resumo", 30_000, resumoDjen),
       config: configuracaoDjen(),
       advogados: listarAdvogados(),
       pericias_sem_laudo: semLaudo.length,

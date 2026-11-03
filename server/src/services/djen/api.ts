@@ -1,4 +1,5 @@
 import { textoDaPublicacao, normalizarTexto } from "./classifier";
+import { hojeSaoPaulo } from "./cache";
 
 export const DJEN_API = "https://comunicaapi.pje.jus.br/api/v1";
 export interface AdvogadoDjen {
@@ -60,9 +61,7 @@ export function somarDias(data: string, dias: number): string {
     .slice(0, 10);
 }
 export function hojeDjen(): string {
-  return new Date().toLocaleDateString("en-CA", {
-    timeZone: "America/Sao_Paulo",
-  });
+  return hojeSaoPaulo();
 }
 export function linkSeguro(value: unknown): string | null {
   try {

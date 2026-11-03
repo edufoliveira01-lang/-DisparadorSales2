@@ -2,6 +2,7 @@ import type { ObrigacaoDetectada } from './obligations';
 import { calcularPrazo, type CalendarioForense } from './deadlines';
 import { lerCalendario, calendarioParaCalculo } from './officialCalendars/store';
 import { chaveEscopo } from './officialCalendars/utils';
+import { memoDjen } from './cache';
 
 export interface PrazoAcompanhamento {
   prazo_texto: string | null; prazo_unidade: string | null;
@@ -31,8 +32,9 @@ export function prazoDoAcompanhamento(ordem: ObrigacaoDetectada, pub: { tribunal
     const extras: CalendarioForense[] = [];
     const ano = Number(base.slice(0,4));
     for (let a = ano; a <= ano + 3; a++) {
-      const c = lerCalendario(chaveEscopo(pub.tribunal, pub.orgao, a));
-      const calculavel = c && calendarioParaCalculo(c);
+      const escopo = chaveEscopo(pub.tribunal, pub.orgao, a);
+      // O calendário muda raramente; evita reler e reinterpretar o mesmo ano a cada ordem.
+      const calculavel = memoDjen(`calendario:${escopo}`, 60_000, () => { const c = lerCalendario(escopo); return c ? calendarioParaCalculo(c) : null; });
       if (calculavel) extras.push(calculavel);
     }
     const p = calcularPrazo(pub.tribunal, pub.orgao, { dias: ordem.prazo_citado_dias, base, marco: 'disponibilizacao',

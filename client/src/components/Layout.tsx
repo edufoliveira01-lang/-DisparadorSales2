@@ -3,6 +3,7 @@ import {
   Menu,
   Search,
   Moon,
+  Zap,
   Sun,
   ChevronRight,
   MessageCircle,
@@ -16,6 +17,7 @@ import { ProcessAlerts } from "./ProcessAlerts";
 import { useActiveService } from "@/context/ActiveServiceContext";
 import { useWhatsapp } from "@/context/WhatsappContext";
 import { useTheme } from "@/context/ThemeContext";
+import { lerModoLeve, modoLeveAtivo, salvarModoLeve } from "@/lib/desempenho";
 import { getCurrentPage } from "@/lib/navigation";
 import { useAuth } from "@/context/AuthContext";
 export function Layout({ children }: { children: ReactNode }) {
@@ -33,6 +35,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const whatsapp = useWhatsapp();
   const active = useActiveService();
   const { theme, setTheme } = useTheme();
+  const [leve, setLeve] = useState(() => modoLeveAtivo(lerModoLeve()));
   const closeSearch = useCallback(() => setSearchOpen(false), []);
   const page = getCurrentPage(pathname);
   const connected = whatsapp.status === "conectado";
@@ -165,6 +168,16 @@ export function Layout({ children }: { children: ReactNode }) {
               </span>
               <MessageCircle className="h-[17px] w-[17px] xl:hidden" />
             </Link>
+            <button
+              type="button"
+              className="topbar-icon"
+              aria-pressed={leve}
+              onClick={() => { const novo = !leve; salvarModoLeve(novo ? "ligado" : "desligado"); setLeve(novo); }}
+              aria-label={leve ? "Desativar modo leve" : "Ativar modo leve"}
+              title={leve ? "Modo leve ligado: sem desfoque, sombras e animações. Clique para desligar." : "Modo leve: reduz efeitos visuais para deixar o sistema mais rápido em computadores modestos."}
+            >
+              <Zap className={`h-[18px] w-[18px] ${leve ? "text-accent-600" : ""}`} />
+            </button>
             <button
               type="button"
               className="topbar-icon"

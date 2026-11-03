@@ -1,4 +1,5 @@
 import type { Server as HttpServer } from "node:http";
+import { limparCachesDjen } from "../services/djen/cache";
 import { Server, type Socket } from "socket.io";
 import { listActiveBatches } from "../services/batchProgressService";
 import { getSession, getUserById } from "../services/authService";
@@ -55,6 +56,7 @@ function eventPermission(event: string): Permission | null {
 }
 
 export function emitEvent(event: string, payload: unknown): void {
+  if (event === "djen:changed") limparCachesDjen();
   // Também verifica antes de transmitir: não há janela de exposição entre os ciclos do timer.
   for (const socket of io?.sockets.sockets.values() ?? []) validateSocket(socket);
   const permission = eventPermission(event);

@@ -1,8 +1,12 @@
 import { db } from "../../db";
 import { identificarObrigacoesExternas } from "./obligations";
+import { memoDjen } from "./cache";
 
 /** Contagens de cobertura, sem presumir que ausência de publicação prova ausência de laudo. */
 export function diagnosticoAcompanhamentos() {
+  return memoDjen("diagnostico-acompanhamentos", 60_000, diagnosticoSemCache);
+}
+function diagnosticoSemCache() {
   const pericias = db.prepare(`SELECT
     COUNT(*) AS ativas,
     SUM(CASE WHEN processo_chave='' THEN 1 ELSE 0 END) AS sem_processo,

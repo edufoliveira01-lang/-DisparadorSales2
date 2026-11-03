@@ -41,7 +41,14 @@ export function ProcessAlerts() {
       document.removeEventListener("visibilitychange", aoRetornar);
     };
   }, [atualizar]);
-  useSocketEvent("djen:changed", atualizar);
+  // Eventos do DJEN chegam em rajada (captura, análises): agrupa em uma única consulta.
+  const adiar = useRef<number | null>(null);
+  const atualizarAdiado = useCallback(() => {
+    if (adiar.current !== null) window.clearTimeout(adiar.current);
+    adiar.current = window.setTimeout(() => { adiar.current = null; void atualizar(); }, 1500);
+  }, [atualizar]);
+  useEffect(() => () => { if (adiar.current !== null) window.clearTimeout(adiar.current); }, []);
+  useSocketEvent("djen:changed", atualizarAdiado);
   useSocketEvent("connect", atualizar);
 
   useEffect(() => {

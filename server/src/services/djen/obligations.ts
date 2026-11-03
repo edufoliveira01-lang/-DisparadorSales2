@@ -1,6 +1,7 @@
 import { laudoEfetivamenteJuntado } from "./followUpPolicy";
 import { identificarOrdensProcessuais } from "./proceduralOrders";
 import { antes, emHipotese } from "./andamentos";
+import { memoTexto } from "./cache";
 export const TIPOS_OBRIGACAO = [
   "perito_laudo",
   "perito_esclarecimentos",
@@ -52,6 +53,10 @@ export function identificarOficios(texto: string): ObrigacaoDetectada[] {
 
 /** Somente intimações/ordens explícitas, no mesmo trecho do destinatário e da providência. */
 export function identificarObrigacoesExternas(texto: string): ObrigacaoDetectada[] {
+  // Cópias rasas: quem chama não altera o resultado guardado.
+  return memoTexto("obrigacoes", texto, identificarObrigacoesExternasSemCache).map((o) => ({ ...o }));
+}
+function identificarObrigacoesExternasSemCache(texto: string): ObrigacaoDetectada[] {
   const saida = new Map<TipoObrigacao, ObrigacaoDetectada>();
   for (const ordem of identificarOrdensProcessuais(texto)) {
     if (["escritorio", "ambas_partes"].includes(ordem.responsavel) || ordem.tipo === "ciencia") continue;
@@ -72,8 +77,7 @@ export function identificarObrigacoesExternas(texto: string): ObrigacaoDetectada
 export function cumprimentoIdentificado(tipo: TipoObrigacao, texto: string, ordem = ""): boolean {
   if (tipo === "perito_laudo") return laudoEfetivamenteJuntado(texto);
   const pedido = normalizar(ordem);
-  for (const original of texto.split(/(?:[.;]\s+|\n+)/).filter(Boolean)) {
-    const s = normalizar(original);
+  for (const s of memoTexto("sentencas-normalizadas", texto, (t) => t.split(/(?:[.;]\s+|\n+)/).filter(Boolean).map(normalizar))) {
     if (/\b(?:nao|ainda nao|sem|aguardando|aguarde-se|aguardar|apos|quando|caso|devera|deverao|sera|serao|para que|para comprovar|intime-se|intimado|intimada)\b/.test(s)) continue;
     const provas: Record<TipoObrigacao, RegExp> = {
       perito_laudo: /\b(?:laudo\b.{0,80}\b(?:juntad[oa]|apresentad[oa])|juntada do laudo|perit[oa]\b.{0,70}\b(?:juntou|apresentou)\b.{0,40}\blaudo)\b/,

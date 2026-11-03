@@ -516,3 +516,17 @@
   .service-activity-heading { padding-inline:16px; }
   .service-activity-list { padding-inline:39px 16px; }
 }
+
+/* Modo leve: menos custo de pintura em computadores modestos. */
+html.modo-leve *, html.modo-leve *::before, html.modo-leve *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+html.modo-leve .app-topbar { background: rgb(255 255 255 / .96); }
+html.dark.modo-leve .app-topbar { background: rgb(9 9 11 / .96); }

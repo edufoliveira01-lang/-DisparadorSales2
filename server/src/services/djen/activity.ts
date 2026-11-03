@@ -1,6 +1,7 @@
 import { db } from '../../db';
 export interface AtividadeProcesso { desde: string; dias: number; nivel: 'verde' | 'amarelo' | 'vermelho'; ultima_providencia_em: string | null }
-const diaSP = (date: Date) => date.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+const formatadorSP = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' });
+const diaSP = (date: Date) => formatadorSP.format(date);
 export function medirInatividade(criado: string, providencia: string | null, agora = new Date()): AtividadeProcesso | null {
   const instante = (s: string) => Date.parse(/[zZ]|[+-]\d{2}:\d{2}$/.test(s) ? s : s.replace(' ', 'T') + 'Z');
   const inicio = instante(criado), ultima = providencia ? instante(providencia) : Number.NaN;

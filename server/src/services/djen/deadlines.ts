@@ -5,6 +5,7 @@ import { getSetting, setSetting } from "../settingsService";
 import { dataValida, somarDias } from "./api";
 import { WorkflowInputError } from "./workflow";
 import { ordemComPrazoDaParte } from "./classifier";
+import { memoDjen, limparCachesDjen } from "./cache";
 
 export class ErroCoberturaCalendario extends WorkflowInputError {
   constructor(
@@ -37,10 +38,13 @@ export interface ConfigPrazos {
   calendarios: CalendarioForense[];
 }
 export function configPrazos(): ConfigPrazos {
-  const raw = getSetting("djen_prazos_config");
-  return raw
-    ? JSON.parse(raw)
-    : { calendarId: "", calendarName: "", calendarios: [] };
+  // Lida a cada cálculo de prazo; em cache curto, invalidado ao salvar a configuração.
+  return memoDjen("config-prazos", 30_000, () => {
+    const raw = getSetting("djen_prazos_config");
+    return raw
+      ? JSON.parse(raw)
+      : { calendarId: "", calendarName: "", calendarios: [] };
+  });
 }
 export function salvarConfigPrazos(data: ConfigPrazos) {
   if (
@@ -125,6 +129,7 @@ export function salvarConfigPrazos(data: ConfigPrazos) {
     ),
   };
   setSetting("djen_prazos_config", JSON.stringify(config));
+  limparCachesDjen();
   return config;
 }
 const canon = (s: string) =>

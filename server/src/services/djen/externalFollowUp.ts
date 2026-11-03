@@ -9,7 +9,8 @@ import { DjenInputError } from "./store";
 import { primeiroAndamentoPosterior, type PublicacaoParaAndamento } from "./andamentos";
 import { cumprimentoIdentificado, identificarObrigacoesExternas, TIPOS_OBRIGACAO, type TipoObrigacao } from "./obligations";
 
-const hoje = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+import { hojeSaoPaulo } from "./cache";
+const hoje = hojeSaoPaulo;
 const diasDesde = (data: string) =>
   Math.floor((Date.parse(`${hoje()}T12:00:00Z`) - Date.parse(`${data.slice(0, 10)}T12:00:00Z`)) / 86400000);
 

@@ -15,26 +15,14 @@ import { andamentoDaPublicacao } from "./andamentos";
 import { dadosDoCumprimento, descricaoCumprimento } from "./fulfillment";
 import { registrarHistoricoDjen } from "./history";
 import { marcarEtapaParaRevisao } from "./kanbanRevisao";
+import { memoDjen, limparCachesDjen, hojeSaoPaulo } from "./cache";
 import { DjenInputError } from "./store";
 
-const hoje = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+const hoje = hojeSaoPaulo;
 const diasEntre = (de: string, ate: string) =>
   Math.round((Date.parse(`${ate.slice(0, 10)}T12:00:00Z`) - Date.parse(`${de.slice(0, 10)}T12:00:00Z`)) / 86400000);
 const JANELA_PRAZOS_DIAS = 240;
 const ANTECEDENCIA_ALERTA_DIAS = 3;
-
-/** Memória curta: as contagens do painel são lidas com frequência. */
-function comMemoria<T>(ttlMs: number, calcular: () => T) {
-  let valor: { em: number; dado: T } | null = null;
-  const ler = () => {
-    if (valor && Date.now() - valor.em < ttlMs) return valor.dado;
-    const dado = calcular();
-    valor = { em: Date.now(), dado };
-    return dado;
-  };
-  ler.limpar = () => { valor = null; };
-  return ler;
-}
 
 interface Linha {
   id: number; processo_chave: string; tribunal: string; orgao: string; data_disponibilizacao: string; texto: string;
@@ -116,8 +104,7 @@ function calcularPrazosEscritorio(): PrazoEscritorio[] {
   }
   return saida.sort((a, b) => (a.termino || "9999").localeCompare(b.termino || "9999"));
 }
-const memoPrazos = comMemoria(30_000, calcularPrazosEscritorio);
-export const listarPrazosEscritorio = () => memoPrazos();
+export const listarPrazosEscritorio = () => memoDjen("prazos-escritorio", 60_000, calcularPrazosEscritorio);
 
 export function atualizarPrazoEscritorio(publicacaoId: number, status: unknown, dados?: Record<string, unknown>) {
   if (status !== "pendente" && status !== "resolvido") throw new DjenInputError("Situação inválida.");
@@ -128,8 +115,7 @@ export function atualizarPrazoEscritorio(publicacaoId: number, status: unknown, 
     .run(publicacaoId, status, confirmado?.cumprido_em ?? null, confirmado?.observacoes ?? "");
   registrarHistoricoDjen(publicacaoId, "providencia", confirmado ? descricaoCumprimento(confirmado) : "Prazo do escritório reaberto pelo usuário.", confirmado);
   marcarEtapaParaRevisao(publicacaoId);
-  memoPrazos.limpar();
-  memoParados.limpar();
+  limparCachesDjen();
   return { ok: true };
 }
 
@@ -166,13 +152,10 @@ function calcularProcessosParados(dias: number): ProcessoParado[] {
   }
   return saida.sort((a, b) => b.dias_parado - a.dias_parado);
 }
-const memoParados = comMemoria(30_000, () => new Map<number, ProcessoParado[]>());
 export function listarProcessosParados(dias = 60) {
   const limite = Math.max(30, Math.min(365, Math.trunc(dias) || 60));
-  const cache = memoParados();
-  if (!cache.has(limite)) cache.set(limite, calcularProcessosParados(limite));
-  return cache.get(limite)!;
+  return memoDjen(`processos-parados:${limite}`, 60_000, () => calcularProcessosParados(limite));
 }
 
 /** Usado após capturas e em testes: as listas são recalculadas na próxima leitura. */
-export function limparMemoriaAlertas() { memoPrazos.limpar(); memoParados.limpar(); }
+export function limparMemoriaAlertas() { limparCachesDjen(); }

@@ -16,7 +16,8 @@ type Cartao = {
   publicacoes_total: number; prazos_abertos: number; publicacoes_nao_lidas: number;
   classe: string | null; tribunal: string | null; orgao: string | null;
 };
-const hoje = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+import { hojeSaoPaulo } from "./cache";
+const hoje = hojeSaoPaulo;
 const listas = () => db.prepare("SELECT id,nome,posicao,contar_dias,codigo,regra_categoria FROM djen_kanban_listas ORDER BY posicao,id").all() as Lista[];
 const nomeValido = (nome: unknown) => {
   if (typeof nome !== "string" || nome.trim().length < 2 || nome.trim().length > 70)
