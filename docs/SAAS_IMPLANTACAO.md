@@ -126,29 +126,43 @@ Teste: abra `https://painel.saleseassociados.com.br`. Deve aparecer a tela de lo
 4. No painel, **Configuração** deve mostrar “Cobrança automática configurada” e “Webhook configurado”.
 5. Para produção: gere a chave da conta real, troque `ASAAS_BASE_URL` por `https://api.asaas.com/v3` e refaça o webhook na conta real.
 
-## 5. Primeiro escritório de teste
+## 5. Escritórios: criação automática (instalação única + formulário)
+
+### 5.1 Instalação única do provisionamento automático
+
+Depois disto, **nenhum escritório novo exige comando nem arquivo de Nginx**. Rode uma vez, como o usuário do sistema (`dropsales`), informando a porta em que o seu Nginx escuta (a mesma do túnel; neste servidor é `8081`):
+
+```bash
+cd ~/disparador-sales2 && bash server/scripts/provisionamento-instalar.sh 8081 saleseassociados.com.br
+```
+
+O script (pode rodar de novo sem problema):
+
+- cria o arquivo `/srv/disparazap-painel/nginx/escritorios.map` e **adota as instâncias que já existem** em `/srv/disparazap`;
+- cria **um único** bloco curinga `*.saleseassociados.com.br` (`/etc/nginx/conf.d/dz-escritorios.conf`) que escolhe a porta pelo nome do escritório. Nomes sem escritório cadastrado dão 404; `painel` e `disparazap` continuam com os blocos próprios;
+- libera por `sudo` **apenas** `nginx -t` e `systemctl reload nginx` (arquivo `/etc/sudoers.d/dz-painel`);
+- liga `PAINEL_AUTO_PROVISIONAR=1` no `painel.env` e reinicia o painel. Se o Nginx recusar a configuração, ela é desfeita e nada é recarregado.
+
+Opcional: apague os arquivos antigos por escritório (o script lista os comandos no fim), pois o bloco curinga os substitui.
+
+### 5.2 Criar um escritório
 
 1. No painel → **Planos** → edite “Escritório” e defina o preço mensal (planos com preço 0 não geram cobrança automática).
-2. **Novo escritório**: nome, endereço `teste`, e-mail, plano, dias de teste, porta `3401`. O painel mostra **uma vez** a chave de licença e os blocos de implantação.
-3. No servidor, salve o bloco “Arquivo .env da instância” em um arquivo temporário. Dica: para instâncias no **mesmo servidor do painel**, troque `LICENSE_SERVER_URL` por `http://127.0.0.1:3340` (mais robusto e independente da Cloudflare):
+2. **Novo escritório**: nome, e-mail, plano, dias de teste. O endereço sai do nome e a porta é automática.
+3. Ao clicar em **Criar escritório**, o painel cria a instância, registra o endereço no Nginx, cria a cobrança no Asaas e mostra o **link e a senha inicial** (botão “Copiar mensagem de acesso” para enviar ao cliente). A senha só aparece nessa tela; peça para trocar no primeiro acesso.
+4. Se algo falhar (por exemplo, o build do sistema ausente), o escritório fica cadastrado e a tela diz o motivo. Abra o escritório e use **Criar/ativar sistema no servidor** para tentar de novo.
 
-   ```bash
-   nano /tmp/teste.env
-   ```
+### 5.3 No dia a dia
 
-4. Aplique:
+Na ficha do escritório, seção **Sistema no servidor**: status (No ar/Parada/Não criada), **Reiniciar** e **Remover do servidor** (para o sistema e tira o endereço do ar; os dados ficam guardados). **Nova chave de licença** já é aplicada na instância e ela reinicia sozinha. Para um escritório criado à mão antes desta instalação, **Criar/ativar sistema no servidor** apenas adota a instância existente, sem alterar os dados dela.
 
-   ```bash
-   cd ~/disparador-sales2 && bash server/scripts/instancia-aplicar.sh teste 3401 /tmp/teste.env
-   ```
+### 5.4 Se preferir o modo manual (sem `PAINEL_AUTO_PROVISIONAR`)
 
-   ```bash
-   shred -u /tmp/teste.env
-   ```
+O painel mostra os blocos de implantação (`.env`, PM2 e Nginx) e você aplica com `server/scripts/instancia-aplicar.sh <slug> <porta> <arquivo.env>`. O exemplo de Nginx gerado serve a interface estática e envia só `/api/` e `/socket.io/` à instância.
 
-5. Nginx do escritório: use o exemplo gerado em `/srv/disparazap/teste/nginx.exemplo.conf` (no caminho B inclua `listen 443 ssl` e os certificados como no painel), ative e recarregue como no passo 2.
-6. Abra `https://teste.saleseassociados.com.br`, entre como `admin` com o `INITIAL_ADMIN_PASSWORD` do `.env` e troque a senha. Em alguns segundos o painel mostra o **último contato** da instância (e o aviso de teste aparece no sistema).
-7. Teste a cobrança no sandbox: abra o link da fatura do escritório, confirme o pagamento no sandbox do Asaas e veja o vencimento mudar no painel (webhook funcionando).
+### 5.5 Testar a cobrança no sandbox
+
+Abra o link da fatura do escritório, confirme o pagamento no sandbox do Asaas e veja o vencimento mudar no painel (webhook funcionando).
 
 ## 6. Backup do painel (essencial)
 

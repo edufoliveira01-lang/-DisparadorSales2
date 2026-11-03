@@ -121,6 +121,16 @@ export class ServicoPainel {
     };
   }
 
+  portasRegistradas(): number[] {
+    return (this.db.prepare("SELECT porta FROM escritorios WHERE porta IS NOT NULL").all() as { porta: number }[]).map((r) => r.porta);
+  }
+  definirInstancia(id: string, porta: number | null, evento: string, detalhe: Record<string, unknown> = {}) {
+    this.linha(id);
+    this.db.prepare("UPDATE escritorios SET porta=?,instancia_em=?,atualizado_em=? WHERE id=?").run(porta, porta === null ? null : agoraIso(this.relogio()), agoraIso(this.relogio()), id);
+    this.registrar(id, evento, { porta, ...detalhe });
+  }
+  slugDe(id: string): string { return this.linha(id).slug; }
+
   novaChave() { return `dz_${randomBytes(24).toString("base64url")}`; }
 
   async criarEscritorio(d: Record<string, unknown>) {
@@ -244,7 +254,7 @@ export class ServicoPainel {
     const dir = `${this.cfg.instanciasDir}/${l.slug}`;
     const porta = opcoes.porta && Number.isInteger(opcoes.porta) ? opcoes.porta : 3400;
     const licenca = [
-      `LICENSE_SERVER_URL=${this.cfg.urlPublica || "https://painel.seudominio.com.br"}`,
+      `LICENSE_SERVER_URL=${this.cfg.licencaUrlInterna || this.cfg.urlPublica || "https://painel.seudominio.com.br"}`,
       `LICENSE_KEY=${chave}`,
       `LICENSE_PUBLIC_KEY_B64=${Buffer.from(opcoes.chavePublicaPem).toString("base64")}`,
     ];

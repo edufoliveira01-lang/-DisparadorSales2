@@ -6,14 +6,17 @@ import type { ConfigPainel } from "./config";
 import { ErroPainel, ServicoPainel, comparar } from "./servico";
 import { criarLimitador, entrar, sair, usuarioDaSessao } from "./auth";
 import { ENTITLEMENTS } from "../licenca/entitlements";
+import { ErroProvisionamento, type Provisionador } from "./provisionador";
 
 const COOKIE = "painel_sessao";
 const IP = (req: Request) => (req.ip || req.socket.remoteAddress || "").replace(/^::ffff:/, "");
 
-export interface DepsPainel { db: Banco; cfg: ConfigPainel; servico: ServicoPainel; chavePublicaPem: string; versao: string; webDir?: string }
+export interface DepsPainel { db: Banco; cfg: ConfigPainel; servico: ServicoPainel; chavePublicaPem: string; versao: string; webDir?: string; provisionador?: Provisionador }
 
 export function criarAppPainel(deps: DepsPainel) {
   const { db, cfg, servico } = deps;
+  const prov = deps.provisionador && deps.provisionador.ativo ? deps.provisionador : null;
+  const comoErro = <T,>(fn: () => Promise<T>) => fn().catch((e) => { if (e instanceof ErroProvisionamento) throw new ErroPainel(e.message, 502); throw e; });
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
@@ -86,6 +89,7 @@ export function criarAppPainel(deps: DepsPainel) {
     provedor: { configurado: true },
     cobranca_configurada: Boolean(cfg.asaasApiKey),
     webhook_configurado: Boolean(cfg.asaasWebhookToken),
+    provisionamento_automatico: Boolean(prov),
     webhook_url: cfg.urlPublica ? `${cfg.urlPublica}/webhooks/asaas` : null,
     carencia_padrao_dias: cfg.carenciaPadraoDias,
     teste_padrao_dias: cfg.testePadraoDias,
@@ -96,10 +100,24 @@ export function criarAppPainel(deps: DepsPainel) {
   admin.put("/planos/:id", rota((req) => servico.atualizarPlano(String(req.params.id), req.body || {})));
   admin.get("/escritorios", rota(() => servico.listarEscritorios()));
   admin.post("/escritorios", rota(async (req, res) => {
+    const pedida = Number(req.body?.porta) || undefined;
+    if (prov) { try { prov.alocarPorta(pedida, servico.portasRegistradas()); } catch (e) { if (e instanceof ErroProvisionamento) throw new ErroPainel(e.message); throw e; } }
     const r = await servico.criarEscritorio(req.body || {});
     res.status(201);
-    const porta = Number(req.body?.porta) || undefined;
-    return { ...r, provisionamento: servico.provisionamento(r.escritorio.id, r.chave, { novaInstancia: true, porta, chavePublicaPem: deps.chavePublicaPem }) };
+    if (!prov) return { ...r, provisionamento: servico.provisionamento(r.escritorio.id, r.chave, { novaInstancia: true, porta: pedida, chavePublicaPem: deps.chavePublicaPem }) };
+    const slug = r.escritorio.slug;
+    let porta = pedida ?? 0;
+    try {
+      porta = prov.alocarPorta(pedida, servico.portasRegistradas());
+      const blocos = servico.provisionamento(r.escritorio.id, r.chave, { novaInstancia: true, porta, chavePublicaPem: deps.chavePublicaPem });
+      const c = await prov.criarInstancia(slug, porta, blocos.env);
+      servico.definirInstancia(r.escritorio.id, c.porta, "instancia_criada", { automatica: true });
+      return { ...r, instancia: { ok: true, url: c.url, usuario: "admin", senha_inicial: c.senhaInicial, avisos: c.avisos } };
+    } catch (e) {
+      const msg = e instanceof ErroProvisionamento ? e.message : (e as Error).message;
+      servico.definirInstancia(r.escritorio.id, null, "instancia_erro", { erro: msg });
+      return { ...r, instancia: { ok: false, erro: msg } };
+    }
   }));
   admin.get("/escritorios/:id", rota((req) => servico.obterEscritorio(String(req.params.id))));
   admin.put("/escritorios/:id", rota((req) => servico.atualizarEscritorio(String(req.params.id), req.body || {})));
@@ -108,11 +126,50 @@ export function criarAppPainel(deps: DepsPainel) {
   admin.post("/escritorios/:id/cancelar", rota((req) => servico.cancelar(String(req.params.id))));
   admin.post("/escritorios/:id/pagamento-manual", rota((req) => servico.registrarPagamentoManual(String(req.params.id), req.body?.ate, String(req.body?.observacao || ""))));
   admin.post("/escritorios/:id/cobranca", rota((req) => servico.criarCobranca(String(req.params.id))));
-  admin.post("/escritorios/:id/nova-chave", rota((req) => {
+  // ---------- instância no servidor (somente com PAINEL_AUTO_PROVISIONAR=1) ----------
+  const exigirProv = () => { if (!prov) throw new ErroPainel("O provisionamento automático não está ligado neste servidor.", 409); return prov; };
+  admin.get("/escritorios/:id/instancia", rota(async (req) => {
+    const id = String(req.params.id); const slug = servico.slugDe(id);
+    if (!prov) return { ativo: false };
+    const e = servico.obterEscritorio(id) as { porta?: number | null };
+    return { ativo: true, status: await prov.statusInstancia(slug), porta: e.porta ?? prov.portaExistente(slug), existe_no_disco: prov.portaExistente(slug) !== null, no_mapa: prov.lerMapa().has(`${slug}.${cfg.baseDomain}`), url: `https://${slug}.${cfg.baseDomain}` };
+  }));
+  admin.post("/escritorios/:id/instancia", rota((req) => comoErro(async () => {
+    const p = exigirProv(); const id = String(req.params.id); const slug = servico.slugDe(id);
+    const existente = p.portaExistente(slug);
+    if (existente !== null) {
+      const c = await p.adotar(slug, existente);
+      servico.definirInstancia(id, c.porta, "instancia_adotada");
+      return { ok: true, url: c.url, adotada: true, avisos: c.avisos, senha_inicial: null };
+    }
+    const porta = p.alocarPorta(Number(req.body?.porta) || undefined, servico.portasRegistradas());
+    const { chave } = servico.rotacionarChave(id);
+    const blocos = servico.provisionamento(id, chave, { novaInstancia: true, porta, chavePublicaPem: deps.chavePublicaPem });
+    const c = await p.criarInstancia(slug, porta, blocos.env);
+    servico.definirInstancia(id, c.porta, "instancia_criada", { automatica: true });
+    return { ok: true, url: c.url, adotada: c.adotada, avisos: c.avisos, senha_inicial: c.senhaInicial };
+  })));
+  admin.post("/escritorios/:id/instancia/reiniciar", rota((req) => comoErro(async () => { await exigirProv().reiniciar(servico.slugDe(String(req.params.id))); return { ok: true }; })));
+  admin.post("/escritorios/:id/instancia/remover", rota((req) => comoErro(async () => {
+    const id = String(req.params.id);
+    await exigirProv().remover(servico.slugDe(id));
+    servico.definirInstancia(id, null, "instancia_removida");
+    return { ok: true };
+  })));
+  admin.post("/escritorios/:id/nova-chave", rota((req) => comoErro(async () => {
     const id = String(req.params.id);
     const { chave } = servico.rotacionarChave(id);
+    if (prov && req.body?.nova_instancia !== true && prov.portaExistente(servico.slugDe(id)) !== null) {
+      try { await prov.atualizarChave(servico.slugDe(id), chave); }
+      catch (e) {
+        const msg = e instanceof ErroProvisionamento ? e.message : (e as Error).message;
+        return { chave, instancia_atualizada: false, provisionamento: { env: `LICENSE_KEY=${chave}`, pm2: "", nginx: "", observacao: `Não consegui aplicar a chave na instância automaticamente (${msg}). Troque a linha LICENSE_KEY do .env dela por esta e reinicie o processo.` } };
+      }
+      servico.definirInstancia(id, prov.portaExistente(servico.slugDe(id)), "chave_aplicada_na_instancia");
+      return { chave, instancia_atualizada: true, provisionamento: { env: "", pm2: "", nginx: "", observacao: "A nova chave já foi aplicada e a instância reiniciada automaticamente." } };
+    }
     return { chave, provisionamento: servico.provisionamento(id, chave, { novaInstancia: req.body?.nova_instancia === true, porta: Number(req.body?.porta) || undefined, chavePublicaPem: deps.chavePublicaPem }) };
-  }));
+  })));
   app.use("/api/admin", admin);
 
   // ---------- interface ----------

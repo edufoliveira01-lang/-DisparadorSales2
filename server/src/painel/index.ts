@@ -8,6 +8,7 @@ import { ServicoPainel } from "./servico";
 import { criarAppPainel } from "./app";
 import { garantirAdmin } from "./auth";
 import { gerarParDeChaves } from "../licenca/token";
+import { Provisionador } from "./provisionador";
 
 /** Painel de controle do SaaS: planos, escritórios, cobrança (Asaas) e emissão de licenças. */
 async function main() {
@@ -31,7 +32,8 @@ async function main() {
   if (!provedor.configurado()) console.warn("[painel] ASAAS_API_KEY ausente: cobranças automáticas desativadas (use pagamento manual).");
   if (!cfg.asaasWebhookToken) console.warn("[painel] ASAAS_WEBHOOK_TOKEN ausente: o webhook de pagamentos responde 503.");
   const versao = (JSON.parse(fs.readFileSync(path.resolve(__dirname, "../../package.json"), "utf8")) as { version: string }).version;
-  const app = criarAppPainel({ db, cfg, servico: new ServicoPainel(db, cfg, provedor, privada), chavePublicaPem: publica, versao });
+  const app = criarAppPainel({ db, cfg, servico: new ServicoPainel(db, cfg, provedor, privada), chavePublicaPem: publica, versao, provisionador: new Provisionador(cfg) });
+  if (cfg.autoProvisionar) console.log("[painel] Provisionamento automático de escritórios ligado.");
   app.listen(cfg.porta, () => console.log(`[painel] Painel de controle em http://localhost:${cfg.porta}`));
 }
 main().catch((e) => { console.error("[painel] falha ao iniciar:", e); process.exit(1); });

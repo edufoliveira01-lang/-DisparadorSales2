@@ -46,6 +46,10 @@ export function abrirBancoPainel(arquivo: string): Banco {
     CREATE TABLE IF NOT EXISTS admins (usuario TEXT PRIMARY KEY, senha_hash TEXT NOT NULL, criado_em TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sessoes (token_hash TEXT PRIMARY KEY, usuario TEXT NOT NULL, criado_em TEXT NOT NULL, expira_em TEXT NOT NULL);
   `);
+  // Migração: porta e data de criação da instância gerenciada pelo painel.
+  const cols = (db.prepare("PRAGMA table_info(escritorios)").all() as { name: string }[]).map((c) => c.name);
+  if (!cols.includes("porta")) db.exec("ALTER TABLE escritorios ADD COLUMN porta INTEGER");
+  if (!cols.includes("instancia_em")) db.exec("ALTER TABLE escritorios ADD COLUMN instancia_em TEXT");
   if (!db.prepare("SELECT id FROM planos LIMIT 1").get())
     db.prepare("INSERT INTO planos(id,nome,preco_centavos,entitlements_json,ativo,criado_em) VALUES ('escritorio','Escritório',0,'{}',1,?)").run(new Date().toISOString());
   return db;

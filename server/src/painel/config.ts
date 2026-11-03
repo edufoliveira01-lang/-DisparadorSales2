@@ -17,6 +17,14 @@ export interface ConfigPainel {
   sessaoHoras: number;
   appDir: string;
   instanciasDir: string;
+  /** Painel cria sozinho a instância e o Nginx dos escritórios (requer scripts/provisionamento-instalar.sh). */
+  autoProvisionar: boolean;
+  nginxMapaArquivo: string;
+  nginxBin: string;
+  systemctlBin: string;
+  portaInicial: number;
+  /** URL que as instâncias NESTE servidor usam para falar com o painel. */
+  licencaUrlInterna: string;
 }
 
 const inteiro = (v: string | undefined, padrao: number, min = 0, max = 3650) => {
@@ -43,5 +51,11 @@ export function lerConfigPainel(env: NodeJS.ProcessEnv = process.env): ConfigPai
     sessaoHoras: inteiro(env.PAINEL_SESSAO_HORAS, 12, 1, 168),
     appDir: env.PAINEL_APP_DIR || "/home/dropsales/disparador-sales2/server",
     instanciasDir: env.PAINEL_INSTANCIAS_DIR || "/srv/disparazap",
+    autoProvisionar: env.PAINEL_AUTO_PROVISIONAR === "1",
+    nginxMapaArquivo: env.PAINEL_NGINX_MAPA || path.join(path.resolve(env.PAINEL_DATA_DIR || path.join(process.cwd(), "data-painel")), "..", "nginx", "escritorios.map"),
+    nginxBin: env.PAINEL_NGINX_BIN || "/usr/sbin/nginx",
+    systemctlBin: env.PAINEL_SYSTEMCTL_BIN || "/usr/bin/systemctl",
+    portaInicial: inteiro(env.PAINEL_PORTA_INICIAL, 3401, 1024, 65000),
+    licencaUrlInterna: (env.PAINEL_LICENCA_URL_INTERNA || (env.PAINEL_AUTO_PROVISIONAR === "1" ? `http://127.0.0.1:${inteiro(env.PAINEL_PORT, 3340, 1, 65535)}` : "")).replace(/\/+$/, ""),
   };
 }

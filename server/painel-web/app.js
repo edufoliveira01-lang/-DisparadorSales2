@@ -108,20 +108,37 @@ function abrirNovo() {
   } }, erro,
     h('div', { class: 'grid' }, campo('nome', 'Nome do escritório', { required: true, oninput: () => { if (!f.slug.dataset.manual) f.slug.value = slugDe(f.nome.value); } }), campo('slug', 'Endereço (subdomínio)', { required: true, pattern: '[a-z0-9][a-z0-9\\-]{2,40}[a-z0-9]', oninput: () => { f.slug.dataset.manual = '1'; } }),
       campo('email', 'E-mail do responsável', { type: 'email', required: true }), campo('documento', 'CNPJ/CPF'), campo('telefone', 'Telefone'), h('div', { class: 'field' }, h('label', {}, 'Plano'), planos),
-      campo('teste', 'Dias de teste', { type: 'number', min: 0, max: 365, value: String(state.config.teste_padrao_dias) }), campo('porta', 'Porta da instância (servidor)', { type: 'number', min: 1024, max: 65535, value: '3400' })),
+      campo('teste', 'Dias de teste', { type: 'number', min: 0, max: 365, value: String(state.config.teste_padrao_dias) }), campo('porta', state.config.provisionamento_automatico ? 'Porta (deixe vazio: automática)' : 'Porta da instância (servidor)', { type: 'number', min: 1024, max: 65535, value: state.config.provisionamento_automatico ? '' : '3400' })),
     h('div', { class: 'field' }, h('label', {}, cortesia, ' Cortesia (sem teste, sem vencimento e sem cobrança)')),
     h('div', { class: 'sec' }, 'Ajustes de limites deste escritório (opcional)'), limites.el,
     h('button', { class: 'pri' }, 'Criar escritório'));
   const m = modal('Novo escritório', form);
 }
 
+function detalhesTecnicos(r) {
+  const p = r.provisionamento; if (!p) return null;
+  return h('details', {}, h('summary', {}, 'Detalhes técnicos (chave de licença e configuração manual)'),
+    h('div', { class: 'sec' }, 'Chave de licença'), h('pre', {}, r.chave || ''),
+    bloco('Arquivo .env da instância', p.env), bloco('Comandos (PM2)', p.pm2), bloco('Proxy (nginx)', p.nginx), p.observacao ? h('p', { class: 'mut sm' }, p.observacao) : null);
+}
 function mostrarProvisionamento(r) {
-  const p = r.provisionamento;
-  modal('Escritório criado — guarde estas informações', h('div', {},
+  const i = r.instancia;
+  if (i && i.ok) {
+    modal('Escritório pronto', h('div', {},
+      r.aviso ? h('div', { class: 'note' }, r.aviso) : null,
+      h('p', {}, 'O sistema do escritório já está no ar. Envie ao responsável:'),
+      h('div', { class: 'tile' }, h('span', {}, 'Endereço'), h('b', { style: 'font-size:16px' }, h('a', { href: i.url, target: '_blank', rel: 'noopener noreferrer' }, i.url))),
+      i.senha_inicial ? h('div', { class: 'tile' }, h('span', {}, 'Usuário: ' + (i.usuario || 'admin') + ' · Senha inicial (aparece só agora; peça para trocar no 1º acesso)'), h('b', { style: 'font-size:16px' }, i.senha_inicial), h('button', { onclick: () => copiar(i.senha_inicial) }, 'Copiar senha')) : null,
+      h('button', { class: 'pri', onclick: () => copiar(`Acesso ao DisparaZap\nEndereço: ${i.url}\nUsuário: ${i.usuario || 'admin'}\nSenha inicial: ${i.senha_inicial || ''}\nTroque a senha no primeiro acesso.`) }, 'Copiar mensagem de acesso'),
+      (i.avisos || []).map((a) => h('p', { class: 'mut sm' }, a)), detalhesTecnicos(r)));
+    return;
+  }
+  modal(i ? 'Escritório criado — falta ativar o sistema' : 'Escritório criado — guarde estas informações', h('div', {},
+    i ? h('div', { class: 'note err' }, 'O escritório foi cadastrado, mas a instância não foi criada automaticamente: ' + i.erro + ' Abra o escritório e use “Criar/ativar sistema no servidor” para tentar de novo.') : null,
     r.aviso ? h('div', { class: 'note' }, r.aviso) : null,
     h('div', { class: 'note' }, 'A chave de licença e o ENCRYPTION_KEY são exibidos somente agora e não ficam guardados no painel. Copie e guarde com segurança.'),
-    h('div', { class: 'sec' }, 'Chave de licença'), h('pre', {}, r.chave),
-    bloco('Arquivo .env da instância', p.env), bloco('Comandos (PM2)', p.pm2), bloco('Proxy (nginx)', p.nginx), p.observacao ? h('p', { class: 'mut sm' }, p.observacao) : null));
+    h('div', { class: 'sec' }, 'Chave de licença'), h('pre', {}, r.chave || ''),
+    r.provisionamento ? [bloco('Arquivo .env da instância', r.provisionamento.env), bloco('Comandos (PM2)', r.provisionamento.pm2), bloco('Proxy (nginx)', r.provisionamento.nginx), r.provisionamento.observacao ? h('p', { class: 'mut sm' }, r.provisionamento.observacao) : null] : null));
 }
 
 async function abrirDetalhe(id) {
@@ -138,12 +155,14 @@ async function abrirDetalhe(id) {
       h('div', { class: 'tile' }, h('span', {}, 'Vencimento (fim do período pago/teste)'), h('b', { style: 'font-size:18px' }, dia(e.vence_em))),
       h('div', { class: 'tile' }, h('span', {}, 'Último contato da instância'), h('b', { style: 'font-size:18px' }, quando(e.ultimo_contato_em)), h('span', {}, e.ultima_versao ? 'versão ' + e.ultima_versao : ''))),
     e.link_fatura ? h('p', {}, 'Fatura: ', h('a', { href: e.link_fatura, target: '_blank', rel: 'noopener noreferrer' }, 'abrir link de pagamento')) : null,
+    state.config.provisionamento_automatico ? h('div', { class: 'sec' }, 'Sistema no servidor') : null,
+    state.config.provisionamento_automatico ? secaoInstancia(id, recarregar) : null,
     h('div', { class: 'sec' }, 'Ações'),
     h('div', { class: 'row2' },
       act('Registrar pagamento…', async () => { const ate = prompt('Uso pago até (AAAA-MM-DD):', e.pago_ate || ''); if (!ate) return; await api('POST', `/escritorios/${id}/pagamento-manual`, { ate }); aviso('Pagamento registrado.'); await recarregar(); }),
       e.status_manual ? act('Reativar', async () => { await api('POST', `/escritorios/${id}/reativar`, {}); await recarregar(); }, 'pri') : act('Suspender', async () => { if (!confirm('Suspender? A instância entra em modo somente leitura na próxima verificação (até 6 h).')) return; await api('POST', `/escritorios/${id}/suspender`, {}); await recarregar(); }, 'dg'),
       !e.asaas_subscription_id && e.preco_centavos > 0 ? act('Criar cobrança no Asaas', async () => { const r = await api('POST', `/escritorios/${id}/cobranca`, {}); aviso(r.aviso || 'Cobrança criada.'); await recarregar(); }) : null,
-      act('Nova chave de licença…', async () => { const nova = confirm('Gerar nova chave? A chave atual deixa de funcionar. OK = também gerar o bloco para uma instância NOVA.'); if (!confirm('Confirma gerar uma nova chave de licença?')) return; const r = await api('POST', `/escritorios/${id}/nova-chave`, { nova_instancia: nova }); mostrarProvisionamento({ chave: r.chave, provisionamento: r.provisionamento }); }),
+      act('Nova chave de licença…', async () => { const nova = confirm('Gerar nova chave? A chave atual deixa de funcionar. OK = também gerar o bloco para uma instância NOVA.'); if (!confirm('Confirma gerar uma nova chave de licença?')) return; const r = await api('POST', `/escritorios/${id}/nova-chave`, { nova_instancia: nova }); if (r.instancia_atualizada) { aviso('Nova chave aplicada e instância reiniciada.'); return; } mostrarProvisionamento({ chave: r.chave, provisionamento: r.provisionamento }); }),
       e.status !== 'cancelada' ? act('Cancelar assinatura', async () => { if (!confirm('Cancelar a assinatura deste escritório? Os dados dele não são apagados.')) return; await api('POST', `/escritorios/${id}/cancelar`, {}); await recarregar(); }, 'dg') : null),
     h('div', { class: 'sec' }, 'Dados'),
     h('div', { class: 'grid' }, campo('nome', 'Nome', e.nome), campo('email', 'E-mail', e.email), campo('documento', 'CNPJ/CPF', e.documento), campo('telefone', 'Telefone', e.telefone), h('div', { class: 'field' }, h('label', {}, 'Plano'), planos), campo('carencia', 'Carência (dias; vazio = padrão ' + state.config.carencia_padrao_dias + ')', e.carencia_dias, { type: 'number', min: 0, max: 90 })),
@@ -155,6 +174,25 @@ async function abrirDetalhe(id) {
     h('div', { class: 'sec' }, 'Histórico'),
     h('div', { class: 'card' }, h('table', {}, h('tbody', {}, e.eventos.map((ev) => h('tr', {}, h('td', { class: 'mut sm' }, quando(ev.criado_em)), h('td', {}, ev.tipo.replaceAll('_', ' '))))))));
   const painel = modal(e.nome, conteudo, { lateral: true });
+}
+
+function secaoInstancia(id, recarregar) {
+  const caixa = h('div', { class: 'row2' }, h('span', { class: 'mut' }, 'Verificando…'));
+  const rodar = (rot, fn, cls = '') => h('button', { class: cls, onclick: async (ev) => { ev.target.disabled = true; try { await fn(); } catch (x) { aviso(x.message); } finally { ev.target.disabled = false; } } }, rot);
+  api('GET', `/escritorios/${id}/instancia`).then((s) => {
+    caixa.replaceChildren();
+    const est = s.status === 'online' ? 'No ar' : s.status === 'parada' ? 'Parada' : 'Não criada';
+    caixa.append(h('span', { class: 'badge b-' + (s.status === 'online' ? 'ativa' : 'suspensa') }, est), h('span', { class: 'mut' }, s.url));
+    if (s.status === 'ausente' || !s.existe_no_disco || !s.no_mapa) caixa.append(rodar('Criar/ativar sistema no servidor', async () => {
+      const r = await api('POST', `/escritorios/${id}/instancia`, {});
+      mostrarProvisionamento({ instancia: { ok: true, url: r.url, usuario: 'admin', senha_inicial: r.senha_inicial, avisos: r.avisos } }); await recarregar();
+    }, 'pri'));
+    else {
+      caixa.append(rodar('Reiniciar', async () => { await api('POST', `/escritorios/${id}/instancia/reiniciar`, {}); aviso('Reiniciada.'); }));
+      caixa.append(rodar('Remover do servidor…', async () => { if (!confirm('Parar o sistema deste escritório e tirar o endereço do ar? Os dados dele ficam guardados no servidor.')) return; await api('POST', `/escritorios/${id}/instancia/remover`, {}); aviso('Removido do ar.'); await recarregar(); }, 'dg'));
+    }
+  }).catch((x) => { caixa.replaceChildren(h('span', { class: 'mut' }, x.message)); });
+  return caixa;
 }
 
 function telaPlanos() {
