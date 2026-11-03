@@ -1,6 +1,6 @@
 import { ActivityBadge, RegisterAction, type AtividadeProcesso } from "@/components/djen/ActivityBadge";
 import { Acompanhamento } from "./Acompanhamento";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, CalendarClock, Clock3, History, Pencil, Plus, RefreshCw, Search, Sparkles, Trash2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
@@ -64,6 +64,29 @@ export function QuadroProcessos() {
   const [foco, setFoco] = useState<number | null>(null);
   const [selecionados, setSelecionados] = useState<string[]>([]);
   const [destinoLote, setDestinoLote] = useState("");
+  // A roda do mouse rola o quadro na horizontal. Uma coluna que ainda pode rolar na vertical
+  // continua rolando por dentro; nas pontas do quadro a página volta a rolar normalmente.
+  const quadroRef = useRef<HTMLDivElement | null>(null);
+  const quadroPronto = Boolean(quadro);
+  useEffect(() => {
+    const el = quadroRef.current;
+    if (!el) return;
+    const aoRolar = (e: WheelEvent) => {
+      if (e.ctrlKey || e.shiftKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX) || el.scrollWidth <= el.clientWidth) return;
+      const coluna = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-rolagem-coluna]");
+      if (coluna && coluna.scrollHeight > coluna.clientHeight) {
+        const descendo = e.deltaY > 0;
+        const podeRolar = descendo ? coluna.scrollTop + coluna.clientHeight < coluna.scrollHeight - 1 : coluna.scrollTop > 0;
+        if (podeRolar) return;
+      }
+      const alvo = e.deltaY > 0 ? el.scrollLeft + el.clientWidth < el.scrollWidth - 1 : el.scrollLeft > 0;
+      if (!alvo) return;
+      e.preventDefault();
+      el.scrollBy({ left: e.deltaMode === 1 ? e.deltaY * 32 : e.deltaY });
+    };
+    el.addEventListener("wheel", aoRolar, { passive: false });
+    return () => el.removeEventListener("wheel", aoRolar);
+  }, [quadroPronto]);
 
   const carregar = useCallback(async () => {
     try { setQuadro(await api.get<Quadro>("/djen/kanban")); setErro(""); }
@@ -148,7 +171,7 @@ export function QuadroProcessos() {
     </div>}
     {erro && <p role="alert" className="rounded-lg bg-red-50 p-3 text-xs text-red-700">{erro}</p>}
     {!quadro && !erro && <p className="text-sm text-zinc-500">Carregando quadro…</p>}
-    {quadro && <div className="-mx-4 overflow-x-auto px-4 pb-5 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+    {quadro && <div ref={quadroRef} className="-mx-4 overflow-x-auto px-4 pb-5 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
       <div className="flex min-h-[420px] w-max items-start gap-3">
         {listasVisiveis.map((lista) => {
           const indice = quadro.listas.findIndex((l) => l.id === lista.id);
@@ -191,7 +214,7 @@ export function QuadroProcessos() {
               <button type="button" aria-label={`Excluir lista ${lista.nome}`} title={lista.codigo ? "Etapa padrão do quadro" : totalNaLista ? "A lista contém processos" : "Excluir lista"} disabled={busy || totalNaLista > 0 || Boolean(lista.codigo)} onClick={() => setExcluir(lista)} className="rounded p-1 text-zinc-500 hover:bg-white disabled:opacity-30 dark:hover:bg-zinc-800"><Trash2 className="h-3.5 w-3.5" /></button>
             </div>}
             {!lista.codigo && !lista.regra_categoria && editando !== lista.id && <p className="mb-2 rounded-lg bg-amber-50 p-2 text-[11px] text-amber-800">Escolha uma categoria do DJEN em Editar lista para ativar a movimentação automática.</p>}
-            <div className="scrollbar-thin max-h-[min(68vh,780px)] min-h-24 space-y-2 overflow-y-auto pr-1">
+            <div data-rolagem-coluna className="scrollbar-thin max-h-[min(68vh,780px)] min-h-24 space-y-2 overflow-y-auto pr-1">
               {cartoes.map((card) => <article key={card.processo_chave}
                 draggable={canManage && !busy}
                 onDragStart={(e) => { e.dataTransfer.setData("application/x-disparazap-processo", card.processo_chave); e.dataTransfer.effectAllowed = "move"; setArrastando(card.processo_chave); }}

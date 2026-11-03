@@ -198,3 +198,5 @@ A apresentação de registros antigos é recalculada a partir do texto capturado
 - **Mover em lote**: selecione cartões (ou todos de uma lista) e escolha a lista de destino; vira etapa manual. `POST /djen/kanban/mover-lote`.
 - Filtros novos: sem etapa específica, providência do escritório, aguardando terceiros, etapa automática e com dias sem providência; chips com a contagem por lista focam uma coluna.
 - O quadro é reavaliado uma vez após a atualização para aplicar as novas etapas.
+
+**2.56.1.** No Quadro de processos, a roda do mouse rola as listas na horizontal. Dentro de uma coluna que ainda tem cartões para rolar, a roda continua rolando a coluna na vertical; ao chegar ao fim dela (ou nas pontas do quadro) a rolagem volta ao normal. Ctrl+roda (zoom) e Shift+roda não são alterados.
