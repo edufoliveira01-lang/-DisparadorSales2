@@ -52,10 +52,10 @@ function numero(s: string): number | null {
 }
 const numerais = Object.keys(numeroPalavras).sort((a,b) => b.length-a.length).join("|");
 const periodo = new RegExp(String.raw`\b(\d{1,3}|(?:${numerais})(?:\s+e\s+(?:${numerais}))*)\s*(?:\(([^)]{1,40})\)\s*)?(dias?|horas?|mes(?:es)?)(?:\s+(uteis|corridos))?\b`, "g");
-const alvo = /\b(ambas as partes|as partes|parte autora|autor(?:a|es|as)?|demandante|requerente|exequente|impetrante|advogad[oa]s?|procurador[ae]?s?|patron[oa]s?|perit[oa](?: de calculos)?|calculista|contadoria|inss|ceab|parte re|parte contraria|reu|requerid[oa]|executad[oa]|autarquia)\b/g;
+const alvo = /\b(ambas as partes|as partes|parte autora|autor(?:a|es|as)?|demandante|requerente|reclamante|exequente|impetrante|advogad[oa]s?|procurador[ae]?s?|patron[oa]s?|perit[oa](?: de calculos)?|calculista|contadoria|inss|ceab|parte re|parte contraria|reu|requerid[oa]|reclamad[oa]s?|demandad[oa]s?|executad[oa]|autarquia|empregador(?:a)?|banco|instituicao financeira|instituicoes financeiras|financeira)\b/g;
 const chamada = /\b(?:intime-se|intimem-se|notifique-se|notifiquem-se|cite-se|citem-se|de-se vista|abra-se vista|intimad[oa]s?)\s+(?:(?:o|a|ao|aos|as|os)\s+)?(?:(?:sr\.?|sra\.?|dr\.?|dra\.?|senhor|senhora)\s+)?$/;
 const intimacaoDepois = /^\s+(?:(?:e|foi|foram|fica|ficam|esta|estao|resta|restam)\s+)?(?:(?:regularmente|devidamente|novamente|desde ja)\s+){0,2}intimad[oa]s?\b/;
-const ordemDepois = /^\s+(?:(?:devera|deverao)\s+(?:se\s+)?)?(?:cumpra|cumpram|devera|deverao|manifeste|manifestem|apresente|apresentem|junte|juntem|emende|emendem|regularize|regularizem|comprove|comprovem)\b/;
+const ordemDepois = /^\s+(?:(?:devera|deverao)\s+(?:se\s+)?)?(?:cumpra|cumpram|devera|deverao|manifeste|manifestem|apresente|apresentem|junte|juntem|emende|emendem|regularize|regularizem|comprove|comprovem|conteste|contestem|replique|repliquem|contraminute|contraminutem|especifique|especifiquem|informe|informem|esclareca|esclarecam|indique|indiquem|recolha|recolham|pague|paguem|deposite|depositem|promova|promovam|requeira|requeiram)\b/;
 const historicoOuHipotese = /\b(?:interposto recurso|interposta apelacao|havendo recurso|sobrevindo recurso|em caso de recurso|apos|quando|caso|se houver|se necessario|se nao|eventual|hipotese|anteriormente|despacho anterior|decisao anterior|ja havia|na ocasiao|transcrevo|precedente|jurisprudencia|requer(?:eu)? (?:a|seja|que)|solicita(?:ou)? (?:a|seja|que)|pedido de|revogad[oa]|sem efeito|cancelad[oa]|dispensad[oa]|nao determino|nao (?:se )?intime|sem necessidade)\b/;
 /** Usado também pelas etapas: evita interpretar hipótese ou citação como ato atual. */
 export function contextoNaoAtual(texto: string) { return /^\s*(?:(?:conforme|segundo|em|nos termos de)\s+)?(?:interposto recurso|interposta apelacao|havendo recurso|sobrevindo recurso|em caso de recurso|apos|quando|caso|se houver|se necessario|eventual|hipotese|anteriormente|despacho anterior|decisao anterior|precedente|jurisprudencia|transcrevo)\b/.test(fonteNormalizada(texto).normal); }
@@ -79,7 +79,8 @@ function sentencas(s: string) {
 function destinatario(valor: string): { responsavel: DestinatarioOrdem; destinatario: string } {
   if (/^(?:as partes|ambas as partes)$/.test(valor)) return { responsavel:"ambas_partes", destinatario:"Ambas as partes" };
   if (/^(?:perit|calculista|contadoria)/.test(valor)) return { responsavel: /calcul|contadoria/.test(valor) ? "contadoria" : "perito", destinatario:/calcul|contadoria/.test(valor) ? "Perito de cálculos / contadoria" : "Perito" };
-  if (/^(?:inss|ceab|parte re|parte contraria|reu|requerid|executad|autarquia)/.test(valor)) return { responsavel:"parte_contraria", destinatario:/^(?:inss|ceab|autarquia)/.test(valor) ? "INSS / autarquia" : "Parte contrária" };
+  if (/^(?:inss|ceab|parte re|parte contraria|reu|requerid|executad|autarquia|reclamad|demandad|empregador|banco|instituico|financeira)/.test(valor))
+    return { responsavel:"parte_contraria", destinatario:/^(?:inss|ceab|autarquia)/.test(valor) ? "INSS / autarquia" : /^(?:reclamad|empregador)/.test(valor) ? "Parte contrária (reclamada)" : /^(?:banco|instituico|financeira)/.test(valor) ? "Parte contrária (instituição financeira)" : "Parte contrária" };
   return { responsavel:"escritorio", destinatario:"Escritório / parte representada" };
 }
 function acao(s: string) {
@@ -91,7 +92,8 @@ function acao(s: string) {
     ["esclarecimentos","Esclarecimentos / complementação pericial",/\b(?:esclarec|complement|retific)\w*\b/],
     ["laudo","Apresentação do laudo",/\b(?:apresent|junt|entreg|elabor)\w*\b.{0,80}\blaudo\b/],
     ["recurso","Contrarrazões / providência recursal",/\b(?:contrarrazo|recorr|apel)\w*\b/],
-    ["manifestacao","Manifestação / providência processual",/\b(?:manifest|apresent|junt|impugn|emend|regulariz|cumpr|cumpra|comprov|contest|replic|promov|recolh)\w*\b/],
+    ["pagamento","Pagamento / depósito",/\b(?:pagar|pague|pagamento|deposit|recolh)\w*\b/],
+    ["manifestacao","Manifestação / providência processual",/\b(?:manifest|apresent|junt|impugn|emend|regulariz|cumpr|cumpra|comprov|contest|replic|contraminut|especific|esclarec|indic|informar|informe|promov)\w*\b/],
   ];
   const item = tipos.find(([, , re]) => re.test(s));
   if (!item) return { acao:"ciencia", descricao:"Ciência / comunicação" };

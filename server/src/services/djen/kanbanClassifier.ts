@@ -12,8 +12,8 @@ export const ETAPAS_AUTOMATICAS = [
   "peticao_inicial", "distribuicao", "emenda_inicial", "citacao_contestacao", "audiencia",
   "perito_designado", "pericia_agendada", "pericia_realizada", "laudo_manifestacoes", "proposta_acordo",
   "conclusos_sentenca", "sentenca", "recurso", "acordao", "transito_julgado",
-  "cumprimento_sentenca", "aguarda_implantacao", "calculos", "aguarda_expedicao_rpv",
-  "rpv_expedida", "concluido",
+  "cumprimento_sentenca", "aguarda_implantacao", "calculos", "penhora_bloqueio", "aguarda_expedicao_rpv",
+  "rpv_expedida", "pagamento_alvara", "concluido",
 ] as const;
 export const ETAPAS_SITUACIONAIS = ["aguarda_juizo", "sobrestado", "aguarda_terceiros", "prov_escritorio"] as const;
 export type EtapaAutomatica = (typeof ETAPAS_AUTOMATICAS)[number];
@@ -115,6 +115,14 @@ export function classificarPublicacaoParaQuadro(texto: string): SinalEtapa | nul
     else if (fatoAtual(s, /\bproposta\s+de\s+acordo\b.{0,80}\b(?:apresentad|ofertad|formulad|aceit)\w*|\b(?:apresentou|ofereceu|formulou)\b.{0,40}\bproposta\s+de\s+acordo\b|\bmanifest\w+\b.{0,60}\bproposta\s+de\s+acordo\b/) &&
         !/\b(?:nao houve acordo|sem acordo|inexito)\b/.test(s))
       adicionar("proposta_acordo", trecho);
+    // Execução fora do INSS: constrição de valores e pagamento/alvará (listas só para essas áreas).
+    if (/\b(?:sisbajud|bacenjud|renajud|infojud|penhora\w*|bloqueio\s+(?:de\s+)?(?:valores|ativos|contas?)|constricao)\b/.test(s) &&
+        /\b(?:realizad[oa]|efetivad[oa]|efetuad[oa]|procedid[oa]|positiv[oa]|negativ[oa]|determino|defiro|expeca-se|foi|resultou|restou|bloqueados?)\b/.test(s) &&
+        !/\b(?:sob pena|pena de|caso|se nao|nao havendo|nao pagar|podera|poderao|devera|sera|apos|quando|eventual|requer)\b/.test(s))
+      adicionar("penhora_bloqueio", trecho);
+    if (/\b(?:alvara|levantamento\s+(?:de\s+)?(?:valores|deposito)|deposito\s+judicial|guia\s+de\s+deposito|quitacao|satisfeita\s+a\s+(?:execucao|obrigacao)|pagamento\s+(?:efetuado|realizado|integral|comprovado))\b/.test(s) &&
+        !/\b(?:sera|devera|deverao|apos|quando|caso|se houver|eventual|requer|pedido de|nao foi)\b/.test(s))
+      adicionar("pagamento_alvara", trecho);
     if (/\b(?:autos?|processo|feito)\s+conclus[oa]s?\s+(?:para|a|ao)\s+(?:sentenca|julgamento|decisao final|juiz)\b|\bconclusos?\s+para\s+(?:sentenca|julgamento)\b/.test(s) &&
         !/\b(?:apos|quando|caso|se houver|eventual|sera|devera)\b/.test(s))
       adicionar("conclusos_sentenca", trecho);

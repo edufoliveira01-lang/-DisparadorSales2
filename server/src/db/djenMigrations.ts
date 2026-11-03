@@ -333,9 +333,9 @@ export function runDjenMigrations(db: Database.Database): void {
   `);
   // Reavalia o histórico após mudanças no classificador, preservando escolhas manuais.
   const versaoQuadro = db.prepare("SELECT valor FROM djen_kanban_meta WHERE chave='classificador'").get() as { valor: string } | undefined;
-  if (versaoQuadro?.valor !== "2.58.0") db.transaction(() => {
+  if (versaoQuadro?.valor !== "2.60.0") db.transaction(() => {
     db.exec("UPDATE djen_kanban_cartoes SET revisar_etapa=1");
-    db.prepare("INSERT INTO djen_kanban_meta(chave,valor) VALUES ('classificador','2.58.0') ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor").run();
+    db.prepare("INSERT INTO djen_kanban_meta(chave,valor) VALUES ('classificador','2.60.0') ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor").run();
   })();
   // Metadados de origem da análise. Preserva o JSON e as revisões já existentes.
   const publicationAiColumns = db.prepare("PRAGMA table_info(djen_publicacoes)").all() as { name: string }[];
@@ -394,6 +394,31 @@ export function runDjenMigrations(db: Database.Database): void {
     cumprido_em TEXT, observacoes TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`);
+  // 2.60.0: área do processo (previdenciário, trabalhista, bancário, cível) e listas por área.
+  const colunasProcessos = db.prepare("PRAGMA table_info(djen_processos)").all() as { name: string }[];
+  if (!colunasProcessos.some((c) => c.name === "area")) db.exec("ALTER TABLE djen_processos ADD COLUMN area TEXT");
+  if (!colunasProcessos.some((c) => c.name === "area_manual")) db.exec("ALTER TABLE djen_processos ADD COLUMN area_manual INTEGER NOT NULL DEFAULT 0");
+  const colunasListasArea = db.prepare("PRAGMA table_info(djen_kanban_listas)").all() as { name: string }[];
+  if (!colunasListasArea.some((c) => c.name === "area")) db.exec("ALTER TABLE djen_kanban_listas ADD COLUMN area TEXT");
+  // Áreas em que a lista se aplica (NULL = todas). Implantação de benefício só para previdenciário;
+  // penhora/bloqueio e pagamento/alvará para as demais áreas. Só define quando ainda não houver escolha.
+  db.transaction(() => {
+    // RPV e precatório existem em qualquer ação contra a Fazenda; só a implantação de benefício é do INSS.
+    db.prepare("UPDATE djen_kanban_listas SET area='previdenciario,civel' WHERE codigo='aguarda_implantacao' AND area IS NULL").run();
+    const outras = [
+      { codigo: "penhora_bloqueio", nome: "Penhora / bloqueio de valores", depois: "calculos" },
+      { codigo: "pagamento_alvara", nome: "Pagamento / alvará", depois: "rpv_expedida" },
+    ];
+    for (const etapa of outras) {
+      if (db.prepare("SELECT id FROM djen_kanban_listas WHERE codigo=?").get(etapa.codigo)) continue;
+      const homonima = db.prepare("SELECT id FROM djen_kanban_listas WHERE nome=? COLLATE NOCASE AND codigo IS NULL").get(etapa.nome) as { id: number } | undefined;
+      if (homonima) { db.prepare("UPDATE djen_kanban_listas SET codigo=?,regra_categoria=NULL,area='trabalhista,bancario,civel' WHERE id=?").run(etapa.codigo, homonima.id); continue; }
+      const ancora = db.prepare("SELECT posicao FROM djen_kanban_listas WHERE codigo=?").get(etapa.depois) as { posicao: number } | undefined;
+      const posicao = ancora ? ancora.posicao + 1 : (db.prepare("SELECT COALESCE(MAX(posicao),-1)+1 AS n FROM djen_kanban_listas").get() as { n: number }).n;
+      if (ancora) db.prepare("UPDATE djen_kanban_listas SET posicao=posicao+1 WHERE posicao>=?").run(posicao);
+      db.prepare("INSERT INTO djen_kanban_listas(nome,posicao,codigo,contar_dias,area) VALUES (?,?,?,0,'trabalhista,bancario,civel')").run(etapa.nome, posicao, etapa.codigo);
+    }
+  })();
   // 2.54.0: classificação complementar local (sem custo de IA) para publicações ainda em
   // "Outros". Só adiciona categorias comprovadas por trecho literal; revisões humanas e
   // publicações que já têm categoria permanecem intactas. Executa uma única vez.

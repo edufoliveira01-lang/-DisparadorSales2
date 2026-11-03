@@ -36,6 +36,7 @@ const normal = (s: string) =>
 const ACOES_ENCERRADAS_POR_JULGAMENTO = new Set([
   "emenda_inicial",
   "manifestacao",
+  "pagamento",
   "esclarecimentos",
   "laudo",
   "ciencia",

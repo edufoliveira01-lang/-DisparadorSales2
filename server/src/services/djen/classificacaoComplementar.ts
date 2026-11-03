@@ -35,7 +35,7 @@ const REGRAS: Record<Exclude<CategoriaComplementar, "recurso" | "transito_julgad
     veto: /\b(?:sem citacao|dispenso a citacao|dispensada a citacao|aguarda a citacao)\b/,
   },
   audiencia: {
-    re: /\baudiencia\b[^.;]{0,100}\b(?:designad|marcad|redesignad|agendad|realizad|cancelad|sera realizada|fica designada|de (?:conciliacao|instrucao|julgamento))\w*|\b(?:designo|redesigno|marco|fica designada)\b[^.;]{0,60}\baudiencia\b/,
+    re: /\baudiencia\b[^.;]{0,100}\b(?:designad|marcad|redesignad|agendad|realizad|cancelad|sera realizada|fica designada|de (?:conciliacao|instrucao|julgamento))\w*|\b(?:designo|redesigno|marco|fica designada|designad[oa]|redesignad[oa]|marcad[oa])\b[^.;]{0,60}\baudiencia\b|\baudiencia\s+(?:una|inaugural|telepresencial|de conciliacao|de instrucao)\b/,
     veto: /\b(?:dispenso a audiencia|dispensada a audiencia|sem audiencia|nao designo audiencia|a designar|designacao futura)\b/,
   },
   implantacao_beneficio: {

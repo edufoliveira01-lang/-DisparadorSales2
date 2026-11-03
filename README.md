@@ -1,6 +1,6 @@
 # DisparaZap — Sales & Associados
 
-Sistema de comunicação com clientes e acompanhamento processual. **Versão 2.59.0.**
+Sistema de comunicação com clientes e acompanhamento processual. **Versão 2.60.0.**
 
 ## Recursos atuais
 
@@ -26,6 +26,7 @@ O quadro utiliza **o histórico capturado do DJEN**, as categorias com evidênci
 - Uma categoria ampla não descreve todas as etapas possíveis: por exemplo, recurso, cálculos ou perícia realizada podem exigir evidência específica no texto ou ajuste manual.
 - As contagens de dias das listas são acompanhamento interno em dias corridos; não substituem prazos processuais.
 - **Etapas situacionais (2.56.0):** quando o histórico não prova nenhuma etapa processual, o cartão deixa de ficar em *Sem etapa identificada* e vai para a lista que indica quem deve agir: **Providência do escritório** (ordem vigente), **Aguardando outra parte / terceiros** (perito, INSS, parte contrária, ofícios sem resposta), **Sobrestado / suspenso** ou **Aguardando juízo** (sem ordem pendente). Qualquer etapa processual comprovada (perícia, sentença, recurso etc.) prevalece sobre elas. Novas etapas: Citação / contestação, Audiência, Proposta de acordo (logo após o laudo), Conclusos para sentença e Trânsito em julgado.
+- **Áreas (2.60.0):** cada processo recebe uma área — Previdenciário, Trabalhista, Bancário ou Cível / outros — detectada pelo ramo da Justiça no número CNJ, pela classe e pelo órgão e por menções nas publicações (INSS, reclamante/reclamada, banco etc.). O quadro tem um seletor de área e só mostra as etapas que se aplicam (a implantação do benefício é do previdenciário; *Penhora / bloqueio de valores* e *Pagamento / alvará* servem às demais). A área pode ser corrigida em **Mover**; a escolha manual não é sobrescrita.
 - **Reclassificar** reavalia todos os cartões automáticos (etapas manuais não mudam). Os chips mostram a contagem por lista e focam uma coluna; é possível selecionar vários cartões e **mover em lote** (vira etapa manual).
 
 ## Stack e armazenamento

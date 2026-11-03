@@ -74,7 +74,7 @@ import { concluirProcessosSelecionados } from "../services/djen/bulk";
 import { criarExemploClassificacao, excluirExemploClassificacao, listarExemplosClassificacao } from "../services/djen/teaching";
 import {
   listarKanban, criarListaKanban, alterarListaKanban, ordenarListasKanban,
-  excluirListaKanban, moverCartaoKanban, ativarClassificacaoAutomatica, reclassificarKanban, moverCartoesLoteKanban, fixarEtapaManual,
+  excluirListaKanban, moverCartaoKanban, ativarClassificacaoAutomatica, reclassificarKanban, moverCartoesLoteKanban, alterarAreaProcesso, fixarEtapaManual,
   alterarInicioEsperaKanban, historicoCartaoKanban,
 } from "../services/djen/kanban";
 export const djenRouter = Router();
@@ -145,6 +145,7 @@ djenRouter.get(
 );
 djenRouter.get("/kanban", wrap((_req, res) => res.json(listarKanban())));
 djenRouter.post("/kanban/listas", wrap((req, res) => { const lista = criarListaKanban(req.body || {}); changed(); res.json(lista); }));
+djenRouter.put("/kanban/cartoes/:processoChave/area", wrap((req, res) => { const r = alterarAreaProcesso(req.params.processoChave, req.body?.area ?? null); changed(); res.json(r); }));
 djenRouter.post("/kanban/reclassificar", wrap((_req, res) => { const resultado = reclassificarKanban(); changed(); res.json(resultado); }));
 djenRouter.post("/kanban/mover-lote", wrap((req, res) => { const resultado = moverCartoesLoteKanban(req.body?.processos, req.body?.lista_id); changed(); res.json(resultado); }));
 djenRouter.put("/kanban/listas/ordem", wrap((req, res) => { const result = ordenarListasKanban(req.body?.ids); changed(); res.json(result); }));

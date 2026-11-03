@@ -14,7 +14,11 @@ import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PageHeader } from "@/components/ui/PageHeader";
 
-interface Lista { id: number; nome: string; posicao: number; contar_dias: number; codigo: string | null; regra_categoria: string | null }
+interface Lista { id: number; nome: string; posicao: number; contar_dias: number; codigo: string | null; regra_categoria: string | null; area: string | null }
+const AREAS: [string, string][] = [["previdenciario", "Previdenciário"], ["trabalhista", "Trabalhista"], ["bancario", "Bancário"], ["civel", "Cível / outros"]];
+const rotuloArea = (a: string | null) => AREAS.find(([k]) => k === a)?.[1] || "Previdenciário";
+const listaServeArea = (l: Lista, area: string) => !l.area || l.area.split(",").includes(area);
+const CHAVE_AREA = "disparazap:quadro-area";
 interface Cartao {
   atividade?: AtividadeProcesso | null;
   processo_chave: string; lista_id: number; posicao: number; entrou_em: string;
@@ -26,6 +30,7 @@ interface Cartao {
   resumo: string; categorias: string[]; publicacoes_total: number;
   publicacoes_nao_lidas: number; prazos_abertos: number;
   classe: string | null; tribunal: string | null; orgao: string | null;
+  area: string | null; area_manual: number;
 }
 interface Quadro { listas: Lista[]; cartoes: Cartao[] }
 interface Movimento { origem: string | null; destino: string; origem_movimento: "automatico" | "manual"; created_at: string }
@@ -64,6 +69,9 @@ export function QuadroProcessos() {
   const [arrastando, setArrastando] = useState<string | null>(null);
   const [foco, setFoco] = useState<number | null>(null);
   const [classeFiltro, setClasseFiltro] = useState("");
+  const [areaFiltro, setAreaFiltro] = useState(() => { try { return localStorage.getItem(CHAVE_AREA) || ""; } catch { return ""; } });
+  const escolherArea = (a: string) => { setAreaFiltro(a); setFoco(null); try { localStorage.setItem(CHAVE_AREA, a); } catch { /* preferência só desta sessão */ } };
+  const [areaEdicao, setAreaEdicao] = useState("");
   const [selecionados, setSelecionados] = useState<string[]>([]);
   const [destinoLote, setDestinoLote] = useState("");
   // A roda do mouse rola o quadro na horizontal. Uma coluna que ainda pode rolar na vertical
@@ -119,7 +127,9 @@ export function QuadroProcessos() {
 
   const codigoDa = (c: Cartao) => quadro?.listas.find((l) => l.id === c.lista_id)?.codigo;
   const termo = normal(busca.trim());
+  const areaDoCartao = (c: Cartao) => c.area || "previdenciario";
   const filtrados = quadro?.cartoes.filter((c) =>
+    (!areaFiltro || areaDoCartao(c) === areaFiltro) &&
     (!classeFiltro || (c.classe || "Sem classe informada") === classeFiltro) &&
     (!termo || normal(`${c.cliente_nome || ""} ${c.numero} ${c.resumo}`).includes(termo)) &&
     (filtro === "todos" || (filtro === "prazos" && c.prazos_abertos > 0) || (filtro === "nao_lidos" && c.publicacoes_nao_lidas > 0)
@@ -136,7 +146,9 @@ export function QuadroProcessos() {
   })();
   const alvoLote = filtrados.filter((c) => foco === null || c.lista_id === foco).slice(0, 500);
   const filtrando = Boolean(termo) || filtro !== "todos" || Boolean(classeFiltro) || foco !== null;
-  const listasVisiveis = quadro?.listas.filter((l) => foco === null || l.id === foco) || [];
+  const listasDaArea = quadro?.listas.filter((l) => !areaFiltro || listaServeArea(l, areaFiltro) || filtrados.some((c) => c.lista_id === l.id)) || [];
+  const listasVisiveis = listasDaArea.filter((l) => foco === null || l.id === foco);
+  const contagemPorArea = (a: string) => quadro?.cartoes.filter((c) => areaDoCartao(c) === a).length ?? 0;
   const alternar = (chave: string) => setSelecionados((atual) => atual.includes(chave) ? atual.filter((c) => c !== chave) : [...atual, chave]);
   const moverLote = () => {
     if (!selecionados.length || !destinoLote) return;
@@ -170,9 +182,15 @@ export function QuadroProcessos() {
       {(classeFiltro || termo || filtro !== "todos") && <Button size="sm" variant="ghost" onClick={() => { setClasseFiltro(""); setBusca(""); setFiltro("todos"); }}>Limpar filtros</Button>}
       <span className="text-xs text-zinc-500">{filtrados.length} de {quadro?.cartoes.length ?? 0} processos</span>
     </div>
+    {quadro && <div className="flex flex-wrap items-center gap-2" aria-label="Área do processo">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Área</span>
+      <button type="button" onClick={() => escolherArea("")} aria-pressed={areaFiltro === ""} className={`rounded-full border px-3 py-1 text-xs font-medium transition ${areaFiltro === "" ? "border-accent-600 bg-accent-600 text-white" : "border-zinc-200 bg-white text-zinc-600 hover:border-accent-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"}`}>Todas</button>
+      {AREAS.map(([k, nome]) => <button key={k} type="button" onClick={() => escolherArea(areaFiltro === k ? "" : k)} aria-pressed={areaFiltro === k} disabled={!contagemPorArea(k) && areaFiltro !== k}
+        className={`rounded-full border px-3 py-1 text-xs transition disabled:opacity-40 ${areaFiltro === k ? "border-accent-600 bg-accent-600 text-white" : "border-zinc-200 bg-white text-zinc-600 hover:border-accent-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"}`}>{nome} <strong className="ml-1">{contagemPorArea(k)}</strong></button>)}
+    </div>}
     {quadro && <div className="flex flex-wrap items-center gap-2" aria-label="Resumo por lista">
       <button type="button" onClick={() => setFoco(null)} aria-pressed={foco === null} className={`rounded-full border px-3 py-1 text-xs font-medium transition ${foco === null ? "border-accent-600 bg-accent-600 text-white" : "border-zinc-200 bg-white text-zinc-600 hover:border-accent-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"}`}>Todas as listas</button>
-      {quadro.listas.map((l) => {
+      {listasDaArea.map((l) => {
         const n = filtrados.filter((c) => c.lista_id === l.id).length;
         return <button key={l.id} type="button" onClick={() => setFoco(foco === l.id ? null : l.id)} aria-pressed={foco === l.id} disabled={!n && foco !== l.id}
           className={`rounded-full border px-3 py-1 text-xs transition disabled:opacity-40 ${foco === l.id ? "border-accent-600 bg-accent-600 text-white" : "border-zinc-200 bg-white text-zinc-600 hover:border-accent-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"}`}>{l.nome} <strong className="ml-1">{n}</strong></button>;
@@ -242,6 +260,7 @@ export function QuadroProcessos() {
                 <button type="button" onClick={() => setPublicacaoAberta(card.publicacao_id)} className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500">
                   <span className="flex items-start justify-between gap-2"><strong className="line-clamp-2 text-xs leading-snug text-zinc-900 dark:text-zinc-100">{card.cliente_nome || "Nome a conferir"}</strong></span>
                   <span className="mt-1 block text-[11px] text-zinc-500">{card.numero}</span>
+                  {!areaFiltro && card.area && card.area !== "previdenciario" && <span className="mt-1 inline-flex rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-950 dark:text-violet-300">{rotuloArea(card.area)}</span>}
                   {card.classe && <span className="mt-0.5 block truncate text-[10px] text-zinc-400" title={`${card.classe}${card.tribunal ? ` · ${card.tribunal}` : ""}`}>{card.classe}{card.tribunal ? ` · ${card.tribunal}` : ""}</span>}
                   <span className="mt-2 line-clamp-2 block text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-300">{card.situacao || card.resumo}</span>
                   <span className="mt-2 flex flex-wrap gap-1 text-[10px]">
@@ -267,7 +286,7 @@ export function QuadroProcessos() {
                 </div>}
                 <div className="mt-3 flex items-center justify-end gap-2 border-t border-zinc-100 pt-2 dark:border-zinc-800">
                   {canManage && <>
-                    <button type="button" disabled={busy} onClick={() => { setMovendo(card); setDestino(String(card.lista_id)); }} aria-label={`Mover processo ${card.numero}`} className="mr-auto rounded px-2 py-1 text-xs font-medium text-accent-700 hover:bg-accent-50 disabled:opacity-50">Mover</button>
+                    <button type="button" disabled={busy} onClick={() => { setMovendo(card); setDestino(String(card.lista_id)); setAreaEdicao(card.area_manual ? card.area || "" : ""); }} aria-label={`Mover processo ${card.numero}`} className="mr-auto rounded px-2 py-1 text-xs font-medium text-accent-700 hover:bg-accent-50 disabled:opacity-50">Mover</button>
                     {card.modo === "manual" && <button type="button" disabled={busy} onClick={() => void acao(() => api.put(`/djen/kanban/cartoes/${encodeURIComponent(card.processo_chave)}/automatico`, {}))} className="rounded px-2 py-1 text-[11px] text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800">Voltar ao automático</button>}
                   </>}
                   <button type="button" aria-label={`Histórico das etapas de ${card.numero}`} title="Histórico das etapas" onClick={() => abrirHistorico(card)} className="rounded p-1.5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><History className="h-4 w-4" /></button>
@@ -296,13 +315,22 @@ export function QuadroProcessos() {
     <Modal open={Boolean(movendo)} onClose={() => { if (!busy) setMovendo(null); }} title="Mover processo" maxWidth="max-w-md" footer={<>
       <Button variant="outline" disabled={busy} onClick={() => setMovendo(null)}>Cancelar</Button>
       <Button disabled={busy || !destino} onClick={() => { if (movendo) void acao(async () => {
-        await api.put(`/djen/kanban/cartoes/${encodeURIComponent(movendo.processo_chave)}`, { lista_id: Number(destino) }); setMovendo(null);
-      }); }}>Salvar etapa</Button>
+        const areaAntes = movendo.area_manual ? movendo.area || "" : "";
+        if (areaEdicao !== areaAntes) await api.put(`/djen/kanban/cartoes/${encodeURIComponent(movendo.processo_chave)}/area`, { area: areaEdicao || null });
+        if (Number(destino) !== movendo.lista_id) await api.put(`/djen/kanban/cartoes/${encodeURIComponent(movendo.processo_chave)}`, { lista_id: Number(destino) });
+        setMovendo(null);
+      }); }}>Salvar</Button>
     </>}>
       <p className="mb-3 text-sm">{movendo?.cliente_nome || movendo?.numero}</p>
-      <label className="block text-xs font-medium" htmlFor="kanban-destino">Lista de destino</label>
+      <label className="block text-xs font-medium" htmlFor="kanban-area">Área do processo</label>
+      <Select id="kanban-area" className="mt-2" value={areaEdicao} onChange={(e) => setAreaEdicao(e.target.value)} disabled={busy}>
+        <option value="">Automática (detectada: {rotuloArea(movendo?.area ?? null)})</option>
+        {AREAS.map(([k, nome]) => <option key={k} value={k}>{nome}</option>)}
+      </Select>
+      <p className="mt-1 text-[11px] text-zinc-500">A área define quais etapas se aplicam (ex.: implantação do benefício só no previdenciário). Ao alterá-la, o cartão é reavaliado.</p>
+      <label className="mt-4 block text-xs font-medium" htmlFor="kanban-destino">Lista de destino</label>
       <Select id="kanban-destino" className="mt-2" value={destino} onChange={(e) => setDestino(e.target.value)} disabled={busy}>
-        {quadro?.listas.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
+        {quadro?.listas.filter((l) => l.id === movendo?.lista_id || listaServeArea(l, areaEdicao || movendo?.area || "previdenciario")).map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
       </Select>
       <p className="mt-3 text-xs text-zinc-500">A etapa ficará manual. Novas análises e publicações não substituirão sua escolha. Você pode voltar ao automático pelo cartão.</p>
     </Modal>

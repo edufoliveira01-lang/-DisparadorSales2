@@ -1,10 +1,11 @@
 import { atividadesProcessos } from "./activity";
 import { db } from "../../db";
 import { DjenInputError, prazosPorPublicacao, cumpridasManualmente } from "./store";
+import { detectarArea, ehArea, type Area } from "./area";
 import { classificarSituacaoProcesso, type PublicacaoSituacao } from "./kanbanSituacao";
 import { classificarPublicacaoComHistorico, evidenciasDeCategorias, CATEGORIAS_LISTA_PERSONALIZADA, ETAPAS_AUTOMATICAS, type EtapaAutomatica } from "./kanbanClassifier";
 
-type Lista = { id: number; nome: string; posicao: number; contar_dias: number; codigo: string | null; regra_categoria: string | null };
+type Lista = { id: number; nome: string; posicao: number; contar_dias: number; codigo: string | null; regra_categoria: string | null; area: string | null };
 type Cartao = {
   processo_chave: string; lista_id: number; posicao: number; entrou_em: string;
   inicio_espera_em: string | null; modo: "automatico" | "manual";
@@ -15,10 +16,13 @@ type Cartao = {
   situacao: string; texto: string; ia_json: string | null; categorias_json: string;
   publicacoes_total: number; prazos_abertos: number; publicacoes_nao_lidas: number;
   classe: string | null; tribunal: string | null; orgao: string | null;
+  area: string | null; area_manual: number;
 };
 import { hojeSaoPaulo } from "./cache";
 const hoje = hojeSaoPaulo;
-const listas = () => db.prepare("SELECT id,nome,posicao,contar_dias,codigo,regra_categoria FROM djen_kanban_listas ORDER BY posicao,id").all() as Lista[];
+const listas = () => db.prepare("SELECT id,nome,posicao,contar_dias,codigo,regra_categoria,area FROM djen_kanban_listas ORDER BY posicao,id").all() as Lista[];
+/** Uma lista sem áreas definidas vale para todas; senão só para as áreas listadas. */
+const listaServeArea = (lista: Lista | undefined, area: string) => Boolean(lista && (!lista.area || lista.area.split(",").includes(area)));
 const nomeValido = (nome: unknown) => {
   if (typeof nome !== "string" || nome.trim().length < 2 || nome.trim().length > 70)
     throw new DjenInputError("Informe um nome de lista com 2 a 70 caracteres.");
@@ -38,6 +42,7 @@ function incluirProcessosNovos() {
   ).run(primeira.id, primeira.id);
 }
 
+type EntradaPub = { tribunal: string | null; orgao: string | null; classe: string | null; texto: string };
 type Candidato = { codigo: string; evidencia: string; publicacao_id: number; data: string };
 function sincronizarEtapasAutomaticas() {
   const colunas = listas();
@@ -45,20 +50,32 @@ function sincronizarEtapasAutomaticas() {
   const porCategoria = new Map(colunas.filter((l) => l.regra_categoria).map((l) => [l.regra_categoria!, l]));
   for (const lista of colunas.filter((l) => l.regra_categoria)) porCodigo.set(`custom:${lista.id}`, lista);
   const cards = db.prepare(
-    `SELECT k.processo_chave,k.lista_id,k.modo,k.etapa_publicacao_id,l.codigo AS codigo_atual,l.nome AS nome_atual
-       FROM djen_kanban_cartoes k JOIN djen_kanban_listas l ON l.id=k.lista_id
+    `SELECT k.processo_chave,k.lista_id,k.modo,k.etapa_publicacao_id,l.codigo AS codigo_atual,l.nome AS nome_atual,pr.area AS area_salva,pr.area_manual
+       FROM djen_kanban_cartoes k JOIN djen_kanban_listas l ON l.id=k.lista_id JOIN djen_processos pr ON pr.chave=k.processo_chave
       WHERE k.revisar_etapa=1`,
-  ).all() as { processo_chave: string; lista_id: number; modo: string; etapa_publicacao_id: number | null; codigo_atual: string | null; nome_atual: string }[];
+  ).all() as { processo_chave: string; lista_id: number; modo: string; etapa_publicacao_id: number | null; codigo_atual: string | null; nome_atual: string; area_salva: string | null; area_manual: number }[];
   if (!cards.length) return;
   const rows = db.prepare(
-    `SELECT p.processo_chave,p.id,p.texto,p.classe,p.revisada,p.categorias_json,p.evidencias_json,p.data_disponibilizacao,p.tipo_documento,p.concluida
+    `SELECT p.processo_chave,p.id,p.texto,p.classe,p.revisada,p.categorias_json,p.evidencias_json,p.data_disponibilizacao,p.tipo_documento,p.concluida,p.tribunal,p.orgao
        FROM djen_publicacoes p JOIN djen_kanban_cartoes k ON k.processo_chave=p.processo_chave
       WHERE p.cancelada=0 AND k.revisar_etapa=1
       ORDER BY p.processo_chave,p.data_disponibilizacao,p.id`,
-  ).all() as { processo_chave: string; id: number; texto: string; classe: string; revisada: number; categorias_json: string; evidencias_json: string; data_disponibilizacao: string; tipo_documento: string | null; concluida: number }[];
+  ).all() as { processo_chave: string; id: number; texto: string; classe: string; revisada: number; categorias_json: string; evidencias_json: string; data_disponibilizacao: string; tipo_documento: string | null; concluida: number; tribunal: string | null; orgao: string | null }[];
+  // Área de cada processo: a escolha manual prevalece; senão é detectada e gravada.
+  const recentes = new Map<string, EntradaPub[]>();
+  for (const pub of rows) { const l = recentes.get(pub.processo_chave) || []; l.unshift(pub); recentes.set(pub.processo_chave, l); }
+  const areaDoProcesso = new Map<string, Area>();
+  const gravarArea = db.prepare("UPDATE djen_processos SET area=? WHERE chave=? AND area_manual=0");
+  for (const card of cards) {
+    if (card.area_manual && ehArea(card.area_salva)) { areaDoProcesso.set(card.processo_chave, card.area_salva); continue; }
+    const { area } = detectarArea({ chave: card.processo_chave, publicacoes: recentes.get(card.processo_chave) || [] });
+    areaDoProcesso.set(card.processo_chave, area);
+    if (card.area_salva !== area) gravarArea.run(area, card.processo_chave);
+  }
   const candidatos = new Map<string, Candidato>();
   const sinaisPorId = new Map<number, string>();
   for (const pub of rows) {
+    const areaDaPub = areaDoProcesso.get(pub.processo_chave) || "previdenciario";
     const base = classificarPublicacaoComHistorico(pub);
     const personalizado = evidenciasDeCategorias(pub)
       .filter((e) => !base || !["intimacao", "despacho", "decisao_interlocutoria"].includes(e.categoria))
@@ -68,6 +85,8 @@ function sincronizarEtapasAutomaticas() {
       ? { codigo: `custom:${personalizado.lista!.id}`, evidencia: personalizado.evidencia }
       : base;
     if (!sinal) continue;
+    // Etapa de outra área (ex.: implantação do INSS em processo trabalhista) não se aplica.
+    if (!sinal.codigo.startsWith("custom:") && !listaServeArea(porCodigo.get(sinal.codigo), areaDaPub)) continue;
     sinaisPorId.set(pub.id, sinal.codigo);
     const antigo = candidatos.get(pub.processo_chave);
     const personalizadoNoHistorico = antigo?.codigo.startsWith("custom:") || sinal.codigo.startsWith("custom:");
@@ -141,7 +160,7 @@ export function atualizarKanbanComNovasPublicacoes() {
 export function listarKanban() {
   atualizarKanbanComNovasPublicacoes();
   const cards = db.prepare(
-    `SELECT k.*,pr.numero,c.nome AS cliente_nome,p.destinatarios_json,p.id AS publicacao_id,
+    `SELECT k.*,pr.numero,pr.area,pr.area_manual,c.nome AS cliente_nome,p.destinatarios_json,p.id AS publicacao_id,
             p.data_disponibilizacao,p.situacao,p.texto,p.ia_json,p.categorias_json,p.classe,p.tribunal,p.orgao,
             (SELECT COUNT(*) FROM djen_publicacoes q WHERE q.processo_chave=k.processo_chave AND q.cancelada=0) AS publicacoes_total,
             (SELECT COUNT(*) FROM djen_publicacoes q WHERE q.processo_chave=k.processo_chave AND q.cancelada=0 AND q.lida=0) AS publicacoes_nao_lidas,
@@ -296,6 +315,20 @@ export function moverCartoesLoteKanban(processos: unknown, destino: unknown) {
   const unicos = [...new Set(processos as string[])];
   db.transaction(() => { for (const chave of unicos) moverCartaoKanban(chave, destino as number); })();
   return { ok: true, movidos: unicos.length };
+}
+
+/** Fixa a área do processo (ou volta à detecção automática com `null`) e reavalia o cartão. */
+export function alterarAreaProcesso(processo: string, area: unknown) {
+  if (!db.prepare("SELECT chave FROM djen_processos WHERE chave=?").get(processo)) throw new DjenInputError("Processo não encontrado.");
+  if (area !== null && !ehArea(area)) throw new DjenInputError("Escolha uma área válida.");
+  db.transaction(() => {
+    if (area === null) db.prepare("UPDATE djen_processos SET area_manual=0 WHERE chave=?").run(processo);
+    else db.prepare("UPDATE djen_processos SET area=?,area_manual=1 WHERE chave=?").run(area, processo);
+    db.prepare("UPDATE djen_kanban_cartoes SET revisar_etapa=1 WHERE processo_chave=?").run(processo);
+  })();
+  incluirProcessosNovos();
+  sincronizarEtapasAutomaticas();
+  return { ok: true };
 }
 
 export function ativarClassificacaoAutomatica(processo: string) {
