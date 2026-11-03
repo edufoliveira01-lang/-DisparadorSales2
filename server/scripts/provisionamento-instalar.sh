@@ -34,6 +34,13 @@ SUDO="sudo"; [ "$(id -u)" -eq 0 ] && SUDO=""
 NGINX_BIN="$(command -v nginx || echo /usr/sbin/nginx)"
 SYSTEMCTL_BIN="$(command -v systemctl || echo /usr/bin/systemctl)"
 
+# 0) a pasta das instâncias precisa ser do usuário do painel (ele cria escritórios sem terminal/sudo)
+if [ "$SIMULAR" != "1" ] && [ "$(stat -c %U "$INSTANCIAS_DIR" 2>/dev/null || echo ausente)" != "$USUARIO" ]; then
+  info "Ajustando o dono de $INSTANCIAS_DIR para $USUARIO (pede a senha do sudo)"
+  $SUDO install -d -m 755 -o "$USUARIO" -g "$(id -gn)" "$INSTANCIAS_DIR"
+  $SUDO chown -R "$USUARIO:$(id -gn)" "$INSTANCIAS_DIR"
+fi
+
 # 1) mapa + adoção das instâncias existentes
 mkdir -p "$PAINEL_DIR/nginx"
 {
