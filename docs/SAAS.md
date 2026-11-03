@@ -1,6 +1,6 @@
 # DisparaZap como serviço (SaaS) — versão 2.61.0
 
-Cada escritório assinante tem seu **workspace próprio e isolado**: uma instância do sistema com endereço (`escritorio.disparazap.saleseassociados.com.br`), banco, equipe, credenciais, sessão do WhatsApp e chaves de IA exclusivos. Um **painel de controle** (aplicação separada, sua) cadastra os escritórios, define planos e limites, cobra pelo Asaas e emite a **licença** que cada instância valida.
+Cada escritório assinante tem seu **workspace próprio e isolado**: uma instância do sistema com endereço (`nome.saleseassociados.com.br`), banco, equipe, credenciais, sessão do WhatsApp e chaves de IA exclusivos. Um **painel de controle** (aplicação separada, sua) cadastra os escritórios, define planos e limites, cobra pelo Asaas e emite a **licença** que cada instância valida.
 
 ```
 Asaas ──webhook──▶ Painel de controle ◀──licença assinada── Instância do escritório A
@@ -9,6 +9,8 @@ Asaas ──webhook──▶ Painel de controle ◀──licença assinada──
 ```
 
 A instalação atual (`disparazap.saleseassociados.com.br`) **não muda**: sem as variáveis `LICENSE_*` ela roda em *modo próprio*, sem verificação, limites ou bloqueios.
+
+> **Implantação passo a passo (Ubuntu + Nginx + PM2 + Cloudflare): [SAAS_IMPLANTACAO.md](SAAS_IMPLANTACAO.md).**
 
 ## Painel de controle
 
@@ -19,7 +21,7 @@ Inicie com `npm run painel` (desenvolvimento) ou `npm run painel --prefix server
 | `PAINEL_DATA_DIR` | Pasta do banco `painel.sqlite3` e do par de chaves de licença (`licenca-privada.pem` — **faça backup**; `licenca-publica.pem`). Criados na primeira execução. |
 | `PAINEL_ADMIN_USER` / `PAINEL_ADMIN_PASSWORD` | Administrador criado na primeira execução (senha com 12+ caracteres). Depois remova a senha do ambiente. |
 | `PAINEL_PUBLIC_URL` | URL pública (HTTPS). Define o cookie seguro e a URL do webhook exibida. |
-| `PAINEL_BASE_DOMAIN` | Domínio dos workspaces (padrão `disparazap.saleseassociados.com.br`). Requer DNS curinga `*.disparazap.saleseassociados.com.br` e certificado curinga. |
+| `PAINEL_BASE_DOMAIN` | Domínio dos workspaces (padrão `saleseassociados.com.br`: escritórios em `nome.saleseassociados.com.br`; `disparazap` e outros endereços já em uso são reservados). Requer DNS curinga `*` e, no acesso direto, certificado curinga. |
 | `ASAAS_API_KEY`, `ASAAS_BASE_URL`, `ASAAS_WEBHOOK_TOKEN` | Cobrança. Por padrão aponta para o **sandbox** do Asaas. |
 | `PAINEL_CARENCIA_DIAS` (7), `PAINEL_TESTE_DIAS` (14), `PAINEL_VALIDADE_LICENCA_HORAS` (72), `PAINEL_TOLERANCIA_OFFLINE_DIAS` (14) | Regras padrão. |
 

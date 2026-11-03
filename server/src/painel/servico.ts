@@ -6,6 +6,9 @@ import { calcularStatus, montarCarga, somarDias, somarMes, hojeIso } from "./sta
 import { assinarLicenca, type CargaLicenca } from "../licenca/token";
 import { EntitlementInvalido, normalizarEntitlements, type Entitlements } from "../licenca/entitlements";
 
+/** Subdomínios que já existem ou não podem ser usados por escritórios (ex.: a instalação atual, disparazap). */
+export const ENDERECOS_RESERVADOS = new Set(["painel", "www", "api", "admin", "app", "mail", "webmail", "disparazap", "smtp", "imap", "pop", "ftp", "ns1", "ns2", "cpanel", "suporte", "status", "licenca", "licencas"]);
+
 export class ErroPainel extends Error {
   constructor(mensagem: string, public status = 400) { super(mensagem); }
 }
@@ -123,7 +126,7 @@ export class ServicoPainel {
   async criarEscritorio(d: Record<string, unknown>) {
     const slug = texto(d.slug, 42).toLowerCase();
     if (!slugValido(slug)) throw new ErroPainel("O endereço deve ter de 4 a 42 letras minúsculas, números ou hífens.");
-    if (["painel", "www", "api", "admin", "app", "mail"].includes(slug)) throw new ErroPainel("Esse endereço é reservado.");
+    if (ENDERECOS_RESERVADOS.has(slug)) throw new ErroPainel("Esse endereço é reservado.");
     const nome = texto(d.nome, 160); if (nome.length < 3) throw new ErroPainel("Informe o nome do escritório.");
     const email = texto(d.email, 254).toLowerCase(); if (!emailValido(email)) throw new ErroPainel("Informe um e-mail válido.");
     const plano = this.db.prepare("SELECT * FROM planos WHERE id=? AND ativo=1").get(texto(d.plano_id, 40) || "escritorio") as LinhaPlano | undefined;

@@ -28,7 +28,7 @@ export function lerConfigPainel(env: NodeJS.ProcessEnv = process.env): ConfigPai
   return {
     porta: inteiro(env.PAINEL_PORT, 3340, 1, 65535),
     dadosDir: path.resolve(env.PAINEL_DATA_DIR || path.join(process.cwd(), "data-painel")),
-    baseDomain: (env.PAINEL_BASE_DOMAIN || "disparazap.saleseassociados.com.br").replace(/^\.+|\.+$/g, ""),
+    baseDomain: (env.PAINEL_BASE_DOMAIN || "saleseassociados.com.br").replace(/^\.+|\.+$/g, ""),
     urlPublica: (env.PAINEL_PUBLIC_URL || "").replace(/\/+$/, ""),
     carenciaPadraoDias: inteiro(env.PAINEL_CARENCIA_DIAS, 7),
     testePadraoDias: inteiro(env.PAINEL_TESTE_DIAS, 14),

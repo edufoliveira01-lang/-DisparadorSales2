@@ -139,6 +139,7 @@ describe("serviço do painel", () => {
   it("valida entradas e reserva endereços", async () => {
     await expect(novo({ slug: "AB" })).rejects.toThrow(/endereço/);
     await expect(novo({ slug: "painel" })).rejects.toThrow(/reservado/);
+    await expect(novo({ slug: "disparazap" })).rejects.toThrow(/reservado/);
     await expect(novo({ email: "x" })).rejects.toThrow(/e-mail/);
     await expect(novo({ plano_id: "nao-existe" })).rejects.toThrow(/Plano/);
     await expect(novo({ entitlements: { max_usuarios: -5 } })).rejects.toThrow();
