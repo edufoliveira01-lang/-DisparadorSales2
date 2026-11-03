@@ -252,7 +252,7 @@ interface PericiaSemLaudo {
 }
 interface PrazoEscritorio {
   publicacao_id: number; processo: string; cliente_nome: string | null; descricao: string; prazo_texto: string;
-  data_disponibilizacao: string; termino: string | null; origem_data: "salvo" | "previsto" | "decorrido";
+  data_disponibilizacao: string; termino: string | null; origem_data: "salvo" | "previsto" | "estimativa" | "decorrido";
   dias_para_vencer: number | null; urgencia: "vencido" | "vence_em_breve" | "decorrido";
   situacao: string; situacao_motivo: string; historico_djen: CoberturaHistorico;
 }
@@ -330,6 +330,8 @@ interface Status {
   resumo: Record<string, number>;
   advogados: Advogado[];
   pericias_sem_laudo: number;
+  pericias_sem_laudo_conferidas?: number;
+  aguardando_retorno_conferidos?: number;
   prazos_escritorio?: number;
   processos_parados?: number;
   aguardando_retorno: number;
@@ -922,7 +924,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
             <EmptyState icon={Clock3} title="Nenhum acompanhamento neste filtro" description="Ajuste a busca ou o tipo. Os alertas aparecem após o período indicado para conferência." />
           ) : aguardandoVisiveis.map((item) => (
             <article key={`${item.publicacao_id}:${item.tipo}`} className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="flex flex-col gap-4 md:flex-row md:justify-between">
+              <div className="flex flex-col gap-4">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge tone="warning">{tiposAguardando[item.tipo]}</Badge>
@@ -944,8 +946,8 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                     {item.ultima_cobranca_em && <p>Cobrança marcada como realizada em {dia(item.ultima_cobranca_em)}</p>}
                   </div>
                 </div>
-                <div className="flex shrink-0 flex-wrap items-start gap-2">
-                  <Button size="sm" variant="outline" onClick={() => void abrir(item.publicacao_id)}>Ver processo <ArrowRight className="h-3.5 w-3.5" /></Button>
+                <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+                  <Button size="sm" onClick={() => void abrir(item.publicacao_id)}>Ver processo <ArrowRight className="h-3.5 w-3.5" /></Button>
                   <Button size="sm" variant="outline" disabled={salvando || item.historico_djen?.status !== "atualizado"} onClick={() => void acao(async () => {
                     await api.put(`/djen/aguardando/${item.publicacao_id}`, { tipo: item.tipo, status: "cobrado" });
                     await carregarAguardando(); await carregarStatus(); show("Cobrança marcada como realizada. Nenhuma mensagem foi enviada.", "success");
@@ -1053,14 +1055,15 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
             {[
               { label: "Processos na lista", value: total, Icon: FolderOpen, action: () => filtrar("categoria", "") },
               { label: "Processos não lidos", value: status?.resumo.nao_lidas ?? 0, Icon: FileCheck2, action: () => filtrar("situacao", "nao_lidas") },
-              { label: "Aguardando retorno", value: status?.aguardando_retorno ?? 0, Icon: Clock3, action: () => { setAguardandoAberto(true); void carregarAguardando().catch(e => show(erro(e), "error")); } },
-              { label: "Perícias sem laudo · 60 dias", value: status?.pericias_sem_laudo ?? 0, Icon: AlertCircle, action: () => { setMostrarSemLaudo(true); void carregarSemLaudo(); } },
-              { label: "Prazos do escritório · vencidos ou a vencer", value: status?.prazos_escritorio ?? 0, Icon: AlertCircle, action: () => void carregarAlerta("prazos").catch((e) => show(erro(e), "error")) },
-              { label: "Processos parados", value: status?.processos_parados ?? 0, Icon: Clock3, action: () => void carregarAlerta("parados", diasParado).catch((e) => show(erro(e), "error")) },
-            ].map(({ label, value, Icon, action }) => (
+              { label: "Aguardando retorno", value: status?.aguardando_retorno ?? 0, nota: status && status.aguardando_retorno > (status.aguardando_retorno_conferidos ?? status.aguardando_retorno) ? `${status.aguardando_retorno_conferidos ?? 0} com histórico conferido` : "", Icon: Clock3, action: () => { setAguardandoAberto(true); void carregarAguardando().catch(e => show(erro(e), "error")); } },
+              { label: "Perícias sem laudo · 60 dias", value: status?.pericias_sem_laudo ?? 0, nota: status && status.pericias_sem_laudo > (status.pericias_sem_laudo_conferidas ?? status.pericias_sem_laudo) ? `${status.pericias_sem_laudo_conferidas ?? 0} com histórico conferido` : "", Icon: AlertCircle, action: () => { setMostrarSemLaudo(true); void carregarSemLaudo(); } },
+              { label: "Prazos do escritório · vencidos ou a vencer", value: status?.prazos_escritorio ?? 0, nota: "", Icon: AlertCircle, action: () => void carregarAlerta("prazos").catch((e) => show(erro(e), "error")) },
+              { label: "Processos parados", value: status?.processos_parados ?? 0, nota: "", Icon: Clock3, action: () => void carregarAlerta("parados", diasParado).catch((e) => show(erro(e), "error")) },
+            ].map(({ label, value, nota, Icon, action }) => (
               <button key={label} type="button" onClick={action} className="group rounded-2xl border border-zinc-200 bg-white p-4 text-left shadow-sm transition hover:border-accent-400 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900">
                 <span className="flex items-center justify-between gap-2 text-[11px] font-medium text-zinc-500"><span>{label}</span><Icon className="h-4 w-4 text-accent-600" /></span>
                 <strong className="mt-3 block text-2xl font-semibold text-zinc-900 dark:text-zinc-100">{value}</strong>
+                {nota && <span className="mt-1 block text-[10px] font-normal text-zinc-500">{nota}</span>}
               </button>
             ))}
           </div></div>
@@ -1284,12 +1287,13 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                         </p>
                       )}
                     </div>
-                    <div className="flex shrink-0 flex-wrap items-start gap-2 sm:max-w-[200px] sm:flex-col sm:items-stretch">
-                      <Button variant="outline" size="sm" onClick={() => void abrir(p.id)}>Abrir processo <ArrowRight className="h-3.5 w-3.5" /></Button>
-                      {!p.concluida && <RegisterAction publicacaoId={p.id} onSaved={carregarLista} />}
+                    <div className="grid w-full shrink-0 grid-cols-2 content-start gap-2 self-start sm:w-48 sm:grid-cols-1">
+                      <Button size="sm" className="col-span-2 w-full sm:col-span-1" onClick={() => void abrir(p.id)}>Abrir processo <ArrowRight className="h-3.5 w-3.5" /></Button>
+                      {!p.concluida && <RegisterAction publicacaoId={p.id} onSaved={carregarLista} className="w-full" />}
                       <Button
                         size="sm"
                         variant="outline"
+                        className="w-full"
                         disabled={salvando}
                         onClick={() =>
                           void acao(async () => {
@@ -1313,6 +1317,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                       <Button
                         size="sm"
                         variant="ghost"
+                        className="col-span-2 w-full text-zinc-500 sm:col-span-1"
                         disabled={salvando}
                         onClick={() =>
                           void acao(async () => {
@@ -1825,19 +1830,19 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
             <EmptyState icon={FileCheck2} title="Nenhum prazo em risco" description="Não há prazos do escritório vencidos ou nos próximos 3 dias sem cumprimento identificado." />
           ) : prazosEscritorio.map((p) => (
             <article key={p.publicacao_id} className={`rounded-xl border p-4 ${p.urgencia === "vencido" || p.urgencia === "decorrido" ? "border-red-200 dark:border-red-900" : "border-amber-200 dark:border-amber-900"}`}>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex flex-col gap-4">
                 <div className="min-w-0">
                   <p className="text-sm font-semibold">{p.cliente_nome || p.processo}</p>
                   <p className="mt-1 text-xs text-zinc-500">{p.processo} · publicado em {dia(p.data_disponibilizacao)}</p>
                   <p className="mt-2 text-xs font-semibold text-red-700 dark:text-red-300">
-                    {p.termino ? `${p.urgencia === "vencido" ? `Vencido há ${Math.abs(p.dias_para_vencer ?? 0)} dia(s)` : p.dias_para_vencer === 0 ? "Vence hoje" : `Vence em ${p.dias_para_vencer} dia(s)`} · ${dia(p.termino)} (${p.origem_data === "salvo" ? "prazo salvo" : "previsão pelo calendário"})` : "Decurso de prazo mencionado em publicação posterior"}
+                    {p.termino ? `${p.urgencia === "vencido" ? `Vencido há ${Math.abs(p.dias_para_vencer ?? 0)} dia(s)` : p.dias_para_vencer === 0 ? "Vence hoje" : `Vence em ${p.dias_para_vencer} dia(s)`} · ${dia(p.termino)} (${p.origem_data === "salvo" ? "prazo salvo" : p.origem_data === "estimativa" ? "estimativa sem calendário conferido" : "previsão pelo calendário"})` : "Decurso de prazo mencionado em publicação posterior"}
                   </p>
                   <p className="mt-2 text-xs"><strong>{p.descricao}</strong>: {p.prazo_texto}</p>
                   {p.situacao === "decorrido" && <p className="mt-1 text-[11px] text-red-700 dark:text-red-300">{p.situacao_motivo}</p>}
                   <HistoryCoverage historico={p.historico_djen} publicacaoId={p.publicacao_id} />
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button size="sm" variant="outline" onClick={() => { setAlertaAberto(null); void abrir(p.publicacao_id); }}>Ver processo <ArrowRight className="h-3.5 w-3.5" /></Button>
+                <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+                  <Button size="sm" onClick={() => { setAlertaAberto(null); void abrir(p.publicacao_id); }}>Ver processo <ArrowRight className="h-3.5 w-3.5" /></Button>
                   <RegisterFulfillment endpoint={`/djen/prazos/escritorio/${p.publicacao_id}`} onSaved={async () => { await carregarAlerta("prazos"); await carregarStatus(); }} />
                 </div>
               </div>
@@ -1858,7 +1863,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
             <EmptyState icon={FileCheck2} title="Nenhum processo parado" description="Todos os processos ativos tiveram publicação dentro do período escolhido." />
           ) : processosParados.map((p) => (
             <article key={p.publicacao_id} className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex flex-col gap-4">
                 <div className="min-w-0">
                   <p className="text-sm font-semibold">{p.cliente_nome || p.processo}</p>
                   <p className="mt-1 text-xs text-zinc-500">{p.processo}</p>
@@ -1866,7 +1871,9 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                   <p className="mt-2 line-clamp-3 text-xs text-zinc-600 dark:text-zinc-300">{p.ultimo_andamento}</p>
                   <HistoryCoverage historico={p.historico_djen} publicacaoId={p.publicacao_id} />
                 </div>
-                <Button size="sm" variant="outline" onClick={() => { setAlertaAberto(null); void abrir(p.publicacao_id); }}>Ver processo <ArrowRight className="h-3.5 w-3.5" /></Button>
+                <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+                  <Button size="sm" onClick={() => { setAlertaAberto(null); void abrir(p.publicacao_id); }}>Ver processo <ArrowRight className="h-3.5 w-3.5" /></Button>
+                </div>
               </div>
             </article>
           ))}
@@ -2030,7 +2037,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                 key={p.pericia_id}
                 className={`rounded-xl border p-4 ${p.historico_djen?.status === "atualizado" ? "border-zinc-200 dark:border-zinc-800" : "border-dashed border-zinc-300 opacity-80 dark:border-zinc-700"}`}
               >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex flex-col gap-4">
                   <div>
                     <p className="text-sm font-semibold">{p.nome}</p>
                     <p className="mt-1 text-xs text-zinc-500">{p.processo}</p>
@@ -2061,7 +2068,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                       </p>
                     )}
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
                     <Button
                       size="sm"
                       variant="outline"

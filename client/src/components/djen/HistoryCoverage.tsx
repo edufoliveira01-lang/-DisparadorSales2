@@ -19,17 +19,17 @@ export function HistoryCoverage({ historico, publicacaoId }: { historico?: Cober
     <p className="font-semibold">{atualizado ? 'Histórico do DJEN consultado' : historico.status === 'verificando' ? 'Atualizando histórico…' : historico.status === 'falha' ? 'Histórico não confirmado' : 'Histórico pendente de atualização'}</p>
     <p>{historico.mensagem}</p>
     {atualizado && historico.fim && <p>Consultado até {historico.fim.split('-').reverse().join('/')} · {historico.consultado_em && instanteBR(historico.consultado_em)}</p>}
-    {publicacaoId && historico.status !== 'verificando' && <Button variant="ghost" size="sm" disabled={busy} onClick={()=>{
+    {publicacaoId && historico.status !== 'verificando' && <Button variant="outline" size="sm" className="mt-2" disabled={busy} onClick={()=>{
       setBusy(true); void api.post(`/djen/publicacoes/${publicacaoId}/atualizar-historico`,{}).then(()=>show('Consulta por processo enfileirada. A situação será atualizada ao terminar.','success')).catch(e=>show(e instanceof ApiError ? e.message : 'Não foi possível atualizar o histórico.','error')).finally(()=>setBusy(false));
     }}>{busy ? 'Solicitando…' : 'Atualizar histórico do processo'}</Button>}
   </div>;
 }
-export function RegisterFulfillment({ endpoint,tipo,onSaved }: { endpoint: string; tipo?: string; onSaved:()=>void|Promise<void> }) {
+export function RegisterFulfillment({ endpoint,tipo,onSaved,className }: { endpoint: string; tipo?: string; onSaved:()=>void|Promise<void>; className?: string }) {
   const [open,setOpen]=useState(false), [busy,setBusy]=useState(false), [nota,setNota]=useState('');
   const hoje = new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
   const [dia,setDia]=useState(hoje); const {show}=useToast();
   return <span className="contents" onClick={e=>e.stopPropagation()} onKeyDown={e=>e.stopPropagation()}>
-    <Button size="sm" variant="ghost" onClick={()=>setOpen(true)}>Já foi cumprido</Button>
+    <Button size="sm" variant="outline" className={className} onClick={()=>setOpen(true)}>Já foi cumprido</Button>
     <Modal open={open} onClose={()=>{if(!busy)setOpen(false)}} title="Confirmar cumprimento nos autos">
       <form className="space-y-4" onSubmit={e=>{e.preventDefault(); if(busy)return; setBusy(true);
         void api.put(endpoint,{tipo,status:'resolvido',cumprido_em:dia,observacoes:nota.trim()}).then(async()=>{

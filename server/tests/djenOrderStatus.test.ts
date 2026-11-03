@@ -124,3 +124,17 @@ describe("migração das obrigações externas", () => {
     db.prepare("DELETE FROM djen_publicacoes WHERE id=?").run(id);
   });
 });
+
+describe("prazo do escritório sem calendário", () => {
+  it("estima vencimento provável e identifica como estimativa", () => {
+    const chave = "50000010120264030055";
+    db.exec("DELETE FROM djen_prazos_escritorio_estado; DELETE FROM djen_prazos; DELETE FROM djen_publicacoes; DELETE FROM djen_processos;");
+    db.prepare("INSERT INTO djen_processos(chave,numero) VALUES (?,?)").run(chave, chave);
+    const hojeSP = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+    const data = new Date(Date.parse(`${hojeSP}T12:00:00Z`) - 40 * 86400000).toISOString().slice(0, 10);
+    db.prepare(`INSERT INTO djen_publicacoes(comunicacao_id,processo_chave,tribunal,orgao,classe,tipo_documento,tipo_comunicacao,data_disponibilizacao,texto)
+      VALUES ('est-1',?,'TJZZ','Vara sem calendario','C','Despacho','Intimação',?,'Intime-se a parte autora para manifestar-se no prazo de 10 (dez) dias.')`).run(chave, data);
+    limparMemoriaAlertas();
+    expect(listarPrazos()[0]).toMatchObject({ origem_data: "estimativa", urgencia: "vencido" });
+  });
+});

@@ -122,21 +122,25 @@ const filtroPublicacoes = (req: import("express").Request) => {
 djenRouter.get("/acompanhamentos/diagnostico", wrap((_req, res) => res.json(diagnosticoAcompanhamentos())));
 djenRouter.get(
   "/status",
-  wrap(async (_req, res) =>
+  wrap(async (_req, res) => {
+    const aguardandoTodos = await acompanhamentos();
+    const semLaudo = listarPericiasSemLaudo();
     res.json({
       ...statusBuscas(),
       resumo: resumoDjen(),
       config: configuracaoDjen(),
       advogados: listarAdvogados(),
-      pericias_sem_laudo: listarPericiasSemLaudo().filter(p => p.historico_djen.status === "atualizado").length,
+      pericias_sem_laudo: semLaudo.length,
+      pericias_sem_laudo_conferidas: semLaudo.filter(p => p.historico_djen.status === "atualizado").length,
       prazos_escritorio: listarPrazosEscritorio().length,
       processos_parados: listarProcessosParados().length,
       historicos_djen: resumoHistoricos(),
-      aguardando_retorno: (await acompanhamentos()).filter(p => p.historico_djen.status === "atualizado" && !p.prazo_pendente).length,
+      aguardando_retorno: aguardandoTodos.length,
+      aguardando_retorno_conferidos: aguardandoTodos.filter(p => p.historico_djen.status === "atualizado" && !p.prazo_pendente).length,
       ia: statusAnalisesCodex(),
       codex: statusAnalisesCodex(), // Compatibilidade com abas da versão anterior.
-    }),
-  ),
+    });
+  }),
 );
 djenRouter.get("/kanban", wrap((_req, res) => res.json(listarKanban())));
 djenRouter.post("/kanban/listas", wrap((req, res) => { const lista = criarListaKanban(req.body || {}); changed(); res.json(lista); }));

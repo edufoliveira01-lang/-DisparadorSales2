@@ -13,11 +13,11 @@ export function ActivityBadge({ atividade }: { atividade?: AtividadeProcesso | n
     <Clock3 className="h-3 w-3" /> {atividade.dias} dia{atividade.dias === 1 ? '' : 's'} sem providência
   </span>;
 }
-export function RegisterAction({ publicacaoId, onSaved }: { publicacaoId: number; onSaved?: () => void | Promise<void> }) {
+export function RegisterAction({ publicacaoId, onSaved, className }: { publicacaoId: number; onSaved?: () => void | Promise<void>; className?: string }) {
   const [aberto, setAberto] = useState(false), [nota, setNota] = useState(''), [salvando, setSalvando] = useState(false);
   const { show } = useToast();
   return <>
-    <Button size="sm" variant="ghost" onClick={() => setAberto(true)}>Registrar providência</Button>
+    <Button size="sm" variant="outline" className={className} onClick={() => setAberto(true)}>Registrar providência</Button>
     <Modal open={aberto} onClose={() => { if (!salvando) setAberto(false); }} title="Registrar providência realizada">
       <form className="space-y-4" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()} onSubmit={e => { e.preventDefault(); if (salvando) return; setSalvando(true);
         void api.post(`/djen/publicacoes/${publicacaoId}/providencia`, { descricao: nota.trim() }).then(async () => {

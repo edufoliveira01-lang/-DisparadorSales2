@@ -55,7 +55,7 @@ function porProcesso(linhas: Linha[]) {
 
 export interface PrazoEscritorio {
   publicacao_id: number; processo: string; cliente_nome: string | null; descricao: string; prazo_texto: string;
-  data_disponibilizacao: string; termino: string | null; origem_data: "salvo" | "previsto" | "decorrido";
+  data_disponibilizacao: string; termino: string | null; origem_data: "salvo" | "previsto" | "estimativa" | "decorrido";
   dias_para_vencer: number | null; urgencia: "vencido" | "vence_em_breve" | "decorrido";
   situacao: string; situacao_motivo: string; historico_djen: CoberturaHistorico;
 }
@@ -88,6 +88,13 @@ function calcularPrazosEscritorio(): PrazoEscritorio[] {
               const previsto = prazoDoAcompanhamento({ tipo: "parte_contraria", responsavel: "Escritório", trecho: ordem.trecho, prazo_citado_dias: ordem.dias,
                 prazo_texto: ordem.prazo_texto, unidade: ordem.unidade, alerta: ordem.alerta }, pub, config?.aguardo_dias || 30, dia);
               termino = previsto.prazo_termino;
+              // Sem calendário conferido: estimativa conservadora (fins de semana e margem),
+              // usada só para apontar vencimento provável, sempre identificada como estimativa.
+              if (!termino && ordem.dias && (ordem.unidade === "uteis" || ordem.unidade === "corridos") && !ordem.alerta) {
+                const margem = ordem.unidade === "uteis" ? Math.ceil(ordem.dias * 7 / 5) + 3 : ordem.dias + 1;
+                const estimado = new Date(Date.parse(`${data}T12:00:00Z`) + margem * 86400000).toISOString().slice(0, 10);
+                if (estimado < dia) { termino = estimado; origem = "estimativa"; }
+              }
             }
             const dias = termino ? diasEntre(dia, termino) : null;
             const decorrido = situ.situacao === "decorrido";
