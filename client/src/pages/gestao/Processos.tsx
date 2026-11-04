@@ -12,13 +12,14 @@ import { Modal } from "@/components/ui/Modal";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Pagination } from "@/components/ui/Pagination";
 import { useToast } from "@/components/ui/Toast";
+import { PessoaRapida } from "./PessoaRapida";
 import { AREAS, Campo, SeletorPessoa, STATUS, STATUS_TOM, dataBr, useAtraso, type Lista, type PessoaResumo } from "./comum";
 
 export interface ProcessoLinha { id: number; numero: string; numero_formatado: string; pasta: string; titulo: string; classe: string; tribunal: string; area: string; status: string; responsavel: string | null; autores: string | null; atualizado_em: string }
 export interface Responsavel { id: number; nome: string }
 const TAM = 30;
 
-export function Processos() {
+export function Processos({ semCabecalho = false, sinalNovo = 0 }: { semCabecalho?: boolean; sinalNovo?: number } = {}) {
   const { can } = useAuth();
   const { show } = useToast();
   const navegar = useNavigate();
@@ -34,6 +35,7 @@ export function Processos() {
   const [pendentes, setPendentes] = useState(0);
   const [novo, setNovo] = useState(false);
   const [importando, setImportando] = useState(false);
+  useEffect(() => { if (sinalNovo > 0) setNovo(true); }, [sinalNovo]);
 
   const carregar = useCallback(async () => {
     try { setDados(await api.get<Lista<ProcessoLinha>>(`/gestao/processos?limite=${TAM}&pagina=${pagina + 1}&busca=${encodeURIComponent(termo)}&status=${status}&responsavel=${responsavel}&area=${area}`)); }
@@ -56,7 +58,7 @@ export function Processos() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Processos e pastas" description="Cada processo com pasta, partes, responsável, histórico e anotações." actions={gerir ? <Button onClick={() => setNovo(true)}><Plus className="h-4 w-4" /> Novo processo</Button> : undefined} />
+      {!semCabecalho && <PageHeader title="Processos e pastas" description="Cada processo com pasta, partes, responsável, histórico e anotações." actions={gerir ? <Button onClick={() => setNovo(true)}><Plus className="h-4 w-4" /> Novo processo</Button> : undefined} />}
       {gerir && pendentes > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-accent-200 bg-accent-50/60 p-4 dark:border-accent-900 dark:bg-accent-950/30">
           <p className="text-sm text-zinc-700 dark:text-zinc-200"><b>{pendentes}</b> processo(s) do DJEN ainda não têm ficha de gestão.</p>
@@ -95,10 +97,11 @@ export function Processos() {
   );
 }
 
-function NovoProcesso({ responsaveis, aoFechar, aoCriar }: { responsaveis: Responsavel[]; aoFechar: () => void; aoCriar: (id: number) => void }) {
+export function NovoProcesso({ responsaveis, aoFechar, aoCriar, clientePadrao }: { responsaveis: Responsavel[]; aoFechar: () => void; aoCriar: (id: number) => void; clientePadrao?: { id: number; nome: string } }) {
   const { show } = useToast();
   const [f, setF] = useState({ numero: "", titulo: "", classe: "", area: "", responsavel_user_id: "", valor_causa: "", observacoes: "" });
-  const [clientes, setClientes] = useState<PessoaResumo[]>([]);
+  const [clientes, setClientes] = useState<PessoaResumo[]>(clientePadrao ? [{ id: clientePadrao.id, nome: clientePadrao.nome, tipo: "cliente", documento_formatado: "", telefone: "", email: "" }] : []);
+  const [rapida, setRapida] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const set = (k: keyof typeof f, v: string) => setF((x) => ({ ...x, [k]: v }));
   const salvar = async (e: React.FormEvent) => {
@@ -124,10 +127,11 @@ function NovoProcesso({ responsaveis, aoFechar, aoCriar }: { responsaveis: Respo
         <div>
           <SeletorPessoa rotulo="Cliente(s) — autor" aoEscolher={(p) => setClientes((c) => (c.some((x) => x.id === p.id) ? c : [...c, p]))} />
           {clientes.length > 0 && <ul className="mt-2 flex flex-wrap gap-2">{clientes.map((c) => <li key={c.id} className="flex items-center gap-1 rounded-full bg-accent-50 px-3 py-1 text-xs text-accent-800 dark:bg-accent-900/40 dark:text-accent-200">{c.nome}<button type="button" aria-label={`Remover ${c.nome}`} onClick={() => setClientes((x) => x.filter((y) => y.id !== c.id))}><X className="h-3 w-3" /></button></li>)}</ul>}
-          <p className="mt-1 text-xs text-zinc-500">Ainda não cadastrou o cliente? Cadastre em Pessoas e volte; ou adicione as partes depois, na ficha.</p>
+          <p className="mt-1 text-xs text-zinc-500">Não achou? <button type="button" className="text-accent-700 underline" onClick={() => setRapida(true)}>Cadastrar o cliente agora</button> sem sair daqui.</p>
         </div>
         <Campo rotulo="Observações"><Textarea rows={3} value={f.observacoes} onChange={(e) => set("observacoes", e.target.value)} className="mt-1.5" /></Campo>
       </form>
+      {rapida && <PessoaRapida aoFechar={() => setRapida(false)} aoCriar={(pe) => { setClientes((c) => (c.some((x) => x.id === pe.id) ? c : [...c, pe])); setRapida(false); }} />}
     </Modal>
   );
 }

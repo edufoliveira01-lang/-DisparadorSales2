@@ -1,6 +1,7 @@
 import { db } from "../../db";
 import { hojeSaoPaulo, limparCachesDjen } from "../djen/cache";
 import { ErroGestao } from "./pessoas";
+import { resumoDjenPericias } from "./integracao";
 import { dataValida } from "./validacao";
 
 export const PRIORIDADES = ["baixa", "normal", "alta", "urgente"] as const;
@@ -162,6 +163,7 @@ export function meuPainel(userId: number) {
     atrasadas: lista("t.prazo<?", hoje),
     hoje_lista: lista("t.prazo=?", hoje),
     proximas: lista("t.prazo>? AND t.prazo<=?", hoje, somarDias(hoje, 7)),
+    djen: resumoDjenPericias(),
     mais_atrasadas_no_escritorio: db.prepare(`SELECT titulo, COUNT(*) AS quantidade FROM gestao_tarefas WHERE ${abertas} AND prazo<? GROUP BY titulo ORDER BY quantidade DESC, titulo LIMIT 8`).all(hoje),
   };
 }

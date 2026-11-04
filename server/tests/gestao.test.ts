@@ -428,3 +428,201 @@ describe("módulos do plano (fase 6)", () => {
     } finally { definirLicencaParaTestes(null); }
   });
 });
+
+import { vi } from "vitest";
+import { limparCacheCep } from "../src/services/gestao/cep";
+import { pisValido } from "../src/services/gestao/validacao";
+
+describe("refinos do cadastro: CEP, campos personalizados, ficha, unificação", () => {
+  it("valida PIS/NIT", () => {
+    expect(pisValido("")).toBe(true);
+    expect(pisValido("12345678919")).toBe(true);
+    expect(pisValido("12345678910")).toBe(false);
+    expect(pisValido("11111111111")).toBe(false);
+    expect(pisValido("123")).toBe(false);
+  });
+
+  it("busca o endereço pelo CEP (ViaCEP com reserva) e trata CEP inexistente e falha de rede", async () => {
+    const { cookie } = await entrar("administrador");
+    const original = globalThis.fetch;
+    const chamadas: string[] = [];
+    const resposta = (corpo: unknown, status = 200) => new Response(JSON.stringify(corpo), { status, headers: { "Content-Type": "application/json" } });
+    try {
+      limparCacheCep();
+      globalThis.fetch = (async (url: any, init?: any) => {
+        const u = String(url); if (!u.includes("viacep") && !u.includes("brasilapi")) return original(url, init);
+        chamadas.push(u);
+        if (u.includes("viacep") && u.includes("01001000")) return resposta({ cep: "01001-000", logradouro: "Praça da Sé", complemento: "lado ímpar", bairro: "Sé", localidade: "São Paulo", uf: "SP" });
+        if (u.includes("viacep") && u.includes("99999999")) return resposta({ erro: true });
+        if (u.includes("viacep") && u.includes("13010000")) throw new Error("rede fora");
+        if (u.includes("brasilapi") && u.includes("13010000")) return resposta({ street: "Rua Barão de Jaguara", neighborhood: "Centro", city: "Campinas", state: "SP" });
+        return resposta({}, 500);
+      }) as typeof fetch;
+      expect((await req("/cep/123", "GET", undefined, cookie)).status).toBe(400);
+      const ok = await req("/cep/01001-000", "GET", undefined, cookie);
+      expect(ok.json).toMatchObject({ cep: "01001000", logradouro: "Praça da Sé", bairro: "Sé", cidade: "São Paulo", uf: "SP" });
+      await req("/cep/01001000", "GET", undefined, cookie);
+      expect(chamadas.filter((c) => c.includes("01001000"))).toHaveLength(1); // segunda consulta vem do cache
+      const reserva = await req("/cep/13010000", "GET", undefined, cookie);
+      expect(reserva.json).toMatchObject({ cidade: "Campinas", logradouro: "Rua Barão de Jaguara" });
+      expect((await req("/cep/99999999", "GET", undefined, cookie)).status).toBe(404);
+      globalThis.fetch = (async (url: any, init?: any) => { if (/viacep|brasilapi/.test(String(url))) throw new Error("sem internet"); return original(url, init); }) as typeof fetch;
+      limparCacheCep();
+      const fora = await req("/cep/20040020", "GET", undefined, cookie);
+      expect(fora.status).toBe(502);
+      expect(fora.json.error).toMatch(/à mão/);
+    } finally { globalThis.fetch = original; }
+  });
+
+  it("campos personalizados: tipos validados, senha criptografada e revelada só sob pedido auditado", async () => {
+    const admin = await entrar("administrador");
+    process.env.ENCRYPTION_KEY = "k".repeat(64);
+    const c = (corpo: unknown) => req("/campos", "POST", corpo, admin.cookie);
+    expect((await c({ entidade: "pessoa", nome: "x", tipo: "texto" })).status).toBe(400);
+    expect((await c({ entidade: "pessoa", nome: "Campo ruim", tipo: "inexistente" })).status).toBe(400);
+    expect((await c({ entidade: "pessoa", nome: "Lista curta", tipo: "lista", opcoes: ["só uma"] })).status).toBe(400);
+    const senha = (await c({ entidade: "pessoa", nome: "Senha GOV", tipo: "senha", grupo: "Acessos" })).json;
+    const nasc = (await c({ entidade: "pessoa", nome: "Data de admissão", tipo: "data", grupo: "Trabalho" })).json;
+    const lista = (await c({ entidade: "pessoa", nome: "Grau de risco", tipo: "lista", opcoes: ["Baixo", "Médio", "Alto"], grupo: "Trabalho" })).json;
+    const site = (await c({ entidade: "pessoa", nome: "Site do empregador", tipo: "link" })).json;
+    const sn = (await c({ entidade: "pessoa", nome: "Recebe aviso", tipo: "sim_nao" })).json;
+    const dinheiro = (await c({ entidade: "pessoa", nome: "Renda declarada", tipo: "moeda" })).json;
+    expect((await c({ entidade: "pessoa", nome: "senha gov", tipo: "texto" })).status).toBe(409); // nome repetido (sem diferenciar maiúsculas)
+
+    const sem = await req("/pessoas", "POST", { nome: "Cliente Com Campos", campos: { [lista.id]: "Altíssimo" } }, admin.cookie);
+    expect(sem.status).toBe(400);
+    expect(sem.json.error).toMatch(/opções/);
+    const p = await req("/pessoas", "POST", { nome: "Cliente Com Campos", escolaridade: "Médio completo", pis: "12345678919", nome_mae: "Maria da Mãe", campos: { [senha.id]: "S3nh@-Gov#2026", [nasc.id]: "2020-03-15", [lista.id]: "Alto", [site.id]: "empresa.com.br/rh", [sn.id]: "sim", [dinheiro.id]: "2.500,50" } }, admin.cookie);
+    expect(p.status).toBe(201);
+    expect(p.json).toMatchObject({ escolaridade: "Médio completo", pis_formatado: "123.45678.91-9", nome_mae: "Maria da Mãe" });
+    const por = (nome: string) => p.json.campos.find((x: any) => x.nome === nome);
+    expect(por("Senha GOV")).toMatchObject({ valor: "", preenchido: true }); // a leitura comum nunca traz a senha
+    expect(JSON.stringify(p.json)).not.toContain("S3nh@");
+    expect(por("Grau de risco").valor).toBe("Alto");
+    expect(por("Site do empregador").valor).toBe("https://empresa.com.br/rh");
+    expect(por("Renda declarada").valor).toBe("2500.50");
+    // no banco a senha está cifrada
+    const bruto = (db.prepare("SELECT valor FROM gestao_campos_valores WHERE campo_id=? AND entidade_id=?").get(senha.id, p.json.id) as { valor: string }).valor;
+    expect(bruto.startsWith("v1:")).toBe(true);
+    expect(bruto).not.toContain("S3nh@");
+
+    expect((await req("/pessoas", "POST", { nome: "PIS ruim", pis: "12345678910" }, admin.cookie)).status).toBe(400);
+    expect((await req(`/pessoas/${p.json.id}`, "PUT", { campos: { [nasc.id]: "15/03/2020" } }, admin.cookie)).status).toBe(400);
+    expect((await req(`/pessoas/${p.json.id}`, "PUT", { campos: { [site.id]: "javascript:alert(1)" } }, admin.cookie)).status).toBe(400);
+    // editar sem mexer na senha preserva; "" limpa
+    const mantida = (await req(`/pessoas/${p.json.id}`, "PUT", { telefone: "11999990000", campos: { [sn.id]: "nao" } }, admin.cookie)).json;
+    expect(mantida.campos.find((x: any) => x.nome === "Senha GOV").preenchido).toBe(true);
+
+    const leitor = await entrar("consulta");
+    expect((await req(`/campos/${senha.id}/revelar/${p.json.id}`, "POST", {}, leitor.cookie)).status).toBe(403);
+    const rev = await req(`/campos/${senha.id}/revelar/${p.json.id}`, "POST", {}, admin.cookie);
+    expect(rev.json.valor).toBe("S3nh@-Gov#2026");
+    expect((db.prepare("SELECT COUNT(*) n FROM access_audit WHERE action='gestao_senha_revelada'").get() as { n: number }).n).toBeGreaterThanOrEqual(1);
+    expect((await req(`/campos/${nasc.id}/revelar/${p.json.id}`, "POST", {}, admin.cookie)).status).toBe(400);
+
+    const limpa = (await req(`/pessoas/${p.json.id}`, "PUT", { campos: { [senha.id]: "" } }, admin.cookie)).json;
+    expect(limpa.campos.find((x: any) => x.nome === "Senha GOV").preenchido).toBe(false);
+    // apagar o campo apaga os valores
+    expect((await req(`/campos/${dinheiro.id}`, "DELETE", undefined, admin.cookie)).status).toBe(200);
+    expect((db.prepare("SELECT COUNT(*) n FROM gestao_campos_valores WHERE campo_id=?").get(dinheiro.id) as { n: number }).n).toBe(0);
+
+    // sem ENCRYPTION_KEY o sistema recusa guardar senha em vez de guardar às claras
+    delete process.env.ENCRYPTION_KEY;
+    const semChave = await req(`/pessoas/${p.json.id}`, "PUT", { campos: { [senha.id]: "outra" } }, admin.cookie);
+    expect(semChave.status).toBe(503);
+    process.env.ENCRYPTION_KEY = "k".repeat(64);
+    // modelo previdenciário: acrescenta os campos da ficha uma vez só
+    const a = (await req("/campos/previdenciarios", "POST", {}, admin.cookie)).json;
+    expect(a.criados).toBe(9);
+    expect((await req("/campos/previdenciarios", "POST", {}, admin.cookie)).json.criados).toBe(0);
+    expect((await req("/campos?entidade=pessoa", "GET", undefined, admin.cookie)).json.campos.map((x: any) => x.nome)).toEqual(expect.arrayContaining(["Serviço", "UDT", "Meu INSS (senha)"]));
+  });
+
+  it("ficha de cadastro para imprimir: dados do modelo, escape, senha só com permissão e auditoria", async () => {
+    const admin = await entrar("administrador");
+    process.env.ENCRYPTION_KEY = "k".repeat(64);
+    await req("/campos/previdenciarios", "POST", {}, admin.cookie);
+    const campos = (await req("/campos?entidade=pessoa", "GET", undefined, admin.cookie)).json.campos;
+    const id = (nome: string) => campos.find((c: any) => c.nome === nome).id;
+    const p = (await req("/pessoas", "POST", { nome: "RENATA <b>ALCANTARA</b>", documento: "39053344705", rg: "59.794.452-0", data_nascimento: "1968-02-15", telefone: "(13) 99718-0040", cep: "11000000", logradouro: "Rua das Flores", numero: "10", uf: "SP",
+      campos: { [id("Serviço")]: "Aposentadoria por idade", [id("Meu INSS (senha)")]: "MinhaSenha123" } }, admin.cookie)).json;
+    await req("/processos", "POST", { numero: cnj(9300001), partes: [{ pessoa_id: p.id, papel: "autor", principal: true }] }, admin.cookie);
+
+    const ficha = await baixar(`/pessoas/${p.id}/ficha`, admin.cookie);
+    expect(ficha.status).toBe(200);
+    expect(ficha.headers.get("content-type")).toMatch(/text\/html/);
+    expect(ficha.headers.get("content-security-policy")).toContain("default-src 'none'");
+    for (const rotulo of ["FICHA PROCESSUAL", "DADOS DE IDENTIFICAÇÃO", "Escolaridade", "Est. civil", "PIS/NIT", "Mãe", "Filiação", "Rua/Av.", "Bairro", "CEP", "DADOS PREVIDENCIÁRIOS", "Serviço", "Meu INSS (senha)", "PROCESSOS VINCULADOS", "OBSERVAÇÕES"]) expect(ficha.texto).toContain(rotulo);
+    expect(ficha.texto).toContain("390.533.447-05");
+    expect(ficha.texto).toContain("15/02/1968");
+    expect(ficha.texto).toContain("11000-000");
+    expect(ficha.texto).toContain("RENATA &lt;b&gt;ALCANTARA&lt;/b&gt;"); // sem injeção de HTML
+    expect(ficha.texto).not.toContain("<b>ALCANTARA</b>");
+    expect(ficha.texto).toContain("Aposentadoria por idade");
+    expect(ficha.texto).toContain("••••••••");
+    expect(ficha.texto).not.toContain("MinhaSenha123");
+    expect(ficha.texto).toContain("window.print()");
+    expect((await baixar(`/pessoas/${p.id}/ficha?imprimir=0`, admin.cookie)).texto).not.toContain("window.print()");
+
+    const comSenha = await baixar(`/pessoas/${p.id}/ficha?senhas=1`, admin.cookie);
+    expect(comSenha.texto).toContain("MinhaSenha123");
+    expect(comSenha.texto).toContain("CONTÉM SENHAS");
+    expect((db.prepare("SELECT COUNT(*) n FROM access_audit WHERE action='gestao_ficha_impressa_com_senhas'").get() as { n: number }).n).toBeGreaterThanOrEqual(1);
+    const leitor = await entrar("consulta");
+    expect((await baixar(`/pessoas/${p.id}/ficha`, leitor.cookie)).status).toBe(200); // ver/imprimir sem senhas: ok
+    expect((await baixar(`/pessoas/${p.id}/ficha?senhas=1`, leitor.cookie)).status).toBe(403);
+    expect((await baixar(`/pessoas/999999/ficha`, admin.cookie)).status).toBe(404);
+  });
+
+  it("cadastro unificado: busca de cliente acha pelo processo; ficha mostra andamento DJEN, perícias, agenda e financeiro", async () => {
+    const admin = await entrar("administrador");
+    const cliente = (await req("/pessoas", "POST", { nome: "Cliente Unificado Silva", telefone: "(11) 98888-7777" }, admin.cookie)).json;
+    const numero = cnj(9400001);
+    const proc = (await req("/processos", "POST", { numero, titulo: "Revisão unificada", partes: [{ pessoa_id: cliente.id, papel: "autor", principal: true }] }, admin.cookie)).json;
+    // achar o cliente pelo número do processo e ver o processo aninhado
+    const busca = (await req(`/pessoas?busca=${numero.slice(0, 10)}`, "GET", undefined, admin.cookie)).json;
+    const achado = busca.itens.find((i: any) => i.id === cliente.id);
+    expect(achado.processos_lista[0]).toMatchObject({ id: proc.id, pasta: proc.pasta, papel: "autor" });
+    expect((await req(`/pessoas?busca=${encodeURIComponent("Revisão unif")}`, "GET", undefined, admin.cookie)).json.itens.map((i: any) => i.id)).toContain(cliente.id);
+
+    // DJEN + quadro + perícia do mesmo processo
+    db.prepare("INSERT OR IGNORE INTO djen_processos(chave,numero) VALUES (?,?)").run(numero, numero);
+    const pub = db.prepare(`INSERT INTO djen_publicacoes(comunicacao_id,processo_chave,tribunal,orgao,classe,tipo_documento,tipo_comunicacao,data_disponibilizacao,texto) VALUES (?,?,?,?,?,?,?,?,?)`).run(`uni-${numero}`, numero, "TJSP", "2ª Vara", "Classe", "Intimação", "Intimação", "2026-10-30", "Intime-se a parte autora para comparecer à perícia.");
+    db.prepare("INSERT INTO djen_prazos(publicacao_id,descricao,termino,status) VALUES (?,?,?,'aberto')").run(pub.lastInsertRowid, "Comparecer à perícia", "2026-12-01");
+    const lista = db.prepare("SELECT id FROM djen_kanban_listas ORDER BY posicao LIMIT 1").get() as { id: number } | undefined;
+    if (lista) db.prepare("INSERT OR REPLACE INTO djen_kanban_cartoes(processo_chave,lista_id,posicao) VALUES (?,?,0)").run(numero, lista.id);
+    const futuro = new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
+    db.prepare(`INSERT INTO pericias_agendadas(card_id,tipo,tipo_chave,nome,nome_chave,telefone,telefone_digits,processo,processo_chave,data,horario,local,data_hora_ms,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'ativa')`)
+      .run("card-uni", "Perícia médica", "medica", "Cliente Unificado Silva", "cliente unificado silva", "(11) 98888-7777", "11988887777", numero, numero, futuro, "09:30", "Fórum Central", Date.now() + 5 * 86400000);
+
+    const and = (await req(`/processos/${proc.id}/andamento`, "GET", undefined, admin.cookie)).json;
+    expect(and.monitorado).toBe(true);
+    expect(and.publicacoes_nao_lidas).toBe(1);
+    expect(and.ultimas_publicacoes[0]).toMatchObject({ tipo_documento: "Intimação", orgao: "2ª Vara" });
+    expect(and.prazos_abertos[0]).toMatchObject({ descricao: "Comparecer à perícia", termino: "2026-12-01" });
+    expect(and.proxima_pericia).toMatchObject({ tipo: "Perícia médica", horario: "09:30", local: "Fórum Central", passada: false });
+    if (lista) expect(and.quadro.lista).toBeTruthy();
+    const naoMonit = (await req("/processos", "POST", { numero: cnj(9400002) }, admin.cookie)).json;
+    expect((await req(`/processos/${naoMonit.id}/andamento`, "GET", undefined, admin.cookie)).json).toMatchObject({ monitorado: false, pericias: [], proxima_pericia: null });
+
+    // a agenda do cliente reúne a perícia (pelo processo ou pelo telefone) e as tarefas do processo
+    await req("/tarefas", "POST", { titulo: "Preparar cliente para a perícia", processo_id: proc.id }, admin.cookie);
+    const ag = (await req(`/pessoas/${cliente.id}/agenda`, "GET", undefined, admin.cookie)).json;
+    expect(ag.pericias.map((x: any) => x.tipo)).toContain("Perícia médica");
+    expect(ag.tarefas.map((t: any) => t.titulo)).toContain("Preparar cliente para a perícia");
+
+    // Meu painel traz o DJEN e as perícias da semana
+    const painel = (await req("/meu-painel", "GET", undefined, admin.cookie)).json;
+    expect(painel.djen.publicacoes_nao_lidas).toBeGreaterThanOrEqual(1);
+    expect(painel.djen.pericias_proximas.map((x: any) => x.local)).toContain("Fórum Central");
+
+    // financeiro dentro do cadastro da pessoa
+    await req("/financeiro/contratos", "POST", { pessoa_id: cliente.id, processo_id: proc.id, descricao: "Honorários unificados", valor_total: "900,00", parcelas: 3, primeiro_vencimento: "2026-01-10" }, admin.cookie);
+    const fin = (await req(`/financeiro/pessoas/${cliente.id}`, "GET", undefined, admin.cookie)).json;
+    expect(fin.totais).toMatchObject({ contratado_centavos: 90000, recebido_centavos: 0, em_aberto_centavos: 90000, atrasado_centavos: 90000 });
+    expect(fin.contratos).toHaveLength(1);
+    expect(fin.lancamentos).toHaveLength(3);
+    const adv = await entrar("advogado");
+    expect((await req(`/financeiro/pessoas/${cliente.id}`, "GET", undefined, adv.cookie)).status).toBe(403); // sem permissão financeira
+  });
+});

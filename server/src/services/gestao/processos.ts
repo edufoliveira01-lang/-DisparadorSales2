@@ -2,6 +2,7 @@ import { db } from "../../db";
 import { normalizeProcesso } from "../../utils/processo";
 import { mensagemSeExcederLimite } from "../../licenca/cliente";
 import { ErroGestao, pessoaDoContato } from "./pessoas";
+import { salvarValores, valoresDe } from "./campos";
 import { cnjValido, dataValida, formatarCnj, tribunalDoCnj } from "./validacao";
 
 export const STATUS = ["ativo", "suspenso", "arquivado", "encerrado"] as const;
@@ -71,7 +72,7 @@ export function obterProcesso(id: number) {
   const p = db.prepare("SELECT p.*, u.display_name AS responsavel_nome, u.username AS responsavel_usuario FROM gestao_processos p LEFT JOIN users u ON u.id=p.responsavel_user_id WHERE p.id=?").get(id) as (Linha & { responsavel_nome: string | null; responsavel_usuario: string | null }) | undefined;
   if (!p) throw new ErroGestao("Processo não encontrado.", 404);
   const partes = db.prepare("SELECT g.papel,g.principal,pe.id AS pessoa_id,pe.nome,pe.documento,pe.telefone,pe.email,pe.tipo FROM gestao_partes g JOIN gestao_pessoas pe ON pe.id=g.pessoa_id WHERE g.processo_id=? ORDER BY g.principal DESC, g.papel, pe.nome COLLATE NOCASE").all(id);
-  return { ...p, numero_formatado: formatarCnj(p.numero), responsavel: p.responsavel_nome || p.responsavel_usuario || null, tribunal_cnj: tribunalDoCnj(p.numero), partes };
+  return { ...p, numero_formatado: formatarCnj(p.numero), responsavel: p.responsavel_nome || p.responsavel_usuario || null, tribunal_cnj: tribunalDoCnj(p.numero), partes, campos: valoresDe("processo", id) };
 }
 
 type ParteEntrada = { pessoa_id: number; papel: Papel; principal?: boolean };
@@ -105,6 +106,7 @@ export function criarProcesso(d: Record<string, unknown>, userId: number | null)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(chave.length === 20 ? formatarCnj(chave) : bruto, chave, proximaPasta(), v.titulo, v.tribunal, v.orgao, v.comarca, v.classe, v.assunto, v.area, v.valor, v.fase, v.status, v.resp, v.dist, v.observacoes, djen?.chave ?? null, userId);
     const novo = Number(info.lastInsertRowid);
     for (const p of partes) db.prepare("INSERT OR IGNORE INTO gestao_partes(processo_id,pessoa_id,papel,principal) VALUES (?,?,?,?)").run(novo, p.pessoa_id, p.papel, p.principal ? 1 : 0);
+    salvarValores("processo", novo, d.campos);
     return novo;
   })();
   return obterProcesso(id);
@@ -116,6 +118,7 @@ export function atualizarProcesso(id: number, d: Record<string, unknown>) {
   const v = limpar(d, atual);
   db.prepare(`UPDATE gestao_processos SET titulo=?,tribunal=?,orgao=?,comarca=?,classe=?,assunto=?,area=?,valor_causa_centavos=?,fase=?,status=?,responsavel_user_id=?,data_distribuicao=?,observacoes=?,atualizado_em=CURRENT_TIMESTAMP WHERE id=?`)
     .run(v.titulo, v.tribunal, v.orgao, v.comarca, v.classe, v.assunto, v.area, v.valor, v.fase, v.status, v.resp, v.dist, v.observacoes, id);
+  salvarValores("processo", id, d.campos);
   return obterProcesso(id);
 }
 

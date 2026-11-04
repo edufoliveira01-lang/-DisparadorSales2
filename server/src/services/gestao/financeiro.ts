@@ -249,3 +249,24 @@ export function fluxoDeCaixa(mesesAfrente = 6) {
   for (let i = -5; i <= n; i++) meses.push(linhaMes(somarMeses(atual, i)));
   return meses;
 }
+
+/** Situação financeira de uma pessoa: totais, contratos e lançamentos (para a aba Financeiro do cadastro). */
+export function financeiroDaPessoa(pessoaId: number) {
+  const pe = db.prepare("SELECT id,nome FROM gestao_pessoas WHERE id=?").get(pessoaId) as { id: number; nome: string } | undefined;
+  if (!pe) throw new ErroGestao("Pessoa não encontrada.", 404);
+  const hoje = hojeSaoPaulo();
+  const v = (sql: string, ...p: unknown[]) => (db.prepare(sql).get(...p) as { v: number }).v;
+  const base = "FROM gestao_lancamentos WHERE pessoa_id=? AND tipo='receber' AND cancelado=0";
+  return {
+    pessoa: pe,
+    totais: {
+      contratado_centavos: v("SELECT COALESCE(SUM(valor_total_centavos),0) v FROM gestao_contratos WHERE pessoa_id=? AND status<>'cancelado'", pessoaId),
+      recebido_centavos: v(`SELECT COALESCE(SUM(COALESCE(valor_pago_centavos,valor_centavos)),0) v ${base} AND pago_em IS NOT NULL`, pessoaId),
+      em_aberto_centavos: v(`SELECT COALESCE(SUM(valor_centavos),0) v ${base} AND pago_em IS NULL`, pessoaId),
+      atrasado_centavos: v(`SELECT COALESCE(SUM(valor_centavos),0) v ${base} AND pago_em IS NULL AND vencimento<?`, pessoaId, hoje),
+      proximo_vencimento: (db.prepare(`SELECT MIN(vencimento) d ${base} AND pago_em IS NULL`).get(pessoaId) as { d: string | null }).d,
+    },
+    contratos: listarContratos({ pessoa: String(pessoaId) }),
+    lancamentos: listarLancamentos({ pessoa: pessoaId, status: "", limite: 50 }).itens,
+  };
+}

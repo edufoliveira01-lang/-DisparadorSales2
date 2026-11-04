@@ -84,11 +84,11 @@ function EditorModelo({ modelo, variaveis, aoFechar, aoSalvar }: { modelo: Parti
   );
 }
 
-function GerarModal({ modelo, aoFechar }: { modelo: Modelo; aoFechar: () => void }) {
+export function GerarModal({ modelo, aoFechar, pessoaInicial, processoInicial }: { modelo: { id: number; nome: string }; aoFechar: () => void; pessoaInicial?: { id: number; nome: string }; processoInicial?: { id: number; rotulo: string } }) {
   const { show } = useToast();
   const { can } = useAuth();
-  const [proc, setProc] = useState<{ id: number; rotulo: string } | null>(null);
-  const [pessoa, setPessoa] = useState<{ id: number; nome: string } | null>(null);
+  const [proc, setProc] = useState<{ id: number; rotulo: string } | null>(processoInicial ?? null);
+  const [pessoa, setPessoa] = useState<{ id: number; nome: string } | null>(pessoaInicial ?? null);
   const [r, setR] = useState<Gerado | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const gerar = async (salvar: boolean) => {
@@ -127,5 +127,21 @@ function GerarModal({ modelo, aoFechar }: { modelo: Modelo; aoFechar: () => void
         )}
       </div>
     </Modal>
+  );
+}
+
+/** Botão "Gerar documento": escolhe um modelo e já abre com o cliente/processo desta ficha. */
+export function GerarDeModelo({ pessoa, processo }: { pessoa?: { id: number; nome: string }; processo?: { id: number; rotulo: string } }) {
+  const { show } = useToast();
+  const [modelos, setModelos] = useState<Modelo[] | null>(null);
+  const [aberto, setAberto] = useState<Modelo | null>(null);
+  useEffect(() => { api.get<{ modelos: Modelo[] }>("/gestao/modelos").then((r) => setModelos(r.modelos.filter((m) => m.ativo))).catch(() => show("Não foi possível carregar os modelos.", "error")); }, [show]);
+  if (!modelos || modelos.length === 0) return null;
+  return (
+    <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+      <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100"><FileText className="h-4 w-4 text-zinc-400" /> Gerar documento a partir de um modelo</p>
+      <div className="flex flex-wrap gap-2">{modelos.map((m) => <Button key={m.id} size="sm" variant="outline" onClick={() => setAberto(m)}>{m.nome}</Button>)}</div>
+      {aberto && <GerarModal modelo={aberto} pessoaInicial={pessoa} processoInicial={processo} aoFechar={() => setAberto(null)} />}
+    </div>
   );
 }

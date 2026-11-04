@@ -1,7 +1,9 @@
 import { db } from "../../db";
-import { soDigitos, documentoValido, formatarDocumento, emailValido, dataValida, UFS } from "./validacao";
+import { soDigitos, documentoValido, formatarDocumento, emailValido, dataValida, UFS, pisValido, formatarPis, formatarCep } from "./validacao";
 
-export class ErroGestao extends Error { constructor(m: string, public status = 400) { super(m); } }
+import { ErroGestao } from "./erro";
+import { salvarValores, valoresDe } from "./campos";
+export { ErroGestao };
 
 export const TIPOS_PESSOA = ["cliente", "parte_contraria", "testemunha", "perito", "outro"] as const;
 export type TipoPessoa = typeof TIPOS_PESSOA[number];
@@ -11,6 +13,7 @@ export interface Pessoa {
   id: number; tipo: TipoPessoa; pessoa_juridica: number; nome: string; documento: string; rg: string; email: string; telefone: string; telefone2: string;
   cep: string; logradouro: string; numero: string; complemento: string; bairro: string; cidade: string; uf: string;
   data_nascimento: string; profissao: string; estado_civil: string; origem: string; observacoes: string;
+  escolaridade: string; pis: string; nome_mae: string; filiacao: string;
   contact_id: number | null; ativo: number; criado_em: string; atualizado_em: string;
 }
 
@@ -27,6 +30,8 @@ function limpar(d: Record<string, unknown>, atual?: Pessoa) {
   if (uf && !UFS.has(uf)) throw new ErroGestao("UF inválida.");
   const nasc = txt(d.data_nascimento ?? atual?.data_nascimento, 10);
   if (!dataValida(nasc)) throw new ErroGestao("Data de nascimento inválida (use AAAA-MM-DD).");
+  const pis = soDigitos(d.pis ?? atual?.pis ?? "");
+  if (!pisValido(pis)) throw new ErroGestao("PIS/NIT inválido. Confira os 11 dígitos (ou deixe em branco).");
   const pj = d.pessoa_juridica !== undefined ? (d.pessoa_juridica ? 1 : 0) : atual ? atual.pessoa_juridica : documento.length === 14 ? 1 : 0;
   return {
     tipo, pessoa_juridica: pj, nome, documento, rg: txt(d.rg ?? atual?.rg, 30), email,
@@ -35,11 +40,12 @@ function limpar(d: Record<string, unknown>, atual?: Pessoa) {
     complemento: txt(d.complemento ?? atual?.complemento, 100), bairro: txt(d.bairro ?? atual?.bairro, 100), cidade: txt(d.cidade ?? atual?.cidade, 100), uf,
     data_nascimento: nasc, profissao: txt(d.profissao ?? atual?.profissao, 100), estado_civil: txt(d.estado_civil ?? atual?.estado_civil, 40),
     origem: txt(d.origem ?? atual?.origem, 100), observacoes: txt(d.observacoes ?? atual?.observacoes, 4000),
+    escolaridade: txt(d.escolaridade ?? atual?.escolaridade, 60), pis, nome_mae: txt(d.nome_mae ?? atual?.nome_mae, 200), filiacao: txt(d.filiacao ?? atual?.filiacao, 300),
   };
 }
-const CAMPOS = ["tipo", "pessoa_juridica", "nome", "documento", "rg", "email", "telefone", "telefone2", "cep", "logradouro", "numero", "complemento", "bairro", "cidade", "uf", "data_nascimento", "profissao", "estado_civil", "origem", "observacoes"] as const;
+const CAMPOS = ["tipo", "pessoa_juridica", "nome", "documento", "rg", "email", "telefone", "telefone2", "cep", "logradouro", "numero", "complemento", "bairro", "cidade", "uf", "data_nascimento", "profissao", "estado_civil", "origem", "observacoes", "escolaridade", "pis", "nome_mae", "filiacao"] as const;
 
-const visao = (p: Pessoa) => ({ ...p, documento_formatado: formatarDocumento(p.documento), ativo: Boolean(p.ativo), pessoa_juridica: Boolean(p.pessoa_juridica) });
+const visao = (p: Pessoa) => ({ ...p, documento_formatado: formatarDocumento(p.documento), pis_formatado: formatarPis(p.pis), cep_formatado: formatarCep(p.cep), ativo: Boolean(p.ativo), pessoa_juridica: Boolean(p.pessoa_juridica) });
 
 export function listarPessoas(f: { busca?: string; tipo?: string; ativo?: string; pagina?: number; limite?: number }) {
   const onde: string[] = []; const par: unknown[] = [];
@@ -48,9 +54,11 @@ export function listarPessoas(f: { busca?: string; tipo?: string; ativo?: string
   const busca = txt(f.busca, 100);
   if (busca) {
     const d = soDigitos(busca);
-    onde.push(`(p.nome LIKE ? ESCAPE '\\' OR p.email LIKE ? ESCAPE '\\' ${d.length >= 3 ? "OR p.documento LIKE ? OR REPLACE(REPLACE(REPLACE(REPLACE(p.telefone,' ',''),'-',''),'(',''),')','') LIKE ?" : ""})`);
+    onde.push(`(p.nome LIKE ? ESCAPE '\\' OR p.email LIKE ? ESCAPE '\\' ${d.length >= 3 ? "OR p.documento LIKE ? OR REPLACE(REPLACE(REPLACE(REPLACE(p.telefone,' ',''),'-',''),'(',''),')','') LIKE ?" : ""}
+      OR p.id IN (SELECT g.pessoa_id FROM gestao_partes g JOIN gestao_processos pr ON pr.id=g.processo_id WHERE pr.titulo LIKE ? ESCAPE '\\' OR pr.pasta LIKE ? ${d.length >= 3 ? "OR pr.chave LIKE ?" : ""}))`);
     const like = `%${busca.replace(/[\\%_]/g, "\\$&")}%`;
     par.push(like, like); if (d.length >= 3) par.push(`%${d}%`, `%${d}%`);
+    par.push(like, like); if (d.length >= 3) par.push(`%${d}%`);
   }
   const limite = Math.min(100, Math.max(1, Math.trunc(f.limite || 30)));
   const pagina = Math.max(1, Math.trunc(f.pagina || 1));
@@ -58,14 +66,18 @@ export function listarPessoas(f: { busca?: string; tipo?: string; ativo?: string
   const total = (db.prepare(`SELECT COUNT(*) n FROM gestao_pessoas p ${w}`).get(...par) as { n: number }).n;
   const linhas = db.prepare(`SELECT p.*, (SELECT COUNT(*) FROM gestao_partes g WHERE g.pessoa_id=p.id) AS processos FROM gestao_pessoas p ${w} ORDER BY p.nome COLLATE NOCASE LIMIT ? OFFSET ?`)
     .all(...par, limite, (pagina - 1) * limite) as (Pessoa & { processos: number })[];
-  return { total, pagina, limite, itens: linhas.map(visao) };
+  const ids = linhas.map((l) => l.id);
+  const procs = ids.length ? (db.prepare(`SELECT g.pessoa_id,g.papel,pr.id,pr.pasta,pr.numero,pr.titulo,pr.status,pr.area FROM gestao_partes g JOIN gestao_processos pr ON pr.id=g.processo_id WHERE g.pessoa_id IN (${ids.map(() => "?").join(",")}) ORDER BY pr.atualizado_em DESC`).all(...ids) as { pessoa_id: number; papel: string; id: number; pasta: string; numero: string; titulo: string; status: string; area: string }[]) : [];
+  const porPessoa = new Map<number, typeof procs>();
+  for (const x of procs) (porPessoa.get(x.pessoa_id) || porPessoa.set(x.pessoa_id, []).get(x.pessoa_id)!).push(x);
+  return { total, pagina, limite, itens: linhas.map((l) => ({ ...visao(l), processos_lista: (porPessoa.get(l.id) || []).slice(0, 4) })) };
 }
 
 export function obterPessoa(id: number) {
   const p = db.prepare("SELECT * FROM gestao_pessoas WHERE id=?").get(id) as Pessoa | undefined;
   if (!p) throw new ErroGestao("Pessoa não encontrada.", 404);
   const processos = db.prepare(`SELECT pr.id,pr.numero,pr.pasta,pr.titulo,pr.status,g.papel FROM gestao_partes g JOIN gestao_processos pr ON pr.id=g.processo_id WHERE g.pessoa_id=? ORDER BY pr.atualizado_em DESC`).all(id);
-  return { ...visao(p), processos };
+  return { ...visao(p), processos, campos: valoresDe("pessoa", id) };
 }
 
 export function criarPessoa(d: Record<string, unknown>) {
@@ -74,8 +86,13 @@ export function criarPessoa(d: Record<string, unknown>) {
     const dup = db.prepare("SELECT id,nome FROM gestao_pessoas WHERE documento=? LIMIT 1").get(v.documento) as { id: number; nome: string } | undefined;
     if (dup) throw new ErroGestao(`Já existe cadastro com esse documento: ${dup.nome}.`, 409);
   }
-  const info = db.prepare(`INSERT INTO gestao_pessoas(${CAMPOS.join(",")}) VALUES (${CAMPOS.map(() => "?").join(",")})`).run(...CAMPOS.map((c) => v[c]));
-  return obterPessoa(Number(info.lastInsertRowid));
+  const novoId = db.transaction(() => {
+    const info = db.prepare(`INSERT INTO gestao_pessoas(${CAMPOS.join(",")}) VALUES (${CAMPOS.map(() => "?").join(",")})`).run(...CAMPOS.map((c) => v[c]));
+    const novo = Number(info.lastInsertRowid);
+    salvarValores("pessoa", novo, d.campos);
+    return novo;
+  })();
+  return obterPessoa(novoId);
 }
 
 export function atualizarPessoa(id: number, d: Record<string, unknown>) {
@@ -87,7 +104,10 @@ export function atualizarPessoa(id: number, d: Record<string, unknown>) {
     if (dup) throw new ErroGestao(`Já existe cadastro com esse documento: ${dup.nome}.`, 409);
   }
   const ativo = d.ativo === undefined ? atual.ativo : d.ativo ? 1 : 0;
-  db.prepare(`UPDATE gestao_pessoas SET ${CAMPOS.map((c) => `${c}=?`).join(",")},ativo=?,atualizado_em=CURRENT_TIMESTAMP WHERE id=?`).run(...CAMPOS.map((c) => v[c]), ativo, id);
+  db.transaction(() => {
+    db.prepare(`UPDATE gestao_pessoas SET ${CAMPOS.map((c) => `${c}=?`).join(",")},ativo=?,atualizado_em=CURRENT_TIMESTAMP WHERE id=?`).run(...CAMPOS.map((c) => v[c]), ativo, id);
+    salvarValores("pessoa", id, d.campos);
+  })();
   return obterPessoa(id);
 }
 

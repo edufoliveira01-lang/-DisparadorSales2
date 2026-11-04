@@ -2,6 +2,23 @@
 
 Área ao lado de "Perícias e avisos" e "Processos e DJEN". Nada do que já existia foi alterado: a gestão só **acrescenta** tabelas (`gestao_*`), rotas (`/api/gestao/*`) e telas.
 
+## Cadastro unificado (2.66.0)
+
+**Clientes e processos** é uma tela só, com duas visões do mesmo cadastro ("Por cliente" e "Por processo") e uma busca única: acha pelo nome, CPF/CNPJ, telefone, número do processo, pasta ou título. Cada cliente aparece com os processos logo abaixo.
+
+A **ficha do cliente** (página inteira) reúne tudo:
+
+- **Dados:** identificação, contato e endereço. Ao digitar o **CEP**, rua, bairro, cidade e UF são preenchidos sozinhos (consulta ViaCEP, com BrasilAPI de reserva; se a internet falhar, preenche-se à mão).
+- **Campos personalizados:** o escritório cria os campos que quiser (texto, número, valor, data, sim/não, lista, link, telefone, e-mail ou **senha**), com grupo e se saem na ficha impressa. Senhas ficam **criptografadas** (AES-256-GCM com a `ENCRYPTION_KEY` do escritório), nunca aparecem na leitura comum e só são mostradas por pedido explícito, que fica no registro de auditoria. Há um botão que adiciona de uma vez os campos da ficha previdenciária (serviço, indicação, seguridade até, última contribuição, vínculo, CNPJ, UDT, Meu INSS).
+- **Processos:** os do cliente, com "Novo processo" já vinculado a ele (e cadastro rápido do cliente dentro de "Novo processo").
+- **Financeiro:** contratado, recebido, em aberto e em atraso; contratos e parcelas do cliente, com receber, pagar e estornar na própria ficha (exige permissão financeira).
+- **Documentos:** arquivos do cliente e geração de procuração, declaração e contrato a partir dos modelos.
+- **Perícias e prazos:** perícias/audiências do cliente (pelos processos ou pelo telefone) e tarefas em aberto.
+
+**Imprimir ficha:** botão na ficha (e logo após cadastrar). Abre em nova aba uma ficha A4 com quadros e faixas de seção, no estilo de formulário: identificação (nome, nascimento, RG, CPF, escolaridade, estado civil, PIS/NIT, profissão, mãe, filiação), endereço, contato, grupos dos campos personalizados, processos vinculados e linhas para observações. As senhas saem ocultas; "Com senhas" exige permissão de edição e fica registrado.
+
+A **ficha do processo** ganhou o cliente em destaque (com atalho para o financeiro dele), a aba **Andamento e perícias** (etapa no quadro, últimas publicações do DJEN, prazos abertos e perícias, com atalhos para as telas de origem) e campos personalizados próprios. O **Meu painel** traz publicações não lidas, prazos do escritório vencendo e perícias dos próximos 7 dias. As telas de Perícias e avisos e de Processos e DJEN continuam como sempre.
+
 ## O que existe (2.65.0)
 
 | Tela | O que faz |

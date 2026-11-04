@@ -119,17 +119,10 @@ export const navigation = [
     group: "gestao",
   },
   {
-    to: "/gestao/pessoas",
-    label: "Pessoas",
-    description: "Clientes, partes e contatos do processo",
+    to: "/gestao/clientes",
+    label: "Clientes e processos",
+    description: "Cadastro, processos, financeiro e documentos de cada cliente",
     icon: Contact,
-    group: "gestao",
-  },
-  {
-    to: "/gestao/processos",
-    label: "Processos e pastas",
-    description: "Cadastro, partes, histórico e anotações",
-    icon: FolderOpen,
     group: "gestao",
   },
   {
@@ -220,6 +213,7 @@ export function firstAllowedPage(permissions: readonly Permission[]): string {
   return permittedNavigation(permissions)[0]?.to ?? "/minha-conta";
 }
 export function getCurrentPage(pathname: string) {
+  if (pathname.startsWith("/gestao/processos") || pathname.startsWith("/gestao/pessoas")) pathname = "/gestao/clientes";
   return (
     navigation.find((item) => item.to === pathname) ??
     navigation.find(

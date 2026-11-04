@@ -16,6 +16,7 @@ interface Painel {
   numeros: { atribuidas_semana: number; concluidas_semana: number; atrasadas: number; prazos_fatais_5_dias: number; sem_responsavel: number; processos_sob_responsabilidade: number };
   grafico: { dia: string; atribuidas: number; concluidas: number }[];
   atrasadas: Tarefa[]; hoje_lista: Tarefa[]; proximas: Tarefa[]; mais_atrasadas_no_escritorio: { titulo: string; quantidade: number }[];
+  djen: { publicacoes_nao_lidas: number; pericias_proximas_total: number; pericias_proximas: { id: number; tipo: string; nome: string; data: string; horario: string | null; local: string | null }[]; prazos_escritorio: { total: number; vencidos: number; lista: { publicacao_id: number; processo: string; cliente_nome: string | null; descricao: string; termino: string | null; urgencia: string }[] } };
 }
 interface Resumo { pessoas: number; clientes: number; processos_ativos: number; processos_total: number; sem_responsavel: number; pendentes_importacao: number; contatos_sem_cadastro: number }
 const DIAS = ["S", "T", "Q", "Q", "S", "S", "D"];
@@ -82,6 +83,16 @@ export function GestaoInicio() {
         <Lista titulo="Para hoje" tom="text-amber-600" itens={p?.hoje_lista ?? []} vazio="Nada para hoje." aoConcluir={gerir ? concluir : undefined} />
         <Lista titulo="Próximos 7 dias" tom="text-indigo-600" itens={p?.proximas ?? []} vazio="Nada nos próximos dias." aoConcluir={gerir ? concluir : undefined} />
       </div>
+      {p && (
+        <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Publicações, prazos do DJEN e perícias</h2><Link to="/processos" className="text-xs text-accent-700 underline">Abrir Processos e DJEN</Link></div>
+          <div className="mt-3 grid gap-4 lg:grid-cols-3">
+            <div><p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Publicações</p><p className="mt-1 text-2xl font-semibold text-zinc-900 dark:text-zinc-100">{p.djen.publicacoes_nao_lidas}</p><p className="text-xs text-zinc-500">não lidas no DJEN</p><Link to="/processos" className="mt-1 inline-block text-xs text-accent-700 underline">Tratar agora</Link></div>
+            <div><p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Prazos do escritório</p>{p.djen.prazos_escritorio.total === 0 ? <p className="mt-1 text-sm text-zinc-500">Nenhum prazo vencendo.</p> : <><p className="mt-1 text-sm text-zinc-700 dark:text-zinc-200"><b>{p.djen.prazos_escritorio.total}</b> a cumprir{p.djen.prazos_escritorio.vencidos ? <span className="text-red-600"> · {p.djen.prazos_escritorio.vencidos} vencido(s)</span> : null}</p><ul className="mt-1 space-y-0.5">{p.djen.prazos_escritorio.lista.map((x) => <li key={x.publicacao_id} className="truncate text-xs text-zinc-500">{x.cliente_nome || x.processo} — {x.descricao}{x.termino ? ` (${dataBr(x.termino)})` : ""}</li>)}</ul><Link to="/processos/aguardando" className="mt-1 inline-block text-xs text-accent-700 underline">Ver acompanhamentos</Link></>}</div>
+            <div><p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Perícias nos próximos 7 dias ({p.djen.pericias_proximas_total})</p>{p.djen.pericias_proximas.length === 0 ? <p className="mt-1 text-sm text-zinc-500">Nenhuma perícia agendada.</p> : <ul className="mt-1 space-y-0.5">{p.djen.pericias_proximas.map((x) => <li key={x.id} className="truncate text-xs text-zinc-600 dark:text-zinc-300">{dataBr(x.data)}{x.horario ? ` ${x.horario}` : ""} — {x.nome} · {x.tipo}{x.local ? ` · ${x.local}` : ""}</li>)}</ul>}<Link to="/calendario" className="mt-1 inline-block text-xs text-accent-700 underline">Abrir calendário</Link></div>
+          </div>
+        </section>
+      )}
       <p className="text-right text-sm"><Link to="/gestao/tarefas" className="inline-flex items-center gap-1 text-accent-700 hover:underline dark:text-accent-300">Ver todas as tarefas <ArrowRight className="h-4 w-4" /></Link></p>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

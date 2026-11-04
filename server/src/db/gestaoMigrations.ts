@@ -125,5 +125,26 @@ export function runGestaoMigrations(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_gestao_lanc_pessoa ON gestao_lancamentos(pessoa_id);
     CREATE INDEX IF NOT EXISTS idx_gestao_lanc_processo ON gestao_lancamentos(processo_id);
     CREATE INDEX IF NOT EXISTS idx_gestao_lanc_contrato ON gestao_lancamentos(contrato_id);
+
+    -- Campos personalizados (pessoa ou processo) e seus valores; "senha" fica criptografada
+    CREATE TABLE IF NOT EXISTS gestao_campos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entidade TEXT NOT NULL CHECK(entidade IN ('pessoa','processo')),
+      nome TEXT NOT NULL,
+      tipo TEXT NOT NULL CHECK(tipo IN ('texto','texto_longo','numero','moeda','data','sim_nao','lista','senha','link','telefone','email')),
+      opcoes_json TEXT NOT NULL DEFAULT '[]', grupo TEXT NOT NULL DEFAULT '', ordem INTEGER NOT NULL DEFAULT 0,
+      ativo INTEGER NOT NULL DEFAULT 1, imprimir INTEGER NOT NULL DEFAULT 1,
+      criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_gestao_campos_nome ON gestao_campos(entidade, nome COLLATE NOCASE);
+    CREATE TABLE IF NOT EXISTS gestao_campos_valores (
+      campo_id INTEGER NOT NULL REFERENCES gestao_campos(id) ON DELETE CASCADE,
+      entidade_id INTEGER NOT NULL, valor TEXT NOT NULL DEFAULT '', atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(campo_id, entidade_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_gestao_campos_valores_entidade ON gestao_campos_valores(entidade_id);
   `);
+  // Ficha de cadastro: escolaridade, PIS/NIT, nome da mãe e filiação (colunas acrescentadas sem tocar nas existentes).
+  const colunas = (db.prepare("PRAGMA table_info(gestao_pessoas)").all() as { name: string }[]).map((c) => c.name);
+  for (const nome of ["escolaridade", "pis", "nome_mae", "filiacao"]) if (!colunas.includes(nome)) db.exec(`ALTER TABLE gestao_pessoas ADD COLUMN ${nome} TEXT NOT NULL DEFAULT ''`);
 }

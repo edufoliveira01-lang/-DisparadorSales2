@@ -62,3 +62,22 @@ export function tribunalDoCnj(numero: string): string | null {
 export const UFS = new Set(UF_ESTADUAL.filter(Boolean));
 export const emailValido = (e: string) => e === "" || /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e);
 export const dataValida = (s: string) => s === "" || (/^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T12:00:00Z`)));
+
+/** PIS/PASEP/NIT: 11 dígitos com dígito verificador (pesos 3,2,9,8,7,6,5,4,3,2). Vazio é permitido. */
+export function pisValido(pis: string): boolean {
+  const d = soDigitos(pis);
+  if (d === "") return true;
+  if (d.length !== 11 || /^(\d)\1+$/.test(d)) return false;
+  const pesos = [3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const soma = pesos.reduce((acc, p, i) => acc + p * Number(d[i]), 0);
+  const resto = 11 - (soma % 11);
+  return (resto >= 10 ? 0 : resto) === Number(d[10]);
+}
+export function formatarPis(pis: string): string {
+  const d = soDigitos(pis);
+  return d.length === 11 ? d.replace(/(\d{3})(\d{5})(\d{2})(\d)/, "$1.$2.$3-$4") : d;
+}
+export function formatarCep(cep: string): string {
+  const d = soDigitos(cep);
+  return d.length === 8 ? `${d.slice(0, 5)}-${d.slice(5)}` : d;
+}

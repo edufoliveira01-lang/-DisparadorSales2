@@ -11,6 +11,8 @@ import { Badge } from "@/components/ui/Badge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
 import { Arquivos } from "./Arquivos";
+import { CamposPersonalizados, type CampoValor } from "./Campos";
+import { GerarDeModelo } from "./Modelos";
 import { TarefaModal, type Tarefa } from "./TarefaModal";
 import { AREAS, Campo, PAPEIS, SeletorPessoa, STATUS, STATUS_TOM, TIPOS, dataBr, dinheiro } from "./comum";
 import type { Responsavel } from "./Processos";
@@ -19,10 +21,10 @@ interface Parte { papel: string; principal: number; pessoa_id: number; nome: str
 interface Ficha {
   id: number; numero: string; numero_formatado: string; pasta: string; titulo: string; tribunal: string; orgao: string; comarca: string; classe: string; assunto: string; area: string;
   valor_causa_centavos: number | null; fase: string; status: string; responsavel_user_id: number | null; responsavel: string | null; data_distribuicao: string; observacoes: string;
-  djen_chave: string | null; criado_em: string; partes: Parte[];
+  djen_chave: string | null; criado_em: string; partes: Parte[]; campos?: CampoValor[];
 }
 interface Evento { tipo: "publicacao" | "pericia" | "anotacao" | "cadastro"; data: string; titulo: string; detalhe: string; ref?: number; autor?: string }
-const ABAS = [["resumo", "Resumo"], ["partes", "Partes"], ["historico", "Histórico e anotações"], ["tarefas", "Tarefas"], ["arquivos", "Arquivos"]] as const;
+const ABAS = [["resumo", "Resumo"], ["partes", "Partes"], ["andamento", "Andamento e perícias"], ["historico", "Histórico e anotações"], ["tarefas", "Tarefas"], ["arquivos", "Arquivos"]] as const;
 type Aba = typeof ABAS[number][0];
 
 export function ProcessoFicha() {
@@ -53,17 +55,25 @@ export function ProcessoFicha() {
 
   return (
     <div className="space-y-5">
-      <Link to="/gestao/processos" className="inline-flex items-center gap-1 text-sm text-accent-700 hover:underline dark:text-accent-300"><ArrowLeft className="h-4 w-4" /> Processos e pastas</Link>
+      <Link to="/gestao/processos" className="inline-flex items-center gap-1 text-sm text-accent-700 hover:underline dark:text-accent-300"><ArrowLeft className="h-4 w-4" /> Clientes e processos</Link>
       <PageHeader title={ficha.numero_formatado || ficha.numero} description={<span className="flex flex-wrap items-center gap-2"><Badge tone="accent"><FolderOpen className="mr-1 h-3 w-3" />Pasta {ficha.pasta}</Badge><Badge tone={STATUS_TOM[ficha.status] || "neutral"}>{STATUS[ficha.status] || ficha.status}</Badge>{ficha.tribunal && <Badge>{ficha.tribunal}</Badge>}<span>{ficha.titulo || ficha.classe}</span></span>}
         actions={gerir ? <Button variant="ghost" onClick={() => setApagar(true)}><Trash2 className="h-4 w-4" /> Excluir</Button> : undefined} />
+      {(() => { const c = ficha.partes.find((p) => p.papel === "autor") ?? ficha.partes[0]; return c ? (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Cliente</span>
+          <Link to={`/gestao/clientes/${c.pessoa_id}`} className="font-semibold text-accent-700 hover:underline dark:text-accent-300">{c.nome}</Link>
+          {c.telefone && <span className="text-zinc-600 dark:text-zinc-300">{c.telefone}</span>}{c.email && <span className="text-zinc-600 dark:text-zinc-300">{c.email}</span>}
+          <Link to={`/gestao/clientes/${c.pessoa_id}?aba=financeiro`} className="ml-auto text-xs text-accent-700 underline">Financeiro do cliente</Link>
+        </div>) : null; })()}
       <div role="tablist" className="flex gap-1 overflow-x-auto border-b border-zinc-200 dark:border-zinc-800">
         {ABAS.map(([k, r]) => <button key={k} role="tab" aria-selected={aba === k} onClick={() => setAba(k)} className={`whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition ${aba === k ? "border-accent-600 text-accent-700 dark:text-accent-300" : "border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"}`}>{r}</button>)}
       </div>
       {aba === "resumo" && <Resumo ficha={ficha} resp={resp} gerir={gerir} aoSalvar={carregar} />}
       {aba === "partes" && <Partes ficha={ficha} gerir={gerir} aoMudar={carregar} />}
+      {aba === "andamento" && <Andamento id={ficha.id} />}
       {aba === "historico" && <Historico ficha={ficha} gerir={gerir} />}
       {aba === "tarefas" && <TarefasDoProcesso ficha={ficha} gerir={gerir} resp={resp} />}
-      {aba === "arquivos" && <Arquivos escopo="processos" id={ficha.id} />}
+      {aba === "arquivos" && <div className="space-y-4"><GerarDeModelo processo={{ id: ficha.id, rotulo: `${ficha.pasta} · ${ficha.numero_formatado || ficha.numero}` }} /><Arquivos escopo="processos" id={ficha.id} /></div>}
       <ConfirmDialog open={apagar} title="Excluir processo" message="Excluir a ficha, as partes e as anotações deste processo? As publicações do DJEN e as perícias não são apagadas. Esta ação não pode ser desfeita." confirmLabel="Excluir" onConfirm={() => void excluir()} onCancel={() => setApagar(false)} />
     </div>
   );
@@ -77,10 +87,11 @@ function Resumo({ ficha, resp, gerir, aoSalvar }: { ficha: Ficha; resp: Responsa
     valor_causa: ficha.valor_causa_centavos == null ? "" : (ficha.valor_causa_centavos / 100).toFixed(2).replace(".", ","), observacoes: ficha.observacoes,
   });
   const [salvando, setSalvando] = useState(false);
+  const [valores, setValores] = useState<Record<number, string>>({});
   const set = (k: keyof typeof f, v: string) => setF((x) => ({ ...x, [k]: v }));
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault(); setSalvando(true);
-    try { await api.put(`/gestao/processos/${ficha.id}`, { ...f, responsavel_user_id: f.responsavel_user_id || null }); show("Ficha salva.", "success"); await aoSalvar(); }
+    try { await api.put(`/gestao/processos/${ficha.id}`, { ...f, responsavel_user_id: f.responsavel_user_id || null, campos: valores }); setValores({}); show("Ficha salva.", "success"); await aoSalvar(); }
     catch (err) { show(err instanceof ApiError ? err.message : "Não foi possível salvar.", "error"); }
     finally { setSalvando(false); }
   };
@@ -101,6 +112,7 @@ function Resumo({ ficha, resp, gerir, aoSalvar }: { ficha: Ficha; resp: Responsa
         <Campo rotulo="Valor da causa (R$)"><Input inputMode="decimal" value={f.valor_causa} onChange={(e) => set("valor_causa", e.target.value)} className="mt-1.5" /></Campo>
         <Campo rotulo="Observações" className="sm:col-span-2 lg:col-span-3"><Textarea rows={4} value={f.observacoes} onChange={(e) => set("observacoes", e.target.value)} className="mt-1.5" /></Campo>
       </fieldset>
+      {ficha.campos && <CamposPersonalizados campos={ficha.campos} valores={valores} aoMudar={(cid, v) => setValores((x) => ({ ...x, [cid]: v }))} entidade="processo" entidadeId={ficha.id} aoAtualizarDefinicoes={() => void aoSalvar()} somenteLeitura={!gerir} />}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-zinc-500">Valor da causa: {dinheiro(ficha.valor_causa_centavos)} · Cadastrado em {dataBr(ficha.criado_em)}{ficha.djen_chave ? " · Acompanhado pelo DJEN" : ""}</p>
         {gerir && <Button type="submit" loading={salvando}>Salvar alterações</Button>}
@@ -126,14 +138,14 @@ function Partes({ ficha, gerir, aoMudar }: { ficha: Ficha; gerir: boolean; aoMud
         <div className="grid gap-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900 sm:grid-cols-[200px_1fr]">
           <Campo rotulo="Papel no processo"><Select value={papel} onChange={(e) => setPapel(e.target.value)} className="mt-1.5">{Object.entries(PAPEIS).map(([v, r]) => <option key={v} value={v}>{r}</option>)}</Select></Campo>
           <SeletorPessoa rotulo="Adicionar pessoa cadastrada" aoEscolher={(p) => void adicionar(p.id)} />
-          <p className="text-xs text-zinc-500 sm:col-span-2">Não encontrou? Cadastre em <Link className="text-accent-700 underline" to="/gestao/pessoas">Pessoas</Link> e volte aqui.</p>
+          <p className="text-xs text-zinc-500 sm:col-span-2">Não encontrou? <Link className="text-accent-700 underline" to="/gestao/clientes/novo">Cadastre a pessoa</Link> e volte aqui.</p>
         </div>
       )}
       {ficha.partes.length === 0 ? <p className="rounded-2xl border border-dashed border-zinc-200 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">Nenhuma parte vinculada a este processo.</p> : (
         <ul className="divide-y divide-zinc-100 overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
           {ficha.partes.map((p) => (
             <li key={`${p.pessoa_id}-${p.papel}`} className="flex items-center justify-between gap-3 px-4 py-3">
-              <div className="min-w-0"><p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{p.nome}{p.principal ? <span className="ml-2 text-xs font-normal text-accent-600">principal</span> : null}</p><p className="truncate text-xs text-zinc-500">{PAPEIS[p.papel] || p.papel} · {TIPOS[p.tipo] || p.tipo}{p.telefone ? ` · ${p.telefone}` : ""}{p.email ? ` · ${p.email}` : ""}</p></div>
+              <div className="min-w-0"><p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100"><Link className="hover:underline" to={`/gestao/clientes/${p.pessoa_id}`}>{p.nome}</Link>{p.principal ? <span className="ml-2 text-xs font-normal text-accent-600">principal</span> : null}</p><p className="truncate text-xs text-zinc-500">{PAPEIS[p.papel] || p.papel} · {TIPOS[p.tipo] || p.tipo}{p.telefone ? ` · ${p.telefone}` : ""}{p.email ? ` · ${p.email}` : ""}</p></div>
               {gerir && <button type="button" aria-label={`Remover ${p.nome}`} className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-red-600 dark:hover:bg-zinc-800" onClick={() => void remover(p)}><X className="h-4 w-4" /></button>}
             </li>
           ))}
@@ -214,6 +226,42 @@ function TarefasDoProcesso({ ficha, gerir, resp }: { ficha: Ficha; gerir: boolea
         </ul>
       )}
       {edicao && <TarefaModal tarefa={edicao === "nova" ? null : edicao} processoFixo={{ id: ficha.id, rotulo: `${ficha.pasta} · ${ficha.numero_formatado || ficha.numero}` }} responsaveis={resp} meuId={user.id} aoFechar={() => setEdicao(null)} aoSalvar={() => { setEdicao(null); void carregar(); }} />}
+    </div>
+  );
+}
+
+interface Andam {
+  monitorado: boolean; quadro: { lista: string; modo: string; etapa_evidencia: string | null; entrou_em: string } | null; publicacoes_nao_lidas: number;
+  ultimas_publicacoes: { id: number; data_disponibilizacao: string; tipo_documento: string | null; orgao: string; lida: number; resumo: string }[];
+  prazos_abertos: { id: number; descricao: string; termino: string | null }[];
+  pericias: { id: number; tipo: string; data: string; horario: string | null; local: string | null; profissional_perito: string | null; passada: boolean }[];
+}
+/** O que o DJEN e a agenda de perícias sabem deste processo: etapa no quadro, publicações, prazos e perícias. */
+function Andamento({ id }: { id: number }) {
+  const { show } = useToast();
+  const [d, setD] = useState<Andam | null>(null);
+  useEffect(() => { api.get<Andam>(`/gestao/processos/${id}/andamento`).then(setD).catch(() => show("Não foi possível carregar o andamento.", "error")); }, [id, show]);
+  if (!d) return <p className="text-sm text-zinc-500" role="status">Carregando…</p>;
+  const Cartao = ({ titulo, children }: { titulo: string; children: React.ReactNode }) => <section className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"><h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{titulo}</h3>{children}</section>;
+  return (
+    <div className="space-y-4">
+      {!d.monitorado && <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">Este processo ainda não é acompanhado pelo DJEN. Cadastre o advogado em <Link className="underline" to="/processos/advogados">Processos e DJEN</Link> para as publicações aparecerem aqui.</p>}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Cartao titulo="Etapa no quadro de processos">
+          {d.quadro ? <><p className="text-base font-semibold text-accent-700 dark:text-accent-300">{d.quadro.lista}</p><p className="mt-1 text-xs text-zinc-500">{d.quadro.modo === "manual" ? "Colocado manualmente" : "Classificado automaticamente"} · desde {dataBr(d.quadro.entrou_em)}</p>{d.quadro.etapa_evidencia && <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">{d.quadro.etapa_evidencia}</p>}<Link to="/processos/quadro" className="mt-2 inline-block text-xs text-accent-700 underline">Abrir o quadro</Link></> : <p className="text-sm text-zinc-500">Sem etapa no quadro.</p>}
+        </Cartao>
+        <Cartao titulo={`Perícias e audiências (${d.pericias.length})`}>
+          {d.pericias.length === 0 ? <p className="text-sm text-zinc-500">Nenhuma perícia ou audiência agendada.</p> : <ul className="space-y-2">{d.pericias.map((p) => <li key={p.id} className="text-sm"><span className="font-medium text-zinc-900 dark:text-zinc-100">{p.tipo}</span> {!p.passada && <Badge tone="info">próxima</Badge>}<span className="block text-xs text-zinc-500">{dataBr(p.data)}{p.horario ? ` às ${p.horario}` : ""}{p.local ? ` · ${p.local}` : ""}{p.profissional_perito ? ` · ${p.profissional_perito}` : ""}</span></li>)}</ul>}
+          <Link to="/calendario" className="mt-2 inline-block text-xs text-accent-700 underline">Abrir calendário e lembretes</Link>
+        </Cartao>
+        <Cartao titulo={`Prazos abertos no DJEN (${d.prazos_abertos.length})`}>
+          {d.prazos_abertos.length === 0 ? <p className="text-sm text-zinc-500">Nenhum prazo em aberto.</p> : <ul className="space-y-1.5">{d.prazos_abertos.map((p) => <li key={p.id} className="flex justify-between gap-2 text-sm"><span className="truncate text-zinc-800 dark:text-zinc-100">{p.descricao}</span><span className="shrink-0 text-xs text-zinc-500">{dataBr(p.termino)}</span></li>)}</ul>}
+        </Cartao>
+        <Cartao titulo={`Últimas publicações${d.publicacoes_nao_lidas ? ` — ${d.publicacoes_nao_lidas} não lida(s)` : ""}`}>
+          {d.ultimas_publicacoes.length === 0 ? <p className="text-sm text-zinc-500">Nenhuma publicação capturada.</p> : <ul className="space-y-2.5">{d.ultimas_publicacoes.map((p) => <li key={p.id} className="text-sm"><p className="flex items-center gap-2 font-medium text-zinc-900 dark:text-zinc-100">{p.tipo_documento || "Publicação"}{!p.lida && <Badge tone="warning">nova</Badge>}<span className="ml-auto text-xs font-normal text-zinc-500">{dataBr(p.data_disponibilizacao)}</span></p><p className="line-clamp-2 text-xs text-zinc-500">{p.orgao ? `${p.orgao} — ` : ""}{p.resumo}</p></li>)}</ul>}
+          <Link to="/processos" className="mt-2 inline-block text-xs text-accent-700 underline">Tratar publicações no DJEN</Link>
+        </Cartao>
+      </div>
     </div>
   );
 }

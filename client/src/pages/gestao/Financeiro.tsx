@@ -16,13 +16,13 @@ import { useToast } from "@/components/ui/Toast";
 import { Campo, SeletorPessoa, SeletorProcesso, dataBr, dinheiro, mesAtual, mesRotulo, useAtraso, type Lista } from "./comum";
 import type { Responsavel } from "./Processos";
 
-interface Lanc { id: number; tipo: "receber" | "pagar"; categoria: string; descricao: string; valor_centavos: number; vencimento: string; pago_em: string | null; valor_pago_centavos: number | null; forma_pagamento: string; status: "aberto" | "atrasado" | "pago" | "cancelado"; pessoa_id: number | null; pessoa_nome: string | null; processo_id: number | null; processo_pasta: string | null; beneficiario: string | null; beneficiario_user_id: number | null; reembolsavel: boolean; observacoes: string; contrato_id: number | null }
-interface Contrato { id: number; descricao: string; tipo: string; status: string; pessoa_nome: string | null; processo_pasta: string | null; valor_total_centavos: number; percentual_exito: number | null; recebido_centavos: number; em_aberto_centavos: number; parcelas_atrasadas: number }
+export interface Lanc { id: number; tipo: "receber" | "pagar"; categoria: string; descricao: string; valor_centavos: number; vencimento: string; pago_em: string | null; valor_pago_centavos: number | null; forma_pagamento: string; status: "aberto" | "atrasado" | "pago" | "cancelado"; pessoa_id: number | null; pessoa_nome: string | null; processo_id: number | null; processo_pasta: string | null; beneficiario: string | null; beneficiario_user_id: number | null; reembolsavel: boolean; observacoes: string; contrato_id: number | null }
+export interface Contrato { id: number; descricao: string; tipo: string; status: string; pessoa_nome: string | null; processo_pasta: string | null; valor_total_centavos: number; percentual_exito: number | null; recebido_centavos: number; em_aberto_centavos: number; parcelas_atrasadas: number }
 interface Resumo { mes: string; receber_previsto_centavos: number; recebido_centavos: number; pagar_previsto_centavos: number; pago_centavos: number; saldo_realizado_centavos: number; inadimplencia_centavos: number; inadimplentes: number; a_receber_30_dias_centavos: number; a_pagar_30_dias_centavos: number; custas_reembolsaveis_centavos: number; por_categoria: { tipo: string; categoria: string; realizado_centavos: number; previsto_centavos: number }[]; comissoes_e_repasses: { beneficiario: string; categoria: string; previsto_centavos: number; pago_centavos: number }[] }
 interface Mes { mes: string; receber_previsto_centavos: number; recebido_centavos: number; pagar_previsto_centavos: number; pago_centavos: number; saldo_centavos: number }
-const CAT: Record<string, string> = { honorarios: "Honorários", custas: "Custas", despesa: "Despesa", comissao: "Comissão", repasse: "Repasse", outro: "Outro" };
-const ST_TOM: Record<string, "success" | "danger" | "neutral" | "info"> = { pago: "success", atrasado: "danger", cancelado: "neutral", aberto: "info" };
-const ST_ROT: Record<string, string> = { pago: "Pago", atrasado: "Atrasado", cancelado: "Cancelado", aberto: "Em aberto" };
+export const CAT: Record<string, string> = { honorarios: "Honorários", custas: "Custas", despesa: "Despesa", comissao: "Comissão", repasse: "Repasse", outro: "Outro" };
+export const ST_TOM: Record<string, "success" | "danger" | "neutral" | "info"> = { pago: "success", atrasado: "danger", cancelado: "neutral", aberto: "info" };
+export const ST_ROT: Record<string, string> = { pago: "Pago", atrasado: "Atrasado", cancelado: "Cancelado", aberto: "Em aberto" };
 const ABAS = [["resumo", "Resumo e fluxo de caixa"], ["lancamentos", "Contas a pagar e receber"], ["contratos", "Contratos de honorários"]] as const;
 type Aba = typeof ABAS[number][0];
 
@@ -87,7 +87,7 @@ function ResumoFin() {
   );
 }
 
-const hoje = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+export const hoje = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 function Lancamentos({ gerir, contrato, aoLimparContrato }: { gerir: boolean; contrato: number | null; aoLimparContrato: () => void }) {
   const { show } = useToast();
   const [tipo, setTipo] = useState("");
@@ -148,10 +148,10 @@ function Lancamentos({ gerir, contrato, aoLimparContrato }: { gerir: boolean; co
   );
 }
 
-function LancamentoModal({ lanc, responsaveis, aoFechar, aoSalvar }: { lanc: Lanc | null; responsaveis: Responsavel[]; aoFechar: () => void; aoSalvar: () => void }) {
+export function LancamentoModal({ lanc, responsaveis, aoFechar, aoSalvar, pessoaFixa }: { lanc: Lanc | null; responsaveis: Responsavel[]; aoFechar: () => void; aoSalvar: () => void; pessoaFixa?: { id: number; nome: string } }) {
   const { show } = useToast();
   const [f, setF] = useState({ tipo: lanc?.tipo ?? "receber", categoria: lanc?.categoria ?? "honorarios", descricao: lanc?.descricao ?? "", valor: lanc ? (lanc.valor_centavos / 100).toFixed(2).replace(".", ",") : "", vencimento: lanc?.vencimento ?? hoje(), parcelas: "1", beneficiario_user_id: lanc?.beneficiario_user_id ? String(lanc.beneficiario_user_id) : "", reembolsavel: lanc?.reembolsavel ?? false, observacoes: lanc?.observacoes ?? "" });
-  const [pessoa, setPessoa] = useState<{ id: number; nome: string } | null>(lanc?.pessoa_id ? { id: lanc.pessoa_id, nome: lanc.pessoa_nome || "" } : null);
+  const [pessoa, setPessoa] = useState<{ id: number; nome: string } | null>(lanc?.pessoa_id ? { id: lanc.pessoa_id, nome: lanc.pessoa_nome || "" } : pessoaFixa ?? null);
   const [proc, setProc] = useState<{ id: number; rotulo: string } | null>(lanc?.processo_id ? { id: lanc.processo_id, rotulo: `Pasta ${lanc.processo_pasta}` } : null);
   const [salvando, setSalvando] = useState(false);
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((x) => ({ ...x, [k]: v }));
@@ -189,7 +189,7 @@ function LancamentoModal({ lanc, responsaveis, aoFechar, aoSalvar }: { lanc: Lan
   );
 }
 
-function BaixaModal({ lanc, aoFechar, aoSalvar }: { lanc: Lanc; aoFechar: () => void; aoSalvar: () => void }) {
+export function BaixaModal({ lanc, aoFechar, aoSalvar }: { lanc: Lanc; aoFechar: () => void; aoSalvar: () => void }) {
   const { show } = useToast();
   const [f, setF] = useState({ pago_em: hoje(), valor_pago: (lanc.valor_centavos / 100).toFixed(2).replace(".", ","), forma_pagamento: "PIX" });
   const [salvando, setSalvando] = useState(false);
@@ -244,10 +244,10 @@ function Contratos({ gerir, aoVerParcelas }: { gerir: boolean; aoVerParcelas: (i
   );
 }
 
-function ContratoModal({ aoFechar, aoSalvar }: { aoFechar: () => void; aoSalvar: () => void }) {
+export function ContratoModal({ aoFechar, aoSalvar, pessoaFixa }: { aoFechar: () => void; aoSalvar: () => void; pessoaFixa?: { id: number; nome: string } }) {
   const { show } = useToast();
   const [f, setF] = useState({ descricao: "", tipo: "parcelado", valor_total: "", parcelas: "1", primeiro_vencimento: hoje(), percentual_exito: "", observacoes: "" });
-  const [pessoa, setPessoa] = useState<{ id: number; nome: string } | null>(null);
+  const [pessoa, setPessoa] = useState<{ id: number; nome: string } | null>(pessoaFixa ?? null);
   const [proc, setProc] = useState<{ id: number; rotulo: string } | null>(null);
   const [salvando, setSalvando] = useState(false);
   const set = <K extends keyof typeof f>(k: K, v: string) => setF((x) => ({ ...x, [k]: v }));

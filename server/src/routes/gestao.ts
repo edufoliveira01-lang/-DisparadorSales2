@@ -13,6 +13,11 @@ import { atualizarTarefa, concluirTarefa, criarTarefa, excluirTarefa, listarTare
 import { atualizarLancamento, baixarLancamento, cancelarContrato, cancelarLancamento, criarContrato, criarLancamentos, estornarLancamento, excluirLancamento, fluxoDeCaixa, listarContratos, listarLancamentos, obterContrato, obterLancamento, resumoFinanceiro } from "../services/gestao/financeiro";
 import { indicadores } from "../services/gestao/indicadores";
 import { hasPermission } from "../services/accessService";
+import { consultarCep } from "../services/gestao/cep";
+import { adicionarCamposPrevidenciarios, atualizarCampo, criarCampo, excluirCampo, listarCampos, revelarSenha, TIPOS_CAMPO } from "../services/gestao/campos";
+import { fichaDeCadastroHtml } from "../services/gestao/ficha";
+import { agendaDaPessoa, andamentoDoProcesso } from "../services/gestao/integracao";
+import { financeiroDaPessoa } from "../services/gestao/financeiro";
 import { recursoLiberadoNaLicenca } from "../licenca/cliente";
 
 /** Gestão do escritório: pessoas (clientes e outras partes), processos e pastas. Permissões: gestao.view / gestao.manage. */
@@ -26,11 +31,12 @@ gestaoRouter.use((req, res, next) => {
 });
 
 const rota = (fn: (req: Request, res: Response) => unknown): ((req: Request, res: Response, next: NextFunction) => void) => (req, res, next) => {
-  try { const r = fn(req, res); if (r !== undefined && !res.headersSent) res.json(r); }
-  catch (e) {
-    if (e instanceof ErroGestao) return void res.status(e.status).json({ error: e.message });
-    next(e);
-  }
+  const falhou = (e: unknown) => { if (e instanceof ErroGestao) return void res.status(e.status).json({ error: e.message }); next(e); };
+  try {
+    const r = fn(req, res);
+    if (r && typeof (r as Promise<unknown>).then === "function") { (r as Promise<unknown>).then((v) => { if (v !== undefined && !res.headersSent) res.json(v); }, falhou); return; }
+    if (r !== undefined && !res.headersSent) res.json(r);
+  } catch (e) { falhou(e); }
 };
 const id = (req: Request, nome = "id") => {
   const n = Number(req.params[nome]);
@@ -147,3 +153,37 @@ gestaoRouter.post("/financeiro/contratos/:id/cancelar", rota((req) => { const r 
 
 // ---------- indicadores ----------
 gestaoRouter.get("/indicadores", rota((req) => indicadores(req.query.mes, hasPermission(usuario(req), "financeiro.view") && recursoLiberadoNaLicenca("modulo_financeiro"))));
+
+// ---------- CEP, campos personalizados e ficha de cadastro ----------
+gestaoRouter.get("/cep/:cep", rota(async (req) => consultarCep(String(req.params.cep))));
+gestaoRouter.get("/campos", rota((req) => ({ tipos: TIPOS_CAMPO, campos: listarCampos(String(req.query.entidade ?? "pessoa"), req.query.inativos === "1") })));
+gestaoRouter.post("/campos/previdenciarios", rota((req) => { const r = adicionarCamposPrevidenciarios(); auditAccess("gestao_campos_previdenciarios", usuario(req).id, null, r); return r; }));
+gestaoRouter.post("/campos", rota((req, res) => { const c = criarCampo(req.body || {}); res.status(201); auditAccess("gestao_campo_criado", usuario(req).id, null, { campo: c.id, nome: c.nome, tipo: c.tipo }); return c; }));
+gestaoRouter.put("/campos/:id", rota((req) => atualizarCampo(id(req), req.body || {})));
+gestaoRouter.delete("/campos/:id", rota((req) => { const r = excluirCampo(id(req)); auditAccess("gestao_campo_excluido", usuario(req).id, null, { campo: id(req) }); return r; }));
+/** Mostrar uma senha guardada é um pedido à parte e fica registrado na auditoria. */
+gestaoRouter.post("/campos/:campoId/revelar/:entidadeId", rota((req) => {
+  const senha = revelarSenha(id(req, "campoId"), id(req, "entidadeId"));
+  auditAccess("gestao_senha_revelada", usuario(req).id, null, { campo: id(req, "campoId"), cadastro: id(req, "entidadeId") });
+  return { valor: senha };
+}));
+gestaoRouter.get("/pessoas/:id/ficha", (req, res, next) => {
+  try {
+    const comSenhas = req.query.senhas === "1";
+    const u = usuario(req);
+    if (comSenhas && !hasPermission(u, "gestao.manage")) return void res.status(403).type("text").send("Você não tem permissão para imprimir senhas.");
+    const html = fichaDeCadastroHtml(id(req), { comSenhas, imprimir: req.query.imprimir !== "0", emitidaPor: nomeDe(u) });
+    if (comSenhas) auditAccess("gestao_ficha_impressa_com_senhas", u.id, null, { pessoa: id(req) });
+    res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:");
+    res.setHeader("Cache-Control", "private, no-store");
+    res.type("html").send(html);
+  } catch (e) {
+    if (e instanceof ErroGestao) return void res.status(e.status).type("text").send(e.message);
+    next(e);
+  }
+});
+
+// ---------- integração com DJEN/perícias e financeiro do cadastro ----------
+gestaoRouter.get("/processos/:id/andamento", rota((req) => andamentoDoProcesso(id(req))));
+gestaoRouter.get("/pessoas/:id/agenda", rota((req) => agendaDaPessoa(id(req))));
+gestaoRouter.get("/financeiro/pessoas/:id", rota((req) => financeiroDaPessoa(id(req))));

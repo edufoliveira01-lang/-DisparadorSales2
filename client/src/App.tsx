@@ -57,8 +57,8 @@ const Login = lazy(() =>
   import("@/pages/Login").then((module) => ({ default: module.Login })),
 );
 const GestaoInicio = lazy(() => import("@/pages/gestao/GestaoInicio").then((m) => ({ default: m.GestaoInicio })));
-const GestaoPessoas = lazy(() => import("@/pages/gestao/Pessoas").then((m) => ({ default: m.Pessoas })));
-const GestaoProcessos = lazy(() => import("@/pages/gestao/Processos").then((m) => ({ default: m.Processos })));
+const GestaoClientes = lazy(() => import("@/pages/gestao/CadastroHub").then((m) => ({ default: m.CadastroHub })));
+const GestaoClienteFicha = lazy(() => import("@/pages/gestao/ClienteFicha").then((m) => ({ default: m.ClienteFicha })));
 const GestaoProcessoFicha = lazy(() => import("@/pages/gestao/ProcessoFicha").then((m) => ({ default: m.ProcessoFicha })));
 const GestaoTarefas = lazy(() => import("@/pages/gestao/Tarefas").then((m) => ({ default: m.Tarefas })));
 const GestaoModelos = lazy(() => import("@/pages/gestao/Modelos").then((m) => ({ default: m.Modelos })));
@@ -130,8 +130,10 @@ function AuthenticatedApp() {
                 <Route path="/gestao/modelos" element={<AccessRoute permission="gestao.view"><GestaoModelos /></AccessRoute>} />
                 <Route path="/gestao/financeiro" element={<AccessRoute permission="financeiro.view"><GestaoFinanceiro /></AccessRoute>} />
                 <Route path="/gestao/indicadores" element={<AccessRoute permission="gestao.view"><GestaoIndicadores /></AccessRoute>} />
-                <Route path="/gestao/pessoas" element={<AccessRoute permission="gestao.view"><GestaoPessoas /></AccessRoute>} />
-                <Route path="/gestao/processos" element={<AccessRoute permission="gestao.view"><GestaoProcessos /></AccessRoute>} />
+                <Route path="/gestao/clientes" element={<AccessRoute permission="gestao.view"><GestaoClientes aba="clientes" /></AccessRoute>} />
+                <Route path="/gestao/clientes/:id" element={<AccessRoute permission="gestao.view"><GestaoClienteFicha /></AccessRoute>} />
+                <Route path="/gestao/pessoas" element={<Navigate to="/gestao/clientes" replace />} />
+                <Route path="/gestao/processos" element={<AccessRoute permission="gestao.view"><GestaoClientes aba="processos" /></AccessRoute>} />
                 <Route path="/gestao/processos/:id" element={<AccessRoute permission="gestao.view"><GestaoProcessoFicha /></AccessRoute>} />
                 <Route path="/processos/quadro" element={<AccessRoute permission="processes.view"><QuadroProcessos /></AccessRoute>} />
                 <Route path="/processos/monitoramento" element={<AccessRoute permission="djen.manage"><Acompanhamento /></AccessRoute>} />
