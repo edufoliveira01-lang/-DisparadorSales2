@@ -100,11 +100,11 @@ describe('histórico posterior por processo',()=>{
   });
   it('não reabre repetição histórica já cumprida, mas mantém ordem posterior ao cumprimento',async()=>{
     const {original,p}=seed();
-    atualizarObrigacaoExterna(p.id,'perito_laudo','resolvido',{cumprido_em:somarDias(hojeDjen(),-10),observacoes:'Laudo conferido nos autos.'});
-    const repetida=raw('repetida',original.texto,somarDias(hojeDjen(),-20));
+    atualizarObrigacaoExterna(p.id,'perito_laudo','resolvido',{cumprido_em:somarDias(hojeDjen(),-30),observacoes:'Laudo conferido nos autos.'});
+    const repetida=raw('repetida',original.texto,somarDias(hojeDjen(),-40));
     vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>response([original,repetida])));
     await atualizarHistoricoProcesso(processo,ctx());expect(listarObrigacoesExternas()).toHaveLength(0);
-    const nova=raw('nova-ordem',original.texto,somarDias(hojeDjen(),-5));
+    const nova=raw('nova-ordem',original.texto,somarDias(hojeDjen(),-20)); // prazo de 10 dias já vencido: só então entra em Acompanhamentos
     vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>response([original,repetida,nova])));
     await atualizarHistoricoProcesso(processo,ctx());expect(listarObrigacoesExternas()).toHaveLength(1);
   });

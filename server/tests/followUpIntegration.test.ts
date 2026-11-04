@@ -47,7 +47,17 @@ describe('prazo expresso de acompanhamento', () => {
   });
   it('sem calendário não inventa vencimento nem aplica 30 dias', () => {
     fixture.calendarios=[];
-    expect(prazoDoAcompanhamento(ordem(),pub,30,'2026-10-02')).toMatchObject({prazo_termino:null,dias_espera:5,prazo_pendente:true,exibir:true});
+    // antes do menor vencimento possível (5 dias corridos) o card não aparece; depois, aparece para conferência
+    expect(prazoDoAcompanhamento(ordem(),pub,30,'2026-10-02')).toMatchObject({prazo_termino:null,dias_espera:5,prazo_pendente:true,exibir:false});
+    expect(prazoDoAcompanhamento(ordem(),pub,30,'2026-10-06').exibir).toBe(false);
+    expect(prazoDoAcompanhamento(ordem(),pub,30,'2026-10-07')).toMatchObject({prazo_termino:null,prazo_pendente:true,exibir:true});
+  });
+  it('prazo do INSS ou contado da ciência pessoal só aparece depois de vencido o menor prazo possível', () => {
+    const inss = identificarObrigacoesExternas('Intime-se o INSS para implantar o benefício em 30 dias.')[0];
+    const publicada = { tribunal:'TRF3',orgao:'Jundiai',data_disponibilizacao:'2026-10-14' };
+    expect(prazoDoAcompanhamento(inss,publicada,30,'2026-11-04')).toMatchObject({prazo_pendente:true,exibir:false}); // 21 dias: ainda no prazo
+    expect(prazoDoAcompanhamento(inss,publicada,30,'2026-11-13').exibir).toBe(false); // 30º dia
+    expect(prazoDoAcompanhamento(inss,publicada,30,'2026-11-14')).toMatchObject({prazo_pendente:true,exibir:true});
   });
   it('sem período expresso só usa o lembrete operacional', () => {
     const o=identificarObrigacoesExternas('Intime-se o perito para apresentar o laudo.')[0];
@@ -55,7 +65,10 @@ describe('prazo expresso de acompanhamento', () => {
     expect(prazoDoAcompanhamento(o,pub,30,'2026-10-31')).toMatchObject({dias_espera:30,exibir:true});
   });
   it.each(['48 horas','2 meses','10 (quinze) dias','5 dias a contar da ciência pessoal'])('unidade ou marco pendente não recebe padrão: %s', periodo => {
-    expect(prazoDoAcompanhamento(ordem(periodo),pub,30,'2026-10-02')).toMatchObject({prazo_termino:null,dias_espera:null,prazo_pendente:true,exibir:true});
+    expect(prazoDoAcompanhamento(ordem(periodo),pub,30,'2026-10-02')).toMatchObject({prazo_termino:null,dias_espera:null,prazo_pendente:true,exibir:false});
+    // sem prazo em dias, vale o lembrete padrão (30 dias corridos da disponibilização)
+    expect(prazoDoAcompanhamento(ordem(periodo),pub,30,'2026-10-30').exibir).toBe(false);
+    expect(prazoDoAcompanhamento(ordem(periodo),pub,30,'2026-10-31')).toMatchObject({prazo_pendente:true,exibir:true});
   });
   it('data limite literal e data inválida', () => {
     const o=identificarObrigacoesExternas('Intime-se o perito para apresentar o laudo até 09/10/2026.')[0];

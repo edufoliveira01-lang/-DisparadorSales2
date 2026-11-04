@@ -35,11 +35,11 @@ describe("obrigações externas capturadas", () => {
   it("nova intimação substitui a antiga e pede conferência da ciência pessoal do INSS", () => {
     publicar("processo-b", "2000-01-01", "Intime-se o INSS para implantar o benefício em 30 dias.");
     const recente = publicar("processo-b", new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }), "Intime-se o INSS para implantar o benefício em 30 dias.");
-    // Sem ciência pessoal confirmada, não inventa vencimento nem oculta a pendência por 30 dias.
-    expect(listarObrigacoesExternas()).toMatchObject([{ publicacao_id: recente, prazo_pendente: true, prazo_termino: null, dias_espera: 30 }]);
-    expect(listarObrigacoesExternas()).toHaveLength(1);
+    // Ainda dentro dos 30 dias: não é caso de acompanhamento (só entra o que já passou do prazo).
+    expect(listarObrigacoesExternas()).toEqual([]);
     db.prepare("UPDATE djen_publicacoes SET data_disponibilizacao='2000-02-01' WHERE id=?").run(recente);
-    expect(listarObrigacoesExternas()).toMatchObject([{ publicacao_id: recente, tipo: "inss_implantacao" }]);
+    // Vencido o menor prazo possível, entra, sem inventar vencimento (a ciência pessoal precisa ser conferida).
+    expect(listarObrigacoesExternas()).toMatchObject([{ publicacao_id: recente, tipo: "inss_implantacao", prazo_pendente: true, prazo_termino: null, dias_espera: 30 }]);
     atualizarObrigacaoExterna(recente, "inss_implantacao", "cobrado");
     expect(listarObrigacoesExternas()[0].acompanhamento_status).toBe("cobrado");
     atualizarObrigacaoExterna(recente, "inss_implantacao", "resolvido");

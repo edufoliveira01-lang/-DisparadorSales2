@@ -18,16 +18,24 @@ export function prazoDoAcompanhamento(ordem: ObrigacaoDetectada, pub: { tribunal
   if (!Number.isFinite(decorrido) || decorrido < 0) return r;
   if (!ordem.prazo_texto && !ordem.prazo_citado_dias) return { ...r, dias_espera: padrao, exibir: decorrido >= padrao,
     prazo_observacao: `Sem período expresso: lembrete operacional após ${padrao} dias corridos da disponibilização.` };
-  const pendente = (motivo: string) => ({ ...r, exibir: true, prazo_pendente: true, prazo_observacao: motivo });
+  /**
+   * Prazo que não dá para calcular com certeza (termo inicial, ciência pessoal, calendário ausente…).
+   * Acompanhamentos é só para o que JÁ passou do prazo sem andamento: então só entra depois do menor vencimento possível
+   * (prazo em dias corridos a partir da disponibilização — o termo real nunca é anterior a isso) ou, sem prazo em dias,
+   * depois do lembrete padrão. Antes disso o card não aparece.
+   */
+  const somarDias = (data: string, dias: number) => new Date(Date.parse(data + 'T12:00:00Z') + dias * 86400000).toISOString().slice(0, 10);
+  const pendente = (motivo: string, dias: number | null = null) => ({ ...r, prazo_pendente: true, prazo_observacao: motivo,
+    exibir: dias && dias > 0 ? hoje > somarDias(base, dias) : decorrido >= padrao });
   if (ordem.unidade === 'data_expressa') {
     const m = ordem.prazo_texto?.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
     const data = m ? `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}` : '';
     if (!data || !Number.isFinite(Date.parse(data + 'T12:00:00Z')) || new Date(data + 'T12:00:00Z').toISOString().slice(0,10) !== data) return pendente('Data expressa inválida: conferir no ato.');
     return { ...r, prazo_termino: data, exibir: hoje > data, prazo_observacao: 'Data limite expressamente indicada no ato.' };
   }
-  if (ordem.alerta || !ordem.prazo_citado_dias) return pendente(ordem.alerta || 'Período expresso: confira unidade e termo inicial; não foi substituído por 30 dias.');
+  if (ordem.alerta || !ordem.prazo_citado_dias) return pendente(ordem.alerta || 'Período expresso: confira unidade e termo inicial; não foi substituído por 30 dias.', ordem.prazo_citado_dias);
   if (/\b(?:inss|ceab|autarquia)\b/i.test(ordem.responsavel) || /(?:intima[cç][aã]o pessoal|ci[eê]ncia pessoal|domic[ií]lio|a partir|contad[oa]s? d|a contar|ap[oó]s)/i.test(ordem.trecho))
-    return pendente('Prazo expresso: conferir a ciência/intimação pessoal ou o evento inicial nos autos antes de contar.');
+    return pendente('Prazo expresso: conferir a ciência/intimação pessoal ou o evento inicial nos autos antes de contar.', ordem.prazo_citado_dias);
   try {
     const extras: CalendarioForense[] = [];
     const ano = Number(base.slice(0,4));
@@ -42,6 +50,6 @@ export function prazoDoAcompanhamento(ordem: ObrigacaoDetectada, pub: { tribunal
     return { ...r, prazo_termino: p.termino, exibir: hoje > p.termino,
       prazo_observacao: 'Previsão CPC pelo DJEN e calendário conferido. Confira destinatário, termo inicial e eventual regime especial nos autos.' };
   } catch (e) {
-    return pendente(e instanceof Error ? e.message : 'Calendário sem cobertura: conferir prazo expresso.');
+    return pendente(e instanceof Error ? e.message : 'Calendário sem cobertura: conferir prazo expresso.', ordem.prazo_citado_dias);
   }
 }
