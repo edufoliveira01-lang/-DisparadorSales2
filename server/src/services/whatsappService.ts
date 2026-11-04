@@ -180,6 +180,29 @@ function clearStaleChromiumLocks(): void {
  * fica a sessão de login em si) antes de cada tentativa de conexão — assim toda reconexão, com ou
  * sem QR novo, sempre busca o bundle da versão pinada direto da rede.
  */
+/**
+ * Limpar o cache do navegador em TODA conexão obrigava o WhatsApp Web (vários MB de JavaScript) a ser
+ * baixado de novo e recompilado a cada QR Code, o que é o maior tempo da conexão. O cache só precisa
+ * ser limpo quando a versão fixada muda ou quando a conexão anterior não chegou ao fim. Por isso um
+ * marcador guarda a versão com a qual a última conexão completou ("ready"); enquanto a versão for a
+ * mesma, o cache quente é reaproveitado. Sem versão fixada (build "mais recente"), sempre limpa.
+ */
+const MARCADOR_CACHE_VALIDADO = path.join(dataDir, "whatsapp-cache-validado.json");
+function cacheDoNavegadorPodeSerReaproveitado(versao: string | undefined): boolean {
+  if (!versao) return false;
+  try {
+    const m = JSON.parse(fs.readFileSync(MARCADOR_CACHE_VALIDADO, "utf8")) as { versao?: string };
+    return m.versao === versao && fs.existsSync(AUTH_DATA_PATH);
+  } catch { return false; }
+}
+function registrarCacheValidado(versao: string | undefined): void {
+  if (!versao) return;
+  try { fs.writeFileSync(MARCADOR_CACHE_VALIDADO, JSON.stringify({ versao, em: new Date().toISOString() }), "utf8"); } catch { /* best-effort */ }
+}
+function invalidarCacheValidado(): void {
+  try { fs.rmSync(MARCADOR_CACHE_VALIDADO, { force: true }); } catch { /* best-effort */ }
+}
+
 function clearStaleServiceWorkerCache(): void {
   if (!fs.existsSync(AUTH_DATA_PATH)) return;
   const cacheDirNames = ["Service Worker", "Cache", "Code Cache"];
@@ -899,13 +922,13 @@ class WhatsappManager {
     // interromper o navegador recém-criado durante uma recuperação automática.
     if (this.inicioTimer) { clearTimeout(this.inicioTimer); this.inicioTimer = null; }
     clearStaleChromiumLocks();
-    // A sessão fica em Local Storage/IndexedDB e não é apagada aqui. Limpamos somente caches
-    // descartáveis para impedir que um bundle antigo do WhatsApp Web derrube a conexão.
-    clearStaleServiceWorkerCache();
+    const inicioDaTentativa = Date.now();
     this.falhaInicializacao = null;
     this.setState({ status: "inicializando", lastError: null, qrDataUrl: null, syncProgress: null, faseInicializacao: "Preparando o navegador" });
     let clientDaTentativa: Client | null = null;
+    const marcasDeTempo: [string, number][] = [];
     const informarEtapa = (description: string) => {
+      marcasDeTempo.push([description, Date.now()]);
       if (minhaGeracao === this.geracao && this.status === "inicializando" && (!clientDaTentativa || this.client === clientDaTentativa)) this.setState({ faseInicializacao: description });
     };
 
@@ -943,6 +966,11 @@ class WhatsappManager {
     const version = await prepareWhatsappVersion(source, path.join(dataDir, "whatsapp-web-cache"), informarEtapa);
     if (minhaGeracao !== this.geracao) return; // connect()/disconnect() aconteceu enquanto resolvíamos a versão
 
+    // A sessão fica em Local Storage/IndexedDB e nunca é apagada aqui. Só caches descartáveis são
+    // limpos, e apenas quando necessário (versão nova ou conexão anterior que não completou).
+    if (cacheDoNavegadorPodeSerReaproveitado(version.webVersion)) informarEtapa("Reaproveitando o cache do WhatsApp Web (início mais rápido)");
+    else clearStaleServiceWorkerCache();
+
     const authStrategy = new LocalAuth({ dataPath: AUTH_DATA_PATH });
     const afterBrowserInitialized = authStrategy.afterBrowserInitialized?.bind(authStrategy);
     const client = new Client({
@@ -962,6 +990,17 @@ class WhatsappManager {
           "--disable-backgrounding-occluded-windows",
           "--disable-renderer-backgrounding",
           "--disable-background-timer-throttling",
+          // Menos trabalho em segundo plano na abertura do navegador (acelera até o QR Code).
+          "--disable-extensions",
+          "--disable-background-networking",
+          "--disable-default-apps",
+          "--disable-sync",
+          "--disable-component-update",
+          "--metrics-recording-only",
+          "--mute-audio",
+          "--no-default-browser-check",
+          "--password-store=basic",
+          "--disable-features=Translate,MediaRouter,OptimizationHints",
         ],
         // O limite do protocolo fica folgado para inicialização/sincronização. Nas operações de
         // envio e consulta usamos watchdogs menores, que reiniciam o browser automaticamente.
@@ -1015,6 +1054,7 @@ class WhatsappManager {
     ) => {
       if (!tentativaAtiva()) return;
       encerrandoTentativa = true;
+      invalidarCacheValidado(); // a próxima tentativa recomeça com o cache limpo
       this.limparMonitorPareamento();
       this.limparEstabilidadeTimer();
       this.limparMonitorSaude();
@@ -1192,6 +1232,13 @@ class WhatsappManager {
       try {
         const qrDataUrl = await QRCode.toDataURL(qr);
         if (!tentativaAtiva() || pronto || seq !== sequenciaQr) return;
+        if (seq === 1) { // primeiro QR da tentativa: registra quanto tempo cada etapa levou
+          const agora = Date.now();
+          const etapas = marcasDeTempo.map(([nome, t], i) => `${nome}: ${(((marcasDeTempo[i + 1]?.[1] ?? agora) - t) / 1000).toFixed(1)}s`).join(" · ");
+          const total = ((agora - inicioDaTentativa) / 1000).toFixed(1);
+          console.log(`[WhatsApp] QR Code pronto em ${total}s (${etapas})`);
+          recordSystemLog({ nivel: "info", categoria: "whatsapp", evento: "qr_pronto", titulo: `QR Code pronto em ${total} s`, mensagem: etapas || "Sem etapas registradas.", origem: "sistema" });
+        }
         this.setState({ status: "aguardando_qr", qrDataUrl, syncProgress: null });
       } catch {
         if (tentativaAtiva() && !pronto && seq === sequenciaQr)
@@ -1219,6 +1266,7 @@ class WhatsappManager {
       pronto = true;
       this.limparMonitorPareamento();
       marcarSessaoPersistida();
+      registrarCacheValidado(version.webVersion);
       this.setState({ status: "conectado", qrDataUrl: null, syncProgress: 100 });
       this.iniciarMonitorSaude(client);
       this.iniciarConferenciaEntrega(client);
