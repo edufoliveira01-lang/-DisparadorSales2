@@ -61,6 +61,8 @@ interface LinhaMensagem { id: string; chat: string; chat_alt: string; de_mim: nu
 /** Guarda as mensagens para consultas de histórico, que o Baileys não oferece. */
 export class LojaMensagens {
   private inseridas = 0;
+  /** Confirmações que chegaram antes de a mensagem ser guardada (o celular do cliente responde em milissegundos). */
+  private orfaos = new Map<string, number>();
   constructor(private db: Database.Database, private retencaoDias = 30) {
     db.exec(`CREATE TABLE IF NOT EXISTS wa_baileys_mensagens (
       id TEXT PRIMARY KEY, chat TEXT NOT NULL, chat_alt TEXT NOT NULL DEFAULT '', de_mim INTEGER NOT NULL DEFAULT 0, autor TEXT NOT NULL DEFAULT '',
@@ -79,10 +81,21 @@ export class LojaMensagens {
   /** Sobe o ack (nunca desce, exceto -1 = erro). Devolve a linha, ou null se a mensagem não é conhecida. */
   atualizarAck(id: string, ack: number): LinhaMensagem | null {
     const atual = this.obter(id);
-    if (!atual) return null;
+    if (!atual) {
+      this.orfaos.set(id, ack === -1 ? -1 : Math.max(this.orfaos.get(id) ?? 0, ack));
+      if (this.orfaos.size > 500) this.orfaos.delete(this.orfaos.keys().next().value as string);
+      return null;
+    }
     const novo = ack === -1 ? -1 : Math.max(atual.ack, ack);
     this.db.prepare("UPDATE wa_baileys_mensagens SET ack=? WHERE id=?").run(novo, id);
     return { ...atual, ack: novo };
+  }
+  /** Devolve (e aplica) a confirmação que chegou antes da mensagem existir. */
+  consumirAckOrfao(id: string): number | undefined {
+    const ack = this.orfaos.get(id);
+    if (ack === undefined) return undefined;
+    this.orfaos.delete(id);
+    return this.atualizarAck(id, ack)?.ack;
   }
   obter(id: string): LinhaMensagem | null { return (this.db.prepare("SELECT * FROM wa_baileys_mensagens WHERE id=?").get(id) as LinhaMensagem | undefined) ?? null; }
   doChat(chats: string[], limite: number): LinhaMensagem[] {
@@ -288,12 +301,20 @@ export class BaileysClient extends EventEmitter {
         this.vistos.add(linha.id); if (this.vistos.size > 2000) this.vistos.delete(this.vistos.values().next().value as string);
         const ackInicial = linha.de_mim ? Math.max(0, ackDoStatus(Number(w.status ?? 1))) : 0;
         this.op.loja.salvar({ ...linha, ack: ackInicial });
+        this.aplicarAckAdiantado(linha.id);
         if (repetida) continue;
         const msg = this.linhaParaMensagem({ ...linha, ack: ackInicial });
         this.emit("message_create", msg);
         if (!linha.de_mim && d.type === "notify") this.emit("message", msg);
       } catch (e) { this.log(`Falha ao tratar mensagem recebida: ${(e as Error).message}`); }
     }
+  }
+
+  /** Confirmação que chegou antes de a mensagem ser guardada: emite agora, depois que o envio já retornou. */
+  private aplicarAckAdiantado(id: string) {
+    const ack = this.op.loja.consumirAckOrfao(id);
+    if (ack === undefined) return;
+    setTimeout(() => { const l = this.op.loja.obter(id); if (l && !this.fechado) this.emit("message_ack", this.linhaParaMensagem(l), ack); }, 0);
   }
 
   private emitirAck(id: string, ack: number) {
@@ -313,7 +334,8 @@ export class BaileysClient extends EventEmitter {
     for (const r of d ?? []) {
       if (!r?.key?.id || !r.key.fromMe) continue;
       const rec = r.receipt ?? {};
-      if (rec.readTimestamp) this.emitirAck(r.key.id, 3);
+      if (rec.playedTimestamp) this.emitirAck(r.key.id, 4);
+      else if (rec.readTimestamp) this.emitirAck(r.key.id, 3);
       else if (rec.receiptTimestamp) this.emitirAck(r.key.id, 2);
     }
   }
@@ -364,6 +386,7 @@ export class BaileysClient extends EventEmitter {
     this.vistos.add(id);
     const jaTinha = this.op.loja.obter(id);
     this.op.loja.salvar({ id, chat, chat_alt: "", de_mim: 1, autor: "", corpo: texto, ts, citada: "", ack: 0 });
+    this.aplicarAckAdiantado(id);
     const linha = this.op.loja.obter(id)!;
     const msg = this.linhaParaMensagem(linha);
     if (!jaTinha) this.emit("message_create", msg);

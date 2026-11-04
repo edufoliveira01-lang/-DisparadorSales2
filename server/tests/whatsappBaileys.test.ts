@@ -102,6 +102,24 @@ describe("BaileysClient", () => {
     expect(acks.at(-1)![1]).toBe(3);
   });
 
+  it("confirmação que chega ANTES de o envio retornar não se perde", async () => {
+    const c = criar(); limpar.push(c.dir);
+    await abrir(c);
+    c.sock.sendMessage = async (jid: string) => {
+      // o celular do cliente confirma a entrega antes de sendMessage devolver
+      c.ev.emit("messages.update", [{ key: { id: "RAPIDO1", fromMe: true, remoteJid: jid }, update: { status: 3 } }]);
+      return { key: { id: "RAPIDO1", remoteJid: jid, fromMe: true }, messageTimestamp: 1700000000 };
+    };
+    const acks: [string, number][] = [];
+    c.client.on("message_ack", (m, a) => acks.push([m.id.id, a]));
+    const m = await c.client.sendMessage("5511999999999@c.us", "Olá");
+    expect(m.id.id).toBe("RAPIDO1");
+    await new Promise((r) => setTimeout(r, 10));
+    expect(acks).toEqual([["RAPIDO1", 2]]);
+    const chat = await c.client.getChatById("5511999999999@c.us");
+    expect((await chat.fetchMessages({ limit: 5 }))[0].ack).toBe(2);
+  });
+
   it("mensagem recebida vira message/message_create e entra no histórico do chat, com citação", async () => {
     const c = criar(); limpar.push(c.dir);
     await abrir(c);
