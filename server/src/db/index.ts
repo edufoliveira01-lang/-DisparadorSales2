@@ -3,6 +3,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { runDjenMigrations } from "./djenMigrations";
 import { runMigrations } from "./migrations";
+import { runGestaoMigrations } from "./gestaoMigrations";
 import { validateOfficeStorage } from "./officeStorage";
 
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.resolve(__dirname, "../../data");
@@ -17,6 +18,7 @@ export const db = new Database(dbPath);
 
 runMigrations(db);
 runDjenMigrations(db);
+runGestaoMigrations(db);
 
 export { dataDir };
 

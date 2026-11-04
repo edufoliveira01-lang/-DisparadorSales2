@@ -14,6 +14,9 @@ import {
   Clock3,
   UserRoundCog,
   UserRound,
+  FolderOpen,
+  Contact,
+  LayoutGrid,
 } from "lucide-react";
 import type { Permission } from "@/context/AuthContext";
 export const navigation = [
@@ -97,6 +100,28 @@ export const navigation = [
     group: "processos",
   },
   {
+    to: "/gestao",
+    label: "Visão geral",
+    description: "Resumo do escritório e atalhos",
+    icon: LayoutGrid,
+    group: "gestao",
+    end: true,
+  },
+  {
+    to: "/gestao/pessoas",
+    label: "Pessoas",
+    description: "Clientes, partes e contatos do processo",
+    icon: Contact,
+    group: "gestao",
+  },
+  {
+    to: "/gestao/processos",
+    label: "Processos e pastas",
+    description: "Cadastro, partes, histórico e anotações",
+    icon: FolderOpen,
+    group: "gestao",
+  },
+  {
     to: "/agenda",
     label: "Contatos",
     description: "Clientes, telefones e processos",
@@ -140,6 +165,7 @@ export function navigationPermission(to: string): Permission | null {
   if (to === "/pendentes") return "pending.view";
   if (to === "/historico") return "history.view";
   if (to === "/agenda") return "contacts.view";
+  if (to.startsWith("/gestao")) return "gestao.view";
   if (to === "/logs") return "activity.view";
   if (to === "/configuracoes") return "integrations.manage";
   if (to === "/equipe") return "team.manage";

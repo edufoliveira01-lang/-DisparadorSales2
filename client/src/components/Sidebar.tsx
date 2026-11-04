@@ -8,6 +8,7 @@ import {
   ChevronRight,
   CalendarDays,
   Scale,
+  FolderOpen,
 } from "lucide-react";
 import { useActiveService } from "@/context/ActiveServiceContext";
 import { cn } from "@/lib/utils";
@@ -120,8 +121,14 @@ export function Sidebar({
               icon: Scale,
               to: "/processos",
             },
+            {
+              id: "gestao",
+              label: "Gestão do escritório",
+              icon: FolderOpen,
+              to: "/gestao",
+            },
           ] as const
-        ).filter(({ id }) => id === "processos" ? can("processes.view") || can("deadlines.view") : visibleNavigation.some((item) => item.group === "pericias"))
+        ).filter(({ id }) => id === "gestao" ? can("gestao.view") : id === "processos" ? can("processes.view") || can("deadlines.view") : visibleNavigation.some((item) => item.group === "pericias"))
           .map(({ id, label, icon: Icon, to }) => (
           <button
             key={id}
@@ -174,7 +181,7 @@ export function Sidebar({
                         className="h-[19px] w-[19px] shrink-0"
                         strokeWidth={1.7}
                       />
-                      <span className="sidebar-copy">{item.label}</span><span className="sidebar-short">{({"/":"Início","/calendario":"Agenda","/templates":"Mensagens","/pendentes":"Retornos","/historico":"Envios","/processos":"Publicações","/processos/quadro":"Quadro","/processos/aguardando":"Espera","/processos/advogados":"Advogados","/processos/monitoramento":"DJEN","/processos/calendarios":"Prazos","/agenda":"Contatos","/logs":"Atividade","/configuracoes":"Ajustes","/equipe":"Equipe","/minha-conta":"Conta"} as Record<string,string>)[item.to]}</span>
+                      <span className="sidebar-copy">{item.label}</span><span className="sidebar-short">{({"/":"Início","/calendario":"Agenda","/templates":"Mensagens","/pendentes":"Retornos","/historico":"Envios","/processos":"Publicações","/processos/quadro":"Quadro","/processos/aguardando":"Espera","/processos/advogados":"Advogados","/processos/monitoramento":"DJEN","/processos/calendarios":"Prazos","/gestao":"Gestão","/gestao/pessoas":"Pessoas","/gestao/processos":"Pastas","/agenda":"Contatos","/logs":"Atividade","/configuracoes":"Ajustes","/equipe":"Equipe","/minha-conta":"Conta"} as Record<string,string>)[item.to]}</span>
                     </NavLink>
                   );
                 })}

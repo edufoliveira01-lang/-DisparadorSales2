@@ -6,6 +6,7 @@ export const PERMISSIONS = [
   "contacts.view", "contacts.manage", "processes.view", "processes.manage",
   "djen.manage", "deadlines.view", "deadlines.manage", "activity.view",
   "integrations.manage", "whatsapp.manage", "team.manage", "backup.manage",
+  "gestao.view", "gestao.manage",
 ] as const;
 export type Permission = typeof PERMISSIONS[number];
 export type Role = "administrador" | "gestor" | "advogado" | "atendimento" | "consulta";
@@ -14,9 +15,9 @@ const ALL = [...PERMISSIONS];
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   administrador: ALL,
   gestor: ALL.filter((p) => !["team.manage", "backup.manage", "integrations.manage"].includes(p)),
-  advogado: ["dashboard.view", "calendar.view", "contacts.view", "processes.view", "processes.manage", "deadlines.view", "deadlines.manage", "activity.view"],
-  atendimento: ["dashboard.view", "calendar.view", "calendar.manage", "templates.view", "templates.manage", "pending.view", "pending.manage", "history.view", "contacts.view", "contacts.manage", "messages.send"],
-  consulta: ["dashboard.view", "calendar.view", "templates.view", "pending.view", "history.view", "contacts.view", "processes.view", "deadlines.view"],
+  advogado: ["dashboard.view", "calendar.view", "contacts.view", "processes.view", "processes.manage", "deadlines.view", "deadlines.manage", "activity.view", "gestao.view", "gestao.manage"],
+  atendimento: ["dashboard.view", "calendar.view", "calendar.manage", "templates.view", "templates.manage", "pending.view", "pending.manage", "history.view", "contacts.view", "contacts.manage", "messages.send", "gestao.view", "gestao.manage"],
+  consulta: ["dashboard.view", "calendar.view", "templates.view", "pending.view", "history.view", "contacts.view", "processes.view", "deadlines.view", "gestao.view"],
 };
 
 export interface AccessUser {

@@ -29,7 +29,7 @@ export function PageHeader({
       <div className="min-w-0">
         {!compact && (
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-accent-600 dark:text-accent-300">
-            {active === "processos" ? "Acompanhamento processual" : "Perícias e avisos"}
+            {active === "gestao" ? "Gestão do escritório" : active === "processos" ? "Acompanhamento processual" : "Perícias e avisos"}
           </p>
         )}
         <Heading

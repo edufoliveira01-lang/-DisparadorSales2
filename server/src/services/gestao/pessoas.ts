@@ -1,0 +1,120 @@
+import { db } from "../../db";
+import { soDigitos, documentoValido, formatarDocumento, emailValido, dataValida, UFS } from "./validacao";
+
+export class ErroGestao extends Error { constructor(m: string, public status = 400) { super(m); } }
+
+export const TIPOS_PESSOA = ["cliente", "parte_contraria", "testemunha", "perito", "outro"] as const;
+export type TipoPessoa = typeof TIPOS_PESSOA[number];
+const txt = (v: unknown, max: number) => String(v ?? "").trim().slice(0, max);
+
+export interface Pessoa {
+  id: number; tipo: TipoPessoa; pessoa_juridica: number; nome: string; documento: string; rg: string; email: string; telefone: string; telefone2: string;
+  cep: string; logradouro: string; numero: string; complemento: string; bairro: string; cidade: string; uf: string;
+  data_nascimento: string; profissao: string; estado_civil: string; origem: string; observacoes: string;
+  contact_id: number | null; ativo: number; criado_em: string; atualizado_em: string;
+}
+
+function limpar(d: Record<string, unknown>, atual?: Pessoa) {
+  const nome = txt(d.nome ?? atual?.nome, 200);
+  if (nome.length < 2) throw new ErroGestao("Informe o nome.");
+  const tipo = (d.tipo ?? atual?.tipo ?? "cliente") as TipoPessoa;
+  if (!TIPOS_PESSOA.includes(tipo)) throw new ErroGestao("Tipo de pessoa inválido.");
+  const documento = soDigitos(d.documento ?? atual?.documento ?? "");
+  if (!documentoValido(documento)) throw new ErroGestao("CPF ou CNPJ inválido. Confira os dígitos (ou deixe em branco).");
+  const email = txt(d.email ?? atual?.email, 254).toLowerCase();
+  if (!emailValido(email)) throw new ErroGestao("E-mail inválido.");
+  const uf = txt(d.uf ?? atual?.uf, 2).toUpperCase();
+  if (uf && !UFS.has(uf)) throw new ErroGestao("UF inválida.");
+  const nasc = txt(d.data_nascimento ?? atual?.data_nascimento, 10);
+  if (!dataValida(nasc)) throw new ErroGestao("Data de nascimento inválida (use AAAA-MM-DD).");
+  const pj = d.pessoa_juridica !== undefined ? (d.pessoa_juridica ? 1 : 0) : atual ? atual.pessoa_juridica : documento.length === 14 ? 1 : 0;
+  return {
+    tipo, pessoa_juridica: pj, nome, documento, rg: txt(d.rg ?? atual?.rg, 30), email,
+    telefone: txt(d.telefone ?? atual?.telefone, 30), telefone2: txt(d.telefone2 ?? atual?.telefone2, 30),
+    cep: soDigitos(d.cep ?? atual?.cep).slice(0, 8), logradouro: txt(d.logradouro ?? atual?.logradouro, 200), numero: txt(d.numero ?? atual?.numero, 20),
+    complemento: txt(d.complemento ?? atual?.complemento, 100), bairro: txt(d.bairro ?? atual?.bairro, 100), cidade: txt(d.cidade ?? atual?.cidade, 100), uf,
+    data_nascimento: nasc, profissao: txt(d.profissao ?? atual?.profissao, 100), estado_civil: txt(d.estado_civil ?? atual?.estado_civil, 40),
+    origem: txt(d.origem ?? atual?.origem, 100), observacoes: txt(d.observacoes ?? atual?.observacoes, 4000),
+  };
+}
+const CAMPOS = ["tipo", "pessoa_juridica", "nome", "documento", "rg", "email", "telefone", "telefone2", "cep", "logradouro", "numero", "complemento", "bairro", "cidade", "uf", "data_nascimento", "profissao", "estado_civil", "origem", "observacoes"] as const;
+
+const visao = (p: Pessoa) => ({ ...p, documento_formatado: formatarDocumento(p.documento), ativo: Boolean(p.ativo), pessoa_juridica: Boolean(p.pessoa_juridica) });
+
+export function listarPessoas(f: { busca?: string; tipo?: string; ativo?: string; pagina?: number; limite?: number }) {
+  const onde: string[] = []; const par: unknown[] = [];
+  if (f.tipo && TIPOS_PESSOA.includes(f.tipo as TipoPessoa)) { onde.push("p.tipo=?"); par.push(f.tipo); }
+  if (f.ativo === "0" || f.ativo === "1") { onde.push("p.ativo=?"); par.push(Number(f.ativo)); }
+  const busca = txt(f.busca, 100);
+  if (busca) {
+    const d = soDigitos(busca);
+    onde.push(`(p.nome LIKE ? ESCAPE '\\' OR p.email LIKE ? ESCAPE '\\' ${d.length >= 3 ? "OR p.documento LIKE ? OR REPLACE(REPLACE(REPLACE(REPLACE(p.telefone,' ',''),'-',''),'(',''),')','') LIKE ?" : ""})`);
+    const like = `%${busca.replace(/[\\%_]/g, "\\$&")}%`;
+    par.push(like, like); if (d.length >= 3) par.push(`%${d}%`, `%${d}%`);
+  }
+  const limite = Math.min(100, Math.max(1, Math.trunc(f.limite || 30)));
+  const pagina = Math.max(1, Math.trunc(f.pagina || 1));
+  const w = onde.length ? `WHERE ${onde.join(" AND ")}` : "";
+  const total = (db.prepare(`SELECT COUNT(*) n FROM gestao_pessoas p ${w}`).get(...par) as { n: number }).n;
+  const linhas = db.prepare(`SELECT p.*, (SELECT COUNT(*) FROM gestao_partes g WHERE g.pessoa_id=p.id) AS processos FROM gestao_pessoas p ${w} ORDER BY p.nome COLLATE NOCASE LIMIT ? OFFSET ?`)
+    .all(...par, limite, (pagina - 1) * limite) as (Pessoa & { processos: number })[];
+  return { total, pagina, limite, itens: linhas.map(visao) };
+}
+
+export function obterPessoa(id: number) {
+  const p = db.prepare("SELECT * FROM gestao_pessoas WHERE id=?").get(id) as Pessoa | undefined;
+  if (!p) throw new ErroGestao("Pessoa não encontrada.", 404);
+  const processos = db.prepare(`SELECT pr.id,pr.numero,pr.pasta,pr.titulo,pr.status,g.papel FROM gestao_partes g JOIN gestao_processos pr ON pr.id=g.processo_id WHERE g.pessoa_id=? ORDER BY pr.atualizado_em DESC`).all(id);
+  return { ...visao(p), processos };
+}
+
+export function criarPessoa(d: Record<string, unknown>) {
+  const v = limpar(d);
+  if (v.documento) {
+    const dup = db.prepare("SELECT id,nome FROM gestao_pessoas WHERE documento=? LIMIT 1").get(v.documento) as { id: number; nome: string } | undefined;
+    if (dup) throw new ErroGestao(`Já existe cadastro com esse documento: ${dup.nome}.`, 409);
+  }
+  const info = db.prepare(`INSERT INTO gestao_pessoas(${CAMPOS.join(",")}) VALUES (${CAMPOS.map(() => "?").join(",")})`).run(...CAMPOS.map((c) => v[c]));
+  return obterPessoa(Number(info.lastInsertRowid));
+}
+
+export function atualizarPessoa(id: number, d: Record<string, unknown>) {
+  const atual = db.prepare("SELECT * FROM gestao_pessoas WHERE id=?").get(id) as Pessoa | undefined;
+  if (!atual) throw new ErroGestao("Pessoa não encontrada.", 404);
+  const v = limpar(d, atual);
+  if (v.documento) {
+    const dup = db.prepare("SELECT id,nome FROM gestao_pessoas WHERE documento=? AND id<>? LIMIT 1").get(v.documento, id) as { id: number; nome: string } | undefined;
+    if (dup) throw new ErroGestao(`Já existe cadastro com esse documento: ${dup.nome}.`, 409);
+  }
+  const ativo = d.ativo === undefined ? atual.ativo : d.ativo ? 1 : 0;
+  db.prepare(`UPDATE gestao_pessoas SET ${CAMPOS.map((c) => `${c}=?`).join(",")},ativo=?,atualizado_em=CURRENT_TIMESTAMP WHERE id=?`).run(...CAMPOS.map((c) => v[c]), ativo, id);
+  return obterPessoa(id);
+}
+
+export function excluirPessoa(id: number) {
+  obterPessoa(id);
+  const n = (db.prepare("SELECT COUNT(*) n FROM gestao_partes WHERE pessoa_id=?").get(id) as { n: number }).n;
+  if (n > 0) throw new ErroGestao(`Esta pessoa participa de ${n} processo(s). Inative o cadastro em vez de excluir.`, 409);
+  db.prepare("DELETE FROM gestao_pessoas WHERE id=?").run(id);
+  return { ok: true };
+}
+
+/** Cria o cadastro completo a partir de um contato antigo (idempotente: um contato gera uma única pessoa). */
+export function pessoaDoContato(contactId: number): number | null {
+  const ja = db.prepare("SELECT id FROM gestao_pessoas WHERE contact_id=?").get(contactId) as { id: number } | undefined;
+  if (ja) return ja.id;
+  const c = db.prepare("SELECT id,nome,telefone,observacoes FROM contacts WHERE id=?").get(contactId) as { id: number; nome: string; telefone: string; observacoes: string | null } | undefined;
+  if (!c || c.nome.trim().length < 2) return null;
+  const info = db.prepare("INSERT INTO gestao_pessoas(tipo,nome,telefone,observacoes,origem,contact_id) VALUES ('cliente',?,?,?,'Contatos do sistema',?)").run(c.nome.trim().slice(0, 200), c.telefone, c.observacoes || "", c.id);
+  return Number(info.lastInsertRowid);
+}
+export function importarContatos() {
+  let criadas = 0;
+  db.transaction(() => {
+    for (const c of db.prepare("SELECT id FROM contacts").all() as { id: number }[]) {
+      const antes = db.prepare("SELECT id FROM gestao_pessoas WHERE contact_id=?").get(c.id);
+      if (!antes && pessoaDoContato(c.id)) criadas++;
+    }
+  })();
+  return { criadas, total: (db.prepare("SELECT COUNT(*) n FROM gestao_pessoas").get() as { n: number }).n };
+}

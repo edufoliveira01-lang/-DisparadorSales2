@@ -31,6 +31,7 @@ function permissionsFor(path: string, method: string): Permission[] {
   if (path.startsWith("/pericias-agendadas")) return [
     read ? "calendar.view" : /lembrete|completar-telefone|completar-processo/.test(path) ? "messages.send" : "calendar.manage",
   ];
+  if (path.startsWith("/gestao")) return [read ? "gestao.view" : "gestao.manage"];
   if (path.startsWith("/djen")) {
     const sub = path.slice(5);
     if (sub.startsWith("/calendarios") || sub.startsWith("/prazos/config")) return [read ? "deadlines.view" : "deadlines.manage"];

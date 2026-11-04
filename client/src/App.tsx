@@ -56,6 +56,10 @@ const Configuracoes = lazy(() =>
 const Login = lazy(() =>
   import("@/pages/Login").then((module) => ({ default: module.Login })),
 );
+const GestaoInicio = lazy(() => import("@/pages/gestao/GestaoInicio").then((m) => ({ default: m.GestaoInicio })));
+const GestaoPessoas = lazy(() => import("@/pages/gestao/Pessoas").then((m) => ({ default: m.Pessoas })));
+const GestaoProcessos = lazy(() => import("@/pages/gestao/Processos").then((m) => ({ default: m.Processos })));
+const GestaoProcessoFicha = lazy(() => import("@/pages/gestao/ProcessoFicha").then((m) => ({ default: m.ProcessoFicha })));
 const Team = lazy(() => import("@/pages/Team").then((module) => ({ default: module.Team })));
 const Account = lazy(() => import("@/pages/Account").then((module) => ({ default: module.Account })));
 
@@ -117,6 +121,10 @@ function AuthenticatedApp() {
           <Layout>
             <Suspense fallback={<PageLoading />}>
               <Routes>
+                <Route path="/gestao" element={<AccessRoute permission="gestao.view"><GestaoInicio /></AccessRoute>} />
+                <Route path="/gestao/pessoas" element={<AccessRoute permission="gestao.view"><GestaoPessoas /></AccessRoute>} />
+                <Route path="/gestao/processos" element={<AccessRoute permission="gestao.view"><GestaoProcessos /></AccessRoute>} />
+                <Route path="/gestao/processos/:id" element={<AccessRoute permission="gestao.view"><GestaoProcessoFicha /></AccessRoute>} />
                 <Route path="/processos/quadro" element={<AccessRoute permission="processes.view"><QuadroProcessos /></AccessRoute>} />
                 <Route path="/processos/monitoramento" element={<AccessRoute permission="djen.manage"><Acompanhamento /></AccessRoute>} />
                 <Route path="/processos/advogados" element={<AccessRoute permission="processes.manage"><Acompanhamento /></AccessRoute>} />
