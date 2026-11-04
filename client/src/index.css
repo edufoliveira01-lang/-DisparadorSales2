@@ -105,6 +105,12 @@
     background: linear-gradient(110deg, #8556ee, #7149cd);
     box-shadow: 0 4px 16px #00000015;
   }
+  .sidebar-group-head {
+    @apply flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-300 transition-colors hover:bg-white/5 hover:text-white;
+  }
+  .sidebar-group-head.is-active { @apply text-white; }
+  .sidebar-link-nested { margin-left: 10px; }
+  .app-sidebar.is-collapsed .sidebar-group-head { display: none; }
   .sidebar-section-label {
     @apply mb-2 px-3 text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-500;
   }

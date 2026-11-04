@@ -101,7 +101,7 @@ function Senha({ c, novo, aoMudar, entidadeId, rotulo, somenteLeitura }: { c: Ca
   );
 }
 
-function GerenciarCampos({ entidade, aoFechar }: { entidade: Entidade; aoFechar: () => void }) {
+export function GerenciarCampos({ entidade, aoFechar }: { entidade: Entidade; aoFechar: () => void }) {
   const { show } = useToast();
   const [lista, setLista] = useState<Def[]>([]);
   const [novo, setNovo] = useState({ nome: "", tipo: "texto", grupo: "", opcoes: "" });

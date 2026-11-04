@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, CalendarClock, FolderOpen, Loader2, Plus, Printer, Save, ShieldAlert } from "lucide-react";
+import { ArrowLeft, Camera, CalendarClock, Download, FolderOpen, Loader2, Plus, Printer, Save, ShieldAlert, Trash2, User } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -22,7 +22,7 @@ interface ProcLigado { id: number; numero: string; pasta: string; titulo: string
 interface Pessoa {
   id: number; tipo: string; pessoa_juridica: boolean; nome: string; documento: string; documento_formatado: string; rg: string; email: string; telefone: string; telefone2: string;
   cep: string; logradouro: string; numero: string; complemento: string; bairro: string; cidade: string; uf: string; data_nascimento: string; profissao: string; estado_civil: string; origem: string; observacoes: string;
-  escolaridade: string; pis: string; nome_mae: string; filiacao: string; ativo: boolean; processos?: ProcLigado[]; campos?: CampoValor[];
+  escolaridade: string; pis: string; nome_mae: string; filiacao: string; ativo: boolean; processos?: ProcLigado[]; campos?: CampoValor[]; tem_foto?: boolean;
 }
 const vazia = (): Pessoa => ({ id: 0, tipo: "cliente", pessoa_juridica: false, nome: "", documento: "", documento_formatado: "", rg: "", email: "", telefone: "", telefone2: "", cep: "", logradouro: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "", data_nascimento: "", profissao: "", estado_civil: "", origem: "", observacoes: "", escolaridade: "", pis: "", nome_mae: "", filiacao: "", ativo: true });
 interface Pericia { id: number; tipo: string; data: string; horario: string | null; local: string | null; profissional_perito: string | null; processo: string | null; passada: boolean }
@@ -55,6 +55,8 @@ export function ClienteFicha() {
   const [msgCep, setMsgCep] = useState("");
   const [apagar, setApagar] = useState(false);
   const numeroRef = useRef<HTMLInputElement>(null);
+  const fotoRef = useRef<HTMLInputElement>(null);
+  const [fotoVersao, setFotoVersao] = useState(0);
 
   const carregar = useCallback(async () => {
     if (novo) { try { const c = await api.get<{ campos: CampoValor[] }>("/gestao/campos?entidade=pessoa"); setPessoa((p) => ({ ...(p ?? vazia()), campos: c.campos.map((x) => ({ ...x, valor: "", preenchido: false, imprimir: true })) })); } catch { /* campos indisponíveis */ } return; }
@@ -94,6 +96,13 @@ export function ClienteFicha() {
     try { await api.delete(`/gestao/pessoas/${id}`); show("Cadastro excluído.", "success"); navegar("/gestao/clientes"); }
     catch (err) { show(err instanceof ApiError ? err.message : "Não foi possível excluir.", "error"); setApagar(false); }
   };
+  const enviarFoto = async (f: File | undefined) => {
+    if (!f) return;
+    try { await api.upload(`/gestao/pessoas/${id}/foto`, f); setFotoVersao((v) => v + 1); setPessoa((p) => (p ? { ...p, tem_foto: true } : p)); show("Foto salva.", "success"); }
+    catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível enviar a foto.", "error"); }
+    finally { if (fotoRef.current) fotoRef.current.value = ""; }
+  };
+  const tirarFoto = async () => { try { await api.delete(`/gestao/pessoas/${id}/foto`); setPessoa((p) => (p ? { ...p, tem_foto: false } : p)); } catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível remover a foto.", "error"); } };
   const abrirFicha = (senhas: boolean, pessoaId = id) => { window.open(`/api/gestao/pessoas/${pessoaId}/ficha${senhas ? "?senhas=1" : ""}`, "_blank", "noopener"); setImprimir(false); };
 
   if (erro) return <div className="space-y-4"><Link to="/gestao/clientes" className="inline-flex items-center gap-1 text-sm text-accent-700"><ArrowLeft className="h-4 w-4" /> Voltar</Link><p className="text-sm text-red-600">{erro}</p></div>;
@@ -120,7 +129,14 @@ export function ClienteFicha() {
         <form onSubmit={salvar} className="space-y-6 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
           <fieldset disabled={leitura} className="space-y-6">
             <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 sm:col-span-2 lg:col-span-4">Identificação</h3>
+              <div className="flex flex-wrap items-center gap-4 sm:col-span-2 lg:col-span-4">
+                {!novo && pessoa.tem_foto ? <img key={fotoVersao} src={`/api/gestao/pessoas/${id}/foto?v=${fotoVersao}`} alt={`Foto de ${pessoa.nome}`} className="h-24 w-[4.5rem] rounded-xl border border-zinc-200 object-cover dark:border-zinc-700" />
+                  : <span className="flex h-24 w-[4.5rem] items-center justify-center rounded-xl border border-dashed border-zinc-300 text-zinc-300 dark:border-zinc-700"><User className="h-8 w-8" /></span>}
+                <div className="space-y-1.5"><h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Identificação</h3>
+                  {novo ? <p className="text-xs text-zinc-500">Cadastre primeiro; depois você coloca a foto (aparece na ficha impressa).</p> : (
+                    <div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant="outline" onClick={() => fotoRef.current?.click()} disabled={leitura}><Camera className="h-4 w-4" /> {pessoa.tem_foto ? "Trocar foto" : "Colocar foto"}</Button>{pessoa.tem_foto && !leitura && <Button type="button" size="sm" variant="ghost" onClick={() => void tirarFoto()}><Trash2 className="h-4 w-4" /> Remover</Button>}<input ref={fotoRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => void enviarFoto(e.target.files?.[0])} /></div>)}
+                  <p className="text-xs text-zinc-500">PNG, JPG ou WebP, até 2 MB.</p></div>
+              </div>
               <Campo rotulo="Nome completo / Razão social *" className="sm:col-span-2 lg:col-span-3"><Input required autoFocus={novo} value={pessoa.nome} onChange={(e) => set("nome", e.target.value)} className="mt-1.5" /></Campo>
               <Campo rotulo="Tipo de cadastro"><Select value={pessoa.tipo} onChange={(e) => set("tipo", e.target.value)} className="mt-1.5">{Object.entries(TIPOS).map(([v, r]) => <option key={v} value={v}>{r}</option>)}</Select></Campo>
               <Campo rotulo={pessoa.pessoa_juridica ? "CNPJ" : "CPF"}><Input inputMode="numeric" value={mascaraCpfCnpj(pessoa.documento)} onChange={(e) => { const m = mascaraCpfCnpj(e.target.value); set("documento", m); set("pessoa_juridica", m.replace(/\D/g, "").length > 11); }} className="mt-1.5" placeholder="Somente números" /></Campo>
@@ -190,8 +206,8 @@ export function ClienteFicha() {
 
       {novoProcesso && <NovoProcesso responsaveis={resp} clientePadrao={{ id, nome: pessoa.nome }} aoFechar={() => setNovoProcesso(false)} aoCriar={(pid) => { setNovoProcesso(false); navegar(`/gestao/processos/${pid}`); }} />}
       <Modal open={imprimir} onClose={() => setImprimir(false)} title="Imprimir ficha de cadastro" description="Abre a ficha em uma nova aba, pronta para imprimir ou salvar em PDF." maxWidth="max-w-md"
-        footer={<div className="flex w-full justify-end gap-2"><Button variant="outline" onClick={() => setImprimir(false)}>Cancelar</Button>{gerir && <Button variant="outline" onClick={() => abrirFicha(true)}><ShieldAlert className="h-4 w-4" /> Com senhas</Button>}<Button onClick={() => abrirFicha(false)}><Printer className="h-4 w-4" /> Imprimir</Button></div>}>
-        <p className="text-sm text-zinc-600 dark:text-zinc-300">A ficha traz os dados do cadastro, os campos personalizados e os processos vinculados. Por segurança, as <b>senhas saem ocultas</b>; use “Com senhas” só se for guardar o papel com cuidado (isso fica registrado).</p>
+        footer={<div className="flex w-full flex-wrap justify-end gap-2"><Button variant="outline" onClick={() => setImprimir(false)}>Cancelar</Button><Button variant="outline" onClick={() => { window.open(`/api/gestao/pessoas/${id}/ficha?formato=doc`, "_self"); setImprimir(false); }}><Download className="h-4 w-4" /> Baixar para editar (Word)</Button>{gerir && <Button variant="outline" onClick={() => abrirFicha(true)}><ShieldAlert className="h-4 w-4" /> Com senhas</Button>}<Button onClick={() => abrirFicha(false)}><Printer className="h-4 w-4" /> Imprimir</Button></div>}>
+        <div className="space-y-3 text-sm text-zinc-600 dark:text-zinc-300"><p>A ficha traz os dados do cadastro, a foto, os campos personalizados e os processos vinculados. Por segurança, as <b>senhas saem ocultas</b>; use “Com senhas” só se for guardar o papel com cuidado (isso fica registrado).</p><p>Quer mudar o visual (logotipo, cabeçalho, o que aparece)? <Link className="text-accent-700 underline" to="/gestao/ficha">Personalizar o modelo da ficha</Link>. Para editar livremente, baixe em Word.</p></div>
       </Modal>
       <Modal open={criado !== null} onClose={() => { const c = criado; setCriado(null); navegar(`/gestao/clientes/${c}`); }} title="Cadastro criado" description="O que deseja fazer agora?" maxWidth="max-w-md"
         footer={<div className="flex w-full flex-wrap justify-end gap-2"><Button variant="outline" onClick={() => { const c = criado!; setCriado(null); navegar(`/gestao/clientes/${c}`); }}>Abrir o cadastro</Button><Button variant="outline" onClick={() => { const c = criado!; abrirFicha(false, c); setCriado(null); navegar(`/gestao/clientes/${c}`); }}><Printer className="h-4 w-4" /> Imprimir ficha</Button><Button onClick={() => { const c = criado!; setCriado(null); navegar(`/gestao/clientes/${c}?aba=processos`); }}><Plus className="h-4 w-4" /> Cadastrar processo</Button></div>}>

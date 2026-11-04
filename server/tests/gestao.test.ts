@@ -626,3 +626,72 @@ describe("refinos do cadastro: CEP, campos personalizados, ficha, unificação",
     expect((await req(`/financeiro/pessoas/${cliente.id}`, "GET", undefined, adv.cookie)).status).toBe(403); // sem permissão financeira
   });
 });
+
+const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+
+describe("modelo da ficha: personalização, logotipo, foto e Word", () => {
+  it("personaliza título, cabeçalho, seções, assinatura; logotipo e foto aparecem na ficha", async () => {
+    const admin = await entrar("administrador");
+    const leitor = await entrar("consulta");
+    const cfg0 = (await req("/ficha/config", "GET", undefined, admin.cookie)).json;
+    expect(cfg0.config.titulo).toBe("FICHA PROCESSUAL");
+    expect(cfg0.config.secoes.endereco).toBe(true);
+    expect((await req("/ficha/config", "PUT", { titulo: "X" }, leitor.cookie)).status).toBe(403); // só quem edita
+
+    const salvo = await req("/ficha/config", "PUT", { titulo: "FICHA DE ATENDIMENTO <script>", subtitulo: "Previdenciário", nome_escritorio: "Sales & Associados", cabecalho_linhas: ["Rua A, 10 — Centro", "(11) 3333-0000", "OAB/SP 123.456", "quarta linha descartada"], rodape: "Documento interno", linhas_observacoes: 3, secoes: { endereco: false, processos: false }, assinatura: true, texto_assinatura: "Declaro que os dados são verdadeiros." }, admin.cookie);
+    expect(salvo.json.config).toMatchObject({ subtitulo: "Previdenciário", linhas_observacoes: 3, assinatura: true });
+    expect(salvo.json.config.cabecalho_linhas).toHaveLength(3);
+    expect(salvo.json.config.secoes).toMatchObject({ endereco: false, processos: false, identificacao: true });
+    expect((await req("/ficha/config", "PUT", { linhas_observacoes: 999 }, admin.cookie)).json.config.linhas_observacoes).toBe(9); // fora do limite volta ao padrão
+    await req("/ficha/config", "PUT", { linhas_observacoes: 3 }, admin.cookie);
+
+    // logotipo: só PNG/JPG/WebP reais
+    expect((await bruto("/ficha/logo", Buffer.from("<svg onload=alert(1)>"), admin.cookie)).status).toBe(400);
+    expect((await bruto("/ficha/logo", Buffer.concat([PNG, Buffer.alloc(1100 * 1024)]), admin.cookie)).status).toBe(413);
+    expect((await bruto("/ficha/logo", PNG, admin.cookie)).status).toBe(200);
+    expect((await bruto("/ficha/logo", PNG, leitor.cookie)).status).toBe(403);
+    const logoGet = await fetch(`${await ready}/api/gestao/ficha/logo`, { headers: { Cookie: admin.cookie } });
+    expect(logoGet.headers.get("content-type")).toBe("image/png");
+    expect(logoGet.headers.get("x-content-type-options")).toBe("nosniff");
+
+    const pessoa = (await req("/pessoas", "POST", { nome: "Cliente Com Foto", logradouro: "Rua Escondida" }, admin.cookie)).json;
+    expect(pessoa.tem_foto).toBe(false);
+    expect((await bruto(`/pessoas/${pessoa.id}/foto`, Buffer.from("não é imagem"), admin.cookie)).status).toBe(400);
+    expect((await bruto(`/pessoas/${pessoa.id}/foto`, PNG, admin.cookie)).status).toBe(200);
+    expect((await req(`/pessoas/${pessoa.id}`, "GET", undefined, admin.cookie)).json.tem_foto).toBe(true);
+    expect((await fetch(`${await ready}/api/gestao/pessoas/${pessoa.id}/foto`, { headers: { Cookie: admin.cookie } })).status).toBe(200);
+
+    const ficha = (await baixar(`/pessoas/${pessoa.id}/ficha?imprimir=0`, admin.cookie)).texto;
+    expect(ficha).toContain("FICHA DE ATENDIMENTO &lt;script&gt;"); // título escapado
+    expect(ficha).toContain("Sales &amp; Associados");
+    expect(ficha).toContain("OAB/SP 123.456");
+    expect(ficha).not.toContain("quarta linha descartada");
+    expect((ficha.match(/data:image\/png;base64/g) || []).length).toBe(2); // foto do cliente + logotipo
+    expect(ficha).not.toContain("ENDEREÇO"); // seção desligada
+    expect(ficha).not.toContain("Rua Escondida");
+    expect(ficha).toContain("DADOS DE IDENTIFICAÇÃO");
+    expect(ficha).toContain("Declaro que os dados são verdadeiros.");
+    expect(ficha).toContain("Assinatura do cliente");
+    expect(ficha).toContain("Documento interno");
+    expect((ficha.match(/class="pauta"/g) || []).length).toBe(3);
+
+    // Word: baixa como arquivo editável
+    const doc = await baixar(`/pessoas/${pessoa.id}/ficha?formato=doc`, admin.cookie);
+    expect(doc.headers.get("content-type")).toMatch(/application\/msword/);
+    expect(doc.headers.get("content-disposition")).toMatch(/^attachment; filename\*=UTF-8''/);
+    expect(doc.texto).not.toContain("window.print()");
+
+    // pré-visualização do modelo com cliente de exemplo
+    const previa = await baixar("/ficha/previa", admin.cookie);
+    expect(previa.texto).toContain("(exemplo)");
+    expect(previa.texto).toContain("Pré-visualização");
+
+    expect((await req(`/pessoas/${pessoa.id}/foto`, "DELETE", undefined, admin.cookie)).status).toBe(200);
+    expect((await req(`/pessoas/${pessoa.id}`, "GET", undefined, admin.cookie)).json.tem_foto).toBe(false);
+    expect((await req("/ficha/logo", "DELETE", undefined, admin.cookie)).status).toBe(200);
+    expect((await fetch(`${await ready}/api/gestao/ficha/logo`, { headers: { Cookie: admin.cookie } })).status).toBe(404);
+    // volta ao modelo original
+    await req("/ficha/config", "PUT", FICHA_PADRAO_TESTE, admin.cookie);
+  });
+});
+const FICHA_PADRAO_TESTE = { titulo: "FICHA PROCESSUAL", subtitulo: "Ficha de cadastro do cliente", nome_escritorio: "", cabecalho_linhas: [], rodape: "", mostrar_foto: true, linhas_observacoes: 9, secoes: { identificacao: true, endereco: true, contato: true, campos: true, processos: true, observacoes: true }, assinatura: false, texto_assinatura: "" };

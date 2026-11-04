@@ -21,11 +21,12 @@ import {
   FileText,
   Wallet,
   BarChart3,
+  Printer,
 } from "lucide-react";
 import type { Permission } from "@/context/AuthContext";
 export const navigation = [
   {
-    to: "/",
+    to: "/pericias",
     label: "Visão geral",
     description: "Compromissos, avisos e pendências",
     icon: LayoutDashboard,
@@ -133,6 +134,13 @@ export const navigation = [
     group: "gestao",
   },
   {
+    to: "/gestao/ficha",
+    label: "Ficha de cadastro",
+    description: "Modelo da ficha impressa: logotipo, cabeçalho e campos",
+    icon: Printer,
+    group: "gestao",
+  },
+  {
     to: "/gestao/financeiro",
     label: "Financeiro",
     description: "Honorários, contas a pagar e receber, fluxo de caixa",
@@ -184,7 +192,7 @@ export const navigation = [
 ] as const;
 
 export function navigationPermission(to: string): Permission | null {
-  if (to === "/") return "dashboard.view";
+  if (to === "/pericias") return "dashboard.view";
   if (to === "/calendario") return "calendar.view";
   if (to.startsWith("/templates")) return "templates.view";
   if (to === "/pendentes") return "pending.view";
@@ -217,7 +225,7 @@ export function getCurrentPage(pathname: string) {
   return (
     navigation.find((item) => item.to === pathname) ??
     navigation.find(
-      (item) => item.to !== "/" && pathname.startsWith(item.to + "/"),
+      (item) => pathname.startsWith(item.to + "/"),
     ) ??
     navigation[0]
   );

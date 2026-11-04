@@ -15,7 +15,8 @@ import { indicadores } from "../services/gestao/indicadores";
 import { hasPermission } from "../services/accessService";
 import { consultarCep } from "../services/gestao/cep";
 import { adicionarCamposPrevidenciarios, atualizarCampo, criarCampo, excluirCampo, listarCampos, revelarSenha, TIPOS_CAMPO } from "../services/gestao/campos";
-import { fichaDeCadastroHtml } from "../services/gestao/ficha";
+import { fichaDeCadastroHtml, fichaDeExemplo } from "../services/gestao/ficha";
+import { PADRAO as FICHA_PADRAO, ROTULO_SECAO, apagarFoto, apagarLogo, fotoDaPessoa, lerConfig, logoAtual, salvarConfig, salvarFoto, salvarLogo } from "../services/gestao/fichaConfig";
 import { agendaDaPessoa, andamentoDoProcesso } from "../services/gestao/integracao";
 import { financeiroDaPessoa } from "../services/gestao/financeiro";
 import { recursoLiberadoNaLicenca } from "../licenca/cliente";
@@ -170,18 +171,45 @@ gestaoRouter.post("/campos/:campoId/revelar/:entidadeId", rota((req) => {
 gestaoRouter.get("/pessoas/:id/ficha", (req, res, next) => {
   try {
     const comSenhas = req.query.senhas === "1";
+    const doc = req.query.formato === "doc";
     const u = usuario(req);
     if (comSenhas && !hasPermission(u, "gestao.manage")) return void res.status(403).type("text").send("Você não tem permissão para imprimir senhas.");
-    const html = fichaDeCadastroHtml(id(req), { comSenhas, imprimir: req.query.imprimir !== "0", emitidaPor: nomeDe(u) });
+    const html = fichaDeCadastroHtml(id(req), { comSenhas, imprimir: !doc && req.query.imprimir !== "0", emitidaPor: nomeDe(u) });
     if (comSenhas) auditAccess("gestao_ficha_impressa_com_senhas", u.id, null, { pessoa: id(req) });
     res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:");
     res.setHeader("Cache-Control", "private, no-store");
+    if (doc) { // arquivo para abrir e editar no Word
+      res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(`Ficha de cadastro ${id(req)}.doc`)}`);
+      return void res.type("application/msword").send(html);
+    }
     res.type("html").send(html);
   } catch (e) {
     if (e instanceof ErroGestao) return void res.status(e.status).type("text").send(e.message);
     next(e);
   }
 });
+
+// ---------- modelo da ficha (cabeçalho, seções, logotipo) e foto do cliente ----------
+const servirImagem = (img: { arquivo: string; mime: string } | null, res: Response) => {
+  if (!img) return void res.status(404).end();
+  res.set({ "Content-Type": img.mime, "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox", "Cache-Control": "private, no-cache" });
+  res.sendFile(img.arquivo);
+};
+gestaoRouter.get("/ficha/config", rota(() => ({ config: lerConfig(), padrao: FICHA_PADRAO, tem_logo: Boolean(logoAtual()), rotulo_secao: ROTULO_SECAO })));
+gestaoRouter.put("/ficha/config", rota((req) => { const c = salvarConfig(req.body || {}); auditAccess("gestao_ficha_modelo_alterado", usuario(req).id, null); return { config: c, tem_logo: Boolean(logoAtual()) }; }));
+gestaoRouter.get("/ficha/previa", (req, res, next) => {
+  try {
+    res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:");
+    res.setHeader("Cache-Control", "private, no-store");
+    res.type("html").send(fichaDeExemplo(lerConfig(), nomeDe(usuario(req))));
+  } catch (e) { next(e); }
+});
+gestaoRouter.get("/ficha/logo", (_req, res) => servirImagem(logoAtual(), res));
+gestaoRouter.post("/ficha/logo", express.raw({ type: () => true, limit: 1024 * 1024 + 1024 }), rota((req) => { salvarLogo(Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0)); return { ok: true }; }));
+gestaoRouter.delete("/ficha/logo", rota(() => { apagarLogo(); return { ok: true }; }));
+gestaoRouter.get("/pessoas/:id/foto", rota((req, res) => servirImagem(fotoDaPessoa(id(req)), res)));
+gestaoRouter.post("/pessoas/:id/foto", express.raw({ type: () => true, limit: 2 * 1024 * 1024 + 1024 }), rota((req) => { salvarFoto(id(req), Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0)); return { ok: true }; }));
+gestaoRouter.delete("/pessoas/:id/foto", rota((req) => { apagarFoto(id(req)); return { ok: true }; }));
 
 // ---------- integração com DJEN/perícias e financeiro do cadastro ----------
 gestaoRouter.get("/processos/:id/andamento", rota((req) => andamentoDoProcesso(id(req))));

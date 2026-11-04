@@ -126,6 +126,9 @@ export function runGestaoMigrations(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_gestao_lanc_processo ON gestao_lancamentos(processo_id);
     CREATE INDEX IF NOT EXISTS idx_gestao_lanc_contrato ON gestao_lancamentos(contrato_id);
 
+    -- Modelo da ficha de cadastro impressa (uma linha só, em JSON)
+    CREATE TABLE IF NOT EXISTS gestao_ficha_config (id INTEGER PRIMARY KEY CHECK(id=1), config_json TEXT NOT NULL DEFAULT '{}', atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+
     -- Campos personalizados (pessoa ou processo) e seus valores; "senha" fica criptografada
     CREATE TABLE IF NOT EXISTS gestao_campos (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -111,7 +111,7 @@ export function GlobalServiceActivity() {
     : whatsapp.status === "autenticado" || (whatsapp.status === "inicializando" && typeof whatsapp.syncProgress === "number") ? `WhatsApp · Sincronizando${progress}`
     : whatsapp.status === "inicializando" || whatsapp.conectando ? `WhatsApp · ${whatsapp.faseInicializacao || "Iniciando conexão"}` : null;
   if (showWhatsapp && whatsappLabel) activities.unshift({ id: "whatsapp", label: whatsappLabel, href: "/configuracoes?whatsapp=1" });
-  if (showBatches) for (const batch of lotes) activities.push({ id: batch.id, label: `${batch.tipo === "lembretes" ? "Lembretes" : "Mensagens"} · ${batch.aguardandoReconexao ? "Aguardando reconexão do WhatsApp" : `${batch.processados} de ${batch.total} processados`}`, href: "/", waiting: batch.aguardandoReconexao });
+  if (showBatches) for (const batch of lotes) activities.push({ id: batch.id, label: `${batch.tipo === "lembretes" ? "Lembretes" : "Mensagens"} · ${batch.aguardandoReconexao ? "Aguardando reconexão do WhatsApp" : `${batch.processados} de ${batch.total} processados`}`, href: "/pericias", waiting: batch.aguardandoReconexao });
   for (const request of requests) activities.push({ id: `request-${request.id}`, label: request.label + (request.count > 1 ? ` · ${request.count} tarefas` : ""), href: "" });
   if (!activities.length) return null;
   return (

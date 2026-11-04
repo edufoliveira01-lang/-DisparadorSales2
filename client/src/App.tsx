@@ -64,6 +64,7 @@ const GestaoTarefas = lazy(() => import("@/pages/gestao/Tarefas").then((m) => ({
 const GestaoModelos = lazy(() => import("@/pages/gestao/Modelos").then((m) => ({ default: m.Modelos })));
 const GestaoFinanceiro = lazy(() => import("@/pages/gestao/Financeiro").then((m) => ({ default: m.Financeiro })));
 const GestaoIndicadores = lazy(() => import("@/pages/gestao/Indicadores").then((m) => ({ default: m.Indicadores })));
+const GestaoFicha = lazy(() => import("@/pages/gestao/FichaModelo").then((m) => ({ default: m.FichaModelo })));
 const Team = lazy(() => import("@/pages/Team").then((module) => ({ default: module.Team })));
 const Account = lazy(() => import("@/pages/Account").then((module) => ({ default: module.Account })));
 
@@ -127,6 +128,7 @@ function AuthenticatedApp() {
               <Routes>
                 <Route path="/gestao" element={<AccessRoute permission="gestao.view"><GestaoInicio /></AccessRoute>} />
                 <Route path="/gestao/tarefas" element={<AccessRoute permission="gestao.view"><GestaoTarefas /></AccessRoute>} />
+                <Route path="/gestao/ficha" element={<AccessRoute permission="gestao.view"><GestaoFicha /></AccessRoute>} />
                 <Route path="/gestao/modelos" element={<AccessRoute permission="gestao.view"><GestaoModelos /></AccessRoute>} />
                 <Route path="/gestao/financeiro" element={<AccessRoute permission="financeiro.view"><GestaoFinanceiro /></AccessRoute>} />
                 <Route path="/gestao/indicadores" element={<AccessRoute permission="gestao.view"><GestaoIndicadores /></AccessRoute>} />
@@ -144,7 +146,8 @@ function AuthenticatedApp() {
                   element={<AccessRoute permission="deadlines.view"><CalendariosPrazos /></AccessRoute>}
                 />
                 <Route path="/processos/*" element={<AccessRoute permission="processes.view"><Acompanhamento /></AccessRoute>} />
-                <Route path="/" element={can("dashboard.view") ? <Dashboard /> : <Navigate to={firstAllowedPage(user.permissions)} replace />} />
+                <Route path="/" element={<Navigate to={can("gestao.view") ? "/gestao" : firstAllowedPage(user.permissions)} replace />} />
+                <Route path="/pericias" element={can("dashboard.view") ? <Dashboard /> : <Navigate to={firstAllowedPage(user.permissions)} replace />} />
                 <Route path="/agenda" element={<AccessRoute permission="contacts.view"><Agenda /></AccessRoute>} />
                 <Route path="/calendario" element={<AccessRoute permission="calendar.view"><Calendario /></AccessRoute>} />
                 <Route path="/templates/*" element={<AccessRoute permission="templates.view"><Templates /></AccessRoute>} />

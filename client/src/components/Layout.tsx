@@ -118,11 +118,6 @@ export function Layout({ children }: { children: ReactNode }) {
             >
               <Menu className="h-5 w-5" />
             </button>
-            <nav className="workspace-switch" aria-label="Área de trabalho">
-              {(can("dashboard.view") || can("calendar.view") || can("pending.view") || can("history.view")) && <Link to={can("dashboard.view") ? "/" : can("calendar.view") ? "/calendario" : can("pending.view") ? "/pendentes" : "/historico"} aria-current={active === "pericias" ? "true" : undefined}>Perícias e avisos</Link>}
-              {(can("processes.view") || can("deadlines.view")) && <Link to={can("processes.view") ? "/processos" : "/processos/calendarios"} aria-current={active === "processos" ? "true" : undefined}>Processos e DJEN</Link>}
-              {can("gestao.view") && <Link to="/gestao" aria-current={active === "gestao" ? "true" : undefined}>Gestão</Link>}
-            </nav>
             <div className="min-w-0 topbar-breadcrumb">
               <p className="hidden items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400 md:flex">
                 <span>

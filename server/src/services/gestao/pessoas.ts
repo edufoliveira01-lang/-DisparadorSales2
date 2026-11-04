@@ -3,6 +3,7 @@ import { soDigitos, documentoValido, formatarDocumento, emailValido, dataValida,
 
 import { ErroGestao } from "./erro";
 import { salvarValores, valoresDe } from "./campos";
+import { fotoDaPessoa } from "./fichaConfig";
 export { ErroGestao };
 
 export const TIPOS_PESSOA = ["cliente", "parte_contraria", "testemunha", "perito", "outro"] as const;
@@ -77,7 +78,7 @@ export function obterPessoa(id: number) {
   const p = db.prepare("SELECT * FROM gestao_pessoas WHERE id=?").get(id) as Pessoa | undefined;
   if (!p) throw new ErroGestao("Pessoa não encontrada.", 404);
   const processos = db.prepare(`SELECT pr.id,pr.numero,pr.pasta,pr.titulo,pr.status,g.papel FROM gestao_partes g JOIN gestao_processos pr ON pr.id=g.processo_id WHERE g.pessoa_id=? ORDER BY pr.atualizado_em DESC`).all(id);
-  return { ...visao(p), processos, campos: valoresDe("pessoa", id) };
+  return { ...visao(p), processos, campos: valoresDe("pessoa", id), tem_foto: Boolean(fotoDaPessoa(id)) };
 }
 
 export function criarPessoa(d: Record<string, unknown>) {

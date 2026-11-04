@@ -2,6 +2,14 @@
 
 Área ao lado de "Perícias e avisos" e "Processos e DJEN". Nada do que já existia foi alterado: a gestão só **acrescenta** tabelas (`gestao_*`), rotas (`/api/gestao/*`) e telas.
 
+## Menu único e modelo da ficha (2.67.0)
+
+- **Menu único:** a barra lateral reúne tudo, em grupos que abrem e fecham: **Gestão do escritório**, **Processos e DJEN**, **Perícias e avisos**, **Contatos** e **Preferências**. O grupo da página atual abre sozinho e a escolha de cada grupo fica guardada. Não há mais troca de "área". Ao entrar, quem tem acesso à Gestão cai no **Meu painel**; a visão geral das perícias fica em `/pericias`.
+- **Ficha de cadastro (menu Gestão):** monta o visual da ficha impressa: título, subtítulo, nome do escritório, até 3 linhas de cabeçalho (endereço, telefone, OAB), **logotipo**, quadro da foto, quais seções saem (identificação, endereço, contato, campos personalizados, processos, observações), linhas em branco para anotar à mão, **campo de assinatura** com texto (declaração, aviso de privacidade) e rodapé, com pré-visualização ao lado. Os campos personalizados são criados no botão "Criar e organizar campos".
+- **Foto do cliente:** no cadastro, "Colocar foto" (PNG, JPG ou WebP, até 2 MB); ela sai no quadro 3x4 da ficha. O logotipo aceita até 1 MB.
+- **Editar livremente:** em "Imprimir ficha" há **Baixar para editar (Word)**, que gera um arquivo `.doc` com a ficha.
+- Fotos e logotipo ficam em `DATA_DIR/ficha` (inclua na cópia do servidor, junto de `DATA_DIR/arquivos`).
+
 ## Cadastro unificado (2.66.0)
 
 **Clientes e processos** é uma tela só, com duas visões do mesmo cadastro ("Por cliente" e "Por processo") e uma busca única: acha pelo nome, CPF/CNPJ, telefone, número do processo, pasta ou título. Cada cliente aparece com os processos logo abaixo.
