@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import { db } from "../../db";
 import { ErroGestao } from "./erro";
@@ -36,7 +37,7 @@ export type Bloco =
   | { k: "assinatura"; nome: string; extra: string[]; pt: number }
   | { k: "rogo"; assina: string; extra: string[]; testemunhas: Testemunha[]; polegar: string; pt: number }
   | { k: "testemunhas"; itens: Testemunha[]; pt: number };
-export interface DocumentoMontado { id: DocId; nome: string; blocos: Bloco[] }
+export interface DocumentoMontado { id: string; nome: string; blocos: Bloco[] }
 export interface ImagemKit { dados: Buffer; mime: string }
 export interface Kit { escritorio: Escritorio; nomeExibicao: string; logo: ImagemKit | null; rodapeImagem: ImagemKit | null; alinhaCabecalho: "left" | "center" | "right"; alinhaRodape: "left" | "center" | "right"; rodape: string[]; documentos: DocumentoMontado[]; faltando: string[] }
 
@@ -128,7 +129,9 @@ export const VARIAVEIS_DOCUMENTO = [
 
 // ---------- configuração editável ----------
 export interface HonorariosPadrao { beneficios: number; percentual: number; parcela: number }
-export interface ConfigDocumentos { textos: Partial<Record<DocId, Partial<Record<Variante, string>>>>; tamanhos: Partial<Record<DocId, number>>; honorarios: HonorariosPadrao }
+/** Documento criado pelo escritório, que passa a fazer parte do kit (mesmo cabeçalho, rodapé e assinatura). */
+export interface DocumentoProprio { id: string; nome: string; texto: string; pt: number; assinatura: boolean }
+export interface ConfigDocumentos { textos: Partial<Record<DocId, Partial<Record<Variante, string>>>>; tamanhos: Partial<Record<DocId, number>>; honorarios: HonorariosPadrao; proprios: DocumentoProprio[] }
 const HONORARIOS_PADRAO: HonorariosPadrao = { beneficios: 3, percentual: 30, parcela: 30 };
 
 function lerBruto(): ConfigDocumentos {
@@ -146,14 +149,20 @@ function lerBruto(): ConfigDocumentos {
   }
   const h = c.honorarios ?? HONORARIOS_PADRAO;
   const num = (x: unknown, padrao: number, max: number) => { const n = Number(x); return Number.isFinite(n) && n >= 0 && n <= max ? Math.round(n * 100) / 100 : padrao; };
-  return { textos, tamanhos, honorarios: { beneficios: num(h.beneficios, 3, 99), percentual: num(h.percentual, 30, 100), parcela: num(h.parcela, 30, 100) } };
+  const proprios: DocumentoProprio[] = (Array.isArray(c.proprios) ? c.proprios : []).slice(0, 30).map((x): DocumentoProprio | null => {
+    const o = x as Partial<DocumentoProprio>;
+    const nome = String(o?.nome ?? "").replace(/\*\*/g, "").trim().slice(0, 80), texto = String(o?.texto ?? "").slice(0, 20000);
+    const pt = Number(o?.pt);
+    return /^x_[a-z0-9]{6,12}$/.test(String(o?.id)) && nome && texto.trim() ? { id: String(o!.id), nome, texto, pt: Number.isFinite(pt) && pt >= 7 && pt <= 18 ? Math.round(pt * 2) / 2 : 11, assinatura: o?.assinatura !== false } : null;
+  }).filter((x): x is DocumentoProprio => x !== null);
+  return { textos, tamanhos, proprios, honorarios: { beneficios: num(h.beneficios, 3, 99), percentual: num(h.percentual, 30, 100), parcela: num(h.parcela, 30, 100) } };
 }
 export function lerConfigDocumentos() {
   const c = lerBruto();
   const textos = Object.fromEntries(DOCS.map((d) => [d.id, Object.fromEntries(VARIANTES.map((v) => [v, c.textos[d.id]?.[v] ?? TEXTOS_PADRAO[d.id][v]]))])) as Record<DocId, Record<Variante, string>>;
   const personalizados = Object.fromEntries(DOCS.map((d) => [d.id, VARIANTES.filter((v) => c.textos[d.id]?.[v] !== undefined)])) as Record<DocId, Variante[]>;
   const tamanhos = Object.fromEntries(DOCS.map((d) => [d.id, c.tamanhos[d.id] ?? d.pt])) as Record<DocId, number>;
-  return { textos, personalizados, tamanhos, honorarios: c.honorarios };
+  return { textos, personalizados, tamanhos, honorarios: c.honorarios, proprios: c.proprios };
 }
 function gravar(c: ConfigDocumentos) {
   db.prepare("INSERT INTO gestao_documentos_config(id,config_json) VALUES (1,?) ON CONFLICT(id) DO UPDATE SET config_json=excluded.config_json,atualizado_em=CURRENT_TIMESTAMP").run(JSON.stringify(c));
@@ -183,6 +192,38 @@ export function restaurarTexto(doc: string, variante: string) {
   const atual = lerBruto();
   delete atual.textos[d.id]?.[variante as Variante];
   gravar(atual);
+  return lerConfigDocumentos();
+}
+
+function dadosDoProprio(d: unknown, atual?: DocumentoProprio): DocumentoProprio {
+  if (!d || typeof d !== "object" || Array.isArray(d)) throw new ErroGestao("Dados inválidos.");
+  const o = d as Record<string, unknown>;
+  const nome = String(o.nome ?? atual?.nome ?? "").replace(/\*\*/g, "").trim().slice(0, 80);
+  const texto = String(o.texto ?? atual?.texto ?? "");
+  if (nome.length < 3) throw new ErroGestao("Dê um nome ao documento (mínimo 3 letras).");
+  if (texto.trim().length < 10) throw new ErroGestao("Escreva o texto do documento.");
+  if (texto.length > 20000) throw new ErroGestao("O texto do documento é grande demais.");
+  const pt = Number(o.pt ?? atual?.pt ?? 11);
+  return { id: atual?.id ?? `x_${crypto.randomBytes(5).toString("hex")}`, nome, texto, pt: Number.isFinite(pt) && pt >= 7 && pt <= 18 ? Math.round(pt * 2) / 2 : 11, assinatura: o.assinatura === undefined ? atual?.assinatura ?? true : o.assinatura !== false };
+}
+export function criarDocumentoProprio(d: unknown) {
+  const c = lerBruto();
+  if (c.proprios.length >= 30) throw new ErroGestao("Limite de 30 documentos próprios.");
+  const novo = dadosDoProprio(d);
+  c.proprios.push(novo); gravar(c);
+  return { documento: novo, ...lerConfigDocumentos() };
+}
+export function atualizarDocumentoProprio(id: string, d: unknown) {
+  const c = lerBruto();
+  const i = c.proprios.findIndex((x) => x.id === id);
+  if (i < 0) throw new ErroGestao("Documento não encontrado.", 404);
+  c.proprios[i] = dadosDoProprio(d, c.proprios[i]); gravar(c);
+  return lerConfigDocumentos();
+}
+export function excluirDocumentoProprio(id: string) {
+  const c = lerBruto();
+  if (!c.proprios.some((x) => x.id === id)) throw new ErroGestao("Documento não encontrado.", 404);
+  c.proprios = c.proprios.filter((x) => x.id !== id); gravar(c);
   return lerConfigDocumentos();
 }
 
@@ -248,10 +289,11 @@ function dadosDaPessoa(opcoes: { pessoaId?: number; processoId?: number }, nomeU
 
 export function montarKit(opcoes: OpcoesKit, nomeUsuario: string, exemplo = false): Kit {
   if (!(VARIANTES as readonly string[]).includes(opcoes.variante)) throw new ErroGestao("Tipo de documento inválido.");
-  const escolhidos = DOCS.filter((d) => opcoes.documentos.includes(d.id));
+  const cfg = lerConfigDocumentos();
+  const todos: { id: string; nome: string; pt: number; titulo: number; proprio?: DocumentoProprio }[] = [...DOCS.map((d) => ({ ...d })), ...cfg.proprios.map((p) => ({ id: p.id, nome: p.nome, pt: p.pt, titulo: 14, proprio: p }))];
+  const escolhidos = todos.filter((d) => opcoes.documentos.includes(d.id));
   if (escolhidos.length === 0) throw new ErroGestao("Marque ao menos um documento.");
   const esc = lerEscritorio();
-  const cfg = lerConfigDocumentos();
   const faltando = new Set<string>();
   const ctx: Record<string, string> = exemplo
     ? { "cliente.nome": "NOME DO CLIENTE", "cliente.cpf": "000.000.000-00", "cliente.rg": "00.000.000-0", "cliente.estado_civil": "casado(a)", "cliente.profissao": "profissão", "cliente.endereco": "Rua do Exemplo, 100, Bairro, Cidade/UF, CEP 00000-000", "data.extenso": "1 de janeiro de 2026", "processo.numero": "0000000-00.2026.0.00.0000" }
@@ -301,12 +343,14 @@ export function montarKit(opcoes: OpcoesKit, nomeUsuario: string, exemplo = fals
   const nomeCliente = v["cliente.nome"].toUpperCase();
 
   const documentos = escolhidos.map((d): DocumentoMontado => {
-    const pt = cfg.tamanhos[d.id];
-    const corpo = paraBlocos(substituir(cfg.textos[d.id][opcoes.variante], v, faltando), d, pt);
+    const pt = d.proprio ? d.proprio.pt : cfg.tamanhos[d.id as DocId];
+    const texto = d.proprio ? (/^\s*# /.test(d.proprio.texto) ? d.proprio.texto : `# ${d.proprio.nome}\n\n${d.proprio.texto}`) : cfg.textos[d.id as DocId][opcoes.variante];
+    const corpo = paraBlocos(substituir(texto, v, faltando), d as typeof DOCS[number], pt);
     const contrato = d.id === "contrato";
     const extraContratado = contrato ? [`CONTRATADO: ${v["advogado_principal.nome"] || BLANK}`, ...(v["advogado_principal.oab"] ? [v["advogado_principal.oab"]] : [])] : [];
     const blocos: Bloco[] = [...corpo, { k: "vazio", n: 1 }, { k: "p", trechos: [{ t: v["data.local"] }], align: contrato ? "r" : "l", pt: Math.min(pt, 11) }, { k: "vazio", n: 2 }];
-    if (opcoes.variante === "rogo") {
+    if (d.proprio && !d.proprio.assinatura) { /* documento sem assinatura: só o texto e a data */ }
+    else if (opcoes.variante === "rogo") {
       blocos.push({ k: "rogo", assina: v["a_rogo.nome"].toUpperCase(), extra: extraContratado, testemunhas: testemunhasRogo, polegar: contrato ? "Polegar direito do contratante" : "Polegar direito do outorgante", pt: Math.min(pt, 10.5) });
     } else {
       const quem = opcoes.variante === "representado"

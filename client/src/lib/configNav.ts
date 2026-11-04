@@ -16,8 +16,7 @@ export const GRUPOS_CONFIG: GrupoConfig[] = [
     { to: "/minha-conta", titulo: "Minha conta", descricao: "Seus dados de acesso e senha.", icon: UserRound },
   ] },
   { id: "documentos", titulo: "Documentos e modelos", itens: [
-    { to: "/configuracoes/documentos", titulo: "Kit de documentos", descricao: "Procuração, contrato e declarações: comum, a rogo e representado.", icon: FileText },
-    { to: "/gestao/modelos", titulo: "Modelos livres", descricao: "Outros documentos do escritório (cartas, recibos, requerimentos) com dados preenchidos.", icon: FileText },
+    { to: "/configuracoes/documentos", titulo: "Documentos do escritório", descricao: "Procuração, contrato, declarações e os documentos que você criar: comum, a rogo e representado.", icon: FileText },
     { to: "/gestao/ficha", titulo: "Ficha de cadastro", descricao: "Visual da ficha impressa, logotipo e campos personalizados.", icon: Printer },
     { to: "/templates", titulo: "Modelos de mensagens", descricao: "Textos e prévias dos avisos enviados por WhatsApp.", icon: MessageSquareText },
   ] },

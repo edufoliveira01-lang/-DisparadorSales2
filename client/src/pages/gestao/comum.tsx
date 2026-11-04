@@ -16,7 +16,7 @@ export interface Lista<T> { total: number; pagina: number; limite: number; itens
 export const campoClasse = "mt-1.5 w-full rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-sm text-zinc-900 outline-none focus:border-accent-500 focus:ring-2 focus:ring-accent-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100";
 
 export function Campo({ rotulo, children, className = "" }: { rotulo: string; children: ReactNode; className?: string }) {
-  return <label className={`block text-xs font-medium text-zinc-600 dark:text-zinc-300 ${className}`}>{rotulo}{children}</label>;
+  return <label className={`block text-[13px] font-medium text-zinc-600 dark:text-zinc-300 ${className}`}>{rotulo}{children}</label>;
 }
 
 export function useAtraso<T>(valor: T, ms = 300): T {

@@ -104,7 +104,7 @@ export function GerarDocumentos({ aberto, aoFechar, pessoa, processo }: { aberto
             </div>
           ) : null}
         </div>
-        <p className="text-xs text-zinc-500">Os textos e o visual ficam em <Link className="underline" to="/configuracoes/documentos" onClick={aoFechar}>Configurações → Documentos</Link>.</p>
+        <p className="text-xs text-zinc-500">Os textos e o visual ficam em <Link className="underline" to="/configuracoes/documentos" onClick={aoFechar}>Configurações → Documentos do escritório</Link>.</p>
       </div>
     </Modal>
   );

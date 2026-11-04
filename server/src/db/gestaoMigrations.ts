@@ -56,6 +56,15 @@ export function runGestaoMigrations(db: Database.Database) {
     );
     CREATE INDEX IF NOT EXISTS idx_gestao_anotacoes_processo ON gestao_anotacoes(processo_id, id DESC);
 
+    -- Anotações no cadastro da pessoa (sem processo): o caminho curto para registrar algo sobre o cliente
+    CREATE TABLE IF NOT EXISTS gestao_anotacoes_pessoa (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pessoa_id INTEGER NOT NULL REFERENCES gestao_pessoas(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id) ON DELETE SET NULL, autor TEXT NOT NULL DEFAULT '',
+      texto TEXT NOT NULL, criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_gestao_anotacoes_pessoa ON gestao_anotacoes_pessoa(pessoa_id, id DESC);
+
     -- Fase 2: arquivos por pasta (processo) ou pessoa, com versões; modelos de documento
     CREATE TABLE IF NOT EXISTS gestao_arquivos (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

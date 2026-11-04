@@ -8,6 +8,7 @@ import {
   ChevronRight,
   MessageCircle,
   Settings,
+  PenLine,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
@@ -15,6 +16,7 @@ import { QuickNavigation } from "./QuickNavigation";
 import { GlobalServiceActivity } from "./GlobalServiceActivity";
 import { ProcessAlerts } from "./ProcessAlerts";
 import { LicencaAviso } from "./LicencaAviso";
+import { AnotacaoRapida } from "./AnotacaoRapida";
 import { useActiveService } from "@/context/ActiveServiceContext";
 import { useWhatsapp } from "@/context/WhatsappContext";
 import { useTheme } from "@/context/ThemeContext";
@@ -32,6 +34,7 @@ export function Layout({ children }: { children: ReactNode }) {
     }
   });
   const [searchOpen, setSearchOpen] = useState(false);
+  const [anotando, setAnotando] = useState(false);
   const { pathname } = useLocation();
   const whatsapp = useWhatsapp();
   const active = useActiveService();
@@ -58,6 +61,7 @@ export function Layout({ children }: { children: ReactNode }) {
         setSearchOpen((open) => !open);
       }
       if (event.key === "Escape") setSidebarOpen(false);
+      if (event.altKey && event.key.toLowerCase() === "n" && !event.ctrlKey && !event.metaKey) { event.preventDefault(); setAnotando(true); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -149,6 +153,12 @@ export function Layout({ children }: { children: ReactNode }) {
                 ⌘ / Ctrl K
               </kbd>
             </button>
+            {can("gestao.manage") && (
+              <button type="button" onClick={() => setAnotando(true)} className="topbar-search" aria-label="Nova anotação (Alt N)" title="Nova anotação (Alt+N)">
+                <PenLine className="h-[17px] w-[17px]" />
+                <span className="hidden xl:inline">Anotar</span>
+              </button>
+            )}
             <Link
               to={can("whatsapp.manage") ? "/configuracoes?whatsapp=1" : "/minha-conta"}
               title={connectionLabel}
@@ -230,6 +240,7 @@ export function Layout({ children }: { children: ReactNode }) {
         </footer>
       </div>
       <QuickNavigation open={searchOpen} onClose={closeSearch} />
+      {can("gestao.manage") && <AnotacaoRapida aberto={anotando} aoFechar={() => setAnotando(false)} />}
     </div>
   );
 }

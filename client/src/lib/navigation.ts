@@ -128,13 +128,6 @@ export const navigation = [
     group: "clientes",
   },
   {
-    to: "/gestao/modelos",
-    label: "Modelos livres",
-    description: "Procuração, contrato e outros, com dados preenchidos",
-    icon: FileText,
-    group: "configuracoes",
-  },
-  {
     to: "/gestao/ficha",
     label: "Ficha de cadastro",
     description: "Modelo da ficha impressa: logotipo, cabeçalho e campos",
@@ -185,8 +178,8 @@ export const navigation = [
   },
   {
     to: "/configuracoes/documentos",
-    label: "Kit de documentos",
-    description: "Procuração, contrato e declarações: comum, a rogo, representado",
+    label: "Documentos do escritório",
+    description: "Procuração, contrato, declarações e documentos próprios",
     icon: FileText,
     group: "configuracoes",
   },
@@ -238,13 +231,11 @@ export function firstAllowedPage(permissions: readonly Permission[]): string {
 }
 export function getCurrentPage(pathname: string) {
   if (pathname.startsWith("/gestao/processos") || pathname.startsWith("/gestao/pessoas")) pathname = "/gestao/clientes";
-  return (
-    navigation.find((item) => item.to === pathname) ??
-    navigation.find(
-      (item) => pathname.startsWith(item.to + "/"),
-    ) ??
-    navigation[0]
-  );
+  const exata = navigation.find((item) => item.to === pathname);
+  if (exata) return exata;
+  // o endereço mais específico vence (/gestao/clientes/1 é "Clientes", não "Meu painel")
+  const prefixo = navigation.filter((item) => pathname.startsWith(item.to + "/")).sort((x, y) => y.to.length - x.to.length)[0];
+  return prefixo ?? navigation[0];
 }
 
 export const ROTULO_GRUPO: Record<string, string> = { inicio: "Início", clientes: "Clientes", processos: "Processos e prazos", agenda: "Agenda e perícias", comunicacao: "Comunicação", financeiro: "Financeiro", configuracoes: "Configurações" };

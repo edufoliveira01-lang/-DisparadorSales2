@@ -42,8 +42,8 @@ export function CartaoImagem({ titulo, descricao, urlBase, tem, aoMudar, podeEdi
   return (
     <div className="space-y-3">
       <div>
-        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{titulo}</h3>
-        <p className="mt-0.5 text-xs text-zinc-500">{descricao}</p>
+        <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">{titulo}</h3>
+        <p className="mt-0.5 text-[13px] text-zinc-500">{descricao}</p>
       </div>
       <div className={`flex min-h-[5rem] items-center justify-center rounded-xl border border-dashed border-zinc-300 p-3 dark:border-zinc-700 ${fundoEscuro ? "bg-zinc-800" : "bg-zinc-50 dark:bg-zinc-950/40"}`}>
         {tem ? <img key={versao} src={`${urlBase}?v=${versao}&t=${Date.now() % 100000}`} alt={titulo} className={`${altura} max-w-full object-contain`} /> : <span className="text-xs text-zinc-500">Nenhuma imagem.</span>}

@@ -60,7 +60,7 @@ export function FichaModelo() {
       <div className="grid gap-5 xl:grid-cols-[minmax(0,420px)_1fr]">
         <div className="space-y-5">
           <fieldset disabled={!gerir} className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Cabeçalho</h2>
+            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Cabeçalho</h2>
             <Campo rotulo="Título da ficha"><Input value={c.titulo} onChange={(e) => set("titulo", e.target.value)} className="mt-1.5" /></Campo>
             <Campo rotulo="Subtítulo"><Input value={c.subtitulo} onChange={(e) => set("subtitulo", e.target.value)} className="mt-1.5" /></Campo>
             <Campo rotulo="Nome do escritório"><Input value={c.nome_escritorio} onChange={(e) => set("nome_escritorio", e.target.value)} className="mt-1.5" placeholder="Sales & Associados" /></Campo>
@@ -81,14 +81,14 @@ export function FichaModelo() {
           </fieldset>
 
           <fieldset disabled={!gerir} className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">O que sai na ficha</h2>
+            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">O que sai na ficha</h2>
             {Object.entries(r.rotulo_secao).map(([k, rot]) => <label key={k} className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300"><input type="checkbox" checked={c.secoes[k] !== false} onChange={(e) => set("secoes", { ...c.secoes, [k]: e.target.checked })} /> {rot}</label>)}
             <Campo rotulo="Linhas em branco para anotar à mão (0 a 25)"><Input type="number" min={0} max={25} value={c.linhas_observacoes} onChange={(e) => set("linhas_observacoes", Number(e.target.value))} className="mt-1.5 w-28" /></Campo>
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-zinc-50 px-3 py-2.5 text-sm dark:bg-zinc-800/50"><span>Os campos personalizados (senha do GOV, serviço, indicação…) são criados aqui.</span>{gerir && <Button type="button" size="sm" variant="outline" onClick={() => setCampos(true)}>Criar e organizar campos</Button>}</div>
           </fieldset>
 
           <fieldset disabled={!gerir} className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Assinatura e rodapé</h2>
+            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Assinatura e rodapé</h2>
             <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300"><input type="checkbox" checked={c.assinatura} onChange={(e) => set("assinatura", e.target.checked)} /> Incluir campo de assinatura do cliente</label>
             {c.assinatura && <Campo rotulo="Texto acima da assinatura (declaração, aviso de privacidade…)"><Textarea rows={3} value={c.texto_assinatura} onChange={(e) => set("texto_assinatura", e.target.value)} className="mt-1.5" /></Campo>}
             <Campo rotulo="Texto do rodapé"><Input value={c.rodape} onChange={(e) => set("rodape", e.target.value)} className="mt-1.5" /></Campo>

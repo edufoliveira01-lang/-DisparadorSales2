@@ -15,9 +15,10 @@ import { indicadores } from "../services/gestao/indicadores";
 import { hasPermission } from "../services/accessService";
 import { consultarCep } from "../services/gestao/cep";
 import { adicionarCamposPrevidenciarios, atualizarCampo, criarCampo, excluirCampo, listarCampos, revelarSenha, TIPOS_CAMPO } from "../services/gestao/campos";
+import { anotacaoRapida, anotacoesDaPessoa, anotarNaPessoa, removerAnotacaoDaPessoa } from "../services/gestao/anotacoes";
 import { fichaDeCadastroHtml, fichaDeExemplo } from "../services/gestao/ficha";
 import { PADRAO as FICHA_PADRAO, ROTULO_SECAO, apagarFoto, apagarImagem, apagarLogo, fotoDaPessoa, imagemAtual, lerConfig, logoAtual, nomeDeImagemValido, salvarConfig, salvarFoto, salvarImagem, salvarLogo } from "../services/gestao/fichaConfig";
-import { DOCS, ROTULO_VARIANTE, TEXTOS_PADRAO, VARIANTES, VARIAVEIS_DOCUMENTO, kitHtml, lerConfigDocumentos, montarKit, restaurarTexto, salvarConfigDocumentos, type OpcoesKit } from "../services/gestao/documentos";
+import { DOCS, ROTULO_VARIANTE, atualizarDocumentoProprio, criarDocumentoProprio, excluirDocumentoProprio, TEXTOS_PADRAO, VARIANTES, VARIAVEIS_DOCUMENTO, kitHtml, lerConfigDocumentos, montarKit, restaurarTexto, salvarConfigDocumentos, type OpcoesKit } from "../services/gestao/documentos";
 import { kitDocx } from "../services/gestao/docx";
 import { lerEscritorio, salvarEscritorio } from "../services/gestao/escritorio";
 import crypto from "node:crypto";
@@ -78,6 +79,11 @@ gestaoRouter.post("/processos/:id/partes", rota((req) => adicionarParte(id(req),
 gestaoRouter.delete("/processos/:id/partes/:pessoaId/:papel", rota((req) => removerParte(id(req), id(req, "pessoaId"), String(req.params.papel))));
 gestaoRouter.post("/processos/:id/anotacoes", rota((req, res) => { const u = usuario(req); res.status(201); return adicionarAnotacao(id(req), req.body?.texto, { id: u.id, nome: nomeDe(u) }); }));
 gestaoRouter.delete("/processos/:id/anotacoes/:anotacaoId", rota((req) => { const u = usuario(req); return removerAnotacao(id(req), id(req, "anotacaoId"), { id: u.id, admin: u.role === "administrador" }); }));
+// anotações no cadastro da pessoa e atalho "anotação rápida" (cliente + processo opcional)
+gestaoRouter.get("/pessoas/:id/anotacoes", rota((req) => ({ itens: anotacoesDaPessoa(id(req)) })));
+gestaoRouter.post("/pessoas/:id/anotacoes", rota((req, res) => { const u = usuario(req); res.status(201); return anotarNaPessoa(id(req), req.body?.texto, { id: u.id, nome: nomeDe(u) }); }));
+gestaoRouter.delete("/pessoas/:id/anotacoes/:anotacaoId", rota((req) => { const u = usuario(req); return removerAnotacaoDaPessoa(id(req), id(req, "anotacaoId"), { id: u.id, admin: u.role === "administrador" }); }));
+gestaoRouter.post("/anotacao-rapida", rota((req, res) => { const u = usuario(req); res.status(201); return anotacaoRapida(req.body || {}, { id: u.id, nome: nomeDe(u) }); }));
 
 // ---------- arquivos ----------
 const corpoBruto = express.raw({ type: () => true, limit: TAMANHO_MAXIMO + 1024 });
@@ -228,9 +234,12 @@ gestaoRouter.delete("/imagens/:nome", rota((req) => { const n = String(req.param
 gestaoRouter.put("/escritorio", rota((req) => { const e = salvarEscritorio(req.body || {}); auditAccess("gestao_escritorio_alterado", usuario(req).id, null); return { escritorio: e, ...imagensDoEscritorio() }; }));
 gestaoRouter.get("/documentos/config", rota(() => ({
   ...lerConfigDocumentos(), padroes: TEXTOS_PADRAO, variaveis: VARIAVEIS_DOCUMENTO, variantes: VARIANTES.map((v) => ({ id: v, nome: ROTULO_VARIANTE[v] })),
-  documentos: DOCS.map((d) => ({ id: d.id, nome: d.nome })), escritorio_completo: Boolean(lerEscritorio().advogados.length && (lerEscritorio().nome || lerEscritorio().razao_social)),
+  documentos: [...DOCS.map((d) => ({ id: d.id, nome: d.nome, proprio: false })), ...lerConfigDocumentos().proprios.map((p) => ({ id: p.id, nome: p.nome, proprio: true }))], escritorio_completo: Boolean(lerEscritorio().advogados.length && (lerEscritorio().nome || lerEscritorio().razao_social)),
 })));
 gestaoRouter.put("/documentos/config", rota((req) => { const c = salvarConfigDocumentos(req.body || {}); auditAccess("gestao_documentos_modelo_alterado", usuario(req).id, null); return c; }));
+gestaoRouter.post("/documentos/proprios", rota((req, res) => { const r = criarDocumentoProprio(req.body || {}); res.status(201); auditAccess("gestao_documento_proprio_criado", usuario(req).id, null, { documento: r.documento.id }); return r; }));
+gestaoRouter.put("/documentos/proprios/:docId", rota((req) => atualizarDocumentoProprio(String(req.params.docId), req.body || {})));
+gestaoRouter.delete("/documentos/proprios/:docId", rota((req) => { const r = excluirDocumentoProprio(String(req.params.docId)); auditAccess("gestao_documento_proprio_excluido", usuario(req).id, null, { documento: String(req.params.docId) }); return r; }));
 gestaoRouter.post("/documentos/config/restaurar", rota((req) => restaurarTexto(String(req.body?.documento ?? ""), String(req.body?.variante ?? ""))));
 const CSP_DOC = "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:";
 const texto = (v: unknown, max = 200) => String(v ?? "").slice(0, max);
@@ -279,7 +288,7 @@ gestaoRouter.get("/documentos/kit/:token", (req, res, next) => {
 gestaoRouter.get("/documentos/previa", (req, res, next) => {
   try {
     const variante = VARIANTES.includes(String(req.query.variante) as never) ? String(req.query.variante) : "comum";
-    const doc = DOCS.some((d) => d.id === req.query.doc) ? String(req.query.doc) : "procuracao";
+    const doc = DOCS.some((d) => d.id === req.query.doc) || lerConfigDocumentos().proprios.some((p) => p.id === req.query.doc) ? String(req.query.doc) : "procuracao";
     const ex = { nome: "NOME DA PESSOA QUE ASSINA", nacionalidade: "brasileiro(a)", estado_civil: "casado(a)", profissao: "", rg: "00.000.000-0", cpf: "000.000.000-00", endereco: "Rua do Exemplo, 100, Bairro, Cidade/UF", qualidade: "mãe" };
     const kit = montarKit({ variante: variante as OpcoesKit["variante"], documentos: [doc], data: "hoje", representante: ex, a_rogo: ex }, nomeDe(usuario(req)), true);
     res.setHeader("Content-Security-Policy", CSP_DOC); res.setHeader("Cache-Control", "private, no-store");

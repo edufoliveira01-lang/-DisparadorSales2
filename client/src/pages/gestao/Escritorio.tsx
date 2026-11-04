@@ -51,7 +51,7 @@ export function EscritorioConfig() {
         actions={gerir ? <Button loading={salvando} onClick={() => void salvar()}><Save className="h-4 w-4" /> Salvar</Button> : undefined} />
       <fieldset disabled={!gerir} className="grid gap-5 xl:grid-cols-2">
         <div className={cartao}>
-          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Identificação</h2>
+          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Identificação</h2>
           <Campo rotulo="Nome do escritório (aparece no cabeçalho se não houver logotipo)"><Input value={e.nome} onChange={(x) => set("nome", x.target.value)} className="mt-1.5" placeholder="Silva & Associados Advocacia" /></Campo>
           <Campo rotulo="Razão social da sociedade de advogados"><Input value={e.razao_social} onChange={(x) => set("razao_social", x.target.value)} className="mt-1.5" /></Campo>
           <div className="grid gap-3 sm:grid-cols-3">
@@ -60,7 +60,7 @@ export function EscritorioConfig() {
           </div>
         </div>
         <div className={cartao}>
-          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Endereço, contato e foro</h2>
+          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Endereço, contato e foro</h2>
           <Campo rotulo="Endereço completo do escritório"><Input value={e.endereco} onChange={(x) => set("endereco", x.target.value)} className="mt-1.5" placeholder="Rua, nº, sala, bairro, cidade/UF, CEP" /></Campo>
           <div className="grid gap-3 sm:grid-cols-3">
             <Campo rotulo="Cidade (local da assinatura)" className="sm:col-span-2"><Input value={e.cidade} onChange={(x) => set("cidade", x.target.value)} className="mt-1.5" /></Campo>
@@ -76,19 +76,19 @@ export function EscritorioConfig() {
           </Campo>
         </div>
         <div className={`${cartao} xl:col-span-2`}>
-          <div><h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Imagens do escritório</h2><p className="mt-1 text-xs text-zinc-500">Cada uso tem a sua imagem: o cabeçalho e o rodapé dos documentos, o logotipo da ficha de cadastro (em Ficha de cadastro) e o ícone do sistema.</p></div>
+          <div><h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Imagens do escritório</h2><p className="mt-1 text-[13px] text-zinc-500">Cada uso tem a sua imagem: o cabeçalho e o rodapé dos documentos, o logotipo da ficha de cadastro (em Ficha de cadastro) e o ícone do sistema.</p></div>
           <div className="grid gap-6 lg:grid-cols-3">
             <CartaoImagem titulo="Cabeçalho dos documentos" descricao="Fica no topo de procuração, contrato e declarações. Uma imagem larga (como o papel timbrado) funciona melhor." urlBase="/api/gestao/imagens/cabecalho" altura="h-20" tem={img.tem_cabecalho} podeEditar={gerir} aoMudar={() => void carregar()}
-              extra={<div className="space-y-1"><p className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Alinhamento do cabeçalho</p><BotoesAlinhamento valor={e.cabecalho_alinhamento} aoMudar={(v) => set("cabecalho_alinhamento", v)} desabilitado={!gerir} />{!img.tem_cabecalho && img.tem_logo && <p className="text-xs text-amber-700 dark:text-amber-300">Sem cabeçalho próprio, os documentos usam o logotipo enviado antes na ficha.</p>}{!img.tem_cabecalho && !img.tem_logo && <p className="text-xs text-zinc-500">Sem imagem, sai o nome do escritório.</p>}</div>} />
+              extra={<div className="space-y-1"><p className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Alinhamento do cabeçalho</p><BotoesAlinhamento valor={e.cabecalho_alinhamento} aoMudar={(v) => set("cabecalho_alinhamento", v)} desabilitado={!gerir} />{!img.tem_cabecalho && img.tem_logo && <p className="text-xs text-amber-700 dark:text-amber-300">Sem cabeçalho próprio, os documentos usam o logotipo enviado antes na ficha.</p>}{!img.tem_cabecalho && !img.tem_logo && <p className="text-[13px] text-zinc-500">Sem imagem, sai o nome do escritório.</p>}</div>} />
             <CartaoImagem titulo="Rodapé dos documentos (opcional)" descricao="Imagem pequena acima das linhas do rodapé (por exemplo, um selo ou o logotipo reduzido). As linhas de texto ficam em Endereço, contato e foro." urlBase="/api/gestao/imagens/rodape" altura="h-12" tem={img.tem_rodape} podeEditar={gerir} aoMudar={() => void carregar()}
               extra={<div className="space-y-1"><p className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Alinhamento do rodapé</p><BotoesAlinhamento valor={e.rodape_alinhamento} aoMudar={(v) => set("rodape_alinhamento", v)} desabilitado={!gerir} /></div>} />
             <CartaoImagem titulo="Ícone do sistema (favicon)" descricao="Aparece na aba do navegador, no menu lateral e na tela de login. Use uma imagem quadrada (PNG, JPG, WebP ou ICO, até 512 KB)." urlBase="/api/gestao/imagens/favicon" altura="h-16 w-16" tem={img.tem_favicon} podeEditar={gerir} aoMudar={() => { void carregar(); setTimeout(avisarIdentidadeMudou, 150); }} />
           </div>
-          {gerir && <p className="text-xs text-zinc-500">Os alinhamentos valem depois de clicar em <b>Salvar</b>. As imagens são salvas na hora.</p>}
+          {gerir && <p className="text-[13px] text-zinc-500">Os alinhamentos valem depois de clicar em <b>Salvar</b>. As imagens são salvas na hora.</p>}
         </div>
         <div className={`${cartao} xl:col-span-2`}>
-          <div className="flex items-center justify-between"><h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Advogados (outorgados e contratados)</h2>{gerir && <Button type="button" size="sm" variant="outline" onClick={() => set("advogados", [...e.advogados, advVazio()])}><Plus className="h-4 w-4" /> Adicionar</Button>}</div>
-          <p className="text-xs text-zinc-500">O primeiro é o sócio (assina o contrato como contratado). Todos entram como outorgados na procuração.</p>
+          <div className="flex items-center justify-between"><h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Advogados (outorgados e contratados)</h2>{gerir && <Button type="button" size="sm" variant="outline" onClick={() => set("advogados", [...e.advogados, advVazio()])}><Plus className="h-4 w-4" /> Adicionar</Button>}</div>
+          <p className="text-[13px] text-zinc-500">O primeiro é o sócio (assina o contrato como contratado). Todos entram como outorgados na procuração.</p>
           {e.advogados.length === 0 && <p className="text-sm text-zinc-500">Nenhum advogado cadastrado.</p>}
           {e.advogados.map((a, i) => (
             <div key={i} className="grid gap-3 rounded-xl border border-zinc-200 p-3 sm:grid-cols-6 dark:border-zinc-700">
@@ -103,8 +103,8 @@ export function EscritorioConfig() {
           ))}
         </div>
         <div className={`${cartao} xl:col-span-2`}>
-          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Testemunhas padrão</h2>
-          <p className="text-xs text-zinc-500">Saem no contrato e nos documentos “a rogo”. Dá para trocar na hora de gerar.</p>
+          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Testemunhas padrão</h2>
+          <p className="text-[13px] text-zinc-500">Saem no contrato e nos documentos “a rogo”. Dá para trocar na hora de gerar.</p>
           <div className="grid gap-3 sm:grid-cols-2">{[0, 1].map((i) => (
             <div key={i} className="grid gap-3 sm:grid-cols-2"><Campo rotulo={`Testemunha ${i + 1} — nome`}><Input value={e.testemunhas[i]?.nome ?? ""} onChange={(x) => test(i, { nome: x.target.value })} className="mt-1.5" /></Campo><Campo rotulo="CPF"><Input value={e.testemunhas[i]?.cpf ?? ""} onChange={(x) => test(i, { cpf: x.target.value })} className="mt-1.5" /></Campo></div>
           ))}</div>

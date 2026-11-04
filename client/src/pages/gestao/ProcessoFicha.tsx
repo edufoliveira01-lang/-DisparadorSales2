@@ -12,7 +12,6 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
 import { Arquivos } from "./Arquivos";
 import { CamposPersonalizados, type CampoValor } from "./Campos";
-import { GerarDeModelo } from "./Modelos";
 import { GerarDocumentos } from "./GerarDocumentos";
 import { TarefaModal, type Tarefa } from "./TarefaModal";
 import { AREAS, Campo, PAPEIS, SeletorPessoa, STATUS, STATUS_TOM, TIPOS, dataBr, dinheiro } from "./comum";
@@ -76,7 +75,7 @@ export function ProcessoFicha() {
       {aba === "andamento" && <Andamento id={ficha.id} />}
       {aba === "historico" && <Historico ficha={ficha} gerir={gerir} />}
       {aba === "tarefas" && <TarefasDoProcesso ficha={ficha} gerir={gerir} resp={resp} />}
-      {aba === "arquivos" && <div className="space-y-4"><GerarDeModelo processo={{ id: ficha.id, rotulo: `${ficha.pasta} · ${ficha.numero_formatado || ficha.numero}` }} /><Arquivos escopo="processos" id={ficha.id} /></div>}
+      {aba === "arquivos" && <div className="space-y-4"><Arquivos escopo="processos" id={ficha.id} /></div>}
       <ConfirmDialog open={apagar} title="Excluir processo" message="Excluir a ficha, as partes e as anotações deste processo? As publicações do DJEN e as perícias não são apagadas. Esta ação não pode ser desfeita." confirmLabel="Excluir" onConfirm={() => void excluir()} onCancel={() => setApagar(false)} />
     </div>
   );

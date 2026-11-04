@@ -14,8 +14,8 @@ import { useToast } from "@/components/ui/Toast";
 import { Arquivos } from "./Arquivos";
 import { CamposPersonalizados, type CampoValor } from "./Campos";
 import { FinanceiroPessoa } from "./FinanceiroPessoa";
-import { GerarDeModelo } from "./Modelos";
 import { GerarDocumentos } from "./GerarDocumentos";
+import { AnotacoesPessoa } from "./AnotacoesPessoa";
 import { NovoProcesso, type Responsavel } from "./Processos";
 import { Campo, ESCOLARIDADES, ESTADOS_CIVIS, STATUS, STATUS_TOM, TIPOS, UFS, dataBr, mascaraCep, mascaraCpfCnpj, mascaraPis, type EnderecoCep } from "./comum";
 
@@ -29,7 +29,7 @@ const vazia = (): Pessoa => ({ id: 0, tipo: "cliente", pessoa_juridica: false, n
 interface Pericia { id: number; tipo: string; data: string; horario: string | null; local: string | null; profissional_perito: string | null; processo: string | null; passada: boolean }
 interface TarefaAberta { id: number; titulo: string; prazo: string | null; prazo_fatal: number; processo_pasta: string | null }
 
-const ABAS = [["dados", "Dados"], ["processos", "Processos"], ["financeiro", "Financeiro"], ["documentos", "Documentos"], ["agenda", "Perícias e prazos"]] as const;
+const ABAS = [["dados", "Dados"], ["processos", "Processos"], ["anotacoes", "Anotações"], ["financeiro", "Financeiro"], ["documentos", "Documentos"], ["agenda", "Perícias e prazos"]] as const;
 type Aba = typeof ABAS[number][0];
 
 /** O cadastro completo de uma pessoa: dados, processos, financeiro, documentos e agenda, tudo em um só lugar. */
@@ -201,10 +201,11 @@ export function ClienteFicha() {
       {!novo && aba === "financeiro" && can("financeiro.view") && <FinanceiroPessoa pessoaId={id} nome={pessoa.nome} />}
       {!novo && aba === "documentos" && (
         <section className="space-y-4">
-          <GerarDeModelo pessoa={{ id, nome: pessoa.nome }} />
+          {gerir && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"><p className="text-sm text-zinc-600 dark:text-zinc-300">Procuração, contrato, declarações e os documentos próprios do escritório, com cabeçalho e rodapé.</p><Button onClick={() => (sujo ? show("Salve as alterações antes de gerar os documentos.", "info") : setDocs(true))}><FileText className="h-4 w-4" /> Gerar documentos</Button></div>}
           <Arquivos escopo="pessoas" id={id} />
         </section>
       )}
+      {!novo && aba === "anotacoes" && <AnotacoesPessoa id={id} nome={pessoa.nome} gerir={gerir} />}
       {!novo && aba === "agenda" && <AgendaPessoa id={id} />}
 
       {novoProcesso && <NovoProcesso responsaveis={resp} clientePadrao={{ id, nome: pessoa.nome }} aoFechar={() => setNovoProcesso(false)} aoCriar={(pid) => { setNovoProcesso(false); navegar(`/gestao/processos/${pid}`); }} />}

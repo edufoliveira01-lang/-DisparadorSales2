@@ -43,6 +43,12 @@ function cpfNovo() {
   const todos = [...n, d1, d2].join("");
   return /^(\d)\1+$/.test(todos) ? cpfNovo() : todos;
 }
+/** Número CNJ válido (calcula o dígito verificador). */
+function cnjNovo() {
+  const seq = String(Math.floor(Math.random() * 9_000_000) + 1_000_000), resto = "202480026" + "0100";
+  const dv = String(98n - (BigInt(`${seq}${resto}00`) % 97n)).padStart(2, "0");
+  return `${seq}${dv}${resto}`;
+}
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
 const ESCRITORIO = {
   nome: "Silva & Associados Advocacia", razao_social: "Maria Silva Sociedade Individual de Advocacia", oab_sociedade: "12.345", cnpj: "00.000.000/0001-00", uf: "SP", cidade: "Santos",
@@ -194,6 +200,63 @@ describe("kit de documentos", () => {
     // remove
     expect((await chamar("/imagens/favicon", "DELETE", undefined, admin)).status).toBe(200);
     expect((await fetch(`${await ready}/api/auth/favicon`)).status).toBe(404);
+  });
+
+  it("documento próprio entra no kit (com assinatura ou sem), edita e exclui", async () => {
+    const admin = await entrar("administrador");
+    expect((await chamar("/documentos/proprios", "POST", { nome: "x", texto: "curto" }, admin)).status).toBe(400);
+    const criado = await chamar("/documentos/proprios", "POST", { nome: "Termo de renúncia", texto: "{{outorgante.qualificacao}} declara que renuncia ao valor excedente.", pt: 12 }, admin);
+    expect(criado.status).toBe(201);
+    const id = criado.json.documento.id as string;
+    expect(id).toMatch(/^x_[a-f0-9]{10}$/);
+    const lista = (await chamar("/documentos/config", "GET", undefined, admin)).json;
+    expect(lista.documentos.find((d: any) => d.id === id)).toMatchObject({ nome: "Termo de renúncia", proprio: true });
+    const pessoa = (await chamar("/pessoas", "POST", { nome: "Cliente Próprio", documento: cpfNovo() }, admin)).json;
+    const gerar = async (variante: string, extra: any = {}) => {
+      const p = await chamar("/documentos/preparar", "POST", { pessoa_id: pessoa.id, documentos: [id], variante, data: "hoje", ...extra }, admin);
+      expect(p.status).toBe(200);
+      return (await chamar(`/documentos/kit/${p.json.token}`, "GET", undefined, admin)).buf.toString("utf8");
+    };
+    const html = await gerar("comum");
+    expect(html).toContain("TERMO DE RENÚNCIA".length ? "Termo de renúncia" : "");
+    expect(html).toContain("<b>Cliente Próprio</b>");
+    expect(html).toContain("renuncia ao valor excedente");
+    expect(html).toContain('class="assina"');
+    expect((await gerar("rogo", { a_rogo: { nome: "Fulano" } }))).toContain("TESTEMUNHAS A ROGO:");
+    expect((await chamar(`/documentos/proprios/${id}`, "PUT", { assinatura: false }, admin)).status).toBe(200);
+    expect(await gerar("comum")).not.toContain('class="assina"');
+    expect((await chamar("/documentos/proprios/x_naoexiste1", "DELETE", undefined, admin)).status).toBe(404);
+    expect((await chamar(`/documentos/proprios/${id}`, "DELETE", undefined, admin)).status).toBe(200);
+    expect((await chamar("/documentos/preparar", "POST", { pessoa_id: pessoa.id, documentos: [id], variante: "comum" }, admin)).status).toBe(400);
+    const leitor = await entrar("visualizador", ["gestao.view"]);
+    expect((await chamar("/documentos/proprios", "POST", { nome: "Meu documento", texto: "texto do documento" }, leitor)).status).toBe(403);
+  });
+
+  it("anotação rápida: no cadastro do cliente ou em um processo dele", async () => {
+    const admin = await entrar("administrador");
+    const pessoa = (await chamar("/pessoas", "POST", { nome: "Cliente Anotação", documento: cpfNovo() }, admin)).json;
+    const outra = (await chamar("/pessoas", "POST", { nome: "Outra Pessoa", documento: cpfNovo() }, admin)).json;
+    expect((await chamar("/anotacao-rapida", "POST", { pessoa_id: pessoa.id, texto: "a" }, admin)).status).toBe(400);
+    expect((await chamar("/anotacao-rapida", "POST", { texto: "sem cliente" }, admin)).status).toBe(400);
+    const sem = await chamar("/anotacao-rapida", "POST", { pessoa_id: pessoa.id, texto: "Ligou pedindo retorno sobre o laudo." }, admin);
+    expect(sem.status).toBe(201); expect(sem.json.destino).toBe("cadastro");
+    const proc = await chamar("/processos", "POST", { numero: cnjNovo(), titulo: "Ação teste", partes: [{ pessoa_id: pessoa.id, papel: "autor", principal: true }] }, admin);
+    expect(proc.status).toBe(201);
+    {
+      const com = await chamar("/anotacao-rapida", "POST", { pessoa_id: pessoa.id, processo_id: proc.json.id, texto: "Anotação dentro do processo." }, admin);
+      expect(com.json.destino).toBe("processo");
+      expect((await chamar("/anotacao-rapida", "POST", { pessoa_id: outra.id, processo_id: proc.json.id, texto: "não é dela" }, admin)).status).toBe(400);
+    }
+    const lista = (await chamar(`/pessoas/${pessoa.id}/anotacoes`, "GET", undefined, admin)).json.itens as any[];
+    expect(lista.some((a) => a.origem === "cadastro" && a.texto.includes("laudo"))).toBe(true);
+    expect(lista.some((a) => a.origem === "processo" && a.processo_rotulo)).toBe(true);
+    const outro = await entrar("gestor", ["gestao.view", "gestao.manage"]);
+    const id = lista.find((a) => a.origem === "cadastro").id;
+    expect((await chamar(`/pessoas/${pessoa.id}/anotacoes/${id}`, "DELETE", undefined, outro)).status).toBe(403);
+    expect((await chamar(`/pessoas/${pessoa.id}/anotacoes/${id}`, "DELETE", undefined, admin)).status).toBe(200);
+    const leitor = await entrar("visualizador", ["gestao.view"]);
+    expect((await chamar(`/pessoas/${pessoa.id}/anotacoes`, "GET", undefined, leitor)).status).toBe(200);
+    expect((await chamar("/anotacao-rapida", "POST", { pessoa_id: pessoa.id, texto: "tentativa sem permissão" }, leitor)).status).toBe(403);
   });
 
   it("textos editáveis: salva, volta ao padrão e rejeita vazio", async () => {

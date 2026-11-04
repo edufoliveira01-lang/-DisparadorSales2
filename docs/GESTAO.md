@@ -86,3 +86,8 @@ Cada uso tem a sua imagem, em *Configurações → Dados do escritório*:
 - **Ícone (favicon)**: aparece na aba do navegador, no menu lateral e na tela de login, junto com o nome do escritório. É servido sem login (`/api/auth/identidade` e `/api/auth/favicon`) porque a tela de login precisa dele.
 
 *Modelos livres* (antes "Outros modelos de documento") são os modelos de texto simples do sistema anterior, para qualquer documento fora do kit.
+
+### Documentos próprios, configurações no topo e anotação rápida (2.71.0)
+- **Modelos livres foi removido.** O que ele fazia agora é o botão **Novo documento** em *Configurações → Documentos do escritório* (antes "Kit de documentos"): o escritório cria o documento (nome e texto com variáveis) e ele passa a sair com cabeçalho, rodapé e assinatura, comum, a rogo ou representado, no botão *Gerar documentos* do cliente e do processo.
+- **Configurações em largura total:** abas por assunto no topo (Escritório e pessoas, Documentos e modelos, Conexões e avisos, DJEN e prazos, Sistema) e, logo abaixo, as páginas de cada assunto.
+- **Anotação rápida:** botão **Anotar** no topo de qualquer tela (ou **Alt+N**): escolha o cliente, o processo (opcional) e escreva. Sem processo, a anotação fica no cadastro do cliente. O cadastro do cliente ganhou a aba **Anotações**, que reúne as anotações do cadastro e as dos processos dele.
