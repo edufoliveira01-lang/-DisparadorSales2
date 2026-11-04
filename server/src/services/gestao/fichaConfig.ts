@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { db, dataDir } from "../../db";
 import { ErroGestao } from "./erro";
+import { nomeDoEscritorio } from "./escritorio";
 
 export const SECOES = ["identificacao", "endereco", "contato", "campos", "processos", "observacoes"] as const;
 export type Secao = typeof SECOES[number];
@@ -23,7 +24,9 @@ export function lerConfig(): ConfigFicha {
   const l = db.prepare("SELECT config_json FROM gestao_ficha_config WHERE id=1").get() as { config_json: string } | undefined;
   let salvo: Partial<ConfigFicha> = {};
   try { salvo = l ? JSON.parse(l.config_json) : {}; } catch { /* config corrompida: volta ao padrão */ }
-  return normalizar({ ...PADRAO, ...salvo, secoes: { ...PADRAO.secoes, ...(salvo.secoes || {}) } });
+  const c = normalizar({ ...PADRAO, ...salvo, secoes: { ...PADRAO.secoes, ...(salvo.secoes || {}) } });
+  if (!c.nome_escritorio) c.nome_escritorio = nomeDoEscritorio(); // o nome vem dos dados do escritório quando a ficha não tem um próprio
+  return c;
 }
 function normalizar(c: Partial<ConfigFicha>): ConfigFicha {
   const linhas = Array.isArray(c.cabecalho_linhas) ? c.cabecalho_linhas.map((x) => txt(x, 120)).filter(Boolean).slice(0, 3) : [];

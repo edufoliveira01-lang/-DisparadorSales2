@@ -1,7 +1,9 @@
 import { lazy, Suspense, useEffect } from "react";
 import { ActiveServiceProvider } from "@/context/ActiveServiceContext";
-import { Route, Routes, useLocation } from "react-router-dom";
+import { Route, Routes, useLocation, useSearchParams } from "react-router-dom";
 import { Layout } from "@/components/Layout";
+import { ConfigShell } from "@/components/ConfigShell";
+import { ConfigHome } from "@/pages/ConfigHome";
 import { WhatsappProvider } from "@/context/WhatsappContext";
 import { BatchProgressProvider } from "@/context/BatchProgressContext";
 import { AuthProvider, useAuth, type Permission } from "@/context/AuthContext";
@@ -64,6 +66,8 @@ const GestaoTarefas = lazy(() => import("@/pages/gestao/Tarefas").then((m) => ({
 const GestaoModelos = lazy(() => import("@/pages/gestao/Modelos").then((m) => ({ default: m.Modelos })));
 const GestaoFinanceiro = lazy(() => import("@/pages/gestao/Financeiro").then((m) => ({ default: m.Financeiro })));
 const GestaoIndicadores = lazy(() => import("@/pages/gestao/Indicadores").then((m) => ({ default: m.Indicadores })));
+const GestaoEscritorio = lazy(() => import("@/pages/gestao/Escritorio").then((m) => ({ default: m.EscritorioConfig })));
+const GestaoDocumentos = lazy(() => import("@/pages/gestao/DocumentosConfig").then((m) => ({ default: m.DocumentosConfig })));
 const GestaoFicha = lazy(() => import("@/pages/gestao/FichaModelo").then((m) => ({ default: m.FichaModelo })));
 const Team = lazy(() => import("@/pages/Team").then((module) => ({ default: module.Team })));
 const Account = lazy(() => import("@/pages/Account").then((module) => ({ default: module.Account })));
@@ -106,6 +110,16 @@ export default function App() {
   return <AuthProvider><AuthenticatedApp /></AuthProvider>;
 }
 
+/** Página dentro da moldura da área de Configurações. */
+const Cfg = ({ children }: { children: React.ReactNode }) => <ConfigShell>{children}</ConfigShell>;
+/** /configuracoes sem seção mostra a visão geral; com ?secao= abre aquela seção das integrações. */
+function ConfiguracoesRota() {
+  const { can } = useAuth();
+  const [q] = useSearchParams();
+  const legado = ["ia", "whatsapp", "google", "prazos"].find((k) => q.has(k));
+  const secao = q.get("secao") ?? legado ?? null;
+  return <Cfg>{!secao ? <ConfigHome /> : can("integrations.manage") ? <Configuracoes secao={secao} /> : <p className="text-sm text-zinc-500">Você não tem permissão para esta configuração.</p>}</Cfg>;
+}
 function AccessRoute({ permission, children }: { permission: Permission; children: React.ReactNode }) {
   const { can, user } = useAuth();
   if (can(permission)) return <>{children}</>;
@@ -128,8 +142,10 @@ function AuthenticatedApp() {
               <Routes>
                 <Route path="/gestao" element={<AccessRoute permission="gestao.view"><GestaoInicio /></AccessRoute>} />
                 <Route path="/gestao/tarefas" element={<AccessRoute permission="gestao.view"><GestaoTarefas /></AccessRoute>} />
-                <Route path="/gestao/ficha" element={<AccessRoute permission="gestao.view"><GestaoFicha /></AccessRoute>} />
-                <Route path="/gestao/modelos" element={<AccessRoute permission="gestao.view"><GestaoModelos /></AccessRoute>} />
+                <Route path="/gestao/ficha" element={<AccessRoute permission="gestao.view"><Cfg><GestaoFicha /></Cfg></AccessRoute>} />
+                <Route path="/configuracoes/escritorio" element={<AccessRoute permission="gestao.view"><Cfg><GestaoEscritorio /></Cfg></AccessRoute>} />
+                <Route path="/configuracoes/documentos" element={<AccessRoute permission="gestao.view"><Cfg><GestaoDocumentos /></Cfg></AccessRoute>} />
+                <Route path="/gestao/modelos" element={<AccessRoute permission="gestao.view"><Cfg><GestaoModelos /></Cfg></AccessRoute>} />
                 <Route path="/gestao/financeiro" element={<AccessRoute permission="financeiro.view"><GestaoFinanceiro /></AccessRoute>} />
                 <Route path="/gestao/indicadores" element={<AccessRoute permission="gestao.view"><GestaoIndicadores /></AccessRoute>} />
                 <Route path="/gestao/clientes" element={<AccessRoute permission="gestao.view"><GestaoClientes aba="clientes" /></AccessRoute>} />
@@ -138,25 +154,25 @@ function AuthenticatedApp() {
                 <Route path="/gestao/processos" element={<AccessRoute permission="gestao.view"><GestaoClientes aba="processos" /></AccessRoute>} />
                 <Route path="/gestao/processos/:id" element={<AccessRoute permission="gestao.view"><GestaoProcessoFicha /></AccessRoute>} />
                 <Route path="/processos/quadro" element={<AccessRoute permission="processes.view"><QuadroProcessos /></AccessRoute>} />
-                <Route path="/processos/monitoramento" element={<AccessRoute permission="djen.manage"><Acompanhamento /></AccessRoute>} />
-                <Route path="/processos/advogados" element={<AccessRoute permission="processes.manage"><Acompanhamento /></AccessRoute>} />
+                <Route path="/processos/monitoramento" element={<AccessRoute permission="djen.manage"><Cfg><Acompanhamento /></Cfg></AccessRoute>} />
+                <Route path="/processos/advogados" element={<AccessRoute permission="processes.manage"><Cfg><Acompanhamento /></Cfg></AccessRoute>} />
                 <Route path="/processos/aguardando" element={<AccessRoute permission="processes.manage"><Acompanhamento /></AccessRoute>} />
                 <Route
                   path="/processos/calendarios"
-                  element={<AccessRoute permission="deadlines.view"><CalendariosPrazos /></AccessRoute>}
+                  element={<AccessRoute permission="deadlines.view"><Cfg><CalendariosPrazos /></Cfg></AccessRoute>}
                 />
                 <Route path="/processos/*" element={<AccessRoute permission="processes.view"><Acompanhamento /></AccessRoute>} />
                 <Route path="/" element={<Navigate to={can("gestao.view") ? "/gestao" : firstAllowedPage(user.permissions)} replace />} />
                 <Route path="/pericias" element={can("dashboard.view") ? <Dashboard /> : <Navigate to={firstAllowedPage(user.permissions)} replace />} />
                 <Route path="/agenda" element={<AccessRoute permission="contacts.view"><Agenda /></AccessRoute>} />
                 <Route path="/calendario" element={<AccessRoute permission="calendar.view"><Calendario /></AccessRoute>} />
-                <Route path="/templates/*" element={<AccessRoute permission="templates.view"><Templates /></AccessRoute>} />
+                <Route path="/templates/*" element={<AccessRoute permission="templates.view"><Cfg><Templates /></Cfg></AccessRoute>} />
                 <Route path="/historico" element={<AccessRoute permission="history.view"><Historico /></AccessRoute>} />
-                <Route path="/logs" element={<AccessRoute permission="activity.view"><Logs /></AccessRoute>} />
+                <Route path="/logs" element={<AccessRoute permission="activity.view"><Cfg><Logs /></Cfg></AccessRoute>} />
                 <Route path="/pendentes" element={<AccessRoute permission="pending.view"><PendentesResposta /></AccessRoute>} />
-                <Route path="/configuracoes" element={<AccessRoute permission="integrations.manage"><Configuracoes /></AccessRoute>} />
-                <Route path="/equipe" element={<AccessRoute permission="team.manage"><Team /></AccessRoute>} />
-                <Route path="/minha-conta" element={<Account />} />
+                <Route path="/configuracoes" element={<ConfiguracoesRota />} />
+                <Route path="/equipe" element={<AccessRoute permission="team.manage"><Cfg><Team /></Cfg></AccessRoute>} />
+                <Route path="/minha-conta" element={<Cfg><Account /></Cfg>} />
                 <Route path="/login" element={<Login />} />
                 <Route path="*" element={<Navigate to={firstAllowedPage(user.permissions)} replace />} />
               </Routes>

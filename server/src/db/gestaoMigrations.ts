@@ -129,6 +129,10 @@ export function runGestaoMigrations(db: Database.Database) {
     -- Modelo da ficha de cadastro impressa (uma linha só, em JSON)
     CREATE TABLE IF NOT EXISTS gestao_ficha_config (id INTEGER PRIMARY KEY CHECK(id=1), config_json TEXT NOT NULL DEFAULT '{}', atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 
+    -- Dados do escritório (nome, endereço, advogados, testemunhas) e textos dos documentos (procuração, contrato…), em JSON
+    CREATE TABLE IF NOT EXISTS gestao_escritorio_config (id INTEGER PRIMARY KEY CHECK(id=1), config_json TEXT NOT NULL DEFAULT '{}', atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+    CREATE TABLE IF NOT EXISTS gestao_documentos_config (id INTEGER PRIMARY KEY CHECK(id=1), config_json TEXT NOT NULL DEFAULT '{}', atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+
     -- Campos personalizados (pessoa ou processo) e seus valores; "senha" fica criptografada
     CREATE TABLE IF NOT EXISTS gestao_campos (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

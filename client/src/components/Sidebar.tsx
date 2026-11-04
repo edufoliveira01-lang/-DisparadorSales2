@@ -8,12 +8,15 @@ import {
   ChevronRight,
   CalendarDays,
   Scale,
-  FolderOpen,
-  Users,
+  LayoutGrid,
+  Contact,
+  MessageSquareReply,
+  Wallet,
   Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { permittedNavigation } from "@/lib/navigation";
+import { emAreaDeConfig } from "@/lib/configNav";
 import { useAuth } from "@/context/AuthContext";
 import { APP_VERSION } from "@/lib/appVersion";
 
@@ -24,13 +27,15 @@ interface SidebarProps {
   onNavigate: () => void;
 }
 const GRUPOS = [
-  { group: "gestao", label: "Gestão do escritório", icon: FolderOpen },
-  { group: "processos", label: "Processos e DJEN", icon: Scale },
-  { group: "pericias", label: "Perícias e avisos", icon: CalendarDays },
-  { group: "compartilhado", label: "Contatos", icon: Users },
-  { group: "sistema", label: "Preferências", icon: Settings },
+  { group: "inicio", label: "Início", icon: LayoutGrid },
+  { group: "clientes", label: "Clientes", icon: Contact },
+  { group: "processos", label: "Processos e prazos", icon: Scale },
+  { group: "agenda", label: "Agenda e perícias", icon: CalendarDays },
+  { group: "comunicacao", label: "Comunicação", icon: MessageSquareReply },
+  { group: "financeiro", label: "Financeiro", icon: Wallet },
+  { group: "configuracoes", label: "Configurações", icon: Settings },
 ] as const;
-const CURTOS: Record<string, string> = {"/pericias":"Início","/calendario":"Agenda","/templates":"Mensagens","/pendentes":"Retornos","/historico":"Envios","/processos":"Publicações","/processos/quadro":"Quadro","/processos/aguardando":"Espera","/processos/advogados":"Advogados","/processos/monitoramento":"DJEN","/processos/calendarios":"Prazos","/gestao":"Painel","/gestao/tarefas":"Tarefas","/gestao/clientes":"Clientes","/gestao/modelos":"Modelos","/gestao/ficha":"Ficha","/gestao/financeiro":"Caixa","/gestao/indicadores":"Metas","/agenda":"Contatos","/logs":"Atividade","/configuracoes":"Ajustes","/equipe":"Equipe","/minha-conta":"Conta"};
+const CURTOS: Record<string, string> = {"/pericias":"Perícias","/calendario":"Agenda","/pendentes":"Retornos","/historico":"Envios","/processos":"Publicações","/processos/quadro":"Quadro","/processos/aguardando":"Espera","/gestao":"Painel","/gestao/tarefas":"Tarefas","/gestao/clientes":"Clientes","/gestao/financeiro":"Caixa","/gestao/indicadores":"Metas","/agenda":"Contatos","/configuracoes":"Ajustes"};
 const CHAVE_GRUPOS = "sales.menu.grupos";
 
 export function Sidebar({
@@ -132,6 +137,26 @@ export function Sidebar({
         {GRUPOS.map(({ group, label, icon: GIcon }) => {
           const itens = visibleNavigation.filter((item) => item.group === group);
           if (itens.length === 0) return null;
+          // Início e Configurações são um link só: as ferramentas de configuração ficam dentro da área de Configurações.
+          if (group === "inicio" || group === "configuracoes") {
+            const destino = group === "inicio" ? itens[0].to : itens.some((i) => i.to === "/configuracoes") ? "/configuracoes" : itens[0].to;
+            const ativoSimples = group === "inicio" ? location.pathname === destino : emAreaDeConfig(location.pathname);
+            return (
+              <div key={group} className="mb-2">
+                {collapsed ? (
+                  <NavLink to={destino} onClick={onNavigate} title={label} className={cn("sidebar-link", ativoSimples && "is-active")} aria-current={ativoSimples ? "page" : undefined}>
+                    <GIcon className="h-[19px] w-[19px] shrink-0" strokeWidth={1.7} />
+                    <span className="sidebar-short">{CURTOS[destino] ?? label}</span>
+                  </NavLink>
+                ) : (
+                  <NavLink to={destino} onClick={onNavigate} title={label} className={cn("sidebar-group-head", ativoSimples && "is-active")} aria-current={ativoSimples ? "page" : undefined}>
+                    <GIcon className="h-[18px] w-[18px] shrink-0" strokeWidth={1.7} />
+                    <span className="sidebar-copy flex-1 text-left">{label}</span>
+                  </NavLink>
+                )}
+              </div>
+            );
+          }
           const ativo = itens.some((item) => ("end" in item && item.end ? location.pathname === item.to : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)));
           const aberto = collapsed || abertos[group] !== false && (abertos[group] === true || ativo);
           return (

@@ -13,6 +13,7 @@ import { useToast } from "@/components/ui/Toast";
 import { Arquivos } from "./Arquivos";
 import { CamposPersonalizados, type CampoValor } from "./Campos";
 import { GerarDeModelo } from "./Modelos";
+import { GerarDocumentos } from "./GerarDocumentos";
 import { TarefaModal, type Tarefa } from "./TarefaModal";
 import { AREAS, Campo, PAPEIS, SeletorPessoa, STATUS, STATUS_TOM, TIPOS, dataBr, dinheiro } from "./comum";
 import type { Responsavel } from "./Processos";
@@ -38,6 +39,7 @@ export function ProcessoFicha() {
   const [aba, setAba] = useState<Aba>("resumo");
   const [resp, setResp] = useState<Responsavel[]>([]);
   const [apagar, setApagar] = useState(false);
+  const [docs, setDocs] = useState(false);
 
   const carregar = useCallback(async () => {
     try { setFicha(await api.get<Ficha>(`/gestao/processos/${id}`)); setErro(""); }
@@ -57,7 +59,8 @@ export function ProcessoFicha() {
     <div className="space-y-5">
       <Link to="/gestao/processos" className="inline-flex items-center gap-1 text-sm text-accent-700 hover:underline dark:text-accent-300"><ArrowLeft className="h-4 w-4" /> Clientes e processos</Link>
       <PageHeader title={ficha.numero_formatado || ficha.numero} description={<span className="flex flex-wrap items-center gap-2"><Badge tone="accent"><FolderOpen className="mr-1 h-3 w-3" />Pasta {ficha.pasta}</Badge><Badge tone={STATUS_TOM[ficha.status] || "neutral"}>{STATUS[ficha.status] || ficha.status}</Badge>{ficha.tribunal && <Badge>{ficha.tribunal}</Badge>}<span>{ficha.titulo || ficha.classe}</span></span>}
-        actions={gerir ? <Button variant="ghost" onClick={() => setApagar(true)}><Trash2 className="h-4 w-4" /> Excluir</Button> : undefined} />
+        actions={gerir ? <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setDocs(true)}>Gerar documentos</Button><Button variant="ghost" onClick={() => setApagar(true)}><Trash2 className="h-4 w-4" /> Excluir</Button></div> : undefined} />
+      <GerarDocumentos aberto={docs} aoFechar={() => setDocs(false)} processo={{ id: ficha.id, rotulo: `${ficha.pasta} · ${ficha.numero_formatado || ficha.numero}` }} />
       {(() => { const c = ficha.partes.find((p) => p.papel === "autor") ?? ficha.partes[0]; return c ? (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
           <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Cliente</span>

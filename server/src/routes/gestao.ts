@@ -17,6 +17,10 @@ import { consultarCep } from "../services/gestao/cep";
 import { adicionarCamposPrevidenciarios, atualizarCampo, criarCampo, excluirCampo, listarCampos, revelarSenha, TIPOS_CAMPO } from "../services/gestao/campos";
 import { fichaDeCadastroHtml, fichaDeExemplo } from "../services/gestao/ficha";
 import { PADRAO as FICHA_PADRAO, ROTULO_SECAO, apagarFoto, apagarLogo, fotoDaPessoa, lerConfig, logoAtual, salvarConfig, salvarFoto, salvarLogo } from "../services/gestao/fichaConfig";
+import { DOCS, ROTULO_VARIANTE, TEXTOS_PADRAO, VARIANTES, VARIAVEIS_DOCUMENTO, kitHtml, lerConfigDocumentos, montarKit, restaurarTexto, salvarConfigDocumentos, type OpcoesKit } from "../services/gestao/documentos";
+import { kitDocx } from "../services/gestao/docx";
+import { lerEscritorio, salvarEscritorio } from "../services/gestao/escritorio";
+import crypto from "node:crypto";
 import { agendaDaPessoa, andamentoDoProcesso } from "../services/gestao/integracao";
 import { financeiroDaPessoa } from "../services/gestao/financeiro";
 import { recursoLiberadoNaLicenca } from "../licenca/cliente";
@@ -210,6 +214,73 @@ gestaoRouter.delete("/ficha/logo", rota(() => { apagarLogo(); return { ok: true 
 gestaoRouter.get("/pessoas/:id/foto", rota((req, res) => servirImagem(fotoDaPessoa(id(req)), res)));
 gestaoRouter.post("/pessoas/:id/foto", express.raw({ type: () => true, limit: 2 * 1024 * 1024 + 1024 }), rota((req) => { salvarFoto(id(req), Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0)); return { ok: true }; }));
 gestaoRouter.delete("/pessoas/:id/foto", rota((req) => { apagarFoto(id(req)); return { ok: true }; }));
+
+// ---------- dados do escritório e kit de documentos (procuração, contrato…) ----------
+gestaoRouter.get("/escritorio", rota(() => ({ escritorio: lerEscritorio(), tem_logo: Boolean(logoAtual()) })));
+gestaoRouter.put("/escritorio", rota((req) => { const e = salvarEscritorio(req.body || {}); auditAccess("gestao_escritorio_alterado", usuario(req).id, null); return { escritorio: e, tem_logo: Boolean(logoAtual()) }; }));
+gestaoRouter.get("/documentos/config", rota(() => ({
+  ...lerConfigDocumentos(), padroes: TEXTOS_PADRAO, variaveis: VARIAVEIS_DOCUMENTO, variantes: VARIANTES.map((v) => ({ id: v, nome: ROTULO_VARIANTE[v] })),
+  documentos: DOCS.map((d) => ({ id: d.id, nome: d.nome })), escritorio_completo: Boolean(lerEscritorio().advogados.length && (lerEscritorio().nome || lerEscritorio().razao_social)),
+})));
+gestaoRouter.put("/documentos/config", rota((req) => { const c = salvarConfigDocumentos(req.body || {}); auditAccess("gestao_documentos_modelo_alterado", usuario(req).id, null); return c; }));
+gestaoRouter.post("/documentos/config/restaurar", rota((req) => restaurarTexto(String(req.body?.documento ?? ""), String(req.body?.variante ?? ""))));
+const CSP_DOC = "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:";
+const texto = (v: unknown, max = 200) => String(v ?? "").slice(0, max);
+const qual = (v: unknown) => { const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>; return { nome: texto(o.nome, 120), nacionalidade: texto(o.nacionalidade, 30), estado_civil: texto(o.estado_civil, 30), profissao: texto(o.profissao, 60), rg: texto(o.rg, 30), cpf: texto(o.cpf, 25), endereco: texto(o.endereco, 250), qualidade: texto(o.qualidade, 40) }; };
+function opcoesDoKit(b: Record<string, unknown>): OpcoesKit {
+  const h = (b.honorarios && typeof b.honorarios === "object" ? b.honorarios : {}) as Record<string, unknown>;
+  return {
+    pessoaId: Number(b.pessoa_id) || undefined, processoId: Number(b.processo_id) || undefined, variante: String(b.variante ?? "comum") as OpcoesKit["variante"],
+    documentos: Array.isArray(b.documentos) ? b.documentos.map(String) : [], data: b.data === "branco" ? "branco" : "hoje",
+    honorarios: { beneficios: h.beneficios === undefined || h.beneficios === "" ? undefined : Number(h.beneficios), percentual: h.percentual === undefined || h.percentual === "" ? undefined : Number(h.percentual), parcela: h.parcela === undefined || h.parcela === "" ? undefined : Number(h.parcela) },
+    representante: qual(b.representante), a_rogo: qual(b.a_rogo),
+    testemunhas_rogo: Array.isArray(b.testemunhas_rogo) ? b.testemunhas_rogo.slice(0, 2).map((t) => ({ nome: texto((t as Record<string, unknown>)?.nome, 120), cpf: texto((t as Record<string, unknown>)?.cpf, 25) })) : undefined,
+  };
+}
+/** Os dados do kit (inclusive CPF de terceiros) ficam no servidor por poucos minutos; a janela de impressão só leva um código. */
+const kitsPreparados = new Map<string, { userId: number; opcoes: OpcoesKit; expira: number }>();
+gestaoRouter.post("/documentos/preparar", rota((req) => {
+  const u = usuario(req);
+  const opcoes = opcoesDoKit(req.body || {});
+  const kit = montarKit(opcoes, nomeDe(u)); // valida tudo agora (cliente, tipo, quem assina)
+  const agora = Date.now();
+  for (const [k, v] of kitsPreparados) if (v.expira < agora) kitsPreparados.delete(k);
+  const token = crypto.randomBytes(18).toString("base64url");
+  kitsPreparados.set(token, { userId: u.id, opcoes, expira: agora + 10 * 60_000 });
+  auditAccess("gestao_documentos_gerados", u.id, null, { pessoa: opcoes.pessoaId ?? null, processo: opcoes.processoId ?? null, variante: opcoes.variante, documentos: kit.documentos.map((d) => d.id) });
+  return { token, faltando: kit.faltando, documentos: kit.documentos.map((d) => d.nome) };
+}));
+gestaoRouter.get("/documentos/kit/:token", (req, res, next) => {
+  try {
+    const u = usuario(req);
+    const k = kitsPreparados.get(String(req.params.token));
+    if (!k || k.userId !== u.id || k.expira < Date.now()) return void res.status(404).type("text").send("Este documento expirou. Gere novamente.");
+    const kit = montarKit(k.opcoes, nomeDe(u));
+    res.setHeader("Cache-Control", "private, no-store");
+    if (req.query.formato === "docx") {
+      res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(`Documentos - ${kit.documentos.length === 1 ? kit.documentos[0].nome : "kit do cliente"}.docx`)}`);
+      return void res.type("application/vnd.openxmlformats-officedocument.wordprocessingml.document").send(kitDocx(kit));
+    }
+    res.setHeader("Content-Security-Policy", CSP_DOC);
+    res.type("html").send(kitHtml(kit, { imprimir: req.query.imprimir === "1" }));
+  } catch (e) {
+    if (e instanceof ErroGestao) return void res.status(e.status).type("text").send(e.message);
+    next(e);
+  }
+});
+gestaoRouter.get("/documentos/previa", (req, res, next) => {
+  try {
+    const variante = VARIANTES.includes(String(req.query.variante) as never) ? String(req.query.variante) : "comum";
+    const doc = DOCS.some((d) => d.id === req.query.doc) ? String(req.query.doc) : "procuracao";
+    const ex = { nome: "NOME DA PESSOA QUE ASSINA", nacionalidade: "brasileiro(a)", estado_civil: "casado(a)", profissao: "", rg: "00.000.000-0", cpf: "000.000.000-00", endereco: "Rua do Exemplo, 100, Bairro, Cidade/UF", qualidade: "mãe" };
+    const kit = montarKit({ variante: variante as OpcoesKit["variante"], documentos: [doc], data: "hoje", representante: ex, a_rogo: ex }, nomeDe(usuario(req)), true);
+    res.setHeader("Content-Security-Policy", CSP_DOC); res.setHeader("Cache-Control", "private, no-store");
+    res.type("html").send(kitHtml(kit, { zoom: 0.62 }));
+  } catch (e) {
+    if (e instanceof ErroGestao) return void res.status(e.status).type("text").send(e.message);
+    next(e);
+  }
+});
 
 // ---------- integração com DJEN/perícias e financeiro do cadastro ----------
 gestaoRouter.get("/processos/:id/andamento", rota((req) => andamentoDoProcesso(id(req))));

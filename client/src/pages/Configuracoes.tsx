@@ -3,7 +3,7 @@ import { Settings as SettingsIcon } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { beginRequestActivity } from "@/lib/requestActivity";
 import { DeadlineSettings } from "@/components/djen/DeadlineSettings";
-import { SettingsOverview, type SettingsSectionKey } from "@/components/SettingsOverview";
+import type { SettingsSectionKey } from "@/components/SettingsOverview";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -85,19 +85,13 @@ const STATUS_LABEL: Record<WhatsappState["status"], string> = {
   falha: "Falha na conexão",
 };
 
-export function Configuracoes() {
+export function Configuracoes({ secao }: { secao?: string | null } = {}) {
   const { user } = useAuth();
   const { search: settingsSearch } = useLocation();
   const { show } = useToast();
   const { theme, setTheme } = useTheme();
-  const [configSection, setConfigSection] = useState<SettingsSectionKey | null>(()=>new URLSearchParams(window.location.search).has("ia")?"ia":new URLSearchParams(window.location.search).has("prazos")?"prazos":new URLSearchParams(window.location.search).has("whatsapp")?"whatsapp":new URLSearchParams(window.location.search).has("google")?"google":null);
-  useEffect(() => {
-    const params = new URLSearchParams(settingsSearch);
-    if (params.has("ia")) setConfigSection("ia");
-    else if (params.has("whatsapp")) setConfigSection("whatsapp");
-    else if (params.has("google")) setConfigSection("google");
-    else if (params.has("prazos")) setConfigSection("prazos");
-  }, [settingsSearch]);
+  const configSection = (secao ?? null) as SettingsSectionKey | null;
+  void settingsSearch;
   const [settings, setSettings] = useState<Settings | null>(null);
   const [trelloKey, setTrelloKey] = useState("");
   const [trelloToken, setTrelloToken] = useState("");
@@ -494,15 +488,14 @@ export function Configuracoes() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Configurações"
-        description="Personalize seu espaço de trabalho e gerencie conexões, avisos e acesso."
+        title="Conexões e sistema"
+        description="Ajuste conexões, avisos, acesso e aparência."
         actions={<Button variant="outline" onClick={handleLogout} className="danger-action">
           <LogOut className="h-4 w-4" /> Sair do sistema
         </Button>}
       />
 
-      <div className="settings-layout"><aside><SettingsOverview selected={configSection} onOpen={setConfigSection} whatsappConnected={whatsapp.status === "conectado"} /></aside><div className="settings-detail">
-      {configSection === null && <div className="settings-welcome"><span className="eyebrow">Do seu jeito</span><h2>Um espaço que acompanha<br />o seu ritmo.</h2><p>Escolha uma área ao lado para ajustar suas conexões, sua aparência e sua rotina.</p><div className="settings-orbit" aria-hidden="true"><SettingsIcon className="h-12 w-12" /></div><Button onClick={()=>setConfigSection("aparencia")}>Personalizar aparência</Button></div>}
+      <div className="settings-layout"><div className="settings-detail">
 
       {configSection === "ia" && <AISettings />}
       <section hidden={configSection !== "aparencia"}><Card>

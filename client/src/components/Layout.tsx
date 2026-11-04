@@ -19,7 +19,7 @@ import { useActiveService } from "@/context/ActiveServiceContext";
 import { useWhatsapp } from "@/context/WhatsappContext";
 import { useTheme } from "@/context/ThemeContext";
 import { lerModoLeve, modoLeveAtivo, salvarModoLeve } from "@/lib/desempenho";
-import { getCurrentPage } from "@/lib/navigation";
+import { areaDaPagina, getCurrentPage } from "@/lib/navigation";
 import { useAuth } from "@/context/AuthContext";
 export function Layout({ children }: { children: ReactNode }) {
   const { user, can } = useAuth();
@@ -121,9 +121,7 @@ export function Layout({ children }: { children: ReactNode }) {
             <div className="min-w-0 topbar-breadcrumb">
               <p className="hidden items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400 md:flex">
                 <span>
-                  {active === "gestao" ? "Gestão do escritório" : active === "processos"
-                    ? "Processos e DJEN"
-                    : "Perícias e avisos"}
+                  {areaDaPagina(pathname)}
                 </span>
                 <ChevronRight className="h-3 w-3" />
                 <span className="text-zinc-700 dark:text-zinc-300">
@@ -227,7 +225,7 @@ export function Layout({ children }: { children: ReactNode }) {
           <span>DisparaZap 2</span>
           <span>
             Sales &amp; Associados ·{" "}
-            {active === "gestao" ? "Gestão do escritório" : active === "processos" ? "Processos e DJEN" : "Perícias e avisos"}
+            {areaDaPagina(pathname)}
           </span>
         </footer>
       </div>

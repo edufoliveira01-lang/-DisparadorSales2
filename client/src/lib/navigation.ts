@@ -22,15 +22,16 @@ import {
   Wallet,
   BarChart3,
   Printer,
+  Building2,
 } from "lucide-react";
 import type { Permission } from "@/context/AuthContext";
 export const navigation = [
   {
     to: "/pericias",
-    label: "Visão geral",
+    label: "Perícias e compromissos",
     description: "Compromissos, avisos e pendências",
     icon: LayoutDashboard,
-    group: "pericias",
+    group: "agenda",
     end: true,
   },
   {
@@ -38,28 +39,28 @@ export const navigation = [
     label: "Calendário",
     description: "Perícias, audiências e lembretes",
     icon: CalendarDays,
-    group: "pericias",
+    group: "agenda",
   },
   {
     to: "/templates",
     label: "Modelos de mensagens",
     description: "Textos e prévias dos avisos",
     icon: MessageSquareText,
-    group: "pericias",
+    group: "configuracoes",
   },
   {
     to: "/pendentes",
     label: "Aguardando resposta",
     description: "Clientes que ainda não retornaram",
     icon: MessageSquareReply,
-    group: "pericias",
+    group: "comunicacao",
   },
   {
     to: "/historico",
     label: "Histórico de envios",
     description: "Mensagens, entregas e respostas",
     icon: History,
-    group: "pericias",
+    group: "comunicacao",
   },
   {
     to: "/processos",
@@ -85,31 +86,31 @@ export const navigation = [
   },
   {
     to: "/processos/advogados",
-    label: "Advogados",
+    label: "Advogados acompanhados no DJEN",
     description: "Profissionais acompanhados no DJEN",
     icon: BriefcaseBusiness,
-    group: "processos",
+    group: "configuracoes",
   },
   {
     to: "/processos/monitoramento",
     label: "Monitoramento DJEN",
     description: "Consulta e sincronização de publicações",
     icon: Search,
-    group: "processos",
+    group: "configuracoes",
   },
   {
     to: "/processos/calendarios",
     label: "Calendários de prazos",
     description: "Feriados e suspensões dos tribunais",
     icon: CalendarDays,
-    group: "processos",
+    group: "configuracoes",
   },
   {
     to: "/gestao",
     label: "Meu painel",
     description: "Suas tarefas, prazos e o resumo do escritório",
     icon: LayoutGrid,
-    group: "gestao",
+    group: "inicio",
     end: true,
   },
   {
@@ -117,77 +118,91 @@ export const navigation = [
     label: "Tarefas",
     description: "Prazos e afazeres por pessoa e processo",
     icon: ListChecks,
-    group: "gestao",
+    group: "processos",
   },
   {
     to: "/gestao/clientes",
     label: "Clientes e processos",
     description: "Cadastro, processos, financeiro e documentos de cada cliente",
     icon: Contact,
-    group: "gestao",
+    group: "clientes",
   },
   {
     to: "/gestao/modelos",
-    label: "Modelos de documento",
+    label: "Outros modelos de documento",
     description: "Procuração, contrato e outros, com dados preenchidos",
     icon: FileText,
-    group: "gestao",
+    group: "configuracoes",
   },
   {
     to: "/gestao/ficha",
     label: "Ficha de cadastro",
     description: "Modelo da ficha impressa: logotipo, cabeçalho e campos",
     icon: Printer,
-    group: "gestao",
+    group: "configuracoes",
   },
   {
     to: "/gestao/financeiro",
     label: "Financeiro",
     description: "Honorários, contas a pagar e receber, fluxo de caixa",
     icon: Wallet,
-    group: "gestao",
+    group: "financeiro",
   },
   {
     to: "/gestao/indicadores",
     label: "Indicadores",
     description: "Produtividade, estoque de processos e receita",
     icon: BarChart3,
-    group: "gestao",
+    group: "financeiro",
   },
   {
     to: "/agenda",
-    label: "Contatos",
-    description: "Clientes, telefones e processos",
+    label: "Contatos do WhatsApp",
+    description: "Telefones e contatos usados nos avisos",
     icon: Users,
-    group: "compartilhado",
+    group: "clientes",
   },
   {
     to: "/logs",
     label: "Atividade do sistema",
     description: "Ocorrências e resultados das integrações",
     icon: ScrollText,
-    group: "sistema",
+    group: "configuracoes",
   },
   {
     to: "/configuracoes",
     label: "Configurações",
-    description: "Integrações, aparência e acesso",
+    description: "Central: escritório, documentos, conexões e sistema",
     icon: Settings,
-    group: "sistema",
+    group: "configuracoes",
+  },
+  {
+    to: "/configuracoes/escritorio",
+    label: "Dados do escritório",
+    description: "Nome, logotipo, endereço, advogados e testemunhas",
+    icon: Building2,
+    group: "configuracoes",
+  },
+  {
+    to: "/configuracoes/documentos",
+    label: "Kit de documentos",
+    description: "Procuração, contrato e declarações: comum, a rogo, representado",
+    icon: FileText,
+    group: "configuracoes",
   },
   {
     to: "/equipe",
     label: "Equipe e acessos",
     description: "Pessoas, perfis e permissões",
     icon: UserRoundCog,
-    group: "sistema",
+    group: "configuracoes",
   },
   {
     to: "/minha-conta",
     label: "Minha conta",
     description: "Seus dados de acesso e senha",
     icon: UserRound,
-    group: "sistema",
+    group: "configuracoes",
   },
 ] as const;
 
@@ -201,7 +216,8 @@ export function navigationPermission(to: string): Permission | null {
   if (to === "/gestao/financeiro") return "financeiro.view";
   if (to.startsWith("/gestao")) return "gestao.view";
   if (to === "/logs") return "activity.view";
-  if (to === "/configuracoes") return "integrations.manage";
+  if (to === "/configuracoes") return null;
+  if (to.startsWith("/configuracoes/")) return "gestao.view";
   if (to === "/equipe") return "team.manage";
   if (to === "/processos/calendarios") return "deadlines.view";
   if (to === "/processos/monitoramento") return "djen.manage";
@@ -230,3 +246,7 @@ export function getCurrentPage(pathname: string) {
     navigation[0]
   );
 }
+
+export const ROTULO_GRUPO: Record<string, string> = { inicio: "Início", clientes: "Clientes", processos: "Processos e prazos", agenda: "Agenda e perícias", comunicacao: "Comunicação", financeiro: "Financeiro", configuracoes: "Configurações" };
+/** Nome da área a que a página pertence (usado no topo das páginas e no rodapé). */
+export const areaDaPagina = (pathname: string) => ROTULO_GRUPO[getCurrentPage(pathname).group] ?? "Sistema";

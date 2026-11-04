@@ -1,4 +1,5 @@
-import { useActiveService } from "@/context/ActiveServiceContext";
+import { useLocation } from "react-router-dom";
+import { areaDaPagina } from "@/lib/navigation";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
@@ -17,7 +18,7 @@ export function PageHeader({
   className,
   compact = false,
 }: PageHeaderProps) {
-  const active=useActiveService();
+  const { pathname } = useLocation();
   const Heading = compact ? "h2" : "h1";
   return (
     <header
@@ -29,7 +30,7 @@ export function PageHeader({
       <div className="min-w-0">
         {!compact && (
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-accent-600 dark:text-accent-300">
-            {active === "gestao" ? "Gestão do escritório" : active === "processos" ? "Acompanhamento processual" : "Perícias e avisos"}
+            {areaDaPagina(pathname)}
           </p>
         )}
         <Heading

@@ -65,3 +65,16 @@ Hoje todos os planos vêm ilimitados/ligados (padrão), então nada muda até vo
 ## Próximos passos possíveis
 
 Cobrança de cliente por boleto/PIX (Asaas), integração com Google Drive, calendário compartilhado com tarefas, controle de horas e backup automático dos arquivos.
+
+## Configurações reunidas e kit de documentos (2.69.0)
+
+**Menu.** O menu lateral agora segue a função de cada ferramenta: Início, Clientes, Processos e prazos, Agenda e perícias, Comunicação, Financeiro e **Configurações**. Tudo o que é ajuste (dados do escritório, kit de documentos, ficha de cadastro, modelos de mensagens, WhatsApp, Trello, Google, IA, DJEN, equipe, conta, aparência, backup, atividade do sistema) fica dentro de *Configurações*, com menu próprio e uma visão geral em cards. Os endereços antigos continuam funcionando.
+
+**Dados do escritório** (`Configurações → Dados do escritório`): nome, razão social, OAB e CNPJ da sociedade, endereço, cidade/UF, foro, telefones, e-mail, rodapé, logotipo, advogados (outorgados/contratados) e testemunhas padrão. Nada vem preenchido de fábrica: cada instalação cadastra o seu.
+
+**Kit de documentos** (`Configurações → Kit de documentos` e botão *Gerar documentos* no cadastro do cliente e do processo): Procuração, Declaração de hipossuficiência, Contrato de prestação de serviços, Declaração de honorários não adiantados e Termo de ciência, em três tipos:
+- **Comum** — o cliente assina;
+- **A rogo** — assina outra pessoa de confiança, com duas testemunhas e quadro da digital do polegar;
+- **Neste ato representado por…** — o representante legal assina (menor, incapaz).
+
+Cada texto é editável (variáveis `{{cliente.nome}}`, `{{escritorio.razao_social}}`, `{{outorgados.lista}}`…), com botão para voltar ao padrão e prévia ao vivo. Os honorários do contrato (nº de benefícios e percentuais) têm valores padrão e podem ser trocados em cada geração. Saída: HTML pronto para imprimir (A4, cabeçalho com logotipo e rodapé do escritório em cada folha) ou **Word (.docx)** de verdade, com o mesmo cabeçalho e rodapé. Tudo é registrado na auditoria; os dados de terceiros (representante, quem assina a rogo) ficam no servidor por 10 minutos apenas e a janela de impressão leva só um código.

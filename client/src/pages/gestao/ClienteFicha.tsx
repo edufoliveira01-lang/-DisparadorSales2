@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Camera, CalendarClock, Download, FolderOpen, Loader2, Plus, Printer, Save, ShieldAlert, Trash2, User } from "lucide-react";
+import { ArrowLeft, Camera, CalendarClock, Download, FileText, FolderOpen, Loader2, Plus, Printer, Save, ShieldAlert, Trash2, User } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -15,6 +15,7 @@ import { Arquivos } from "./Arquivos";
 import { CamposPersonalizados, type CampoValor } from "./Campos";
 import { FinanceiroPessoa } from "./FinanceiroPessoa";
 import { GerarDeModelo } from "./Modelos";
+import { GerarDocumentos } from "./GerarDocumentos";
 import { NovoProcesso, type Responsavel } from "./Processos";
 import { Campo, ESCOLARIDADES, ESTADOS_CIVIS, STATUS, STATUS_TOM, TIPOS, UFS, dataBr, mascaraCep, mascaraCpfCnpj, mascaraPis, type EnderecoCep } from "./comum";
 
@@ -51,6 +52,7 @@ export function ClienteFicha() {
   const [novoProcesso, setNovoProcesso] = useState(false);
   const [criado, setCriado] = useState<number | null>(null);
   const [imprimir, setImprimir] = useState(false);
+  const [docs, setDocs] = useState(false);
   const [buscandoCep, setBuscandoCep] = useState(false);
   const [msgCep, setMsgCep] = useState("");
   const [apagar, setApagar] = useState(false);
@@ -116,6 +118,7 @@ export function ClienteFicha() {
         description={novo ? "Preencha o que souber; só o nome é obrigatório. O endereço completa sozinho pelo CEP." : <span className="flex flex-wrap items-center gap-2"><Badge tone={pessoa.tipo === "cliente" ? "accent" : "neutral"}>{TIPOS[pessoa.tipo]}</Badge>{!pessoa.ativo && <Badge tone="warning">Inativo</Badge>}{pessoa.documento_formatado && <span>{pessoa.documento_formatado}</span>}{pessoa.telefone && <span>{pessoa.telefone}</span>}</span>}
         actions={<div className="flex flex-wrap gap-2">
           {!novo && <Button variant="outline" onClick={() => (sujo ? show("Salve as alterações antes de imprimir a ficha.", "info") : setImprimir(true))}><Printer className="h-4 w-4" /> Imprimir ficha</Button>}
+          {!novo && gerir && <Button variant="outline" onClick={() => (sujo ? show("Salve as alterações antes de gerar os documentos.", "info") : setDocs(true))}><FileText className="h-4 w-4" /> Gerar documentos</Button>}
           {!novo && gerir && <Button variant="outline" onClick={() => setNovoProcesso(true)}><Plus className="h-4 w-4" /> Novo processo</Button>}
           {gerir && <Button loading={salvando} onClick={() => void salvar()} disabled={!sujo && !novo}><Save className="h-4 w-4" /> Salvar</Button>}
         </div>} />
@@ -205,6 +208,7 @@ export function ClienteFicha() {
       {!novo && aba === "agenda" && <AgendaPessoa id={id} />}
 
       {novoProcesso && <NovoProcesso responsaveis={resp} clientePadrao={{ id, nome: pessoa.nome }} aoFechar={() => setNovoProcesso(false)} aoCriar={(pid) => { setNovoProcesso(false); navegar(`/gestao/processos/${pid}`); }} />}
+      {!novo && <GerarDocumentos aberto={docs} aoFechar={() => setDocs(false)} pessoa={{ id, nome: pessoa.nome }} />}
       <Modal open={imprimir} onClose={() => setImprimir(false)} title="Imprimir ficha de cadastro" description="Abre a ficha em uma nova aba, pronta para imprimir ou salvar em PDF." maxWidth="max-w-md"
         footer={<div className="flex w-full flex-wrap justify-end gap-2"><Button variant="outline" onClick={() => setImprimir(false)}>Cancelar</Button><Button variant="outline" onClick={() => { window.open(`/api/gestao/pessoas/${id}/ficha?formato=doc`, "_self"); setImprimir(false); }}><Download className="h-4 w-4" /> Baixar para editar (Word)</Button>{gerir && <Button variant="outline" onClick={() => abrirFicha(true)}><ShieldAlert className="h-4 w-4" /> Com senhas</Button>}<Button onClick={() => abrirFicha(false)}><Printer className="h-4 w-4" /> Imprimir</Button></div>}>
         <div className="space-y-3 text-sm text-zinc-600 dark:text-zinc-300"><p>A ficha traz os dados do cadastro, a foto, os campos personalizados e os processos vinculados. Por segurança, as <b>senhas saem ocultas</b>; use “Com senhas” só se for guardar o papel com cuidado (isso fica registrado).</p><p>Quer mudar o visual (logotipo, cabeçalho, o que aparece)? <Link className="text-accent-700 underline" to="/gestao/ficha">Personalizar o modelo da ficha</Link>. Para editar livremente, baixe em Word.</p></div>

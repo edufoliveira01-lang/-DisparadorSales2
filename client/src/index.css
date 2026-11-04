@@ -536,3 +536,6 @@ html.modo-leve *, html.modo-leve *::before, html.modo-leve *::after {
 }
 html.modo-leve .app-topbar { background: rgb(255 255 255 / .96); }
 html.dark.modo-leve .app-topbar { background: rgb(9 9 11 / .96); }
+
+/* Configurações: a navegação lateral agora é da moldura (ConfigShell); a página usa a largura toda. */
+.settings-layout { grid-template-columns:minmax(0,1fr) !important; }
