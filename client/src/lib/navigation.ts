@@ -17,6 +17,10 @@ import {
   FolderOpen,
   Contact,
   LayoutGrid,
+  ListChecks,
+  FileText,
+  Wallet,
+  BarChart3,
 } from "lucide-react";
 import type { Permission } from "@/context/AuthContext";
 export const navigation = [
@@ -101,11 +105,18 @@ export const navigation = [
   },
   {
     to: "/gestao",
-    label: "Visão geral",
-    description: "Resumo do escritório e atalhos",
+    label: "Meu painel",
+    description: "Suas tarefas, prazos e o resumo do escritório",
     icon: LayoutGrid,
     group: "gestao",
     end: true,
+  },
+  {
+    to: "/gestao/tarefas",
+    label: "Tarefas",
+    description: "Prazos e afazeres por pessoa e processo",
+    icon: ListChecks,
+    group: "gestao",
   },
   {
     to: "/gestao/pessoas",
@@ -119,6 +130,27 @@ export const navigation = [
     label: "Processos e pastas",
     description: "Cadastro, partes, histórico e anotações",
     icon: FolderOpen,
+    group: "gestao",
+  },
+  {
+    to: "/gestao/modelos",
+    label: "Modelos de documento",
+    description: "Procuração, contrato e outros, com dados preenchidos",
+    icon: FileText,
+    group: "gestao",
+  },
+  {
+    to: "/gestao/financeiro",
+    label: "Financeiro",
+    description: "Honorários, contas a pagar e receber, fluxo de caixa",
+    icon: Wallet,
+    group: "gestao",
+  },
+  {
+    to: "/gestao/indicadores",
+    label: "Indicadores",
+    description: "Produtividade, estoque de processos e receita",
+    icon: BarChart3,
     group: "gestao",
   },
   {
@@ -165,6 +197,7 @@ export function navigationPermission(to: string): Permission | null {
   if (to === "/pendentes") return "pending.view";
   if (to === "/historico") return "history.view";
   if (to === "/agenda") return "contacts.view";
+  if (to === "/gestao/financeiro") return "financeiro.view";
   if (to.startsWith("/gestao")) return "gestao.view";
   if (to === "/logs") return "activity.view";
   if (to === "/configuracoes") return "integrations.manage";

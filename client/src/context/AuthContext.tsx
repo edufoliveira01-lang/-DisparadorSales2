@@ -8,7 +8,7 @@ export type Permission =
   | "contacts.view" | "contacts.manage" | "processes.view" | "processes.manage"
   | "djen.manage" | "deadlines.view" | "deadlines.manage" | "activity.view"
   | "integrations.manage" | "whatsapp.manage" | "team.manage" | "backup.manage"
-  | "gestao.view" | "gestao.manage";
+  | "gestao.view" | "gestao.manage" | "financeiro.view" | "financeiro.manage";
 export type Role = "administrador" | "gestor" | "advogado" | "atendimento" | "consulta";
 export interface TeamUser {
   id: number; username: string; display_name: string | null; email: string | null;

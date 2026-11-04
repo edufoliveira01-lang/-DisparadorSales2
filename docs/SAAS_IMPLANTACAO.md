@@ -157,6 +157,10 @@ Opcional: apague os arquivos antigos por escritório (o script lista os comandos
 
 Na ficha do escritório, seção **Sistema no servidor**: status (No ar/Parada/Não criada), **Reiniciar** e **Remover do servidor** (para o sistema e tira o endereço do ar; os dados ficam guardados). **Nova chave de licença** já é aplicada na instância e ela reinicia sozinha. Para um escritório criado à mão antes desta instalação, **Criar/ativar sistema no servidor** apenas adota a instância existente, sem alterar os dados dela.
 
+### 5.3.1 Depois de cada atualização do sistema
+
+No painel, em **Escritórios**, o botão **Reiniciar sistemas** reinicia os sistemas dos escritórios e/ou o próprio painel (equivale ao `pm2 restart dz-painel dz-<escritório>` no terminal). Use depois de cada deploy. Só reinicia escritórios que têm a instância criada pelo painel (use **Criar/ativar sistema no servidor** no escritório para adotar um antigo).
+
 ### 5.4 Se preferir o modo manual (sem `PAINEL_AUTO_PROVISIONAR`)
 
 O painel mostra os blocos de implantação (`.env`, PM2 e Nginx) e você aplica com `server/scripts/instancia-aplicar.sh <slug> <porta> <arquivo.env>`. O exemplo de Nginx gerado serve a interface estática e envia só `/api/` e `/socket.io/` à instância.

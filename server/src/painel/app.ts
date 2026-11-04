@@ -158,6 +158,18 @@ export function criarAppPainel(deps: DepsPainel) {
     servico.definirInstancia(id, null, "instancia_removida");
     return { ok: true };
   })));
+  // Atualização: reinicia os sistemas dos escritórios e/ou o painel (substitui o "pm2 restart ..." no terminal).
+  admin.post("/servidor/reiniciar", rota((req) => comoErro(async () => {
+    const p = exigirProv();
+    const alvo = String(req.body?.alvo || "tudo");
+    if (!["escritorios", "painel", "tudo"].includes(alvo)) throw new ErroPainel("Alvo inválido.");
+    const slugs = alvo === "painel" ? [] : db.prepare("SELECT slug FROM escritorios WHERE porta IS NOT NULL ORDER BY slug").all().map((r) => (r as { slug: string }).slug);
+    const resultado = await p.reiniciarVarias(slugs);
+    servico.registrar(null, "servidor_reiniciado", { alvo, escritorios: resultado.length, falhas: resultado.filter((r) => !r.ok).length });
+    const painel = alvo !== "escritorios";
+    if (painel) p.reiniciarPainelDepois();
+    return { ok: resultado.every((r) => r.ok), escritorios: resultado, painel };
+  })));
   admin.post("/escritorios/:id/nova-chave", rota((req) => comoErro(async () => {
     const id = String(req.params.id);
     const { chave } = servico.rotacionarChave(id);

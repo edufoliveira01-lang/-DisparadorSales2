@@ -181,6 +181,20 @@ export class Provisionador {
     await this.alterarMapa((m) => { m.delete(this.host(slug)); });
   }
 
+  /** Reinicia várias instâncias (uma falha não impede as demais). */
+  async reiniciarVarias(slugs: string[]): Promise<{ slug: string; ok: boolean; erro?: string }[]> {
+    const saida: { slug: string; ok: boolean; erro?: string }[] = [];
+    for (const slug of slugs) {
+      try { await this.reiniciar(slug); saida.push({ slug, ok: true }); }
+      catch (e) { saida.push({ slug, ok: false, erro: (e as Error).message }); }
+    }
+    return saida;
+  }
+  /** Reinicia o próprio painel depois de responder à requisição (o processo é encerrado pelo PM2). */
+  reiniciarPainelDepois(atrasoMs = 800) {
+    setTimeout(() => { void this.executar("pm2", ["restart", this.cfg.pm2NomePainel]); }, atrasoMs).unref();
+  }
+
   /** Troca só a chave de licença no .env da instância existente e reinicia. */
   async atualizarChave(slug: string, chave: string) {
     this.conferirSlug(slug);

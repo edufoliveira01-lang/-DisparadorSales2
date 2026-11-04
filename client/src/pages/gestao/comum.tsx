@@ -61,3 +61,40 @@ export function SeletorPessoa({ aoEscolher, tipo, rotulo = "Pessoa" }: { aoEscol
     </div>
   );
 }
+
+export interface ProcessoResumo { id: number; pasta: string; numero: string; numero_formatado: string; titulo: string }
+/** Busca e escolhe um processo já cadastrado (por número, pasta, cliente ou título). */
+export function SeletorProcesso({ aoEscolher, rotulo = "Processo" }: { aoEscolher: (p: ProcessoResumo) => void; rotulo?: string }) {
+  const [busca, setBusca] = useState("");
+  const termo = useAtraso(busca);
+  const [itens, setItens] = useState<ProcessoResumo[]>([]);
+  useEffect(() => {
+    if (termo.trim().length < 2) { setItens([]); return; }
+    let ativo = true;
+    api.get<Lista<ProcessoResumo>>(`/gestao/processos?limite=8&status=&busca=${encodeURIComponent(termo)}`).then((r) => { if (ativo) setItens(r.itens); }).catch(() => undefined);
+    return () => { ativo = false; };
+  }, [termo]);
+  return (
+    <div className="relative">
+      <Label>{rotulo}</Label>
+      <div className="relative mt-1.5">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+        <Input className="pl-9" placeholder="Número, pasta ou nome do cliente…" value={busca} onChange={(e) => setBusca(e.target.value)} />
+      </div>
+      {itens.length > 0 && (
+        <ul className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-xl border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+          {itens.map((p) => (
+            <li key={p.id}><button type="button" className="flex w-full flex-col px-3.5 py-2 text-left text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800" onClick={() => { aoEscolher(p); setBusca(""); setItens([]); }}>
+              <span className="font-medium text-zinc-900 dark:text-zinc-100">{p.pasta} · {p.numero_formatado || p.numero}</span>{p.titulo && <span className="text-xs text-zinc-500">{p.titulo}</span>}</button></li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+export const PRIORIDADES: Record<string, string> = { baixa: "Baixa", normal: "Normal", alta: "Alta", urgente: "Urgente" };
+export const PRIORIDADE_TOM: Record<string, "neutral" | "info" | "warning" | "danger"> = { baixa: "neutral", normal: "info", alta: "warning", urgente: "danger" };
+export const mesAtual = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }).slice(0, 7);
+export const mesRotulo = (m: string) => { const [a, mm] = m.split("-"); return `${["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"][Number(mm) - 1]}/${a.slice(2)}`; };
+export const tamanho = (b: number) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : b >= 1024 ? `${Math.round(b / 1024)} KB` : `${b} B`);

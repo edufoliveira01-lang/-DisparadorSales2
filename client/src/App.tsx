@@ -60,6 +60,10 @@ const GestaoInicio = lazy(() => import("@/pages/gestao/GestaoInicio").then((m) =
 const GestaoPessoas = lazy(() => import("@/pages/gestao/Pessoas").then((m) => ({ default: m.Pessoas })));
 const GestaoProcessos = lazy(() => import("@/pages/gestao/Processos").then((m) => ({ default: m.Processos })));
 const GestaoProcessoFicha = lazy(() => import("@/pages/gestao/ProcessoFicha").then((m) => ({ default: m.ProcessoFicha })));
+const GestaoTarefas = lazy(() => import("@/pages/gestao/Tarefas").then((m) => ({ default: m.Tarefas })));
+const GestaoModelos = lazy(() => import("@/pages/gestao/Modelos").then((m) => ({ default: m.Modelos })));
+const GestaoFinanceiro = lazy(() => import("@/pages/gestao/Financeiro").then((m) => ({ default: m.Financeiro })));
+const GestaoIndicadores = lazy(() => import("@/pages/gestao/Indicadores").then((m) => ({ default: m.Indicadores })));
 const Team = lazy(() => import("@/pages/Team").then((module) => ({ default: module.Team })));
 const Account = lazy(() => import("@/pages/Account").then((module) => ({ default: module.Account })));
 
@@ -122,6 +126,10 @@ function AuthenticatedApp() {
             <Suspense fallback={<PageLoading />}>
               <Routes>
                 <Route path="/gestao" element={<AccessRoute permission="gestao.view"><GestaoInicio /></AccessRoute>} />
+                <Route path="/gestao/tarefas" element={<AccessRoute permission="gestao.view"><GestaoTarefas /></AccessRoute>} />
+                <Route path="/gestao/modelos" element={<AccessRoute permission="gestao.view"><GestaoModelos /></AccessRoute>} />
+                <Route path="/gestao/financeiro" element={<AccessRoute permission="financeiro.view"><GestaoFinanceiro /></AccessRoute>} />
+                <Route path="/gestao/indicadores" element={<AccessRoute permission="gestao.view"><GestaoIndicadores /></AccessRoute>} />
                 <Route path="/gestao/pessoas" element={<AccessRoute permission="gestao.view"><GestaoPessoas /></AccessRoute>} />
                 <Route path="/gestao/processos" element={<AccessRoute permission="gestao.view"><GestaoProcessos /></AccessRoute>} />
                 <Route path="/gestao/processos/:id" element={<AccessRoute permission="gestao.view"><GestaoProcessoFicha /></AccessRoute>} />

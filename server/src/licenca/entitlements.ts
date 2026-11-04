@@ -11,6 +11,9 @@ export const ENTITLEMENTS = {
   max_numeros_whatsapp: { tipo: "limite", padrao: null, rotulo: "Números de WhatsApp" },
   max_processos: { tipo: "limite", padrao: null, rotulo: "Processos acompanhados" },
   ia_habilitada: { tipo: "recurso", padrao: true, rotulo: "Análise por IA" },
+  max_armazenamento_mb: { tipo: "limite", padrao: null, rotulo: "Armazenamento de arquivos (MB)" },
+  modulo_gestao: { tipo: "recurso", padrao: true, rotulo: "Módulo de gestão (pessoas, processos, arquivos, tarefas)" },
+  modulo_financeiro: { tipo: "recurso", padrao: true, rotulo: "Módulo financeiro e indicadores de receita" },
 } as const;
 
 export type ChaveEntitlement = keyof typeof ENTITLEMENTS;

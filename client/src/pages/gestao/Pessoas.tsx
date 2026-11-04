@@ -13,6 +13,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Pagination } from "@/components/ui/Pagination";
 import { useToast } from "@/components/ui/Toast";
+import { Arquivos } from "./Arquivos";
 import { Campo, TIPOS, UFS, STATUS, STATUS_TOM, useAtraso, type Lista } from "./comum";
 
 interface Pessoa {
@@ -131,6 +132,7 @@ export function Pessoas() {
                 {form.id > 0 && <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300"><input type="checkbox" checked={form.ativo} onChange={(e) => set("ativo", e.target.checked)} /> Cadastro ativo</label>}
               </section>
             </fieldset>
+            {form.id > 0 && <section><h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">Documentos do cliente</h3><Arquivos escopo="pessoas" id={form.id} /></section>}
             {form.id > 0 && Array.isArray(form.processos) && (
               <section>
                 <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">Processos ({form.processos.length})</h3>

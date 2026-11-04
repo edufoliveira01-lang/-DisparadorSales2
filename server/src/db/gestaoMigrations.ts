@@ -55,5 +55,75 @@ export function runGestaoMigrations(db: Database.Database) {
       texto TEXT NOT NULL, criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_gestao_anotacoes_processo ON gestao_anotacoes(processo_id, id DESC);
+
+    -- Fase 2: arquivos por pasta (processo) ou pessoa, com versões; modelos de documento
+    CREATE TABLE IF NOT EXISTS gestao_arquivos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      processo_id INTEGER REFERENCES gestao_processos(id) ON DELETE CASCADE,
+      pessoa_id INTEGER REFERENCES gestao_pessoas(id) ON DELETE CASCADE,
+      nome TEXT NOT NULL, armazenado TEXT NOT NULL UNIQUE, mime TEXT NOT NULL DEFAULT 'application/octet-stream',
+      tamanho INTEGER NOT NULL DEFAULT 0, categoria TEXT NOT NULL DEFAULT '', descricao TEXT NOT NULL DEFAULT '',
+      grupo INTEGER, versao INTEGER NOT NULL DEFAULT 1,
+      enviado_por INTEGER REFERENCES users(id) ON DELETE SET NULL, autor TEXT NOT NULL DEFAULT '',
+      criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CHECK(processo_id IS NOT NULL OR pessoa_id IS NOT NULL)
+    );
+    CREATE INDEX IF NOT EXISTS idx_gestao_arquivos_processo ON gestao_arquivos(processo_id, criado_em DESC);
+    CREATE INDEX IF NOT EXISTS idx_gestao_arquivos_pessoa ON gestao_arquivos(pessoa_id, criado_em DESC);
+    CREATE INDEX IF NOT EXISTS idx_gestao_arquivos_grupo ON gestao_arquivos(grupo, versao);
+    CREATE TABLE IF NOT EXISTS gestao_modelos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT NOT NULL, categoria TEXT NOT NULL DEFAULT '',
+      conteudo TEXT NOT NULL, ativo INTEGER NOT NULL DEFAULT 1, padrao TEXT UNIQUE,
+      criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Fase 3: tarefas (manuais ou vindas dos prazos do DJEN)
+    CREATE TABLE IF NOT EXISTS gestao_tarefas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      titulo TEXT NOT NULL, descricao TEXT NOT NULL DEFAULT '',
+      processo_id INTEGER REFERENCES gestao_processos(id) ON DELETE CASCADE,
+      pessoa_id INTEGER REFERENCES gestao_pessoas(id) ON DELETE SET NULL,
+      responsavel_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      criado_por INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      prazo TEXT, prazo_fatal INTEGER NOT NULL DEFAULT 0,
+      prioridade TEXT NOT NULL DEFAULT 'normal' CHECK(prioridade IN ('baixa','normal','alta','urgente')),
+      status TEXT NOT NULL DEFAULT 'pendente' CHECK(status IN ('pendente','em_andamento','concluida','cancelada')),
+      concluida_em TEXT, origem TEXT NOT NULL DEFAULT 'manual' CHECK(origem IN ('manual','djen')),
+      djen_prazo_id INTEGER UNIQUE REFERENCES djen_prazos(id) ON DELETE SET NULL,
+      criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_gestao_tarefas_resp ON gestao_tarefas(responsavel_user_id, status, prazo);
+    CREATE INDEX IF NOT EXISTS idx_gestao_tarefas_processo ON gestao_tarefas(processo_id);
+
+    -- Fase 4: contratos de honorários e lançamentos financeiros (controle interno)
+    CREATE TABLE IF NOT EXISTS gestao_contratos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pessoa_id INTEGER REFERENCES gestao_pessoas(id) ON DELETE SET NULL,
+      processo_id INTEGER REFERENCES gestao_processos(id) ON DELETE SET NULL,
+      descricao TEXT NOT NULL, tipo TEXT NOT NULL DEFAULT 'parcelado' CHECK(tipo IN ('fixo','parcelado','exito','misto')),
+      valor_total_centavos INTEGER NOT NULL DEFAULT 0, percentual_exito INTEGER,
+      status TEXT NOT NULL DEFAULT 'ativo' CHECK(status IN ('ativo','quitado','cancelado')),
+      observacoes TEXT NOT NULL DEFAULT '', criado_por INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS gestao_lancamentos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tipo TEXT NOT NULL CHECK(tipo IN ('receber','pagar')),
+      categoria TEXT NOT NULL DEFAULT 'honorarios' CHECK(categoria IN ('honorarios','custas','despesa','comissao','repasse','outro')),
+      descricao TEXT NOT NULL, valor_centavos INTEGER NOT NULL CHECK(valor_centavos > 0),
+      vencimento TEXT NOT NULL, pago_em TEXT, valor_pago_centavos INTEGER, forma_pagamento TEXT NOT NULL DEFAULT '',
+      cancelado INTEGER NOT NULL DEFAULT 0,
+      pessoa_id INTEGER REFERENCES gestao_pessoas(id) ON DELETE SET NULL,
+      processo_id INTEGER REFERENCES gestao_processos(id) ON DELETE SET NULL,
+      contrato_id INTEGER REFERENCES gestao_contratos(id) ON DELETE SET NULL,
+      beneficiario_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      reembolsavel INTEGER NOT NULL DEFAULT 0, parcela_numero INTEGER, parcela_total INTEGER,
+      observacoes TEXT NOT NULL DEFAULT '', criado_por INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_gestao_lanc_venc ON gestao_lancamentos(vencimento, tipo);
+    CREATE INDEX IF NOT EXISTS idx_gestao_lanc_pessoa ON gestao_lancamentos(pessoa_id);
+    CREATE INDEX IF NOT EXISTS idx_gestao_lanc_processo ON gestao_lancamentos(processo_id);
+    CREATE INDEX IF NOT EXISTS idx_gestao_lanc_contrato ON gestao_lancamentos(contrato_id);
   `);
 }

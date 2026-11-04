@@ -25,6 +25,8 @@ export interface ConfigPainel {
   portaInicial: number;
   /** URL que as instâncias NESTE servidor usam para falar com o painel. */
   licencaUrlInterna: string;
+  /** Nome do processo do próprio painel no PM2 (para o botão "Reiniciar"). */
+  pm2NomePainel: string;
 }
 
 const inteiro = (v: string | undefined, padrao: number, min = 0, max = 3650) => {
@@ -56,6 +58,7 @@ export function lerConfigPainel(env: NodeJS.ProcessEnv = process.env): ConfigPai
     nginxBin: env.PAINEL_NGINX_BIN || "/usr/sbin/nginx",
     systemctlBin: env.PAINEL_SYSTEMCTL_BIN || "/usr/bin/systemctl",
     portaInicial: inteiro(env.PAINEL_PORTA_INICIAL, 3401, 1024, 65000),
+    pm2NomePainel: /^[A-Za-z0-9._-]{1,60}$/.test(env.PAINEL_PM2_NOME || "") ? (env.PAINEL_PM2_NOME as string) : "dz-painel",
     licencaUrlInterna: (env.PAINEL_LICENCA_URL_INTERNA || (env.PAINEL_AUTO_PROVISIONAR === "1" ? `http://127.0.0.1:${inteiro(env.PAINEL_PORT, 3340, 1, 65535)}` : "")).replace(/\/+$/, ""),
   };
 }

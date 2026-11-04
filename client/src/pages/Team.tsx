@@ -23,14 +23,15 @@ const AREAS: { title: string; description: string; groups: AccessGroup[] }[] = [
     { title: "Prazos e calendários", items: [["deadlines.view", "Ver prazos e calendários"], ["deadlines.manage", "Editar prazos e feriados"]] },
   ] },
   { title: "Gestão do escritório", description: "Cadastro de pessoas, processos, pastas e anotações.", groups: [
-    { title: "Pessoas e processos", items: [["gestao.view", "Ver pessoas, processos e pastas"], ["gestao.manage", "Cadastrar e editar pessoas, processos e anotações"]] },
+    { title: "Pessoas, processos, arquivos e tarefas", items: [["gestao.view", "Ver pessoas, processos, arquivos, tarefas e indicadores"], ["gestao.manage", "Cadastrar e editar pessoas, processos, arquivos, modelos e tarefas"]] },
+    { title: "Financeiro (valores sensíveis)", items: [["financeiro.view", "Ver honorários, contas e fluxo de caixa"], ["financeiro.manage", "Lançar, baixar e estornar valores"]] },
   ] },
   { title: "Administração do sistema", description: "Integrações, equipe e cópias de segurança.", groups: [
     { title: "Configurações e equipe", items: [["integrations.manage", "Configurar integrações"], ["team.manage", "Gerenciar equipe"], ["backup.manage", "Baixar e restaurar backup"]] },
   ] },
 ];
 const DEPENDENCIES: Partial<Record<Permission, Permission>> = {
-  "calendar.manage": "calendar.view", "templates.manage": "templates.view", "pending.manage": "pending.view", "history.manage": "history.view", "contacts.manage": "contacts.view", "processes.manage": "processes.view", "gestao.manage": "gestao.view", "djen.manage": "processes.manage", "deadlines.manage": "deadlines.view",
+  "calendar.manage": "calendar.view", "templates.manage": "templates.view", "pending.manage": "pending.view", "history.manage": "history.view", "contacts.manage": "contacts.view", "processes.manage": "processes.view", "gestao.manage": "gestao.view", "financeiro.manage": "financeiro.view", "djen.manage": "processes.manage", "deadlines.manage": "deadlines.view",
 };
 const ADMIN_ONLY = new Set<Permission>(["team.manage", "backup.manage"]);
 const empty = (permissions: Permission[]): Form => ({ display_name: "", username: "", email: "", role: "atendimento", active: true, permissions, password: "" });

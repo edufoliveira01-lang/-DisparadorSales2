@@ -181,7 +181,7 @@ export function Sidebar({
                         className="h-[19px] w-[19px] shrink-0"
                         strokeWidth={1.7}
                       />
-                      <span className="sidebar-copy">{item.label}</span><span className="sidebar-short">{({"/":"Início","/calendario":"Agenda","/templates":"Mensagens","/pendentes":"Retornos","/historico":"Envios","/processos":"Publicações","/processos/quadro":"Quadro","/processos/aguardando":"Espera","/processos/advogados":"Advogados","/processos/monitoramento":"DJEN","/processos/calendarios":"Prazos","/gestao":"Gestão","/gestao/pessoas":"Pessoas","/gestao/processos":"Pastas","/agenda":"Contatos","/logs":"Atividade","/configuracoes":"Ajustes","/equipe":"Equipe","/minha-conta":"Conta"} as Record<string,string>)[item.to]}</span>
+                      <span className="sidebar-copy">{item.label}</span><span className="sidebar-short">{({"/":"Início","/calendario":"Agenda","/templates":"Mensagens","/pendentes":"Retornos","/historico":"Envios","/processos":"Publicações","/processos/quadro":"Quadro","/processos/aguardando":"Espera","/processos/advogados":"Advogados","/processos/monitoramento":"DJEN","/processos/calendarios":"Prazos","/gestao":"Painel","/gestao/tarefas":"Tarefas","/gestao/pessoas":"Pessoas","/gestao/processos":"Pastas","/gestao/modelos":"Modelos","/gestao/financeiro":"Caixa","/gestao/indicadores":"Metas","/agenda":"Contatos","/logs":"Atividade","/configuracoes":"Ajustes","/equipe":"Equipe","/minha-conta":"Conta"} as Record<string,string>)[item.to]}</span>
                     </NavLink>
                   );
                 })}

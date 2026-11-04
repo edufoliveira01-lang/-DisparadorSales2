@@ -81,6 +81,8 @@ export const api = {
   post: <T>(path: string, data?: unknown, options?: RequestOptions) => escrever<T>(path, { ...options, method: "POST", body: data ? JSON.stringify(data) : undefined }),
   put: <T>(path: string, data?: unknown) => escrever<T>(path, { method: "PUT", body: data ? JSON.stringify(data) : undefined }),
   delete: <T>(path: string) => escrever<T>(path, { method: "DELETE" }),
+  /** Envia o conteúdo bruto de um arquivo (o nome vai na query da rota). */
+  upload: <T>(path: string, file: Blob) => escrever<T>(path, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file }),
 };
 
 

@@ -10,6 +10,8 @@ import { Select } from "@/components/ui/Select";
 import { Badge } from "@/components/ui/Badge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
+import { Arquivos } from "./Arquivos";
+import { TarefaModal, type Tarefa } from "./TarefaModal";
 import { AREAS, Campo, PAPEIS, SeletorPessoa, STATUS, STATUS_TOM, TIPOS, dataBr, dinheiro } from "./comum";
 import type { Responsavel } from "./Processos";
 
@@ -20,7 +22,7 @@ interface Ficha {
   djen_chave: string | null; criado_em: string; partes: Parte[];
 }
 interface Evento { tipo: "publicacao" | "pericia" | "anotacao" | "cadastro"; data: string; titulo: string; detalhe: string; ref?: number; autor?: string }
-const ABAS = [["resumo", "Resumo"], ["partes", "Partes"], ["historico", "Histórico e anotações"]] as const;
+const ABAS = [["resumo", "Resumo"], ["partes", "Partes"], ["historico", "Histórico e anotações"], ["tarefas", "Tarefas"], ["arquivos", "Arquivos"]] as const;
 type Aba = typeof ABAS[number][0];
 
 export function ProcessoFicha() {
@@ -60,6 +62,8 @@ export function ProcessoFicha() {
       {aba === "resumo" && <Resumo ficha={ficha} resp={resp} gerir={gerir} aoSalvar={carregar} />}
       {aba === "partes" && <Partes ficha={ficha} gerir={gerir} aoMudar={carregar} />}
       {aba === "historico" && <Historico ficha={ficha} gerir={gerir} />}
+      {aba === "tarefas" && <TarefasDoProcesso ficha={ficha} gerir={gerir} resp={resp} />}
+      {aba === "arquivos" && <Arquivos escopo="processos" id={ficha.id} />}
       <ConfirmDialog open={apagar} title="Excluir processo" message="Excluir a ficha, as partes e as anotações deste processo? As publicações do DJEN e as perícias não são apagadas. Esta ação não pode ser desfeita." confirmLabel="Excluir" onConfirm={() => void excluir()} onCancel={() => setApagar(false)} />
     </div>
   );
@@ -183,6 +187,33 @@ function Historico({ ficha, gerir }: { ficha: Ficha; gerir: boolean }) {
             </li>); })}
         </ol>
       )}
+    </div>
+  );
+}
+
+function TarefasDoProcesso({ ficha, gerir, resp }: { ficha: Ficha; gerir: boolean; resp: Responsavel[] }) {
+  const { show } = useToast();
+  const { user } = useAuth();
+  const [itens, setItens] = useState<Tarefa[] | null>(null);
+  const [edicao, setEdicao] = useState<Tarefa | "nova" | null>(null);
+  const carregar = useCallback(async () => { try { setItens((await api.get<{ itens: Tarefa[] }>(`/gestao/tarefas?processo=${ficha.id}&status=&limite=100`)).itens); } catch { show("Não foi possível carregar as tarefas.", "error"); } }, [ficha.id, show]);
+  useEffect(() => { void carregar(); }, [carregar]);
+  const concluir = async (t: Tarefa) => { try { await api.post(`/gestao/tarefas/${t.id}/concluir`, { concluida: t.aberta }); await carregar(); } catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível atualizar.", "error"); } };
+  return (
+    <div className="space-y-4">
+      {gerir && <div className="flex justify-end"><Button onClick={() => setEdicao("nova")}>Nova tarefa neste processo</Button></div>}
+      {itens === null ? <p className="text-sm text-zinc-500">Carregando…</p> : itens.length === 0 ? <p className="rounded-2xl border border-dashed border-zinc-200 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">Nenhuma tarefa neste processo.</p> : (
+        <ul className="divide-y divide-zinc-100 overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+          {itens.map((t) => (
+            <li key={t.id} className="flex items-start gap-3 px-4 py-3">
+              <input type="checkbox" className="mt-1 h-5 w-5 accent-violet-600" checked={!t.aberta} disabled={!gerir || t.status === "cancelada"} onChange={() => void concluir(t)} aria-label={t.aberta ? `Concluir ${t.titulo}` : `Reabrir ${t.titulo}`} />
+              <button type="button" onClick={() => setEdicao(t)} className="min-w-0 flex-1 text-left"><span className={`block text-sm font-semibold ${t.aberta ? "text-zinc-900 dark:text-zinc-100" : "text-zinc-400 line-through"}`}>{t.titulo}</span>
+                <span className="text-xs text-zinc-500"><span className={t.atrasada ? "font-semibold text-red-600" : ""}>{t.prazo ? `${t.atrasada ? "Atrasada · " : "Prazo "}${dataBr(t.prazo)}` : "Sem prazo"}</span> · {t.responsavel || "Sem responsável"}{t.prazo_fatal && t.aberta ? " · FATAL" : ""}{t.origem === "djen" ? " · DJEN" : ""}</span></button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {edicao && <TarefaModal tarefa={edicao === "nova" ? null : edicao} processoFixo={{ id: ficha.id, rotulo: `${ficha.pasta} · ${ficha.numero_formatado || ficha.numero}` }} responsaveis={resp} meuId={user.id} aoFechar={() => setEdicao(null)} aoSalvar={() => { setEdicao(null); void carregar(); }} />}
     </div>
   );
 }

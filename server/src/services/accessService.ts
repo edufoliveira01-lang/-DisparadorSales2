@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { recursoLiberadoNaLicenca } from "../licenca/cliente";
 
 export const PERMISSIONS = [
   "dashboard.view", "calendar.view", "calendar.manage", "templates.view", "templates.manage",
@@ -6,7 +7,7 @@ export const PERMISSIONS = [
   "contacts.view", "contacts.manage", "processes.view", "processes.manage",
   "djen.manage", "deadlines.view", "deadlines.manage", "activity.view",
   "integrations.manage", "whatsapp.manage", "team.manage", "backup.manage",
-  "gestao.view", "gestao.manage",
+  "gestao.view", "gestao.manage", "financeiro.view", "financeiro.manage",
 ] as const;
 export type Permission = typeof PERMISSIONS[number];
 export type Role = "administrador" | "gestor" | "advogado" | "atendimento" | "consulta";
@@ -58,7 +59,8 @@ export function publicUser(user: AccessUser) {
   return {
     id: user.id, username: user.username, display_name: user.display_name,
     email: user.email, role: user.role, active: Boolean(user.active),
-    permissions: effectivePermissions(user),
+    permissions: effectivePermissions(user).filter((p) =>
+      p.startsWith("gestao.") ? recursoLiberadoNaLicenca("modulo_gestao") : p.startsWith("financeiro.") ? recursoLiberadoNaLicenca("modulo_gestao") && recursoLiberadoNaLicenca("modulo_financeiro") : true),
     must_change_password: Boolean(user.must_change_password),
   };
 }

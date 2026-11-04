@@ -56,7 +56,7 @@ function desenhar() {
   if (state.aba === 'planos') corpo = telaPlanos();
   else corpo = h('div', {},
     h('div', { class: 'tiles' }, tile('Ativos', cont('ativa'), 'ativa'), tile('Em teste', cont('teste'), 'teste'), tile('Em carência', cont('carencia'), 'carencia'), tile('Suspensos', cont('suspensa'), 'suspensa'), tile('Cancelados', cont('cancelada'), 'cancelada')),
-    h('div', { class: 'bar' }, h('input', { placeholder: 'Buscar escritório, endereço ou e-mail…', value: state.busca, style: 'flex:1;min-width:220px', oninput: (e) => { state.busca = e.target.value; clearTimeout(desenhar.t); desenhar.t = setTimeout(() => { desenhar(); document.querySelector('.bar input')?.focus(); }, 250); } }), h('button', { class: 'pri', onclick: abrirNovo }, '+ Novo escritório')),
+    h('div', { class: 'bar' }, h('input', { placeholder: 'Buscar escritório, endereço ou e-mail…', value: state.busca, style: 'flex:1;min-width:220px', oninput: (e) => { state.busca = e.target.value; clearTimeout(desenhar.t); desenhar.t = setTimeout(() => { desenhar(); document.querySelector('.bar input')?.focus(); }, 250); } }), h('button', { onclick: abrirReinicio, title: 'Aplica uma atualização: reinicia os sistemas dos escritórios e o painel' }, 'Reiniciar sistemas'), h('button', { class: 'pri', onclick: abrirNovo }, '+ Novo escritório')),
     h('div', { class: 'card' }, h('table', {}, h('thead', {}, h('tr', {}, ['Escritório', 'Endereço', 'Plano', 'Situação', 'Vence em', 'Último contato'].map((t) => h('th', {}, t)))),
       h('tbody', {}, lista.length ? lista.map((e) => h('tr', { class: 'row', onclick: () => abrirDetalhe(e.id) }, h('td', {}, h('b', {}, e.nome), h('div', { class: 'mut sm' }, e.email)), h('td', {}, e.slug), h('td', {}, e.plano_nome), h('td', {}, badge(e.status)), h('td', {}, dia(e.vence_em)), h('td', {}, quando(e.ultimo_contato_em)))) : h('tr', {}, h('td', { colspan: 6, class: 'mut' }, 'Nenhum escritório.'))))));
   $app.replaceChildren(topo, h('main', {}, corpo));
@@ -91,6 +91,23 @@ function campoLimites(valores) {
     }
   }
   return { el: caixa, valor: () => Object.fromEntries(Object.entries(entradas).map(([k, f]) => [k, f()]).filter(([, v]) => v !== undefined)) };
+}
+
+function abrirReinicio() {
+  if (!state.config.provisionamento_automatico) { aviso('O provisionamento automático não está ligado neste servidor.'); return; }
+  const saida = h('div', {});
+  const rodar = (alvo, rotulo) => h('button', { class: alvo === 'tudo' ? 'pri' : '', onclick: async (ev) => {
+    if (alvo !== 'escritorios' && !confirm('O painel fica indisponível por alguns segundos e a página será recarregada. Continuar?')) return;
+    ev.target.disabled = true; saida.replaceChildren(h('p', { class: 'mut' }, 'Reiniciando…'));
+    try {
+      const r = await api('POST', '/servidor/reiniciar', { alvo });
+      saida.replaceChildren(h('p', {}, r.escritorios.length ? r.escritorios.map((e) => (e.ok ? '✓ ' : '✗ ') + e.slug + (e.erro ? ' — ' + e.erro : '')).join('  ·  ') : 'Nenhum escritório com sistema ativo.'));
+      if (r.painel) { saida.append(h('p', { class: 'mut' }, 'Reiniciando o painel… a página recarrega sozinha.')); setTimeout(() => location.reload(), 5000); }
+    } catch (x) { saida.replaceChildren(h('div', { class: 'note err' }, x.message)); }
+    finally { ev.target.disabled = false; }
+  } }, rotulo);
+  modal('Reiniciar sistemas', h('div', {}, h('p', { class: 'mut' }, 'Use depois de cada atualização do sistema (deploy). Os escritórios ficam fora do ar por alguns segundos.'),
+    h('div', { class: 'row2' }, rodar('tudo', 'Reiniciar tudo (escritórios + painel)'), rodar('escritorios', 'Só os escritórios'), rodar('painel', 'Só o painel')), saida));
 }
 
 function abrirNovo() {

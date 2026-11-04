@@ -174,6 +174,24 @@ describe("API do painel com provisionamento automático", () => {
     expect(env).toContain("INITIAL_ADMIN_MUST_CHANGE=1");
   });
 
+  it("botão de reiniciar: reinicia só os escritórios com sistema ativo e informa falhas", async () => {
+    const c = await entrar();
+    await adm(c, "POST", "/escritorios", { ...novo, slug: "banca-um", nome: "Banca Um" });
+    await adm(c, "POST", "/escritorios", { ...novo, slug: "banca-dois", nome: "Banca Dois", email: "d@exemplo.com" });
+    chamadas.length = 0;
+    const r = await (await adm(c, "POST", "/servidor/reiniciar", { alvo: "escritorios" })).json() as { ok: boolean; painel: boolean; escritorios: { slug: string; ok: boolean }[] };
+    expect(r).toMatchObject({ ok: true, painel: false });
+    expect(r.escritorios.map((e) => e.slug)).toEqual(["banca-dois", "banca-um"]);
+    expect(chamadas.filter((x) => x[0] === "pm2" && x[1] === "restart").map((x) => x[2])).toEqual(["dz-banca-dois", "dz-banca-um"]);
+    falhas["pm2 restart dz-banca-um"] = { code: 1, stderr: "Process not found" };
+    const f = await (await adm(c, "POST", "/servidor/reiniciar", { alvo: "escritorios" })).json() as { ok: boolean; escritorios: { slug: string; ok: boolean; erro?: string }[] };
+    expect(f.ok).toBe(false);
+    expect(f.escritorios.find((e) => e.slug === "banca-um")?.erro).toMatch(/Process not found/);
+    expect(f.escritorios.find((e) => e.slug === "banca-dois")?.ok).toBe(true); // uma falha não impede as demais
+    expect((await adm(c, "POST", "/servidor/reiniciar", { alvo: "xyz" })).status).toBe(400);
+    expect((await (await adm(c, "POST", "/servidor/reiniciar", { alvo: "painel" })).json() as { painel: boolean }).painel).toBe(true);
+  });
+
   it("se a criação falhar, o escritório continua cadastrado e dá para tentar de novo", async () => {
     const c = await entrar();
     falhas["bash"] = { code: 1, stderr: "ERRO: build ausente" };
