@@ -108,14 +108,15 @@ describe("execução restrita do Codex CLI", () => {
         os.tmpdir(),
         "",
         undefined,
-        5000,
+        20000,
       );
       expect(help.code).toBe(0);
       expect(help.stdout).toContain("--output-schema");
     } finally {
       await fs.rm(home, { recursive: true, force: true });
     }
-  });
+    // Chama o binário real: em servidor ocupado (suíte inteira rodando) passa dos 5 s padrão do vitest.
+  }, 45000);
   it("não herda API keys ou tokens das integrações do servidor", () => {
     for (const name of [
       "OPENAI_API_KEY",
