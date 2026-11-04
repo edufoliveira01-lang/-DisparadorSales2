@@ -973,12 +973,12 @@ class WhatsappManager {
     // escolhemos uma versão recente já estabilizada, deixando de fora as últimas builds. Se a consulta falhar por
     // qualquer motivo, caímos no comportamento anterior (mais recente) em vez de travar.
     const motor = motorWhatsappAtual();
-    let version: { webVersion?: string; webVersionCache?: unknown } = {};
+    let version: Awaited<ReturnType<typeof prepareWhatsappVersion>>;
     let client: Client;
     if (motor === "baileys") {
       // Motor sem navegador: não há Chromium, versão do WhatsApp Web nem cache a preparar.
       informarEtapa("Conectando direto ao WhatsApp (sem navegador)");
-      version = { webVersion: "baileys" };
+      version = { webVersion: "baileys" } as unknown as typeof version;
       client = new BaileysClient({
         authDir: BAILEYS_AUTH_DIR,
         carregar: carregarBaileys,
