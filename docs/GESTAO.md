@@ -78,3 +78,11 @@ Cobrança de cliente por boleto/PIX (Asaas), integração com Google Drive, cale
 - **Neste ato representado por…** — o representante legal assina (menor, incapaz).
 
 Cada texto é editável (variáveis `{{cliente.nome}}`, `{{escritorio.razao_social}}`, `{{outorgados.lista}}`…), com botão para voltar ao padrão e prévia ao vivo. Os honorários do contrato (nº de benefícios e percentuais) têm valores padrão e podem ser trocados em cada geração. Saída: HTML pronto para imprimir (A4, cabeçalho com logotipo e rodapé do escritório em cada folha) ou **Word (.docx)** de verdade, com o mesmo cabeçalho e rodapé. Tudo é registrado na auditoria; os dados de terceiros (representante, quem assina a rogo) ficam no servidor por 10 minutos apenas e a janela de impressão leva só um código.
+
+### Imagens do escritório (2.70.0)
+Cada uso tem a sua imagem, em *Configurações → Dados do escritório*:
+- **Cabeçalho dos documentos** (com alinhamento esquerda/centro/direita) e **rodapé** (imagem opcional + linhas de texto, também com alinhamento), usados no HTML e no Word.
+- **Logotipo da ficha de cadastro**, em *Ficha de cadastro*: usar o mesmo cabeçalho dos documentos ou enviar uma imagem só da ficha, com posição esquerda/centro/direita.
+- **Ícone (favicon)**: aparece na aba do navegador, no menu lateral e na tela de login, junto com o nome do escritório. É servido sem login (`/api/auth/identidade` e `/api/auth/favicon`) porque a tela de login precisa dele.
+
+*Modelos livres* (antes "Outros modelos de documento") são os modelos de texto simples do sistema anterior, para qualquer documento fora do kit.

@@ -8,12 +8,14 @@ import { Input, Textarea } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
 import { GerenciarCampos } from "./Campos";
 import { Campo } from "./comum";
+import { BotoesAlinhamento, CartaoImagem, type Alinha } from "./ImagemUpload";
+import { Link } from "react-router-dom";
 
 interface Config {
   titulo: string; subtitulo: string; nome_escritorio: string; cabecalho_linhas: string[]; rodape: string; mostrar_foto: boolean; linhas_observacoes: number;
-  secoes: Record<string, boolean>; assinatura: boolean; texto_assinatura: string;
+  secoes: Record<string, boolean>; assinatura: boolean; texto_assinatura: string; logo_modo: "mesma" | "propria"; logo_alinhamento: Alinha;
 }
-interface Resposta { config: Config; padrao: Config; tem_logo: boolean; rotulo_secao: Record<string, string> }
+interface Resposta { config: Config; padrao: Config; tem_logo: boolean; tem_cabecalho: boolean; rotulo_secao: Record<string, string> }
 
 /** Onde o escritório monta o visual da ficha impressa: título, cabeçalho, logotipo, seções, campos e assinatura. */
 export function FichaModelo() {
@@ -63,15 +65,17 @@ export function FichaModelo() {
             <Campo rotulo="Subtítulo"><Input value={c.subtitulo} onChange={(e) => set("subtitulo", e.target.value)} className="mt-1.5" /></Campo>
             <Campo rotulo="Nome do escritório"><Input value={c.nome_escritorio} onChange={(e) => set("nome_escritorio", e.target.value)} className="mt-1.5" placeholder="Sales & Associados" /></Campo>
             {linhas.map((l, i) => <Campo key={i} rotulo={`Linha do cabeçalho ${i + 1} (endereço, telefone, OAB…)`}><Input value={l} onChange={(e) => linhaCab(i, e.target.value)} className="mt-1.5" /></Campo>)}
-            <div>
-              <p className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Logotipo do escritório</p>
-              <div className="mt-1.5 flex flex-wrap items-center gap-3">
-                {r.tem_logo ? <img key={versao} src={`/api/gestao/ficha/logo?v=${versao}`} alt="Logotipo" className="h-14 max-w-[8rem] rounded-lg border border-zinc-200 bg-white object-contain p-1 dark:border-zinc-700" /> : <span className="text-xs text-zinc-500">Nenhum logotipo.</span>}
-                <Button type="button" size="sm" variant="outline" onClick={() => entrada.current?.click()}><ImagePlus className="h-4 w-4" /> {r.tem_logo ? "Trocar" : "Enviar logotipo"}</Button>
-                {r.tem_logo && <Button type="button" size="sm" variant="ghost" onClick={() => void tirarLogo()}><Trash2 className="h-4 w-4" /> Remover</Button>}
-                <input ref={entrada} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => void enviarLogo(e.target.files?.[0])} />
+            <div className="space-y-3">
+              <p className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Logotipo da ficha</p>
+              <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Qual imagem usar na ficha">
+                {([["mesma", "Usar o cabeçalho dos documentos", "A mesma imagem da procuração e do contrato."], ["propria", "Usar uma imagem só da ficha", "Envie uma imagem diferente para a ficha."]] as const).map(([v, t, d]) => (
+                  <button key={v} type="button" role="radio" aria-checked={c.logo_modo === v} onClick={() => set("logo_modo", v)} className={`rounded-xl border p-3 text-left text-sm transition ${c.logo_modo === v ? "border-accent-500 bg-accent-500/10" : "border-zinc-200 dark:border-zinc-700"}`}><span className="block font-semibold">{t}</span><span className="mt-0.5 block text-xs text-zinc-500">{d}</span></button>
+                ))}
               </div>
-              <p className="mt-1 text-xs text-zinc-500">PNG, JPG ou WebP, até 1 MB.</p>
+              {c.logo_modo === "mesma"
+                ? <div className="rounded-xl border border-dashed border-zinc-300 p-3 text-center dark:border-zinc-700">{r.tem_cabecalho || r.tem_logo ? <img key={versao} src={r.tem_cabecalho ? `/api/gestao/imagens/cabecalho?v=${versao}` : `/api/gestao/ficha/logo?v=${versao}`} alt="Cabeçalho dos documentos" className="mx-auto h-14 max-w-full object-contain" /> : <span className="text-xs text-zinc-500">Nenhuma imagem enviada ainda.</span>}<p className="mt-2 text-xs text-zinc-500">A imagem se troca em <Link className="underline" to="/configuracoes/escritorio">Dados do escritório</Link>.</p></div>
+                : <CartaoImagem titulo="Imagem própria da ficha" descricao="PNG, JPG ou WebP, até 1 MB." urlBase="/api/gestao/ficha/logo" tem={r.tem_logo} podeEditar={gerir} altura="h-14" aoMudar={() => { setVersao((v) => v + 1); void carregar(); }} />}
+              <div className="space-y-1"><p className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Posição do logotipo no cabeçalho da ficha</p><BotoesAlinhamento valor={c.logo_alinhamento} aoMudar={(v) => set("logo_alinhamento", v)} desabilitado={!gerir} /></div>
             </div>
             <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300"><input type="checkbox" checked={c.mostrar_foto} onChange={(e) => set("mostrar_foto", e.target.checked)} /> Mostrar o quadro da foto 3x4 do cliente</label>
           </fieldset>

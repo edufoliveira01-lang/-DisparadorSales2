@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FileText, Plus, Printer, Download, Save } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { Link } from "react-router-dom";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
@@ -32,9 +33,9 @@ export function Modelos() {
   const grupos = (dados?.modelos ?? []).reduce<Record<string, Modelo[]>>((a, m) => { (a[m.categoria || "Outros"] ||= []).push(m); return a; }, {});
   return (
     <div className="space-y-5">
-      <PageHeader title="Modelos de documento" description="Procuração, declaração, contrato e o que mais precisar. Os dados do cliente e do processo entram sozinhos."
+      <PageHeader title="Modelos livres" description="Para qualquer outro documento que o escritório use (cartas, recibos, requerimentos…). Os dados do cliente e do processo entram sozinhos."
         actions={gerir ? <Button onClick={() => setEdicao({ nome: "", categoria: "", conteudo: "" })}><Plus className="h-4 w-4" /> Novo modelo</Button> : undefined} />
-      <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">Os modelos já cadastrados são ponto de partida: revise e adapte o texto à sua prática antes de usar com clientes.</p>
+      <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">Procuração, hipossuficiência, contrato, declaração e termo agora ficam no <Link className="font-medium underline" to="/configuracoes/documentos">Kit de documentos</Link> (com logotipo, rodapé, a rogo e representado) e saem pelo botão <b>Gerar documentos</b> do cliente. Os três modelos simples abaixo são do sistema antigo: pode excluí-los se não precisar mais; os que você criar aqui continuam funcionando.</p>
       {dados && dados.modelos.length === 0 ? <EmptyState icon={FileText} title="Nenhum modelo" description="Crie o primeiro modelo de documento." /> : (
         Object.entries(grupos).map(([cat, itens]) => (
           <section key={cat}><h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">{cat}</h2>

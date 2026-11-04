@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { Router } from "express";
 import {
   getUserByUsername,
@@ -18,11 +19,25 @@ import { enviarMensagemTelegram } from "../services/telegramService";
 import { auditAccess, invalidateUserSessions, publicUser } from "../services/accessService";
 import { db } from "../db";
 import { loginBranding, loginImage } from "./branding";
+import { imagemAtual } from "../services/gestao/fichaConfig";
+import { lerEscritorio } from "../services/gestao/escritorio";
 import { disconnectUserSockets, disconnectSessionSockets } from "../websocket";
 
 export const authRouter = Router();
 authRouter.get("/login-branding", loginBranding);
 authRouter.get("/login-image", loginImage);
+/** Identidade do escritório (nome e ícone), pública: a tela de login e a aba do navegador precisam dela antes do acesso. */
+authRouter.get("/identidade", (_req, res) => {
+  const f = imagemAtual("favicon");
+  let versao = 0; try { if (f) versao = Math.floor(fs.statSync(f.arquivo).mtimeMs); } catch { /* sem ícone */ }
+  res.set("Cache-Control", "no-store").json({ nome: lerEscritorio().nome, favicon_url: f ? `/api/auth/favicon?v=${versao}` : null });
+});
+authRouter.get("/favicon", (_req, res) => {
+  const f = imagemAtual("favicon");
+  if (!f) return void res.status(404).end();
+  res.set({ "Content-Type": f.mime, "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox", "Cache-Control": "public, max-age=300" });
+  res.sendFile(f.arquivo);
+});
 const failures = new Map<string, { count: number; until: number }>();
 
 authRouter.post("/login", (req, res) => {

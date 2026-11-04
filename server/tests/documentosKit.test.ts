@@ -147,6 +147,55 @@ describe("kit de documentos", () => {
     expect((await chamar("/documentos/previa?variante=rogo&doc=procuracao", "GET", undefined, leitor)).status).toBe(200);
   });
 
+  it("imagens do escritório: cabeçalho e rodapé dos documentos, logotipo da ficha e ícone público", async () => {
+    const admin = await entrar("administrador");
+    const subir = async (caminho: string, corpo: Buffer, cookie = admin) => fetch(`${await ready}/api/gestao${caminho}`, { method: "POST", headers: { "Content-Type": "application/octet-stream", Cookie: cookie }, body: corpo });
+    expect((await subir("/imagens/inexistente", PNG)).status).toBe(404);
+    expect((await subir("/imagens/cabecalho", Buffer.from("<svg onload=alert(1)>"))).status).toBe(400);
+    expect((await subir("/imagens/favicon", Buffer.alloc(600 * 1024, 1))).status).toBe(413);
+    expect((await subir("/imagens/cabecalho", PNG)).status).toBe(200);
+    expect((await subir("/imagens/rodape", PNG)).status).toBe(200);
+    const ICO = Buffer.concat([Buffer.from([0, 0, 1, 0, 1, 0]), Buffer.alloc(30)]);
+    expect((await subir("/imagens/cabecalho", ICO)).status).toBe(400); // ICO só vale para o ícone
+    expect((await subir("/imagens/favicon", ICO)).status).toBe(200);
+    // o ícone e o nome são públicos (aba do navegador e tela de login); as demais imagens exigem acesso
+    const semLogin = await fetch(`${await ready}/api/auth/identidade`);
+    const ident = (await semLogin.json()) as any;
+    expect(ident.favicon_url).toContain("/api/auth/favicon");
+    const fav = await fetch(`${await ready}${ident.favicon_url}`);
+    expect(fav.status).toBe(200);
+    expect(fav.headers.get("content-type")).toBe("image/x-icon");
+    expect((await fetch(`${await ready}/api/gestao/imagens/cabecalho`)).status).toBe(401);
+    // alinhamentos
+    expect((await chamar("/escritorio", "PUT", { ...ESCRITORIO, cabecalho_alinhamento: "right", rodape_alinhamento: "left" }, admin)).json.escritorio.cabecalho_alinhamento).toBe("right");
+    expect((await chamar("/escritorio", "PUT", { cabecalho_alinhamento: "diagonal" }, admin)).json.escritorio.cabecalho_alinhamento).toBe("center");
+    await chamar("/escritorio", "PUT", { cabecalho_alinhamento: "right", rodape_alinhamento: "left" }, admin);
+    const pessoa = (await chamar("/pessoas", "POST", { nome: "Cliente Imagem", documento: cpfNovo() }, admin)).json;
+    const prep = await chamar("/documentos/preparar", "POST", { pessoa_id: pessoa.id, documentos: ["termo_ciencia"], variante: "comum" }, admin);
+    const html = (await chamar(`/documentos/kit/${prep.json.token}`, "GET", undefined, admin)).buf.toString("utf8");
+    expect(html).toContain('class="cab" style="text-align:right"');
+    expect(html).toContain('class="rodape" style="text-align:left"');
+    expect(html).toContain('class="img-rodape"');
+    const docx = (await chamar(`/documentos/kit/${prep.json.token}?formato=docx`, "GET", undefined, admin)).buf;
+    try {
+      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kitimg-")); const arq = path.join(tmp, "k.docx"); fs.writeFileSync(arq, docx);
+      const lista = execFileSync("unzip", ["-l", arq]).toString();
+      expect(lista).toContain("word/media/logo.png"); expect(lista).toContain("word/media/rodape.png"); expect(lista).toContain("word/_rels/footer1.xml.rels");
+      expect(execFileSync("unzip", ["-p", arq, "word/header1.xml"]).toString()).toContain('w:jc w:val="right"');
+      fs.rmSync(tmp, { recursive: true, force: true });
+    } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
+    // ficha: usa o cabeçalho dos documentos ou imagem própria, com alinhamento
+    await chamar("/ficha/config", "PUT", { logo_modo: "mesma", logo_alinhamento: "right" }, admin);
+    const ficha = await fetch(`${await ready}/api/gestao/ficha/previa`, { headers: { Cookie: admin } });
+    const htmlFicha = await ficha.text();
+    expect(htmlFicha).toContain('alt="Logotipo"');
+    const cfg = (await chamar("/ficha/config", "GET", undefined, admin)).json;
+    expect(cfg.config.logo_modo).toBe("mesma"); expect(cfg.config.logo_alinhamento).toBe("right"); expect(cfg.tem_cabecalho).toBe(true);
+    // remove
+    expect((await chamar("/imagens/favicon", "DELETE", undefined, admin)).status).toBe(200);
+    expect((await fetch(`${await ready}/api/auth/favicon`)).status).toBe(404);
+  });
+
   it("textos editáveis: salva, volta ao padrão e rejeita vazio", async () => {
     const admin = await entrar("administrador");
     const antes = (await chamar("/documentos/config", "GET", undefined, admin)).json;

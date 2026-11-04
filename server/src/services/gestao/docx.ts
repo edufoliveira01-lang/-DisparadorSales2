@@ -67,16 +67,21 @@ function bloco(b: Bloco, primeiro: boolean): string {
 
 export function kitDocx(kit: Kit): Buffer {
   const corpo = kit.documentos.map((d, i) => d.blocos.map((b, j) => bloco(b, i > 0 && j === 0)).join("")).join("");
-  const dim = kit.logo ? dimensoesDaImagem(kit.logo.dados) : null;
-  const larg = 2160000; // ~6 cm
-  const emuW = dim ? Math.min(larg, Math.round((dim.w / dim.h) * 648000)) : larg; // altura ~1,8 cm
-  const emuH = dim ? Math.round(emuW * (dim.h / dim.w)) : 648000;
-  const ext = kit.logo ? (kit.logo.mime === "image/png" ? "png" : kit.logo.mime === "image/webp" ? "webp" : "jpeg") : "";
-  const cabecalho = kit.logo
-    ? par(`<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${emuW}" cy="${emuH}"/><wp:docPr id="1" name="Logotipo"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="logo"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdLogo"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${emuW}" cy="${emuH}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`, { jc: "center", depois: 120 })
-    : par(run({ t: kit.nomeExibicao, b: true }, 16), { jc: "center", depois: 120 });
-  const rodape = kit.rodape.length
-    ? kit.rodape.map((l, i) => par(run({ t: l, b: true }, 8), { jc: "right", depois: 0, borda: i === 0 ? '<w:pBdr><w:top w:val="single" w:sz="12" w:space="4" w:color="333333"/></w:pBdr>' : "" })).join("")
+  const ext = (m: string) => (m === "image/png" ? "png" : m === "image/webp" ? "webp" : "jpeg");
+  const JCA = { left: "left", center: "center", right: "right" } as const;
+  /** Parágrafo com a imagem em linha; altura-alvo em EMU e largura limitada à área útil (17 cm). */
+  const figura = (img: { dados: Buffer; mime: string }, rid: string, id: number, alturaEmu: number, align: string) => {
+    const dim = dimensoesDaImagem(img.dados);
+    const max = 6120000;
+    let w = dim ? Math.round((dim.w / dim.h) * alturaEmu) : 2160000;
+    let h = alturaEmu;
+    if (w > max) { h = Math.round(h * (max / w)); w = max; }
+    return par(`<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${w}" cy="${h}"/><wp:docPr id="${id}" name="Imagem ${id}"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="img${id}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`, { jc: align, depois: 120 });
+  };
+  const cabecalho = kit.logo ? figura(kit.logo, "rIdLogo", 1, 648000, JCA[kit.alinhaCabecalho]) : par(run({ t: kit.nomeExibicao, b: true }, 16), { jc: JCA[kit.alinhaCabecalho], depois: 120 });
+  const linhasRodape = kit.rodape.map((l, i) => par(run({ t: l, b: true }, 8), { jc: JCA[kit.alinhaRodape], depois: 0, borda: i === 0 && !kit.rodapeImagem ? '<w:pBdr><w:top w:val="single" w:sz="12" w:space="4" w:color="333333"/></w:pBdr>' : "" })).join("");
+  const rodape = kit.rodapeImagem || kit.rodape.length
+    ? (kit.rodapeImagem ? par(`<w:r><w:t></w:t></w:r>`, { depois: 0, borda: '<w:pBdr><w:top w:val="single" w:sz="12" w:space="4" w:color="333333"/></w:pBdr>' }) + figura(kit.rodapeImagem, "rIdRodape", 2, 432000, JCA[kit.alinhaRodape]) : "") + linhasRodape
     : vazio(8);
   const ns = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"';
   const xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
@@ -90,9 +95,14 @@ export function kitDocx(kit: Kit): Buffer {
     { nome: "word/header1.xml", dados: Buffer.from(`${xml}<w:hdr ${ns}>${cabecalho}</w:hdr>`) },
     { nome: "word/footer1.xml", dados: Buffer.from(`${xml}<w:ftr ${ns}>${rodape}</w:ftr>`) },
   ];
+  const rel = (id: string, alvo: string) => `<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${alvo}"/>`;
   if (kit.logo) {
-    arquivos.push({ nome: `word/media/logo.${ext}`, dados: kit.logo.dados });
-    arquivos.push({ nome: "word/_rels/header1.xml.rels", dados: Buffer.from(`${xml}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdLogo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/logo.${ext}"/></Relationships>`) });
+    arquivos.push({ nome: `word/media/logo.${ext(kit.logo.mime)}`, dados: kit.logo.dados });
+    arquivos.push({ nome: "word/_rels/header1.xml.rels", dados: Buffer.from(`${xml}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rel("rIdLogo", `logo.${ext(kit.logo.mime)}`)}</Relationships>`) });
+  }
+  if (kit.rodapeImagem) {
+    arquivos.push({ nome: `word/media/rodape.${ext(kit.rodapeImagem.mime)}`, dados: kit.rodapeImagem.dados });
+    arquivos.push({ nome: "word/_rels/footer1.xml.rels", dados: Buffer.from(`${xml}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rel("rIdRodape", `rodape.${ext(kit.rodapeImagem.mime)}`)}</Relationships>`) });
   }
   return criarZip(arquivos);
 }

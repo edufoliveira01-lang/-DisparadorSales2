@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { ImagePlus, Plus, Save, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Plus, Save, Trash2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -7,12 +7,15 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
 import { Campo } from "./comum";
+import { BotoesAlinhamento, CartaoImagem, type Alinha } from "./ImagemUpload";
+import { avisarIdentidadeMudou } from "@/context/IdentidadeContext";
 
 interface Advogado { tratamento: string; nome: string; nacionalidade: string; estado_civil: string; oab: string; cpf: string }
 interface Testemunha { nome: string; cpf: string }
 interface Esc {
   nome: string; razao_social: string; oab_sociedade: string; cnpj: string; endereco: string; cidade: string; uf: string; foro: string;
   telefones: string[]; email: string; rodape_linhas: string[]; advogados: Advogado[]; testemunhas: Testemunha[];
+  cabecalho_alinhamento: Alinha; rodape_alinhamento: Alinha;
 }
 const advVazio = (): Advogado => ({ tratamento: "Dr.", nome: "", nacionalidade: "brasileiro(a)", estado_civil: "", oab: "", cpf: "" });
 const cartao = "space-y-4 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900";
@@ -23,12 +26,10 @@ export function EscritorioConfig() {
   const { show } = useToast();
   const gerir = can("gestao.manage");
   const [e, setE] = useState<Esc | null>(null);
-  const [temLogo, setTemLogo] = useState(false);
-  const [versao, setVersao] = useState(0);
+  const [img, setImg] = useState({ tem_logo: false, tem_cabecalho: false, tem_rodape: false, tem_favicon: false });
   const [salvando, setSalvando] = useState(false);
-  const entrada = useRef<HTMLInputElement>(null);
   const carregar = useCallback(async () => {
-    try { const r = await api.get<{ escritorio: Esc; tem_logo: boolean }>("/gestao/escritorio", { fresh: true } as never); setE(r.escritorio); setTemLogo(r.tem_logo); }
+    try { const r = await api.get<{ escritorio: Esc } & typeof img>("/gestao/escritorio", { fresh: true } as never); setE(r.escritorio); setImg({ tem_logo: r.tem_logo, tem_cabecalho: r.tem_cabecalho, tem_rodape: r.tem_rodape, tem_favicon: r.tem_favicon }); }
     catch { show("Não foi possível carregar os dados do escritório.", "error"); }
   }, [show]);
   useEffect(() => { void carregar(); }, [carregar]);
@@ -36,17 +37,10 @@ export function EscritorioConfig() {
   const set = <K extends keyof Esc>(k: K, v: Esc[K]) => setE((x) => (x ? { ...x, [k]: v } : x));
   const salvar = async () => {
     setSalvando(true);
-    try { const r = await api.put<{ escritorio: Esc }>("/gestao/escritorio", e); setE(r.escritorio); show("Dados do escritório salvos.", "success"); }
+    try { const r = await api.put<{ escritorio: Esc }>("/gestao/escritorio", e); setE(r.escritorio); show("Dados do escritório salvos.", "success"); avisarIdentidadeMudou(); }
     catch (err) { show(err instanceof ApiError ? err.message : "Não foi possível salvar.", "error"); }
     finally { setSalvando(false); }
   };
-  const enviarLogo = async (f: File | undefined) => {
-    if (!f) return;
-    try { await api.upload("/gestao/ficha/logo", f); show("Logotipo salvo.", "success"); setVersao((v) => v + 1); setTemLogo(true); }
-    catch (err) { show(err instanceof ApiError ? err.message : "Não foi possível enviar o logotipo.", "error"); }
-    finally { if (entrada.current) entrada.current.value = ""; }
-  };
-  const tirarLogo = async () => { try { await api.delete("/gestao/ficha/logo"); setTemLogo(false); setVersao((v) => v + 1); } catch (err) { show(err instanceof ApiError ? err.message : "Não foi possível remover.", "error"); } };
   const adv = (i: number, p: Partial<Advogado>) => set("advogados", e.advogados.map((a, j) => (j === i ? { ...a, ...p } : a)));
   const test = (i: number, p: Partial<Testemunha>) => { const l = [...e.testemunhas]; while (l.length < 2) l.push({ nome: "", cpf: "" }); l[i] = { ...l[i], ...p }; set("testemunhas", l); };
   const tel = e.telefones.join(", ");
@@ -57,21 +51,12 @@ export function EscritorioConfig() {
         actions={gerir ? <Button loading={salvando} onClick={() => void salvar()}><Save className="h-4 w-4" /> Salvar</Button> : undefined} />
       <fieldset disabled={!gerir} className="grid gap-5 xl:grid-cols-2">
         <div className={cartao}>
-          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Identificação e logotipo</h2>
+          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Identificação</h2>
           <Campo rotulo="Nome do escritório (aparece no cabeçalho se não houver logotipo)"><Input value={e.nome} onChange={(x) => set("nome", x.target.value)} className="mt-1.5" placeholder="Silva & Associados Advocacia" /></Campo>
           <Campo rotulo="Razão social da sociedade de advogados"><Input value={e.razao_social} onChange={(x) => set("razao_social", x.target.value)} className="mt-1.5" /></Campo>
           <div className="grid gap-3 sm:grid-cols-3">
             <Campo rotulo="Inscrição na OAB (nº)"><Input value={e.oab_sociedade} onChange={(x) => set("oab_sociedade", x.target.value)} className="mt-1.5" placeholder="37.112" /></Campo>
             <Campo rotulo="CNPJ" className="sm:col-span-2"><Input value={e.cnpj} onChange={(x) => set("cnpj", x.target.value)} className="mt-1.5" /></Campo>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Logotipo (sai no topo de todos os documentos)</p>
-            <div className="mt-1.5 flex flex-wrap items-center gap-3">
-              {temLogo ? <img key={versao} src={`/api/gestao/ficha/logo?v=${versao}`} alt="Logotipo" className="h-14 max-w-[10rem] rounded-lg border border-zinc-200 bg-white object-contain p-1 dark:border-zinc-700" /> : <span className="text-xs text-zinc-500">Nenhum logotipo.</span>}
-              {gerir && <><Button type="button" size="sm" variant="outline" onClick={() => entrada.current?.click()}><ImagePlus className="h-4 w-4" /> {temLogo ? "Trocar" : "Enviar logotipo"}</Button>{temLogo && <Button type="button" size="sm" variant="ghost" onClick={() => void tirarLogo()}><Trash2 className="h-4 w-4" /> Remover</Button>}</>}
-              <input ref={entrada} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(x) => void enviarLogo(x.target.files?.[0])} />
-            </div>
-            <p className="mt-1 text-xs text-zinc-500">PNG, JPG ou WebP, até 1 MB. Prefira uma imagem larga (como o logotipo do papel timbrado).</p>
           </div>
         </div>
         <div className={cartao}>
@@ -89,6 +74,17 @@ export function EscritorioConfig() {
           <Campo rotulo="Linhas do rodapé dos documentos (vazio: endereço e telefones)">
             <div className="mt-1.5 space-y-2">{[0, 1].map((i) => <Input key={i} value={e.rodape_linhas[i] ?? ""} onChange={(x) => { const l = [e.rodape_linhas[0] ?? "", e.rodape_linhas[1] ?? ""]; l[i] = x.target.value; set("rodape_linhas", l.filter(Boolean)); }} />)}</div>
           </Campo>
+        </div>
+        <div className={`${cartao} xl:col-span-2`}>
+          <div><h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Imagens do escritório</h2><p className="mt-1 text-xs text-zinc-500">Cada uso tem a sua imagem: o cabeçalho e o rodapé dos documentos, o logotipo da ficha de cadastro (em Ficha de cadastro) e o ícone do sistema.</p></div>
+          <div className="grid gap-6 lg:grid-cols-3">
+            <CartaoImagem titulo="Cabeçalho dos documentos" descricao="Fica no topo de procuração, contrato e declarações. Uma imagem larga (como o papel timbrado) funciona melhor." urlBase="/api/gestao/imagens/cabecalho" altura="h-20" tem={img.tem_cabecalho} podeEditar={gerir} aoMudar={() => void carregar()}
+              extra={<div className="space-y-1"><p className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Alinhamento do cabeçalho</p><BotoesAlinhamento valor={e.cabecalho_alinhamento} aoMudar={(v) => set("cabecalho_alinhamento", v)} desabilitado={!gerir} />{!img.tem_cabecalho && img.tem_logo && <p className="text-xs text-amber-700 dark:text-amber-300">Sem cabeçalho próprio, os documentos usam o logotipo enviado antes na ficha.</p>}{!img.tem_cabecalho && !img.tem_logo && <p className="text-xs text-zinc-500">Sem imagem, sai o nome do escritório.</p>}</div>} />
+            <CartaoImagem titulo="Rodapé dos documentos (opcional)" descricao="Imagem pequena acima das linhas do rodapé (por exemplo, um selo ou o logotipo reduzido). As linhas de texto ficam em Endereço, contato e foro." urlBase="/api/gestao/imagens/rodape" altura="h-12" tem={img.tem_rodape} podeEditar={gerir} aoMudar={() => void carregar()}
+              extra={<div className="space-y-1"><p className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Alinhamento do rodapé</p><BotoesAlinhamento valor={e.rodape_alinhamento} aoMudar={(v) => set("rodape_alinhamento", v)} desabilitado={!gerir} /></div>} />
+            <CartaoImagem titulo="Ícone do sistema (favicon)" descricao="Aparece na aba do navegador, no menu lateral e na tela de login. Use uma imagem quadrada (PNG, JPG, WebP ou ICO, até 512 KB)." urlBase="/api/gestao/imagens/favicon" altura="h-16 w-16" tem={img.tem_favicon} podeEditar={gerir} aoMudar={() => { void carregar(); setTimeout(avisarIdentidadeMudou, 150); }} />
+          </div>
+          {gerir && <p className="text-xs text-zinc-500">Os alinhamentos valem depois de clicar em <b>Salvar</b>. As imagens são salvas na hora.</p>}
         </div>
         <div className={`${cartao} xl:col-span-2`}>
           <div className="flex items-center justify-between"><h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Advogados (outorgados e contratados)</h2>{gerir && <Button type="button" size="sm" variant="outline" onClick={() => set("advogados", [...e.advogados, advVazio()])}><Plus className="h-4 w-4" /> Adicionar</Button>}</div>

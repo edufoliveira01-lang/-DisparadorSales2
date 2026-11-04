@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { ToastProvider } from "./components/ui/Toast";
+import { IdentidadeProvider } from "./context/IdentidadeContext";
 import { applyTheme, getInitialTheme, ThemeProvider } from "./context/ThemeContext";
 import { aplicarModoLeve } from "./lib/desempenho";
 import "./index.css";
@@ -15,7 +16,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <BrowserRouter>
       <ThemeProvider>
         <ToastProvider>
-          <App />
+          <IdentidadeProvider>
+            <App />
+          </IdentidadeProvider>
         </ToastProvider>
       </ThemeProvider>
     </BrowserRouter>

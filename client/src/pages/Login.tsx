@@ -5,10 +5,12 @@ import { useToast } from "@/components/ui/Toast";
 import { APP_VERSION } from "@/lib/appVersion";
 import { firstAllowedPage } from "@/lib/navigation";
 import type { TeamUser } from "@/context/AuthContext";
+import { useIdentidade } from "@/context/IdentidadeContext";
 import "./Login.css";
 
 export function Login() {
   const { show } = useToast();
+  const identidade = useIdentidade();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [visible, setVisible] = useState(false);
@@ -46,14 +48,14 @@ export function Login() {
 
   return <main className="login-layout">
     <section className={`login-visual ${imageUrl ? "has-image" : ""}`} style={imageUrl ? { backgroundImage: `linear-gradient(180deg, rgba(21,18,58,.16), rgba(19,15,63,.78)), url("${imageUrl}")` } : undefined} aria-label="DisparaZap 2 · Sales & Associados">
-      <div className="login-visual-header"><span className="login-brand-symbol"><Zap size={25} fill="currentColor" /></span><span><strong>DisparaZap <i>2</i></strong><small>Sales &amp; Associados</small></span></div>
+      <div className="login-visual-header"><span className="login-brand-symbol">{identidade.faviconUrl ? <img src={identidade.faviconUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain", background: "#fff", borderRadius: 12, padding: 4 }} /> : <Zap size={25} fill="currentColor" />}</span><span><strong>DisparaZap <i>2</i></strong><small>{identidade.nome || "Sales & Associados"}</small></span></div>
       {!imageUrl && <div className="login-illustration" aria-hidden="true"><div className="login-orbit orbit-one" /><div className="login-orbit orbit-two" /><div className="login-floating floating-one"><MessageSquareText size={27} /><span>Mensagens</span></div><div className="login-center-card"><span className="login-center-logo"><Zap size={37} fill="currentColor" /></span><span className="login-center-line" /><span className="login-center-line short" /><span className="login-center-progress"><span /></span></div><div className="login-floating floating-two"><ShieldCheck size={25} /><span>Acompanhamento</span></div></div>}
       <div className="login-visual-copy"><span className="login-eyebrow">UM ESPAÇO DE TRABALHO MAIS CLARO</span><h2>Seu trabalho conectado.<br />Sua rotina no controle.</h2><p>Perícias, mensagens e processos organizados no mesmo lugar.</p></div>
       <span className="login-visual-footer">DisparaZap 2 · v{APP_VERSION}</span>
     </section>
 
     <section className="login-form-side"><div className="login-form-wrap">
-      <div className="login-mobile-brand"><Zap size={20} fill="currentColor" /> DisparaZap 2</div>
+      <div className="login-mobile-brand">{identidade.faviconUrl ? <img src={identidade.faviconUrl} alt="" style={{ width: 20, height: 20, objectFit: "contain" }} /> : <Zap size={20} fill="currentColor" />} DisparaZap 2</div>
       <span className="login-form-eyebrow">BEM-VINDO AO SEU ESPAÇO</span>
       <h1>{mode === "login" ? "Entre na sua conta" : mode === "forgot" ? "Recuperar acesso" : "Criar nova senha"}</h1>
       <p className="login-intro">{mode === "login" ? "Acesse o que você precisa, com as permissões da sua equipe." : mode === "forgot" ? "Informe seu usuário para receber as instruções no canal cadastrado." : "Escolha uma senha segura de pelo menos 12 caracteres."}</p>

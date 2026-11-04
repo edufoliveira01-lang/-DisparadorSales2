@@ -3,7 +3,7 @@ import { db } from "../../db";
 import { ErroGestao } from "./erro";
 import { contextoDoDocumento } from "./modelos";
 import { lerEscritorio, type Escritorio, type Testemunha } from "./escritorio";
-import { logoAtual } from "./fichaConfig";
+import { imagemAtual, logoAtual } from "./fichaConfig";
 
 /**
  * Kit de documentos do escritório (procuração, hipossuficiência, contrato, declaração e termo) em três variações:
@@ -37,7 +37,8 @@ export type Bloco =
   | { k: "rogo"; assina: string; extra: string[]; testemunhas: Testemunha[]; polegar: string; pt: number }
   | { k: "testemunhas"; itens: Testemunha[]; pt: number };
 export interface DocumentoMontado { id: DocId; nome: string; blocos: Bloco[] }
-export interface Kit { escritorio: Escritorio; nomeExibicao: string; logo: { dados: Buffer; mime: string } | null; rodape: string[]; documentos: DocumentoMontado[]; faltando: string[] }
+export interface ImagemKit { dados: Buffer; mime: string }
+export interface Kit { escritorio: Escritorio; nomeExibicao: string; logo: ImagemKit | null; rodapeImagem: ImagemKit | null; alinhaCabecalho: "left" | "center" | "right"; alinhaRodape: "left" | "center" | "right"; rodape: string[]; documentos: DocumentoMontado[]; faltando: string[] }
 
 // ---------- textos padrão ----------
 const PODERES_ESPECIFICOS_COMUM = `**PODERES ESPECÍFICOS:** A presente procuração outorga aos Advogados acima descritos os poderes especiais para receber citação, confessar, reconhecer a procedência do pedido, transigir, desistir, firmar compromissos ou acordos, RENUNCIAR DIREITOS, receber e dar quitação, cadastrar e alterar senhas, acessar o sistema gov.br, levantar ou receber RPV – Requisição de Pequeno Valor, precatórios e alvarás, pedir e declarar isenção de imposto de renda, pedir e declarar a justiça gratuita, em conformidade com a norma do art. 105 da Lei 13.105/2015, podendo ainda substabelecer, com ou sem reserva de poderes.`;
@@ -319,10 +320,11 @@ export function montarKit(opcoes: OpcoesKit, nomeUsuario: string, exemplo = fals
     return { id: d.id, nome: d.nome, blocos };
   });
 
-  const img = logoAtual();
-  const logo = img ? { dados: fs.readFileSync(img.arquivo), mime: img.mime } : null;
+  const ler = (i: { arquivo: string; mime: string } | null): ImagemKit | null => (i ? { dados: fs.readFileSync(i.arquivo), mime: i.mime } : null);
+  const logo = ler(imagemAtual("cabecalho") ?? logoAtual()); // sem cabeçalho próprio, usa o logotipo enviado antes
+  const rodapeImagem = ler(imagemAtual("rodape"));
   const rodape = esc.rodape_linhas.length ? esc.rodape_linhas : [esc.endereco, esc.telefones.join(" / ")].filter(Boolean);
-  return { escritorio: esc, nomeExibicao: nomeEscritorio, logo, rodape, documentos, faltando: [...faltando] };
+  return { escritorio: esc, nomeExibicao: nomeEscritorio, logo, rodapeImagem, alinhaCabecalho: esc.cabecalho_alinhamento, alinhaRodape: esc.rodape_alinhamento, rodape, documentos, faltando: [...faltando] };
 }
 
 // ---------- HTML (tela e impressão) ----------
@@ -344,13 +346,14 @@ function blocoHtml(b: Bloco): string {
 
 export function kitHtml(kit: Kit, opcoes: { imprimir?: boolean; zoom?: number } = {}): string {
   const logo = kit.logo ? `<img class="logo" alt="" src="data:${kit.logo.mime};base64,${kit.logo.dados.toString("base64")}">` : `<div class="nome-escritorio">${escHtml(kit.nomeExibicao)}</div>`;
-  const rodape = kit.rodape.length ? `<div class="rodape">${kit.rodape.map((l, i) => (i === 0 ? `<b>${escHtml(l)}</b>` : `<div><b>${escHtml(l)}</b></div>`)).join("")}</div>` : "";
-  const folhas = kit.documentos.map((d) => `<table class="folha"><thead><tr><td class="cab">${logo}</td></tr></thead><tbody><tr><td class="corpo">${d.blocos.map(blocoHtml).join("\n")}</td></tr></tbody><tfoot><tr><td>${rodape}</td></tr></tfoot></table>`).join("\n");
+  const imgRodape = kit.rodapeImagem ? `<img class="img-rodape" style="${kit.alinhaRodape === "left" ? "" : kit.alinhaRodape === "center" ? "margin-left:auto;margin-right:auto" : "margin-left:auto"}" alt="" src="data:${kit.rodapeImagem.mime};base64,${kit.rodapeImagem.dados.toString("base64")}">` : "";
+  const rodape = kit.rodape.length || imgRodape ? `<div class="rodape" style="text-align:${kit.alinhaRodape}">${imgRodape}${kit.rodape.map((l, i) => (i === 0 ? `<b>${escHtml(l)}</b>` : `<div><b>${escHtml(l)}</b></div>`)).join("")}</div>` : "";
+  const folhas = kit.documentos.map((d) => `<table class="folha"><thead><tr><td class="cab" style="text-align:${kit.alinhaCabecalho}">${logo}</td></tr></thead><tbody><tr><td class="corpo">${d.blocos.map(blocoHtml).join("\n")}</td></tr></tbody><tfoot><tr><td>${rodape}</td></tr></tfoot></table>`).join("\n");
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${escHtml(kit.documentos.map((d) => d.nome).join(" · "))}</title><style>
 @page{size:A4;margin:0}*{box-sizing:border-box}body{margin:0;background:#e5e7eb;font-family:Arial,Helvetica,sans-serif;color:#000;line-height:1.28}
 .folha{width:210mm;height:296mm;margin:8mm auto;background:#fff;border-collapse:collapse;page-break-after:always;break-after:page;box-shadow:0 1px 6px rgba(0,0,0,.25)}
 thead{display:table-header-group}tfoot{display:table-footer-group}
-.cab{padding:8mm 20mm 2mm;text-align:center;height:30mm;vertical-align:middle}.logo{max-height:22mm;max-width:90mm;object-fit:contain}.nome-escritorio{font-size:16pt;font-weight:bold;letter-spacing:.5px}
+.cab{padding:8mm 20mm 2mm;height:30mm;vertical-align:middle}.logo{max-height:24mm;max-width:170mm;object-fit:contain}.img-rodape{display:block;max-height:14mm;max-width:170mm;object-fit:contain;margin-bottom:1.5mm}.nome-escritorio{font-size:16pt;font-weight:bold;letter-spacing:.5px}
 .corpo{padding:1mm 20mm;vertical-align:top;height:100%}
 h2{text-align:center;margin:1mm 0 4mm}p{margin:0 0 2.6mm}
 .caixa{border:1px solid #000;padding:2mm 3mm;margin:0 0 4mm}
@@ -358,7 +361,7 @@ h2{text-align:center;margin:1mm 0 4mm}p{margin:0 0 2.6mm}
 table.rogo,table.test{width:100%;border-collapse:separate;border-spacing:3mm 0;table-layout:fixed}td.sem{vertical-align:bottom;padding:0 0 2mm}
 td.polegar{width:42mm;border:1px solid #000;height:30mm;vertical-align:bottom;text-align:center;font-weight:bold;padding:2mm}
 .test td{vertical-align:top;padding-top:6mm}
-.rodape{border-top:2px solid #333;margin:0 20mm 7mm;padding-top:2mm;text-align:right;font-size:8pt}
+.rodape{border-top:2px solid #333;margin:0 20mm 7mm;padding-top:2mm;font-size:8pt}
 @media print{body{background:#fff}.folha{margin:0;box-shadow:none}}${opcoes.zoom ? `html{zoom:${Number(opcoes.zoom)}}` : ""}
 </style></head><body>${folhas}${opcoes.imprimir ? "<script>window.addEventListener('load',function(){setTimeout(function(){window.print()},300)})</script>" : ""}</body></html>`;
 }

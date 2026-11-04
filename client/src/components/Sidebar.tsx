@@ -19,6 +19,7 @@ import { permittedNavigation } from "@/lib/navigation";
 import { emAreaDeConfig } from "@/lib/configNav";
 import { useAuth } from "@/context/AuthContext";
 import { APP_VERSION } from "@/lib/appVersion";
+import { useIdentidade } from "@/context/IdentidadeContext";
 
 interface SidebarProps {
   open: boolean;
@@ -45,6 +46,7 @@ export function Sidebar({
   onNavigate,
 }: SidebarProps) {
   const { user } = useAuth();
+  const identidade = useIdentidade();
   const visibleNavigation = permittedNavigation(user.permissions);
   const location = useLocation();
   const [abertos, setAbertos] = useState<Record<string, boolean>>(() => {
@@ -110,15 +112,15 @@ export function Sidebar({
       )}
     >
       <div className="sidebar-brand">
-        <span className="brand-mark">
-          <Zap className="h-6 w-6" fill="currentColor" strokeWidth={1.5} />
+        <span className="brand-mark" style={identidade.faviconUrl ? { background: "#fff", padding: 5 } : undefined}>
+          {identidade.faviconUrl ? <img src={identidade.faviconUrl} alt="" className="h-full w-full object-contain" /> : <Zap className="h-6 w-6" fill="currentColor" strokeWidth={1.5} />}
         </span>
         <div className="sidebar-copy min-w-0 flex-1">
           <p className="text-base font-semibold tracking-tight text-white">
             DisparaZap <span className="text-violet-300">2</span>
           </p>
-          <p className="mt-0.5 text-[11px] text-slate-400">
-            Sales &amp; Associados
+          <p className="mt-0.5 truncate text-[11px] text-slate-400">
+            {identidade.nome || "Sales & Associados"}
           </p>
         </div>
         <button

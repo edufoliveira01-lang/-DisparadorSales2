@@ -129,7 +129,7 @@ export const navigation = [
   },
   {
     to: "/gestao/modelos",
-    label: "Outros modelos de documento",
+    label: "Modelos livres",
     description: "Procuração, contrato e outros, com dados preenchidos",
     icon: FileText,
     group: "configuracoes",

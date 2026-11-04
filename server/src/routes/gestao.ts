@@ -16,7 +16,7 @@ import { hasPermission } from "../services/accessService";
 import { consultarCep } from "../services/gestao/cep";
 import { adicionarCamposPrevidenciarios, atualizarCampo, criarCampo, excluirCampo, listarCampos, revelarSenha, TIPOS_CAMPO } from "../services/gestao/campos";
 import { fichaDeCadastroHtml, fichaDeExemplo } from "../services/gestao/ficha";
-import { PADRAO as FICHA_PADRAO, ROTULO_SECAO, apagarFoto, apagarLogo, fotoDaPessoa, lerConfig, logoAtual, salvarConfig, salvarFoto, salvarLogo } from "../services/gestao/fichaConfig";
+import { PADRAO as FICHA_PADRAO, ROTULO_SECAO, apagarFoto, apagarImagem, apagarLogo, fotoDaPessoa, imagemAtual, lerConfig, logoAtual, nomeDeImagemValido, salvarConfig, salvarFoto, salvarImagem, salvarLogo } from "../services/gestao/fichaConfig";
 import { DOCS, ROTULO_VARIANTE, TEXTOS_PADRAO, VARIANTES, VARIAVEIS_DOCUMENTO, kitHtml, lerConfigDocumentos, montarKit, restaurarTexto, salvarConfigDocumentos, type OpcoesKit } from "../services/gestao/documentos";
 import { kitDocx } from "../services/gestao/docx";
 import { lerEscritorio, salvarEscritorio } from "../services/gestao/escritorio";
@@ -199,7 +199,7 @@ const servirImagem = (img: { arquivo: string; mime: string } | null, res: Respon
   res.set({ "Content-Type": img.mime, "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox", "Cache-Control": "private, no-cache" });
   res.sendFile(img.arquivo);
 };
-gestaoRouter.get("/ficha/config", rota(() => ({ config: lerConfig(), padrao: FICHA_PADRAO, tem_logo: Boolean(logoAtual()), rotulo_secao: ROTULO_SECAO })));
+gestaoRouter.get("/ficha/config", rota(() => ({ config: lerConfig(), padrao: FICHA_PADRAO, tem_logo: Boolean(logoAtual()), tem_cabecalho: Boolean(imagemAtual("cabecalho")), rotulo_secao: ROTULO_SECAO })));
 gestaoRouter.put("/ficha/config", rota((req) => { const c = salvarConfig(req.body || {}); auditAccess("gestao_ficha_modelo_alterado", usuario(req).id, null); return { config: c, tem_logo: Boolean(logoAtual()) }; }));
 gestaoRouter.get("/ficha/previa", (req, res, next) => {
   try {
@@ -216,8 +216,16 @@ gestaoRouter.post("/pessoas/:id/foto", express.raw({ type: () => true, limit: 2 
 gestaoRouter.delete("/pessoas/:id/foto", rota((req) => { apagarFoto(id(req)); return { ok: true }; }));
 
 // ---------- dados do escritório e kit de documentos (procuração, contrato…) ----------
-gestaoRouter.get("/escritorio", rota(() => ({ escritorio: lerEscritorio(), tem_logo: Boolean(logoAtual()) })));
-gestaoRouter.put("/escritorio", rota((req) => { const e = salvarEscritorio(req.body || {}); auditAccess("gestao_escritorio_alterado", usuario(req).id, null); return { escritorio: e, tem_logo: Boolean(logoAtual()) }; }));
+const imagensDoEscritorio = () => ({ tem_logo: Boolean(logoAtual()), tem_cabecalho: Boolean(imagemAtual("cabecalho")), tem_rodape: Boolean(imagemAtual("rodape")), tem_favicon: Boolean(imagemAtual("favicon")) });
+gestaoRouter.get("/escritorio", rota(() => ({ escritorio: lerEscritorio(), ...imagensDoEscritorio() })));
+// cabeçalho e rodapé dos documentos, e ícone do sistema (favicon); o logotipo da ficha segue em /ficha/logo
+gestaoRouter.get("/imagens/:nome", (req, res) => { const n = String(req.params.nome); if (!nomeDeImagemValido(n)) return void res.status(404).end(); servirImagem(imagemAtual(n), res); });
+gestaoRouter.post("/imagens/:nome", express.raw({ type: () => true, limit: 2 * 1024 * 1024 + 1024 }), rota((req) => {
+  const n = String(req.params.nome); if (!nomeDeImagemValido(n)) throw new ErroGestao("Imagem desconhecida.", 404);
+  salvarImagem(n, Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0)); auditAccess("gestao_imagem_escritorio_alterada", usuario(req).id, null, { imagem: n }); return { ok: true, ...imagensDoEscritorio() };
+}));
+gestaoRouter.delete("/imagens/:nome", rota((req) => { const n = String(req.params.nome); if (!nomeDeImagemValido(n)) throw new ErroGestao("Imagem desconhecida.", 404); apagarImagem(n); return { ok: true, ...imagensDoEscritorio() }; }));
+gestaoRouter.put("/escritorio", rota((req) => { const e = salvarEscritorio(req.body || {}); auditAccess("gestao_escritorio_alterado", usuario(req).id, null); return { escritorio: e, ...imagensDoEscritorio() }; }));
 gestaoRouter.get("/documentos/config", rota(() => ({
   ...lerConfigDocumentos(), padroes: TEXTOS_PADRAO, variaveis: VARIAVEIS_DOCUMENTO, variantes: VARIANTES.map((v) => ({ id: v, nome: ROTULO_VARIANTE[v] })),
   documentos: DOCS.map((d) => ({ id: d.id, nome: d.nome })), escritorio_completo: Boolean(lerEscritorio().advogados.length && (lerEscritorio().nome || lerEscritorio().razao_social)),

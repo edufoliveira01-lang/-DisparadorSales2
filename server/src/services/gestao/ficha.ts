@@ -3,7 +3,7 @@ import { ErroGestao } from "./erro";
 import { valoresParaImpressao } from "./campos";
 import { formatarCep, formatarDocumento, formatarPis, formatarCnj } from "./validacao";
 import type { Pessoa } from "./pessoas";
-import { comoDataUri, fotoDaPessoa, lerConfig, logoAtual, type ConfigFicha } from "./fichaConfig";
+import { comoDataUri, fotoDaPessoa, lerConfig, logoDaFicha, type ConfigFicha } from "./fichaConfig";
 import { listarCampos } from "./campos";
 
 const esc = (v: unknown) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -58,7 +58,11 @@ export function renderizarFicha(d: DadosFicha, cfg: ConfigFicha, o: OpcoesFicha)
   const caixaFoto = cfg.mostrar_foto
     ? `<td style="width:3.8cm;padding:4px"><div class="foto">${d.foto ? `<img src="${d.foto}" alt="Foto">` : "<br><br>FOTO 3x4"}</div></td>`
     : "";
-  const logo = d.logo ? `<td style="width:3cm;padding:4px;text-align:center"><img class="logo" src="${d.logo}" alt="Logotipo"></td>` : "";
+  const alinhaLogo = cfg.logo_alinhamento;
+  const logoCelula = d.logo && alinhaLogo !== "center" ? `<td style="width:3cm;padding:4px;text-align:center"><img class="logo" src="${d.logo}" alt="Logotipo"></td>` : "";
+  const logoNoTitulo = d.logo && alinhaLogo === "center" ? `<div style="text-align:center;margin-bottom:2px"><img class="logo" src="${d.logo}" alt="Logotipo"></div>` : "";
+  const logo = alinhaLogo === "left" ? logoCelula : "";
+  const logoDireita = alinhaLogo === "right" ? logoCelula : "";
   const cabecalhoTexto = [cfg.nome_escritorio, ...cfg.cabecalho_linhas].filter(Boolean);
 
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Ficha de cadastro — ${esc(p.nome)}</title>
@@ -93,8 +97,8 @@ td.pauta { height: 20px; }
 </style></head><body><div class="folha">
 ${o.amostra ? '<div class="amostra">Pré-visualização com dados de exemplo. Na ficha real entram os dados do cliente.</div>' : ""}
 <table class="cab"><tr>${caixaFoto}${logo}
-<td><div class="titulo">${esc(cfg.titulo)}</div>${cfg.subtitulo ? `<div class="sub">${esc(cfg.subtitulo)}</div>` : ""}${cabecalhoTexto.length ? `<div class="esc">${cabecalhoTexto.map(esc).join("<br>")}</div>` : ""}</td>
-<td class="meta">Cadastro nº <b>${p.id}</b><br>Em ${esc(dataBr(p.criado_em))}${processos[0] ? `<br>Pasta <b>${esc(processos[0].pasta)}</b>` : ""}</td></tr></table>
+<td${alinhaLogo === "center" ? ' style="text-align:center"' : ""}>${logoNoTitulo}<div class="titulo">${esc(cfg.titulo)}</div>${cfg.subtitulo ? `<div class="sub">${esc(cfg.subtitulo)}</div>` : ""}${cabecalhoTexto.length ? `<div class="esc">${cabecalhoTexto.map(esc).join("<br>")}</div>` : ""}</td>
+<td class="meta">Cadastro nº <b>${p.id}</b><br>Em ${esc(dataBr(p.criado_em))}${processos[0] ? `<br>Pasta <b>${esc(processos[0].pasta)}</b>` : ""}</td>${logoDireita}</tr></table>
 ${cfg.secoes.identificacao ? secao("DADOS DE IDENTIFICAÇÃO", [
     linha([[juridica ? "Razão social" : "Nome", p.nome]]),
     linha([["Nasc.", dataBr(p.data_nascimento), 3], ["Idade", idade(p.data_nascimento), 2], ["RG", p.rg, 3], [juridica ? "CNPJ" : "CPF", formatarDocumento(p.documento), 4]]),
@@ -121,12 +125,12 @@ export function fichaDeCadastroHtml(pessoaId: number, opcoes: { comSenhas: boole
   if (!p) throw new ErroGestao("Pessoa não encontrada.", 404);
   const processos = db.prepare("SELECT pr.numero,pr.pasta,pr.tribunal,pr.titulo,pr.status,g.papel FROM gestao_partes g JOIN gestao_processos pr ON pr.id=g.processo_id WHERE g.pessoa_id=? ORDER BY pr.criado_em DESC LIMIT 12").all(pessoaId) as DadosFicha["processos"];
   const personalizados = valoresParaImpressao("pessoa", pessoaId, opcoes.comSenhas);
-  return renderizarFicha({ pessoa: p, processos, personalizados: personalizados.map((x) => ({ campo: { nome: x.campo.nome, grupo: x.campo.grupo }, valor: x.valor })), foto: comoDataUri(fotoDaPessoa(pessoaId)), logo: comoDataUri(logoAtual()) }, lerConfig(), opcoes);
+  return renderizarFicha({ pessoa: p, processos, personalizados: personalizados.map((x) => ({ campo: { nome: x.campo.nome, grupo: x.campo.grupo }, valor: x.valor })), foto: comoDataUri(fotoDaPessoa(pessoaId)), logo: comoDataUri(logoDaFicha()) }, lerConfig(), opcoes);
 }
 
 /** Pré-visualização do modelo com um cliente fictício (usa os campos personalizados que já existem). */
 export function fichaDeExemplo(cfg: ConfigFicha, emitidaPor: string): string {
   const pessoa = { id: 0, tipo: "cliente", pessoa_juridica: 0, nome: "MARIA DA SILVA SANTOS (exemplo)", documento: "52998224725", rg: "12.345.678-9", email: "maria@exemplo.com.br", telefone: "(11) 99999-0000", telefone2: "", cep: "01001000", logradouro: "Praça da Sé", numero: "100", complemento: "Sala 2", bairro: "Sé", cidade: "São Paulo", uf: "SP", data_nascimento: "1968-02-15", profissao: "Auxiliar administrativa", estado_civil: "Casado(a)", origem: "", observacoes: "", escolaridade: "Médio completo", pis: "12345678919", nome_mae: "JOANA DA SILVA", filiacao: "Joana da Silva e José Santos", contact_id: null, ativo: 1, criado_em: new Date().toISOString(), atualizado_em: "" } as unknown as Pessoa;
   const personalizados = listarCampos("pessoa").filter((c) => c.imprimir).map((c) => ({ campo: { nome: c.nome, grupo: c.grupo }, valor: c.tipo === "senha" ? "••••••••" : c.tipo === "data" ? "01/03/2026" : c.tipo === "sim_nao" ? "Sim" : c.tipo === "lista" ? c.opcoes[0] ?? "" : c.tipo === "moeda" ? "R$ 1.500,00" : "Exemplo" }));
-  return renderizarFicha({ pessoa, processos: [{ numero: "00012345-67", pasta: "2026/0001", tribunal: "TJSP", titulo: "Exemplo", status: "ativo", papel: "autor" }], personalizados, foto: null, logo: comoDataUri(logoAtual()) }, cfg, { comSenhas: false, imprimir: false, emitidaPor, amostra: true });
+  return renderizarFicha({ pessoa, processos: [{ numero: "00012345-67", pasta: "2026/0001", tribunal: "TJSP", titulo: "Exemplo", status: "ativo", papel: "autor" }], personalizados, foto: null, logo: comoDataUri(logoDaFicha(cfg)) }, cfg, { comSenhas: false, imprimir: false, emitidaPor, amostra: true });
 }
