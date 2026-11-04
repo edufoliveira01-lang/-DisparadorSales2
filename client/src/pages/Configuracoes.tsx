@@ -282,6 +282,28 @@ export function Configuracoes() {
     }
   }
 
+  const [motorWhatsapp, setMotorWhatsapp] = useState<"wwebjs" | "baileys" | null>(null);
+  const [trocandoMotor, setTrocandoMotor] = useState(false);
+  useEffect(() => {
+    api.get<{ engine: "wwebjs" | "baileys" }>("/whatsapp/engine").then((r) => setMotorWhatsapp(r.engine)).catch(() => undefined);
+  }, []);
+  async function handleTrocarMotor(engine: "wwebjs" | "baileys") {
+    if (engine === motorWhatsapp || trocandoMotor) return;
+    if (!window.confirm(engine === "baileys"
+      ? "Trocar para o motor novo (sem navegador)? A conexão atual será encerrada e você precisará ler o QR Code de novo. Dá para voltar ao motor atual a qualquer momento."
+      : "Voltar ao motor atual (whatsapp-web.js)? A conexão atual será encerrada e a sessão anterior desse motor será retomada.")) return;
+    setTrocandoMotor(true);
+    try {
+      const r = await api.post<{ engine: "wwebjs" | "baileys" }>("/whatsapp/engine", { engine });
+      setMotorWhatsapp(r.engine);
+      show("Motor alterado. Clique em Conectar para continuar.", "success");
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Erro ao trocar o motor do WhatsApp.", "error");
+    } finally {
+      setTrocandoMotor(false);
+    }
+  }
+
   async function handleConectarWhatsapp() {
     try {
       await whatsapp.conectar();
@@ -739,6 +761,16 @@ export function Configuracoes() {
         storageKey="whatsapp"
         headerExtra={<Badge tone={whatsappTone as "success" | "danger" | "warning"}>{whatsapp.carregado ? STATUS_LABEL[whatsapp.status] : "Verificando conexão"}</Badge>}
       >
+          <div className="mb-3 rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-700">
+            <p className="mb-2 font-medium">Motor de conexão</p>
+            <div className="flex flex-wrap gap-2">
+              {([["wwebjs", "Motor atual (whatsapp-web.js)"], ["baileys", "Motor novo (Baileys, sem navegador)"]] as const).map(([valor, rotulo]) => (
+                <button key={valor} type="button" disabled={trocandoMotor || motorWhatsapp === null} onClick={() => void handleTrocarMotor(valor)}
+                  className={`rounded-md border px-3 py-1.5 ${motorWhatsapp === valor ? "border-accent-500 bg-accent-500/10 font-semibold" : "border-slate-300 dark:border-slate-600"}`}>{rotulo}</button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs opacity-70">O motor novo conecta direto ao WhatsApp (QR em poucos segundos, bem menos memória). Cada motor guarda a própria sessão; trocar exige ler o QR Code uma vez. Para voltar, escolha o motor atual.</p>
+          </div>
           {whatsapp.status === "inicializando" && whatsapp.faseInicializacao && (
             <p role="status" className="mb-3 flex items-center gap-2 text-sm text-accent-600 dark:text-accent-300">
               <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> {whatsapp.faseInicializacao}…

@@ -7,7 +7,9 @@ import { Client, LocalAuth, type Message, type Reaction } from "whatsapp-web.js"
 import { dataDir } from "../db";
 import { whatsappMessageIdCandidates, whatsappMessageStableKey } from "../utils/whatsappMessageId";
 import { emitEvent } from "../websocket";
-import { getSetting } from "./settingsService";
+import { getSetting, setSetting } from "./settingsService";
+import { BaileysClient, LojaMensagens, carregarBaileys } from "./whatsappBaileys";
+import { db as bancoDeDados } from "../db";
 import { enviarMensagemTelegram } from "./telegramService";
 import { recordSystemLog } from "./systemLogsService";
 import { moveCard } from "./trelloService";
@@ -37,7 +39,16 @@ export type WhatsappStatus = "desconectado" | "inicializando" | "aguardando_qr" 
 
 const AUTH_DATA_PATH = path.join(dataDir, "wwebjs_auth");
 const AUTH_SESSION_DIR = path.join(AUTH_DATA_PATH, "session");
-const AUTH_SESSION_MARKER_PATH = path.join(dataDir, "whatsapp-session-ready.json");
+const AUTH_SESSION_MARKER_WWEBJS = path.join(dataDir, "whatsapp-session-ready.json");
+const BAILEYS_AUTH_DIR = path.join(dataDir, "baileys_auth");
+const AUTH_SESSION_MARKER_BAILEYS = path.join(dataDir, "baileys-session-ready.json");
+
+export type MotorWhatsapp = "wwebjs" | "baileys";
+/** Motor escolhido em Configurações → WhatsApp. O padrão continua sendo o whatsapp-web.js. */
+export function motorWhatsappAtual(): MotorWhatsapp {
+  return getSetting("whatsapp_engine") === "baileys" ? "baileys" : "wwebjs";
+}
+const AUTH_SESSION_MARKER_PATH_ATUAL = () => (motorWhatsappAtual() === "baileys" ? AUTH_SESSION_MARKER_BAILEYS : AUTH_SESSION_MARKER_WWEBJS);
 const INSTANCE_LOCK_PATH = path.join(dataDir, "whatsapp-manager.lock");
 const INSTANCE_TOKEN = `${os.hostname()}:${process.pid}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
 let possuiLockDaInstancia = false;
@@ -231,7 +242,7 @@ function clearLegacyWebVersionCache(): void {
 
 function marcarSessaoPersistida(): void {
   try {
-    fs.writeFileSync(AUTH_SESSION_MARKER_PATH, JSON.stringify({ authenticatedAt: new Date().toISOString() }), "utf8");
+    fs.writeFileSync(AUTH_SESSION_MARKER_PATH_ATUAL(), JSON.stringify({ authenticatedAt: new Date().toISOString() }), "utf8");
   } catch (err) {
     console.error("[WhatsApp] Não foi possível registrar a sessão autenticada:", err);
   }
@@ -239,7 +250,7 @@ function marcarSessaoPersistida(): void {
 
 function removerMarcadorDeSessao(): void {
   try {
-    fs.rmSync(AUTH_SESSION_MARKER_PATH, { force: true });
+    fs.rmSync(AUTH_SESSION_MARKER_PATH_ATUAL(), { force: true });
   } catch (err) {
     console.error("[WhatsApp] Não foi possível remover o marcador da sessão:", err);
   }
@@ -248,14 +259,14 @@ function removerMarcadorDeSessao(): void {
 function removerSessaoPersistida(): void {
   try {
     removerMarcadorDeSessao();
-    fs.rmSync(AUTH_SESSION_DIR, { recursive: true, force: true });
+    fs.rmSync(motorWhatsappAtual() === "baileys" ? BAILEYS_AUTH_DIR : AUTH_SESSION_DIR, { recursive: true, force: true });
   } catch (err) {
     console.error("[WhatsApp] Não foi possível remover os dados da sessão encerrada:", err);
   }
 }
 
 function possuiMarcadorDeSessao(): boolean {
-  return fs.existsSync(AUTH_SESSION_MARKER_PATH);
+  return fs.existsSync(AUTH_SESSION_MARKER_PATH_ATUAL());
 }
 
 const WA_VERSION_REPO_API = "https://api.github.com/repos/wppconnect-team/wa-version/contents/html";
@@ -901,7 +912,7 @@ class WhatsappManager {
   /** One user action restores the saved session or prepares a fresh QR when needed. */
   async connectWithRecovery(): Promise<void> {
     if (this.client || this.status === "inicializando" || this.encerramento) return;
-    const renovar = !possuiMarcadorDeSessao() && fs.existsSync(AUTH_SESSION_DIR);
+    const renovar = !possuiMarcadorDeSessao() && fs.existsSync(motorWhatsappAtual() === "baileys" ? BAILEYS_AUTH_DIR : AUTH_SESSION_DIR);
     if (renovar) await this.recreateSession();
     else this.connect();
     this.perfilRecuperado = renovar;
@@ -961,67 +972,85 @@ class WhatsappManager {
     // conexão via resolveWaVersionCache(): consultamos a listagem atual do repositório e
     // escolhemos uma versão recente já estabilizada, deixando de fora as últimas builds. Se a consulta falhar por
     // qualquer motivo, caímos no comportamento anterior (mais recente) em vez de travar.
-    informarEtapa("Selecionando versão do WhatsApp Web");
-    const source = this.usarVersaoAtual ? { type: "none" as const } : await resolveWaVersionCache();
-    const version = await prepareWhatsappVersion(source, path.join(dataDir, "whatsapp-web-cache"), informarEtapa);
-    if (minhaGeracao !== this.geracao) return; // connect()/disconnect() aconteceu enquanto resolvíamos a versão
+    const motor = motorWhatsappAtual();
+    let version: { webVersion?: string; webVersionCache?: unknown } = {};
+    let client: Client;
+    if (motor === "baileys") {
+      // Motor sem navegador: não há Chromium, versão do WhatsApp Web nem cache a preparar.
+      informarEtapa("Conectando direto ao WhatsApp (sem navegador)");
+      version = { webVersion: "baileys" };
+      client = new BaileysClient({
+        authDir: BAILEYS_AUTH_DIR,
+        carregar: carregarBaileys,
+        loja: new LojaMensagens(bancoDeDados),
+        qrMaxRetries: 12,
+      }) as unknown as Client;
+      this.client = client;
+      clientDaTentativa = client;
+    } else {
+      informarEtapa("Selecionando versão do WhatsApp Web");
+      const source = this.usarVersaoAtual ? { type: "none" as const } : await resolveWaVersionCache();
+      version = await prepareWhatsappVersion(source, path.join(dataDir, "whatsapp-web-cache"), informarEtapa);
+      if (minhaGeracao !== this.geracao) return; // connect()/disconnect() aconteceu enquanto resolvíamos a versão
 
-    // A sessão fica em Local Storage/IndexedDB e nunca é apagada aqui. Só caches descartáveis são
-    // limpos, e apenas quando necessário (versão nova ou conexão anterior que não completou).
-    if (cacheDoNavegadorPodeSerReaproveitado(version.webVersion)) informarEtapa("Reaproveitando o cache do WhatsApp Web (início mais rápido)");
-    else clearStaleServiceWorkerCache();
+      // A sessão fica em Local Storage/IndexedDB e nunca é apagada aqui. Só caches descartáveis são
+      // limpos, e apenas quando necessário (versão nova ou conexão anterior que não completou).
+      if (cacheDoNavegadorPodeSerReaproveitado(version.webVersion)) informarEtapa("Reaproveitando o cache do WhatsApp Web (início mais rápido)");
+      else clearStaleServiceWorkerCache();
 
-    const authStrategy = new LocalAuth({ dataPath: AUTH_DATA_PATH });
-    const afterBrowserInitialized = authStrategy.afterBrowserInitialized?.bind(authStrategy);
-    const client = new Client({
-      authStrategy,
-      puppeteer: {
-        headless: true,
-        timeout: 20000,
-        // Além de impedir throttling em segundo plano, usamos /tmp em vez do /dev/shm. Em
-        // instâncias pequenas ou containers, o /dev/shm costuma ter só 64 MB; quando ele enche,
-        // o Chromium fica instável justamente durante a sincronização inicial do WhatsApp.
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-gpu",
-          "--no-first-run",
-          "--disable-backgrounding-occluded-windows",
-          "--disable-renderer-backgrounding",
-          "--disable-background-timer-throttling",
-          // Menos trabalho em segundo plano na abertura do navegador (acelera até o QR Code).
-          "--disable-extensions",
-          "--disable-background-networking",
-          "--disable-default-apps",
-          "--disable-sync",
-          "--disable-component-update",
-          "--metrics-recording-only",
-          "--mute-audio",
-          "--no-default-browser-check",
-          "--password-store=basic",
-          "--disable-features=Translate,MediaRouter,OptimizationHints",
-        ],
-        // O limite do protocolo fica folgado para inicialização/sincronização. Nas operações de
-        // envio e consulta usamos watchdogs menores, que reiniciam o browser automaticamente.
-        protocolTimeout: 600000,
-      },
-      ...version,
-      // Quantas vezes o QR Code pode ser renovado (o WhatsApp Web troca a imagem sozinho a
-      // cada ~20-30s) antes do whatsapp-web.js desistir e desconectar. Um valor generoso dá
-      // mais tempo real para escanear em celulares mais lentos, sem travar para sempre — depois
-      // de esgotado, nosso próprio retry automático entra em ação e gera um QR novo.
-      qrMaxRetries: 12,
-      authTimeoutMs: 90000,
-    });
-    this.client = client;
-    clientDaTentativa = client;
-    informarEtapa("Iniciando navegador do WhatsApp");
-    authStrategy.afterBrowserInitialized = async () => {
-      await afterBrowserInitialized?.();
-      if (minhaGeracao !== this.geracao || this.client !== client || !client.pupPage) return;
-      configureWhatsappStartupPage(client.pupPage, informarEtapa);
-    };
+      const authStrategy = new LocalAuth({ dataPath: AUTH_DATA_PATH });
+      const afterBrowserInitialized = authStrategy.afterBrowserInitialized?.bind(authStrategy);
+      client = new Client({
+        authStrategy,
+        puppeteer: {
+          headless: true,
+          timeout: 20000,
+          // Além de impedir throttling em segundo plano, usamos /tmp em vez do /dev/shm. Em
+          // instâncias pequenas ou containers, o /dev/shm costuma ter só 64 MB; quando ele enche,
+          // o Chromium fica instável justamente durante a sincronização inicial do WhatsApp.
+          args: [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--no-first-run",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-renderer-backgrounding",
+            "--disable-background-timer-throttling",
+            // Menos trabalho em segundo plano na abertura do navegador (acelera até o QR Code).
+            "--disable-extensions",
+            "--disable-background-networking",
+            "--disable-default-apps",
+            "--disable-sync",
+            "--disable-component-update",
+            "--metrics-recording-only",
+            "--mute-audio",
+            "--no-default-browser-check",
+            "--password-store=basic",
+            "--disable-features=Translate,MediaRouter,OptimizationHints",
+          ],
+          // O limite do protocolo fica folgado para inicialização/sincronização. Nas operações de
+          // envio e consulta usamos watchdogs menores, que reiniciam o browser automaticamente.
+          protocolTimeout: 600000,
+        },
+        ...version,
+        // Quantas vezes o QR Code pode ser renovado (o WhatsApp Web troca a imagem sozinho a
+        // cada ~20-30s) antes do whatsapp-web.js desistir e desconectar. Um valor generoso dá
+        // mais tempo real para escanear em celulares mais lentos, sem travar para sempre — depois
+        // de esgotado, nosso próprio retry automático entra em ação e gera um QR novo.
+        qrMaxRetries: 12,
+        authTimeoutMs: 90000,
+      });
+      this.client = client;
+      clientDaTentativa = client;
+      informarEtapa("Iniciando navegador do WhatsApp");
+      authStrategy.afterBrowserInitialized = async () => {
+        await afterBrowserInitialized?.();
+        if (minhaGeracao !== this.geracao || this.client !== client || !client.pupPage) return;
+        configureWhatsappStartupPage(client.pupPage, informarEtapa);
+      };
+
+    }
 
     let pronto = false;
     let encerrandoTentativa = false;
@@ -1488,13 +1517,23 @@ class WhatsappManager {
   async stop(): Promise<void> {
     await this.encerrar();
   }
+  /** Troca o motor de conexão. A conexão atual é encerrada (sem logout); cada motor guarda sua própria sessão. */
+  async trocarMotor(motor: MotorWhatsapp): Promise<MotorWhatsapp> {
+    if (motor !== "wwebjs" && motor !== "baileys") throw new Error("Motor inválido.");
+    if (motor === motorWhatsappAtual()) return motor;
+    await this.stop();
+    setSetting("whatsapp_engine", motor);
+    recordSystemLog({ nivel: "info", categoria: "whatsapp", evento: "motor_trocado", titulo: "Motor do WhatsApp alterado", mensagem: motor === "baileys" ? "Agora usando o motor novo (Baileys, sem navegador). É preciso conectar e ler o QR Code." : "Voltou ao motor atual (whatsapp-web.js).", origem: "usuario" });
+    return motor;
+  }
   recreateSession(): Promise<void> {
     if (this.recriacao) return this.recriacao;
     const operation = (async () => {
       await this.stop();
       if (!adquirirLockDaInstancia()) throw new WhatsappSessionRecoveryError("Outra instância está usando esta sessão. Não foi possível recriar o vínculo.");
       try {
-        backupWhatsappProfile(dataDir, chromiumDoProfileEstaAtivo);
+        if (motorWhatsappAtual() === "baileys") removerSessaoPersistida();
+        else backupWhatsappProfile(dataDir, chromiumDoProfileEstaAtivo);
       } finally {
         liberarLockDaInstancia();
       }

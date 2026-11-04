@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { whatsappManager } from "../services/whatsappService";
+import { whatsappManager, motorWhatsappAtual } from "../services/whatsappService";
 import { WhatsappSessionRecoveryError } from "../services/whatsappProfile";
 import { getUserById, getSession } from "../services/authService";
 import { hasPermission } from "../services/accessService";
@@ -19,6 +19,17 @@ whatsappRouter.post("/connect", async (_req, res, next) => {
     if (error instanceof WhatsappSessionRecoveryError) { res.status(409).json({ error: error.message }); return; }
     next(error);
   }
+});
+
+whatsappRouter.get("/engine", (_req, res) => { res.json({ engine: motorWhatsappAtual() }); });
+
+whatsappRouter.post("/engine", async (req, res, next) => {
+  try {
+    const engine = req.body?.engine;
+    if (engine !== "wwebjs" && engine !== "baileys") { res.status(400).json({ error: "Motor inválido." }); return; }
+    await whatsappManager.trocarMotor(engine);
+    res.json({ engine: motorWhatsappAtual(), ...whatsappManager.getState() });
+  } catch (error) { next(error); }
 });
 
 whatsappRouter.post("/stop", async (_req, res) => {
