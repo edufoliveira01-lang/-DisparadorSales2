@@ -25,6 +25,11 @@ jobs:
           APP=/home/dropsales/disparador-sales2
           BACKUPS=/home/dropsales/disparazap-backups
           export PM2_HOME=/home/dropsales/.pm2
+          # O /tmp deste servidor é uma partição pequena (1 GB) e já encheu, derrubando testes e
+          # publicações com ENOSPC. Tudo o que é temporário vai para o disco principal.
+          export TMPDIR=/home/dropsales/.cache/disparazap-tmp
+          mkdir -p "$TMPDIR"
+          find "$TMPDIR" -mindepth 1 -maxdepth 1 -mmin +120 -exec rm -rf -- {} + 2>/dev/null || true
           exec 9>/home/dropsales/.disparazap-deploy.lock
           flock -n 9
           cd "$APP"
@@ -37,7 +42,7 @@ jobs:
           RUN_WHATSAPP_DIAGNOSTIC=false
           if git cat-file -e "$GITHUB_SHA:server/scripts/diagnose-whatsapp.cjs" 2>/dev/null && ! git diff --quiet HEAD "$GITHUB_SHA" -- server/scripts/diagnose-whatsapp.cjs; then
             RUN_WHATSAPP_DIAGNOSTIC=true
-            DIAGNOSTIC=$(mktemp /tmp/disparazap-whatsapp-diagnostic-XXXXXX.cjs)
+            DIAGNOSTIC=$(mktemp "$TMPDIR/disparazap-whatsapp-diagnostic-XXXXXX.cjs")
             git show "$GITHUB_SHA:server/scripts/diagnose-whatsapp.cjs" > "$DIAGNOSTIC"
             timeout 30s node "$DIAGNOSTIC" "$APP" || true
             rm -f -- "$DIAGNOSTIC"
@@ -45,7 +50,7 @@ jobs:
           
           # Compara eventos sem escrever nas agendas nem expor títulos ou credenciais.
           if git cat-file -e "$GITHUB_SHA:server/scripts/diagnose-google-calendar.cjs" 2>/dev/null && ! git diff --quiet HEAD "$GITHUB_SHA" -- server/scripts/diagnose-google-calendar.cjs; then
-            CALENDAR_DIAGNOSTIC=$(mktemp /tmp/disparazap-calendar-diagnostic-XXXXXX.cjs)
+            CALENDAR_DIAGNOSTIC=$(mktemp "$TMPDIR/disparazap-calendar-diagnostic-XXXXXX.cjs")
             git show "$GITHUB_SHA:server/scripts/diagnose-google-calendar.cjs" > "$CALENDAR_DIAGNOSTIC"
             timeout 90s node "$CALENDAR_DIAGNOSTIC" "$APP" || true
             rm -f -- "$CALENDAR_DIAGNOSTIC"
@@ -214,6 +219,8 @@ jobs:
 
           mkdir -p "$BACKUPS"
           chmod 700 "$BACKUPS"
+          # Mantém só as 8 cópias de publicação mais recentes (cada uma ocupa centenas de MB).
+          ls -1dt "$BACKUPS"/deploy-* 2>/dev/null | tail -n +9 | xargs -r rm -rf -- || true
           BACKUP=$(mktemp -d "$BACKUPS/deploy-$(date +%Y%m%d-%H%M%S)-XXXXXX")
           cd "$APP"
           git rev-parse HEAD > "$BACKUP/commit-anterior.txt"
