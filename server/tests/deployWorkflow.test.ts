@@ -57,6 +57,7 @@ function fixture(versionOnly = false) {
     .replaceAll("/home/dropsales/disparazap-build-", path.join(root, "build-"))
     .replaceAll("/home/dropsales/.disparazap-deploy.lock", path.join(root, "lock"))
     .replaceAll("/home/dropsales/.pm2", path.join(root, "pm2"))
+    .replaceAll("/home/dropsales/.cache/disparazap-tmp", path.join(root, "tmp"))
     .replaceAll("/var/www/disparazap", web).replaceAll("-C /var/www disparazap", `-C '${root}' web`).replaceAll("-C /var/www", `-C '${root}'`);
   const scriptPath = path.join(root, "deploy.sh"); write(scriptPath, script);
   return {
