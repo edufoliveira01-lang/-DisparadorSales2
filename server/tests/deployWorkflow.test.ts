@@ -52,12 +52,13 @@ function fixture(versionOnly = false) {
     echo '{"ok":true}'`);
   const yaml = fs.readFileSync(path.resolve(__dirname, "../../.github/workflows/deploy-ubuntu.yml"), "utf8");
   let script = yaml.split("        run: |\n")[1].split("\n").map((line) => line.startsWith("          ") ? line.slice(10) : line).join("\n");
-  script = script.replaceAll("/home/dropsales/disparador-sales2", app)
+  // A pasta temporária do script vai primeiro: o caminho de teste (root) pode estar dentro do TMPDIR real do servidor.
+  script = script.replaceAll("/home/dropsales/.cache/disparazap-tmp", path.join(root, "tmp"))
+    .replaceAll("/home/dropsales/disparador-sales2", app)
     .replaceAll("/home/dropsales/disparazap-backups", path.join(root, "backups"))
     .replaceAll("/home/dropsales/disparazap-build-", path.join(root, "build-"))
     .replaceAll("/home/dropsales/.disparazap-deploy.lock", path.join(root, "lock"))
     .replaceAll("/home/dropsales/.pm2", path.join(root, "pm2"))
-    .replaceAll("/home/dropsales/.cache/disparazap-tmp", path.join(root, "tmp"))
     .replaceAll("/var/www/disparazap", web).replaceAll("-C /var/www disparazap", `-C '${root}' web`).replaceAll("-C /var/www", `-C '${root}'`);
   const scriptPath = path.join(root, "deploy.sh"); write(scriptPath, script);
   return {
