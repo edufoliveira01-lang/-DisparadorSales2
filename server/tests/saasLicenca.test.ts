@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import express from "express";
 import type { AddressInfo } from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { ClienteLicenca, lerConfigLicenca, definirLicencaParaTestes, mensagemSeExcederLimite, licencaPermiteOperar, recursoLiberadoNaLicenca } from "../src/licenca/cliente";
 import { assinarLicenca, gerarParDeChaves, type CargaLicenca } from "../src/licenca/token";
 import { licencaSomenteLeitura } from "../src/middleware/licenca";
@@ -21,6 +21,7 @@ const cfg = (n: string, extra = {}) => ({ urlServidor: "https://painel.exemplo",
 const resposta = (c: CargaLicenca) => (async () => new Response(JSON.stringify({ token: assinarLicenca(c, par.privada) }), { status: 200 })) as unknown as typeof fetch;
 
 afterEach(() => definirLicencaParaTestes(null));
+afterAll(() => { fs.rmSync(dir, { recursive: true, force: true }); });
 
 describe("configuração da licença", () => {
   it("sem variáveis = modo próprio (sem verificação, limites ou bloqueios)", () => {
