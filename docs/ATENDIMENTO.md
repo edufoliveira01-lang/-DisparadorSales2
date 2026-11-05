@@ -30,3 +30,7 @@ Menu **Comunicação → Atendimento e vendas** (só aparece com o módulo liber
 - **Validação em servidor real**: os testes usam um Supabase falso. O piloto precisa confirmar criação da empresa, entrada direta e suspensão (ver `docs/ATENDIMENTO-INSTALACAO.md`).
 - **Equipe**: hoje só o administrador (e-mail do escritório) é criado no Deskcomm. Adicionar a equipe pelo painel/sistema é a próxima etapa.
 - **Sincronizar clientes/processos** e **enviar os avisos do sistema pelo WhatsApp do Deskcomm** (um só dono do número) são etapas seguintes, depois do piloto.
+
+## Equipe do escritório no atendimento
+Só o administrador do escritório entra no Deskcomm de início. Em **Comunicação → Atendimento e vendas**, quem gerencia a equipe vê **Enviar equipe ao atendimento**: o sistema envia as pessoas ativas **com e-mail cadastrado** (papéis: administrador→admin, gestor→manager, advogado/atendimento→agent, consulta→viewer). O sistema fala com o painel usando a chave de licença (`POST /api/v1/atendimento/equipe`) e o painel repassa à ponte (`POST /ponte/v1/offices/:slug/members`), que cria o usuário no Deskcomm sem e-mail de convite e o vincula à empresa. Repetir é seguro. Pessoas sem e-mail são listadas para cadastro em *Equipe e acessos*. Só funciona em escritórios licenciados e com o atendimento ativo.
+

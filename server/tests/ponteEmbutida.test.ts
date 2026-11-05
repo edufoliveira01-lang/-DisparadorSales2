@@ -120,6 +120,32 @@ describe("ponte embutida no painel", () => {
   });
 });
 
+describe("equipe da empresa no atendimento", () => {
+  it("vincula cada pessoa com o papel pedido (agent se vier inválido) e relata falhas sem parar as demais", async () => {
+    const f = falso(); const { req } = await subir(f.db);
+    await req("POST", "/v1/offices", { slug: "alfa", display_name: "Alfa", owner_email: "dono@alfa.com.br" });
+    f.c.rpc.length = 0;
+    const r = await req("POST", "/v1/offices/alfa/members", { members: [
+      { email: " Ana@Alfa.com.br ", name: "Ana", role: "manager" }, { email: "bia@alfa.com.br", role: "superuser" }, { email: "sem-arroba" }, { email: "cris@alfa.com.br", role: "viewer" },
+    ] });
+    expect(r.status).toBe(200);
+    expect(r.json.resultados).toEqual([
+      { email: "ana@alfa.com.br", ok: true, role: "manager" }, { email: "bia@alfa.com.br", ok: true, role: "agent" },
+      { email: "sem-arroba", ok: false, erro: "E-mail inválido." }, { email: "cris@alfa.com.br", ok: true, role: "viewer" },
+    ]);
+    expect(f.c.rpc.map(([n, a]) => [n, a.p_role])).toEqual([["fn_accept_team_invite", "manager"], ["fn_accept_team_invite", "agent"], ["fn_accept_team_invite", "viewer"]]);
+    f.e.rpcErro.fn_accept_team_invite = { code: "42501" };
+    expect((await req("POST", "/v1/offices/alfa/members", { members: [{ email: "x@alfa.com.br" }] })).json.resultados[0]).toMatchObject({ ok: false });
+  });
+  it("valida a lista e a empresa", async () => {
+    const f = falso(); const { req } = await subir(f.db);
+    expect((await req("POST", "/v1/offices/naoexiste/members", { members: [{ email: "a@b.com" }] })).status).toBe(404);
+    await req("POST", "/v1/offices", { slug: "alfa", display_name: "Alfa", owner_email: "dono@alfa.com.br" });
+    expect((await req("POST", "/v1/offices/alfa/members", { members: [] })).status).toBe(400);
+    expect((await req("POST", "/v1/offices/alfa/members", {})).status).toBe(400);
+  });
+});
+
 describe("acesso ao Supabase por fetch", () => {
   it("chama as rotas certas com a chave de serviço e interpreta as respostas", async () => {
     const chamadas: { url: string; init: any }[] = [];

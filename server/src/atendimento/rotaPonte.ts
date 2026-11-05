@@ -1,7 +1,7 @@
 import express, { type Request, type Response, type Router } from "express";
 import { lerTokenSso, verificarRequisicao } from "./assinatura";
 import type { BancoAtendimento } from "./banco";
-import { ErroPonte, prepararEntrada, provisionarEmpresa, reativarEmpresa, statusDaEmpresa, suspenderEmpresa } from "./ponteLocal";
+import { ErroPonte, adicionarMembros, prepararEntrada, provisionarEmpresa, reativarEmpresa, statusDaEmpresa, suspenderEmpresa } from "./ponteLocal";
 
 /** Configuração da ponte embutida no painel (variáveis ATENDIMENTO_*). */
 export interface ConfigPonteInterna { supabaseUrl: string; chaveServico: string; atorId: string; urlDeskcomm: string; segredo: string }
@@ -56,6 +56,7 @@ export function criarRotaPonte(db: BancoAtendimento, cfg: ConfigPonteInterna, ag
       const slug = rota[2] || "";
       if (metodo === "GET" && rota.length === 3) return res.json(await statusDaEmpresa(db, slug));
       if (metodo === "POST" && rota[3] === "suspend") return res.json(await suspenderEmpresa(db, ator, slug, String(dados.reason ?? "")));
+      if (metodo === "POST" && rota[3] === "members") return res.json(await adicionarMembros(db, ator, slug, dados.members as never));
       if (metodo === "POST" && rota[3] === "reactivate") return res.json(await reativarEmpresa(db, ator, slug));
       return res.status(404).json({ error: "Não encontrado." });
     } catch (e) {

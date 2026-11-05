@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { atendimentoDaInstancia, enderecoDeEntrada } from "../atendimento/instancia";
-import { auditAccess } from "../services/accessService";
+import { auditAccess, hasPermission } from "../services/accessService";
+import { ErroEquipe, sincronizarEquipe } from "../atendimento/equipe";
 
 /** Atendimento e vendas por WhatsApp com IA (DeskcommCRM, em outro servidor). Permissão: atendimento.use. */
 export const atendimentoRouter = Router();
@@ -19,4 +20,18 @@ atendimentoRouter.get("/entrar", (req, res) => {
   auditAccess("atendimento_entrada", req.accessUser!.id, null, { slug: a.slug });
   res.setHeader("Cache-Control", "no-store");
   res.redirect(302, enderecoDeEntrada(a, email));
+});
+
+/** Envia ao atendimento as pessoas da equipe que têm e-mail (papel traduzido). Só quem gerencia a equipe. */
+atendimentoRouter.post("/equipe/sincronizar", async (req, res) => {
+  if (!req.accessUser || !hasPermission(req.accessUser, "team.manage")) return void res.status(403).json({ error: "Somente quem gerencia a equipe pode sincronizá-la com o atendimento." });
+  if (!atendimentoDaInstancia()) return void res.status(404).json({ error: "O atendimento não está liberado para este escritório." });
+  try {
+    const r = await sincronizarEquipe();
+    auditAccess("atendimento_equipe", req.accessUser.id, null, { enviados: r.enviados, ok: r.ok });
+    res.json(r);
+  } catch (e) {
+    if (e instanceof ErroEquipe) return void res.status(e.status).json({ error: e.message });
+    throw e;
+  }
 });

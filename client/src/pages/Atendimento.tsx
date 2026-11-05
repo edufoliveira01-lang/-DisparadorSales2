@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ExternalLink, Headset } from "lucide-react";
+import { ExternalLink, Headset, Users } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 
+interface Relatorio { enviados: number; ok: number; semEmail: string[]; resultados: { email: string; ok: boolean; erro?: string }[] }
+
 /** Porta de entrada para o atendimento e vendas por WhatsApp com IA (DeskcommCRM, em outro servidor). */
 export function Atendimento() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
+  const [equipe, setEquipe] = useState<{ carregando: boolean; erro?: string; relatorio?: Relatorio }>({ carregando: false });
   const semEmail = !user.email?.trim();
   const [info, setInfo] = useState<{ disponivel: boolean; url: string | null } | null>(null);
   useEffect(() => { api.get<{ disponivel: boolean; url: string | null }>("/atendimento/info", { fresh: true } as never).then(setInfo).catch(() => setInfo({ disponivel: false, url: null })); }, []);
@@ -27,6 +30,31 @@ export function Atendimento() {
               </div>
             ) : (
               <Button onClick={() => window.open("/api/atendimento/entrar", "_blank", "noopener")}><ExternalLink className="h-4 w-4" /> Abrir o atendimento</Button>
+            )}
+            {can("team.manage") && (
+              <div className="space-y-3 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+                <p className="flex items-center gap-2 text-sm font-semibold text-zinc-800 dark:text-zinc-100"><Users className="h-4 w-4" /> Equipe no atendimento</p>
+                <p className="text-sm text-zinc-600 dark:text-zinc-300">Envia ao atendimento as pessoas ativas que têm e-mail cadastrado, com o papel equivalente (administrador, gestor, atendente ou somente consulta). Repetir é seguro.</p>
+                <Button
+                  disabled={equipe.carregando}
+                  onClick={() => {
+                    setEquipe({ carregando: true });
+                    api.post<Relatorio>("/atendimento/equipe/sincronizar", {})
+                      .then((relatorio) => setEquipe({ carregando: false, relatorio }))
+                      .catch((e: unknown) => setEquipe({ carregando: false, erro: e instanceof Error ? e.message : "Não foi possível sincronizar a equipe." }));
+                  }}
+                >
+                  {equipe.carregando ? "Enviando…" : "Enviar equipe ao atendimento"}
+                </Button>
+                {equipe.erro && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{equipe.erro}</p>}
+                {equipe.relatorio && (
+                  <div role="status" className="space-y-1 text-sm text-zinc-700 dark:text-zinc-200">
+                    <p><b>{equipe.relatorio.ok}</b> de {equipe.relatorio.enviados} pessoas estão no atendimento.</p>
+                    {equipe.relatorio.resultados.filter((r) => !r.ok).map((r) => <p key={r.email} className="text-red-600 dark:text-red-400">{r.email}: {r.erro}</p>)}
+                    {equipe.relatorio.semEmail.length > 0 && <p className="text-amber-700 dark:text-amber-300">Sem e-mail (não enviadas): {equipe.relatorio.semEmail.join(", ")}. Cadastre o e-mail em Equipe e acessos.</p>}
+                  </div>
+                )}
+              </div>
             )}
           </>
         ) : <p className="text-sm text-zinc-600 dark:text-zinc-300">O atendimento não está liberado para este escritório. Fale com o suporte para incluí-lo no plano.</p>}

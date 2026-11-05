@@ -85,3 +85,25 @@ export async function prepararEntrada(db: Cliente, slug: string, email: string):
   if (!vinculo) throw new ErroPonte("Esta pessoa não tem acesso ao atendimento deste escritório.", 403, "sem_acesso");
   return { token_hash: link.tokenHash, org_status: org.status };
 }
+
+export interface MembroPedido { email: string; name?: string; role?: string }
+export interface ResultadoMembro { email: string; ok: boolean; role?: string; erro?: string }
+const PAPEIS = ["viewer", "agent", "manager", "admin"];
+
+/** Coloca pessoas na equipe da empresa no atendimento (cria o usuário sem e-mail de convite se preciso). Falha de uma pessoa não impede as demais. */
+export async function adicionarMembros(db: Cliente, cfg: ConfigPonte, slug: string, membros: MembroPedido[]): Promise<{ slug: string; org_id: string; resultados: ResultadoMembro[] }> {
+  if (!Array.isArray(membros) || membros.length === 0 || membros.length > 100) throw new ErroPonte("Lista de pessoas inválida (de 1 a 100).", 400, "membros_invalidos");
+  const org = await empresaPorSlug(db, slug);
+  const resultados: ResultadoMembro[] = [];
+  for (const m of membros) {
+    const email = String(m?.email || "").trim().toLowerCase();
+    const papel = PAPEIS.includes(String(m?.role)) ? String(m.role) : "agent";
+    if (!EMAIL.test(email)) { resultados.push({ email, ok: false, erro: "E-mail inválido." }); continue; }
+    try {
+      const id = await usuarioDoDono(db, email, typeof m.name === "string" ? m.name.slice(0, 120) : undefined);
+      const v = await db.rpc("fn_accept_team_invite", { p_user: id, p_org: org.id, p_role: papel, p_invited_by: cfg.atorId, p_issued_at: null, p_invited_at: null, p_interface_settings: { preset: "completa" } });
+      resultados.push(v.error ? { email, ok: false, erro: "Não foi possível vincular à empresa." } : { email, ok: true, role: papel });
+    } catch (e) { resultados.push({ email, ok: false, erro: e instanceof ErroPonte ? e.message : "Falha inesperada." }); }
+  }
+  return { slug, org_id: org.id, resultados };
+}

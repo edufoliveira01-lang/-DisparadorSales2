@@ -55,6 +55,14 @@ export function criarAppPainel(deps: DepsPainel) {
     return { token: r.token, status: r.carga.status };
   }));
 
+  // Equipe do escritório no atendimento (chamado pelo sistema do escritório com a chave de licença).
+  const consultasEquipe = criarLimitador(30, 60_000);
+  app.post("/api/v1/atendimento/equipe", rota(async (req, res) => {
+    if (!consultasEquipe(IP(req))) { res.status(429).json({ error: "Muitas chamadas." }); return; }
+    const cab = String(req.headers.authorization || "");
+    return await servico.sincronizarEquipe(cab.startsWith("Bearer ") ? cab.slice(7).trim() : "", req.body?.membros);
+  }));
+
   // ---------- webhook do Asaas ----------
   app.post("/webhooks/asaas", (req, res, next) => {
     try {
