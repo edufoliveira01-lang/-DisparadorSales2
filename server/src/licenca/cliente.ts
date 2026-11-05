@@ -105,6 +105,9 @@ export class ClienteLicenca {
     return { ...e, aviso, modo: "licenciado", entitlements: combinarEntitlements(this.carga.entitlements), plano: this.carga.plano, ultima_verificacao_ok: this.arq.ultimo_contato_ok_em ?? null };
   }
 
+  /** Dados do atendimento enviados pelo painel (null se o plano não inclui o módulo). */
+  atendimento(): NonNullable<CargaLicenca["atendimento"]> | null { return this.carga?.atendimento ?? null; }
+
   iniciar() {
     if (!this.cfg || this.timer) return;
     const ciclo = async () => {

@@ -26,6 +26,9 @@ const AREAS: { title: string; description: string; groups: AccessGroup[] }[] = [
     { title: "Pessoas, processos, arquivos e tarefas", items: [["gestao.view", "Ver pessoas, processos, arquivos, tarefas e indicadores"], ["gestao.manage", "Cadastrar e editar pessoas, processos, arquivos, modelos e tarefas"]] },
     { title: "Financeiro (valores sensíveis)", items: [["financeiro.view", "Ver honorários, contas e fluxo de caixa"], ["financeiro.manage", "Lançar, baixar e estornar valores"]] },
   ] },
+  { title: "Atendimento e vendas", description: "Chat de atendimento por WhatsApp com IA (quando o plano inclui).", groups: [
+    { title: "Atendimento", items: [["atendimento.use", "Abrir o atendimento (precisa ter o mesmo e-mail cadastrado lá)"]] },
+  ] },
   { title: "Administração do sistema", description: "Integrações, equipe e cópias de segurança.", groups: [
     { title: "Configurações e equipe", items: [["integrations.manage", "Configurar integrações"], ["team.manage", "Gerenciar equipe"], ["backup.manage", "Baixar e restaurar backup"]] },
   ] },

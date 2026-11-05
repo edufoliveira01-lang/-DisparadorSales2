@@ -1,6 +1,6 @@
 # DisparaZap — Sales & Associados
 
-Sistema de comunicação com clientes e acompanhamento processual. **Versão 2.71.1.**
+Sistema de comunicação com clientes e acompanhamento processual. **Versão 2.72.0.**
 
 ## Recursos atuais
 

@@ -9,6 +9,7 @@ import { criarAppPainel } from "./app";
 import { garantirAdmin } from "./auth";
 import { gerarParDeChaves } from "../licenca/token";
 import { Provisionador } from "./provisionador";
+import { ClientePonte } from "../atendimento/ponte";
 
 /** Painel de controle do SaaS: planos, escritórios, cobrança (Asaas) e emissão de licenças. */
 async function main() {
@@ -32,7 +33,15 @@ async function main() {
   if (!provedor.configurado()) console.warn("[painel] ASAAS_API_KEY ausente: cobranças automáticas desativadas (use pagamento manual).");
   if (!cfg.asaasWebhookToken) console.warn("[painel] ASAAS_WEBHOOK_TOKEN ausente: o webhook de pagamentos responde 503.");
   const versao = (JSON.parse(fs.readFileSync(path.resolve(__dirname, "../../package.json"), "utf8")) as { version: string }).version;
-  const app = criarAppPainel({ db, cfg, servico: new ServicoPainel(db, cfg, provedor, privada), chavePublicaPem: publica, versao, provisionador: new Provisionador(cfg) });
+  const ponte = cfg.atendimento ? new ClientePonte({ url: cfg.atendimento.url, segredo: cfg.atendimento.segredo }) : null;
+  const servico = new ServicoPainel(db, cfg, provedor, privada, () => new Date(), ponte);
+  const app = criarAppPainel({ db, cfg, servico: servico, chavePublicaPem: publica, versao, provisionador: new Provisionador(cfg) });
+  if (ponte) {
+    console.log("[painel] Atendimento (DeskcommCRM) ligado pela ponte", cfg.atendimento!.url);
+    // Vencimentos mudam com o tempo sem nenhum evento: confere de tempos em tempos e repete o que tiver falhado.
+    setTimeout(() => void servico.reconciliarAtendimento().catch(() => undefined), 20_000).unref();
+    setInterval(() => void servico.reconciliarAtendimento().catch(() => undefined), 15 * 60_000).unref();
+  } else console.log("[painel] Atendimento desligado (defina ATENDIMENTO_PONTE_URL e ATENDIMENTO_SEGREDO para ligar).");
   if (cfg.autoProvisionar) console.log("[painel] Provisionamento automático de escritórios ligado.");
   app.listen(cfg.porta, () => console.log(`[painel] Painel de controle em http://localhost:${cfg.porta}`));
 }

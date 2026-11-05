@@ -50,6 +50,10 @@ export function abrirBancoPainel(arquivo: string): Banco {
   const cols = (db.prepare("PRAGMA table_info(escritorios)").all() as { name: string }[]).map((c) => c.name);
   if (!cols.includes("porta")) db.exec("ALTER TABLE escritorios ADD COLUMN porta INTEGER");
   if (!cols.includes("instancia_em")) db.exec("ALTER TABLE escritorios ADD COLUMN instancia_em TEXT");
+  // Atendimento (DeskcommCRM via ponte): estado da empresa lá — ativo, suspenso ou vazio (nunca provisionado).
+  if (!cols.includes("atendimento_estado")) db.exec("ALTER TABLE escritorios ADD COLUMN atendimento_estado TEXT");
+  if (!cols.includes("atendimento_em")) db.exec("ALTER TABLE escritorios ADD COLUMN atendimento_em TEXT");
+  if (!cols.includes("atendimento_erro")) db.exec("ALTER TABLE escritorios ADD COLUMN atendimento_erro TEXT");
   if (!db.prepare("SELECT id FROM planos LIMIT 1").get())
     db.prepare("INSERT INTO planos(id,nome,preco_centavos,entitlements_json,ativo,criado_em) VALUES ('escritorio','Escritório',0,'{}',1,?)").run(new Date().toISOString());
   return db;

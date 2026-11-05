@@ -23,6 +23,7 @@ import {
   BarChart3,
   Printer,
   Building2,
+  Headset,
 } from "lucide-react";
 import type { Permission } from "@/context/AuthContext";
 export const navigation = [
@@ -104,6 +105,13 @@ export const navigation = [
     description: "Feriados e suspensões dos tribunais",
     icon: CalendarDays,
     group: "configuracoes",
+  },
+  {
+    to: "/atendimento",
+    label: "Atendimento e vendas",
+    description: "Chat de WhatsApp com IA, funil de vendas e atendimento",
+    icon: Headset,
+    group: "comunicacao",
   },
   {
     to: "/gestao",
@@ -200,6 +208,7 @@ export const navigation = [
 ] as const;
 
 export function navigationPermission(to: string): Permission | null {
+  if (to === "/atendimento") return "atendimento.use";
   if (to === "/pericias") return "dashboard.view";
   if (to === "/calendario") return "calendar.view";
   if (to.startsWith("/templates")) return "templates.view";

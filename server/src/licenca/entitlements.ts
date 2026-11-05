@@ -14,6 +14,7 @@ export const ENTITLEMENTS = {
   max_armazenamento_mb: { tipo: "limite", padrao: null, rotulo: "Armazenamento de arquivos (MB)" },
   modulo_gestao: { tipo: "recurso", padrao: true, rotulo: "Módulo de gestão (pessoas, processos, arquivos, tarefas)" },
   modulo_financeiro: { tipo: "recurso", padrao: true, rotulo: "Módulo financeiro e indicadores de receita" },
+  modulo_atendimento: { tipo: "recurso", padrao: false, rotulo: "Atendimento e vendas por WhatsApp com IA (DeskcommCRM)" },
 } as const;
 
 export type ChaveEntitlement = keyof typeof ENTITLEMENTS;

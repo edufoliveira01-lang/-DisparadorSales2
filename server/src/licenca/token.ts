@@ -25,6 +25,8 @@ export interface CargaLicenca {
   valido_ate: string;
   tolerancia_offline_dias: number;
   mensagem?: string | null;
+  /** Entrada direta no atendimento (LexSync/Deskcomm); só vai quando o plano inclui o módulo. A chave vale apenas para este escritório. */
+  atendimento?: { slug: string; url: string; ponte_url: string; chave_sso: string } | null;
 }
 
 export const gerarParDeChaves = () => {

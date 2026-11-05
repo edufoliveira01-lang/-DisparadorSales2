@@ -4,7 +4,9 @@ import type { ConfigPainel } from "./config";
 import { ErroProvedor, type ProvedorCobranca } from "./asaas";
 import { calcularStatus, montarCarga, somarDias, somarMes, hojeIso } from "./status";
 import { assinarLicenca, type CargaLicenca } from "../licenca/token";
-import { EntitlementInvalido, normalizarEntitlements, type Entitlements } from "../licenca/entitlements";
+import { EntitlementInvalido, combinarEntitlements, normalizarEntitlements, type Entitlements } from "../licenca/entitlements";
+import { chaveSso } from "../atendimento/assinatura";
+import type { ClientePonte } from "../atendimento/ponte";
 
 /** Subdomínios que já existem ou não podem ser usados por escritórios (ex.: a instalação atual, disparazap). */
 export const ENDERECOS_RESERVADOS = new Set(["painel", "www", "api", "admin", "app", "mail", "webmail", "disparazap", "smtp", "imap", "pop", "ftp", "ns1", "ns2", "cpanel", "suporte", "status", "licenca", "licencas"]);
@@ -25,6 +27,7 @@ interface LinhaEscritorio {
   id: string; slug: string; nome: string; documento: string | null; email: string; telefone: string | null; plano_id: string;
   entitlements_json: string; status_manual: string | null; teste_ate: string | null; pago_ate: string | null; carencia_dias: number | null;
   asaas_customer_id: string | null; asaas_subscription_id: string | null; link_fatura: string | null;
+  atendimento_estado: string | null; atendimento_em: string | null; atendimento_erro: string | null;
   chave_hash: string; chave_prefixo: string; ultimo_contato_em: string | null; ultima_versao: string | null; ultimo_ip: string | null;
   observacoes: string; criado_em: string; atualizado_em: string;
 }
@@ -37,6 +40,7 @@ export class ServicoPainel {
     private provedor: ProvedorCobranca,
     private chavePrivadaPem: string,
     private relogio: () => Date = () => new Date(),
+    private ponte: ClientePonte | null = null,
   ) {}
 
   // ---------- auditoria ----------
@@ -100,6 +104,7 @@ export class ServicoPainel {
       ...resto, plano_nome: p?.nome ?? l.plano_id, preco_centavos: p?.preco_centavos ?? 0,
       entitlements: JSON.parse(l.entitlements_json) as Entitlements,
       status: st.status, vence_em: st.vence_em, carencia_ate: st.carencia_ate,
+      atendimento_disponivel: Boolean(this.ponte) && this.atendimentoContratado(l),
       endereco: `https://${l.slug}.${this.cfg.baseDomain}`,
     };
   }
@@ -130,6 +135,71 @@ export class ServicoPainel {
     this.registrar(id, evento, { porta, ...detalhe });
   }
   slugDe(id: string): string { return this.linha(id).slug; }
+
+  // ---------- atendimento (DeskcommCRM, por meio da ponte do LexSync) ----------
+  /** O plano (ou o ajuste do escritório) inclui o módulo de atendimento? */
+  private atendimentoContratado(l: LinhaEscritorio): boolean {
+    const plano = this.db.prepare("SELECT entitlements_json FROM planos WHERE id=?").get(l.plano_id) as { entitlements_json: string } | undefined;
+    return combinarEntitlements(normalizarEntitlements(JSON.parse(plano?.entitlements_json || "{}")), normalizarEntitlements(JSON.parse(l.entitlements_json || "{}"))).modulo_atendimento === true;
+  }
+  /** Dados que vão na licença para a entrada direta (a chave vale só para este escritório). */
+  private dadosDoAtendimento(l: LinhaEscritorio) {
+    const a = this.cfg.atendimento;
+    if (!a || !this.atendimentoContratado(l) || l.atendimento_estado !== "ativo") return null;
+    return { slug: l.slug, url: a.urlPublica, ponte_url: a.urlNavegador, chave_sso: chaveSso(a.segredo, l.slug) };
+  }
+  /**
+   * Deixa a empresa do atendimento como o painel manda: ativa quando o plano inclui o módulo e o escritório está em dia
+   * (teste, ativa ou carência); suspensa quando não. Cria a empresa na primeira vez. Seguro de repetir.
+   */
+  async sincronizarAtendimento(id: string) {
+    const l = this.linha(id);
+    if (!this.ponte) throw new ErroPainel("O atendimento não está configurado no painel (ATENDIMENTO_PONTE_URL e ATENDIMENTO_SEGREDO).", 409);
+    const contratado = this.atendimentoContratado(l);
+    const st = calcularStatus(l, this.relogio(), this.cfg.carenciaPadraoDias).status;
+    const queroAtivo = contratado && ["ativa", "teste", "carencia"].includes(st);
+    const agora = agoraIso(this.relogio());
+    const gravar = (estado: string | null, erro: string | null) =>
+      this.db.prepare("UPDATE escritorios SET atendimento_estado=?,atendimento_erro=?,atendimento_em=?,atualizado_em=? WHERE id=?").run(estado, erro, agora, agora, id);
+    try {
+      if (queroAtivo) {
+        if (l.atendimento_estado === null) {
+          const r = await this.ponte.provisionar({ slug: l.slug, display_name: l.nome, owner_email: l.email, owner_name: l.nome, cnpj: l.documento ?? undefined });
+          this.registrar(id, "atendimento_criado", { org_id: r.org_id, novo: r.created });
+        } else if (l.atendimento_estado === "suspenso") {
+          await this.ponte.reativar(l.slug);
+          this.registrar(id, "atendimento_reativado");
+        }
+        gravar("ativo", null);
+      } else if (l.atendimento_estado === "ativo") {
+        await this.ponte.suspender(l.slug, contratado ? `Escritório ${st} no painel de assinaturas` : "Plano sem o módulo de atendimento");
+        this.registrar(id, "atendimento_suspenso", { motivo: contratado ? st : "plano_sem_modulo" });
+        gravar("suspenso", null);
+      }
+    } catch (e) {
+      const msg = (e as Error).message;
+      this.registrar(id, "atendimento_erro", { erro: msg });
+      this.db.prepare("UPDATE escritorios SET atendimento_erro=?,atendimento_em=? WHERE id=?").run(msg, agora, id);
+      throw e instanceof ErroPainel ? e : new ErroPainel(msg, 502);
+    }
+    return this.obterEscritorio(id);
+  }
+  /** Sem esperar nem falhar: usado quando algo muda (plano, pagamento, suspensão). O ciclo periódico repete o que falhar. */
+  private dispararAtendimento(id: string) {
+    if (!this.ponte) return;
+    void this.sincronizarAtendimento(id).catch(() => undefined);
+  }
+  /** Ciclo periódico: acompanha vencimentos (que mudam com o tempo, sem nenhum evento) e repete o que falhou. */
+  async reconciliarAtendimento(): Promise<number> {
+    if (!this.ponte) return 0;
+    let n = 0;
+    for (const l of this.db.prepare("SELECT * FROM escritorios").all() as LinhaEscritorio[]) {
+      if (!this.atendimentoContratado(l) && l.atendimento_estado !== "ativo") continue;
+      try { await this.sincronizarAtendimento(l.id); n++; } catch { /* já registrado no escritório; segue com os outros */ }
+    }
+    return n;
+  }
+
 
   /** Usuário e senha iniciais do administrador do escritório (a senha nunca fica guardada no painel). */
   validarAdminInicial(usuario: unknown, senha: unknown): { adminUsuario: string; adminSenha?: string } {
@@ -167,6 +237,7 @@ export class ServicoPainel {
     this.registrar(id, "escritorio_criado", { slug, plano: plano.id, teste_ate });
     let aviso: string | null = null;
     if (d.cortesia !== true && plano.preco_centavos > 0) aviso = await this.criarCobrancaInterna(id).catch((e) => (e as Error).message);
+    this.dispararAtendimento(id);
     return { escritorio: this.visao(this.linha(id)), chave, aviso };
   }
 
@@ -226,15 +297,17 @@ export class ServicoPainel {
       try { await this.provedor.atualizarValor(atual.asaas_subscription_id, novoPlano.preco_centavos); }
       catch (e) { this.registrar(id, "cobranca_erro", { acao: "atualizar_valor", erro: (e as Error).message }); }
     }
+    if (d.plano_id !== undefined || d.entitlements !== undefined || d.teste_ate !== undefined) this.dispararAtendimento(id);
     return this.obterEscritorio(id);
   }
 
-  suspender(id: string, motivo = "") { this.linha(id); this.db.prepare("UPDATE escritorios SET status_manual='suspensa',atualizado_em=? WHERE id=?").run(agoraIso(this.relogio()), id); this.registrar(id, "suspenso", { motivo }); return this.obterEscritorio(id); }
-  reativar(id: string) { this.linha(id); this.db.prepare("UPDATE escritorios SET status_manual=NULL,atualizado_em=? WHERE id=?").run(agoraIso(this.relogio()), id); this.registrar(id, "reativado"); return this.obterEscritorio(id); }
+  suspender(id: string, motivo = "") { this.linha(id); this.db.prepare("UPDATE escritorios SET status_manual='suspensa',atualizado_em=? WHERE id=?").run(agoraIso(this.relogio()), id); this.registrar(id, "suspenso", { motivo }); this.dispararAtendimento(id); return this.obterEscritorio(id); }
+  reativar(id: string) { this.linha(id); this.db.prepare("UPDATE escritorios SET status_manual=NULL,atualizado_em=? WHERE id=?").run(agoraIso(this.relogio()), id); this.registrar(id, "reativado"); this.dispararAtendimento(id); return this.obterEscritorio(id); }
   async cancelar(id: string) {
     const l = this.linha(id);
     this.db.prepare("UPDATE escritorios SET status_manual='cancelada',atualizado_em=? WHERE id=?").run(agoraIso(this.relogio()), id);
     this.registrar(id, "cancelado");
+    this.dispararAtendimento(id);
     if (l.asaas_subscription_id && this.provedor.configurado()) {
       try { await this.provedor.cancelarAssinatura(l.asaas_subscription_id); }
       catch (e) { this.registrar(id, "cobranca_erro", { acao: "cancelar", erro: (e as Error).message }); }
@@ -247,6 +320,7 @@ export class ServicoPainel {
     if (!dataValida(ate)) throw new ErroPainel("Informe a data até a qual o uso está pago (AAAA-MM-DD).");
     this.db.prepare("UPDATE escritorios SET pago_ate=?,atualizado_em=? WHERE id=?").run(ate, agoraIso(this.relogio()), id);
     this.registrar(id, "pagamento_manual", { ate, observacao: texto(observacao, 300) });
+    this.dispararAtendimento(id);
     return this.obterEscritorio(id);
   }
   rotacionarChave(id: string) {
@@ -325,6 +399,8 @@ export class ServicoPainel {
     const plano = this.db.prepare("SELECT * FROM planos WHERE id=?").get(l.plano_id) as LinhaPlano;
     const carga = montarCarga({ ...l, entitlements_plano: plano.entitlements_json, entitlements_escritorio: l.entitlements_json }, agora,
       { carenciaPadraoDias: this.cfg.carenciaPadraoDias, validadeHoras: this.cfg.validadeLicencaHoras, toleranciaOfflineDias: this.cfg.toleranciaOfflineDias });
+    const atendimento = this.dadosDoAtendimento(l);
+    if (atendimento) carga.atendimento = atendimento;
     return { token: assinarLicenca(carga, this.chavePrivadaPem), carga };
   }
 
@@ -360,11 +436,13 @@ export class ServicoPainel {
       const novo = somarMes(p.dueDate);
       if (!l.pago_ate || novo > l.pago_ate) this.db.prepare("UPDATE escritorios SET pago_ate=?,atualizado_em=? WHERE id=?").run(novo, agora, l.id);
       this.registrar(l.id, "pagamento_recebido", { pagamento: p.id, vencimento: p.dueDate, pago_ate: novo });
+      this.dispararAtendimento(l.id);
     } else if (evento === "PAYMENT_OVERDUE") {
       this.registrar(l.id, "pagamento_vencido", { pagamento: p.id, vencimento: p.dueDate });
     } else if (evento === "PAYMENT_REFUNDED" || evento === "PAYMENT_CHARGEBACK_REQUESTED" || evento === "PAYMENT_CHARGEBACK_DISPUTE") {
       this.db.prepare("UPDATE escritorios SET status_manual='suspensa',atualizado_em=? WHERE id=?").run(agora, l.id);
       this.registrar(l.id, "suspenso_por_estorno", { pagamento: p.id, evento });
+      this.dispararAtendimento(l.id);
     } else {
       this.registrar(l.id, `asaas_${evento.toLowerCase()}`, { pagamento: p.id });
     }

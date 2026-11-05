@@ -90,6 +90,7 @@ export function criarAppPainel(deps: DepsPainel) {
     cobranca_configurada: Boolean(cfg.asaasApiKey),
     webhook_configurado: Boolean(cfg.asaasWebhookToken),
     provisionamento_automatico: Boolean(prov),
+    atendimento_configurado: Boolean(cfg.atendimento),
     webhook_url: cfg.urlPublica ? `${cfg.urlPublica}/webhooks/asaas` : null,
     carencia_padrao_dias: cfg.carenciaPadraoDias,
     teste_padrao_dias: cfg.testePadraoDias,
@@ -124,6 +125,7 @@ export function criarAppPainel(deps: DepsPainel) {
   admin.put("/escritorios/:id", rota((req) => servico.atualizarEscritorio(String(req.params.id), req.body || {})));
   admin.post("/escritorios/:id/suspender", rota((req) => servico.suspender(String(req.params.id), String(req.body?.motivo || ""))));
   admin.post("/escritorios/:id/reativar", rota((req) => servico.reativar(String(req.params.id))));
+  admin.post("/escritorios/:id/atendimento/sincronizar", rota((req) => servico.sincronizarAtendimento(String(req.params.id))));
   admin.post("/escritorios/:id/cancelar", rota((req) => servico.cancelar(String(req.params.id))));
   admin.post("/escritorios/:id/pagamento-manual", rota((req) => servico.registrarPagamentoManual(String(req.params.id), req.body?.ate, String(req.body?.observacao || ""))));
   admin.post("/escritorios/:id/cobranca", rota((req) => servico.criarCobranca(String(req.params.id))));

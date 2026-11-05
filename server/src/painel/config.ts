@@ -1,4 +1,5 @@
 import path from "node:path";
+import { lerConfigPonte } from "../atendimento/ponte";
 
 export interface ConfigPainel {
   porta: number;
@@ -27,6 +28,8 @@ export interface ConfigPainel {
   licencaUrlInterna: string;
   /** Nome do processo do próprio painel no PM2 (para o botão "Reiniciar"). */
   pm2NomePainel: string;
+  /** Ponte do atendimento (LexSync/DeskcommCRM). Ausente = módulo de atendimento desligado no painel. */
+  atendimento?: { url: string; segredo: string; urlPublica: string; urlNavegador: string } | null;
 }
 
 const inteiro = (v: string | undefined, padrao: number, min = 0, max = 3650) => {
@@ -58,6 +61,7 @@ export function lerConfigPainel(env: NodeJS.ProcessEnv = process.env): ConfigPai
     nginxBin: env.PAINEL_NGINX_BIN || "/usr/sbin/nginx",
     systemctlBin: env.PAINEL_SYSTEMCTL_BIN || "/usr/bin/systemctl",
     portaInicial: inteiro(env.PAINEL_PORTA_INICIAL, 3401, 1024, 65000),
+    atendimento: (() => { const a = lerConfigPonte(env); return a ? { ...a, urlNavegador: (env.ATENDIMENTO_PONTE_URL_PUBLICA || a.url).trim().replace(/\/+$/, "") } : null; })(),
     pm2NomePainel: /^[A-Za-z0-9._-]{1,60}$/.test(env.PAINEL_PM2_NOME || "") ? (env.PAINEL_PM2_NOME as string) : "dz-painel",
     licencaUrlInterna: (env.PAINEL_LICENCA_URL_INTERNA || (env.PAINEL_AUTO_PROVISIONAR === "1" ? `http://127.0.0.1:${inteiro(env.PAINEL_PORT, 3340, 1, 65535)}` : "")).replace(/\/+$/, ""),
   };

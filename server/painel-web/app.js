@@ -175,6 +175,8 @@ async function abrirDetalhe(id) {
       h('div', { class: 'tile' }, h('span', {}, 'Vencimento (fim do período pago/teste)'), h('b', { style: 'font-size:18px' }, dia(e.vence_em))),
       h('div', { class: 'tile' }, h('span', {}, 'Último contato da instância'), h('b', { style: 'font-size:18px' }, quando(e.ultimo_contato_em)), h('span', {}, e.ultima_versao ? 'versão ' + e.ultima_versao : ''))),
     e.link_fatura ? h('p', {}, 'Fatura: ', h('a', { href: e.link_fatura, target: '_blank', rel: 'noopener noreferrer' }, 'abrir link de pagamento')) : null,
+    state.config.atendimento_configurado ? h('div', { class: 'sec' }, 'Atendimento (WhatsApp com IA)') : null,
+    state.config.atendimento_configurado ? secaoAtendimento(e, id, recarregar) : null,
     state.config.provisionamento_automatico ? h('div', { class: 'sec' }, 'Sistema no servidor') : null,
     state.config.provisionamento_automatico ? secaoInstancia(id, recarregar) : null,
     h('div', { class: 'sec' }, 'Ações'),
@@ -194,6 +196,18 @@ async function abrirDetalhe(id) {
     h('div', { class: 'sec' }, 'Histórico'),
     h('div', { class: 'card' }, h('table', {}, h('tbody', {}, e.eventos.map((ev) => h('tr', {}, h('td', { class: 'mut sm' }, quando(ev.criado_em)), h('td', {}, ev.tipo.replaceAll('_', ' '))))))));
   const painel = modal(e.nome, conteudo, { lateral: true });
+}
+
+/** Estado do escritório no atendimento (DeskcommCRM): o painel cria, suspende e reativa sozinho conforme o plano e o pagamento. */
+function secaoAtendimento(e, id, recarregar) {
+  const rotulo = e.atendimento_estado === 'ativo' ? 'Ativo' : e.atendimento_estado === 'suspenso' ? 'Suspenso' : 'Ainda não criado';
+  const erro = e.atendimento_erro ? h('div', { class: 'note err' }, 'Última tentativa falhou: ' + e.atendimento_erro) : null;
+  const botao = h('button', { class: 'pri', onclick: async (ev) => { ev.target.disabled = true; try { await api('POST', `/escritorios/${id}/atendimento/sincronizar`, {}); aviso('Atendimento sincronizado.'); await recarregar(); } catch (x) { aviso(x.message); } finally { ev.target.disabled = false; } } }, 'Sincronizar agora');
+  return h('div', {},
+    h('div', { class: 'row2' }, h('span', { class: 'badge b-' + (e.atendimento_estado === 'ativo' ? 'ativa' : 'suspensa') }, rotulo),
+      h('span', { class: 'mut' }, e.atendimento_disponivel ? 'O plano inclui o atendimento; ele é criado e mantido em dia automaticamente.' : 'O plano deste escritório não inclui o módulo de atendimento (ligue “Atendimento e vendas” em Limites do plano ou do escritório).'),
+      e.atendimento_disponivel || e.atendimento_estado ? botao : null),
+    erro);
 }
 
 function secaoInstancia(id, recarregar) {
