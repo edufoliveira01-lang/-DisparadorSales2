@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { mensagemSeExcederLimite } from "../licenca/cliente";
 import { db } from "../db";
+import { agendarSincronizacaoDaEquipe, lembrarEmailAntigo } from "../atendimento/equipe";
 import { hashPassword, getUserById, type User } from "../services/authService";
 import {
   auditAccess, effectivePermissions, invalidateUserSessions, isRole,
@@ -62,6 +63,7 @@ teamRouter.post("/", (req, res) => {
         JSON.stringify(input.permissions), input.active ? 1 : 0, hashPassword(password));
     const user = getUserById(Number(info.lastInsertRowid))!;
     auditAccess("pessoa_criada", req.accessUser!.id, user.id, { perfil: user.role, permissoes: input.permissions });
+    agendarSincronizacaoDaEquipe();
     res.status(201).json(publicUser(user));
   } catch (error) {
     res.status(error instanceof Error && error.message.includes("UNIQUE") ? 409 : 400).json({ error: error instanceof Error && error.message.includes("UNIQUE") ? "Este usuário já está em uso." : (error as Error).message });
@@ -91,6 +93,8 @@ teamRouter.put("/:id", (req, res) => {
       || JSON.stringify(effectivePermissions(existing)) !== JSON.stringify(input.permissions);
     if (changed) { invalidateUserSessions(id); disconnectUserSockets(id); }
     auditAccess("pessoa_atualizada", req.accessUser!.id, id, { perfil: input.role, ativo: input.active, permissoes: input.permissions });
+    if ((existing.email || "").trim().toLowerCase() !== (input.email || "").trim().toLowerCase()) lembrarEmailAntigo(existing.email); // o e-mail antigo perde o acesso no atendimento
+    agendarSincronizacaoDaEquipe();
     res.json(publicUser(getUserById(id)!));
   } catch (error) {
     res.status(error instanceof Error && error.message.includes("UNIQUE") ? 409 : 400).json({ error: error instanceof Error && error.message.includes("UNIQUE") ? "Este usuário já está em uso." : (error as Error).message });

@@ -27,7 +27,10 @@ export class ClientePonte {
   provisionar(d: DadosEmpresaAtendimento) { return this.chamar<{ org_id: string; slug: string; created: boolean }>("POST", "/v1/offices", d); }
   status(slug: string) { return this.chamar<{ org_id: string; status: string }>("GET", `/v1/offices/${encodeURIComponent(slug)}`); }
   suspender(slug: string, motivo: string) { return this.chamar<{ changed?: boolean }>("POST", `/v1/offices/${encodeURIComponent(slug)}/suspend`, { reason: motivo }); }
-  membros(slug: string, members: { email: string; name?: string; role?: string }[]) { return this.chamar<{ slug: string; resultados: { email: string; ok: boolean; role?: string; erro?: string }[] }>("POST", `/v1/offices/${encodeURIComponent(slug)}/members`, { members }); }
+  membros(slug: string, members: { email: string; name?: string; role?: string }[], remove: string[] = []) {
+    type R = { email: string; ok: boolean; role?: string; erro?: string; removido?: boolean };
+    return this.chamar<{ slug: string; resultados: R[]; removidos: R[] }>("POST", `/v1/offices/${encodeURIComponent(slug)}/members`, { members, remove });
+  }
   reativar(slug: string) { return this.chamar<{ changed?: boolean }>("POST", `/v1/offices/${encodeURIComponent(slug)}/reactivate`, {}); }
 }
 

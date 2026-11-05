@@ -60,7 +60,7 @@ export function criarAppPainel(deps: DepsPainel) {
   app.post("/api/v1/atendimento/equipe", rota(async (req, res) => {
     if (!consultasEquipe(IP(req))) { res.status(429).json({ error: "Muitas chamadas." }); return; }
     const cab = String(req.headers.authorization || "");
-    return await servico.sincronizarEquipe(cab.startsWith("Bearer ") ? cab.slice(7).trim() : "", req.body?.membros);
+    return await servico.sincronizarEquipe(cab.startsWith("Bearer ") ? cab.slice(7).trim() : "", req.body?.membros, req.body?.remover);
   }));
 
   // ---------- webhook do Asaas ----------

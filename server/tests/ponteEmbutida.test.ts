@@ -16,7 +16,7 @@ let agora = 1_800_000_000;
 /** Banco falso: guarda as chamadas e devolve o que cada teste configurar. */
 function falso() {
   const c = { rpc: [] as [string, any][], criarUsuario: [] as string[], gerarLink: [] as string[] };
-  const e = { orgs: {} as Record<string, any>, usuarioExiste: false, membros: new Set<string>(), rpcErro: {} as Record<string, any> };
+  const e = { orgs: {} as Record<string, any>, usuarioExiste: false, membros: new Set<string>(), rpcErro: {} as Record<string, any>, vinculos: [] as { id: string; user_id: string; role: string; revoked_at: string | null }[], emails: {} as Record<string, string>, atualizacoes: [] as any[] };
   const db: BancoAtendimento = {
     async rpc(nome, args: any) {
       c.rpc.push([nome, args]);
@@ -31,6 +31,17 @@ function falso() {
       if (tabela === "organizations") return { data: e.orgs[f.slug] ?? null, error: null };
       return { data: e.membros.has(`${f.organization_id}:${f.user_id}`) ? { user_id: f.user_id } : null, error: null };
     },
+    async lista(tabela, _col, f) {
+      if (tabela !== "user_organizations") return { data: [], error: null };
+      return { data: e.vinculos.filter((v) => f.revoked_at !== "is.null" || v.revoked_at === null).map(({ id, user_id, role }) => ({ id, user_id, role })), error: null };
+    },
+    async atualizar(tabela, f, valores) {
+      e.atualizacoes.push([tabela, f, valores]);
+      const alvo = e.vinculos.find((v) => `eq.${v.id}` === f.id && v.revoked_at === null);
+      if (alvo) alvo.revoked_at = String(valores.revoked_at);
+      return { count: alvo ? 1 : 0, error: null };
+    },
+    async emailDoUsuario(id) { return { email: e.emails[id] ?? null, error: null }; },
     async criarUsuario(email) { c.criarUsuario.push(email); return e.usuarioExiste ? { id: null, error: { code: "email_exists", status: 422, message: "exists" } } : { id: DONO, error: null }; },
     async gerarLink(email) { c.gerarLink.push(email); return { userId: DONO, tokenHash: "hash-de-teste", error: null }; },
   };
@@ -137,6 +148,29 @@ describe("equipe da empresa no atendimento", () => {
     f.e.rpcErro.fn_accept_team_invite = { code: "42501" };
     expect((await req("POST", "/v1/offices/alfa/members", { members: [{ email: "x@alfa.com.br" }] })).json.resultados[0]).toMatchObject({ ok: false });
   });
+  it("revoga o acesso de quem saiu, mantém o último administrador e trata quem já estava fora", async () => {
+    const f = falso(); const { req } = await subir(f.db);
+    await req("POST", "/v1/offices", { slug: "alfa", display_name: "Alfa", owner_email: "dono@alfa.com.br" });
+    f.e.vinculos.push({ id: "v1", user_id: "u1", role: "admin", revoked_at: null }, { id: "v2", user_id: "u2", role: "agent", revoked_at: null }, { id: "v3", user_id: "u3", role: "agent", revoked_at: "2026-01-01" });
+    f.e.emails = { u1: "Dono@Alfa.com.br", u2: "ana@alfa.com.br", u3: "velho@alfa.com.br" };
+    const r = await req("POST", "/v1/offices/alfa/members", { remove: ["ANA@alfa.com.br", "dono@alfa.com.br", "velho@alfa.com.br", "nunca@alfa.com.br", "sem-arroba"] });
+    expect(r.status).toBe(200);
+    expect(r.json.removidos).toEqual([
+      { email: "ana@alfa.com.br", ok: true, removido: true },
+      { email: "dono@alfa.com.br", ok: false, erro: "É o último administrador da empresa; o acesso foi mantido." },
+      { email: "velho@alfa.com.br", ok: true, removido: false },
+      { email: "nunca@alfa.com.br", ok: true, removido: false },
+      { email: "sem-arroba", ok: false, erro: "E-mail inválido." },
+    ]);
+    expect(f.e.atualizacoes.length).toBe(1);
+    expect(f.e.atualizacoes[0][1]).toEqual({ id: "eq.v2", revoked_at: "is.null" });
+    expect(f.e.vinculos.find((v) => v.id === "v2")!.revoked_at).not.toBeNull();
+    expect(f.e.vinculos.find((v) => v.id === "v1")!.revoked_at).toBeNull();
+    // adicionar e remover na mesma chamada: o administrador novo entra antes da saída do antigo
+    const mista = await req("POST", "/v1/offices/alfa/members", { members: [{ email: "nova@alfa.com.br", role: "admin" }], remove: ["inexistente@alfa.com.br"] });
+    expect(mista.json.resultados[0]).toMatchObject({ email: "nova@alfa.com.br", ok: true });
+    expect(mista.json.removidos[0]).toMatchObject({ email: "inexistente@alfa.com.br", ok: true });
+  });
   it("valida a lista e a empresa", async () => {
     const f = falso(); const { req } = await subir(f.db);
     expect((await req("POST", "/v1/offices/naoexiste/members", { members: [{ email: "a@b.com" }] })).status).toBe(404);
@@ -154,6 +188,9 @@ describe("acesso ao Supabase por fetch", () => {
       chamadas.push({ url, init });
       if (url.includes("/rpc/fn_ok")) return resp({ id: "o1" });
       if (url.includes("/rpc/fn_erro")) return resp({ code: "23505", message: "duplicado" }, 409);
+      if (init.method === "PATCH") return resp([{ id: "v2" }]);
+      if (url.includes("/auth/v1/admin/users/u2")) return resp({ id: "u2", email: "ana@alfa.com.br" });
+      if (url.includes("/rest/v1/user_organizations?select=id%2Cuser_id")) return resp([{ id: "v2", user_id: "u2", role: "agent" }]);
       if (url.includes("/rest/v1/organizations")) return resp([{ id: "o1", status: "active" }]);
       if (url.includes("/rest/v1/user_organizations")) return resp([]);
       if (url.includes("/auth/v1/admin/users")) return resp({ error_code: "email_exists", msg: "já existe" }, 422);
@@ -167,6 +204,12 @@ describe("acesso ao Supabase por fetch", () => {
     expect((await db.uma("user_organizations", "user_id", { user_id: "u" })).data).toBeNull();
     expect((await db.criarUsuario("a@b.com")).error).toMatchObject({ code: "email_exists", status: 422 });
     expect(await db.gerarLink("a@b.com")).toEqual({ userId: DONO, tokenHash: "abc", error: null });
+    expect((await db.lista("user_organizations", "id,user_id,role", { organization_id: "eq.o1", revoked_at: "is.null" })).data).toEqual([{ id: "v2", user_id: "u2", role: "agent" }]);
+    expect(await db.emailDoUsuario("u2")).toEqual({ email: "ana@alfa.com.br", error: null });
+    expect(await db.atualizar("user_organizations", { id: "eq.v2", revoked_at: "is.null" }, { revoked_at: "x" })).toEqual({ count: 1, error: null });
+    const patch = chamadas.find((c) => c.init.method === "PATCH")!;
+    expect(patch.url).toBe("https://p.supabase.co/rest/v1/user_organizations?id=eq.v2&revoked_at=is.null");
+    expect(patch.init.headers.Prefer).toBe("return=representation");
     expect(chamadas[0].url).toBe("https://p.supabase.co/rest/v1/rpc/fn_ok");
     expect(chamadas[0].init.headers).toMatchObject({ apikey: "CHAVE", Authorization: "Bearer CHAVE" });
     expect(chamadas[2].url).toBe("https://p.supabase.co/rest/v1/organizations?select=id%2Cstatus&limit=1&slug=eq.alfa");

@@ -8,6 +8,7 @@ import http from "node:http";
 import { djenRouter } from "./routes/djen";
 import { gestaoRouter } from "./routes/gestao";
 import { atendimentoRouter } from "./routes/atendimento";
+import { iniciarSincronizacaoPeriodicaDaEquipe } from "./atendimento/equipe";
 import { iniciarMonitorDjen, pararMonitorDjen } from "./services/djen/sync";
 import { cardsRouter } from "./routes/cards";
 import { authRouter } from "./routes/auth";
@@ -102,6 +103,7 @@ const port = Number(process.env.PORT) || 3333;
 httpServer.listen(port, () => {
   console.log(`Servidor do Disparador de Perícias rodando em http://localhost:${port}`);
   try { licenca().iniciar(); } catch (error) { console.error("[Licença]", (error as Error).message); }
+  try { iniciarSincronizacaoPeriodicaDaEquipe(); } catch (error) { console.error("[Atendimento]", (error as Error).message); }
   try {
     const remarcacoesCorrigidas = reconciliarRemarcacoesAntigas();
     if (remarcacoesCorrigidas > 0) {

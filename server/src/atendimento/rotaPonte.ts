@@ -1,7 +1,7 @@
 import express, { type Request, type Response, type Router } from "express";
 import { lerTokenSso, verificarRequisicao } from "./assinatura";
 import type { BancoAtendimento } from "./banco";
-import { ErroPonte, adicionarMembros, prepararEntrada, provisionarEmpresa, reativarEmpresa, statusDaEmpresa, suspenderEmpresa } from "./ponteLocal";
+import { ErroPonte, adicionarMembros, prepararEntrada, provisionarEmpresa, reativarEmpresa, revogarMembros, statusDaEmpresa, suspenderEmpresa, type ResultadoMembro } from "./ponteLocal";
 
 /** Configuração da ponte embutida no painel (variáveis ATENDIMENTO_*). */
 export interface ConfigPonteInterna { supabaseUrl: string; chaveServico: string; atorId: string; urlDeskcomm: string; segredo: string }
@@ -56,7 +56,14 @@ export function criarRotaPonte(db: BancoAtendimento, cfg: ConfigPonteInterna, ag
       const slug = rota[2] || "";
       if (metodo === "GET" && rota.length === 3) return res.json(await statusDaEmpresa(db, slug));
       if (metodo === "POST" && rota[3] === "suspend") return res.json(await suspenderEmpresa(db, ator, slug, String(dados.reason ?? "")));
-      if (metodo === "POST" && rota[3] === "members") return res.json(await adicionarMembros(db, ator, slug, dados.members as never));
+      if (metodo === "POST" && rota[3] === "members") {
+        const adicionar = Array.isArray(dados.members) && dados.members.length > 0, remover = Array.isArray(dados.remove) && dados.remove.length > 0;
+        if (!adicionar && !remover) throw new ErroPonte("Informe pessoas para adicionar (members) ou remover (remove).", 400, "membros_invalidos");
+        const saida: { slug: string; org_id?: string; resultados: ResultadoMembro[]; removidos: ResultadoMembro[] } = { slug, resultados: [], removidos: [] };
+        if (adicionar) { const r = await adicionarMembros(db, ator, slug, dados.members as never); saida.org_id = r.org_id; saida.resultados = r.resultados; }
+        if (remover) saida.removidos = (await revogarMembros(db, ator, slug, dados.remove as string[])).resultados; // depois de adicionar: nunca deixa a empresa sem administrador
+        return res.json(saida);
+      }
       if (metodo === "POST" && rota[3] === "reactivate") return res.json(await reativarEmpresa(db, ator, slug));
       return res.status(404).json({ error: "Não encontrado." });
     } catch (e) {

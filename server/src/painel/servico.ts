@@ -390,15 +390,17 @@ export class ServicoPainel {
   }
 
   /** Equipe do escritório no atendimento: o sistema do escritório (identificado pela chave de licença) envia as pessoas; o painel repassa à ponte. */
-  async sincronizarEquipe(chaveBruta: string, membros: unknown): Promise<{ slug: string; resultados: { email: string; ok: boolean; role?: string; erro?: string }[] }> {
+  async sincronizarEquipe(chaveBruta: string, membros: unknown, remover: unknown = []): Promise<{ slug: string; resultados: { email: string; ok: boolean; role?: string; erro?: string }[]; removidos: { email: string; ok: boolean; erro?: string; removido?: boolean }[] }> {
     if (typeof chaveBruta !== "string" || chaveBruta.length < 20 || chaveBruta.length > 100) throw new ErroPainel("Licença inválida.", 401);
     const l = this.db.prepare("SELECT * FROM escritorios WHERE chave_hash=?").get(sha256(chaveBruta)) as LinhaEscritorio | undefined;
     if (!l) throw new ErroPainel("Licença inválida.", 401);
     if (!this.ponte) throw new ErroPainel("O atendimento não está configurado no painel.", 409);
     if (!this.atendimentoContratado(l) || l.atendimento_estado !== "ativo") throw new ErroPainel("O atendimento não está ativo para este escritório.", 409);
-    if (!Array.isArray(membros) || membros.length === 0 || membros.length > 100) throw new ErroPainel("Lista de pessoas inválida (de 1 a 100).");
-    const lista = membros.map((m) => ({ email: texto((m as { email?: unknown })?.email, 200), name: texto((m as { name?: unknown })?.name, 120), role: texto((m as { role?: unknown })?.role, 20) }));
-    try { return await this.ponte.membros(l.slug, lista); }
+    const add = Array.isArray(membros) ? membros : [], rem = Array.isArray(remover) ? remover : [];
+    if ((!Array.isArray(membros) && membros !== undefined) || (!add.length && !rem.length) || add.length > 100 || rem.length > 100) throw new ErroPainel("Lista de pessoas inválida (até 100 por vez).");
+    const lista = add.map((m) => ({ email: texto((m as { email?: unknown })?.email, 200), name: texto((m as { name?: unknown })?.name, 120), role: texto((m as { role?: unknown })?.role, 20) }));
+    const saem = rem.map((e) => texto(e, 200)).filter(Boolean);
+    try { return await this.ponte.membros(l.slug, lista, saem); }
     catch (e) { if (e instanceof ErroPonteAtendimento) throw new ErroPainel(e.message, 502); throw e; }
   }
 

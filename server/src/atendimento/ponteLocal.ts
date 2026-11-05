@@ -87,7 +87,7 @@ export async function prepararEntrada(db: Cliente, slug: string, email: string):
 }
 
 export interface MembroPedido { email: string; name?: string; role?: string }
-export interface ResultadoMembro { email: string; ok: boolean; role?: string; erro?: string }
+export interface ResultadoMembro { email: string; ok: boolean; role?: string; erro?: string; removido?: boolean }
 const PAPEIS = ["viewer", "agent", "manager", "admin"];
 
 /** Coloca pessoas na equipe da empresa no atendimento (cria o usuário sem e-mail de convite se preciso). Falha de uma pessoa não impede as demais. */
@@ -106,4 +106,33 @@ export async function adicionarMembros(db: Cliente, cfg: ConfigPonte, slug: stri
     } catch (e) { resultados.push({ email, ok: false, erro: e instanceof ErroPonte ? e.message : "Falha inesperada." }); }
   }
   return { slug, org_id: org.id, resultados };
+}
+
+/**
+ * Tira o acesso de pessoas à empresa (marca o vínculo como revogado, como a tela de equipe do próprio DeskcommCRM faz).
+ * Nunca revoga o último administrador. Quem já está sem acesso conta como resolvido.
+ */
+export async function revogarMembros(db: Cliente, _cfg: ConfigPonte, slug: string, emails: string[]): Promise<{ slug: string; resultados: ResultadoMembro[] }> {
+  if (!Array.isArray(emails) || emails.length === 0 || emails.length > 100) throw new ErroPonte("Lista de pessoas inválida (de 1 a 100).", 400, "membros_invalidos");
+  const org = await empresaPorSlug(db, slug);
+  const alvos = [...new Set(emails.map((e) => String(e || "").trim().toLowerCase()))];
+  const { data, error } = await db.lista("user_organizations", "id,user_id,role", { organization_id: `eq.${org.id}`, revoked_at: "is.null" });
+  if (error) throw new ErroPonte("Não foi possível consultar a equipe da empresa.", 502, "consulta_falhou");
+  const ativos = data.map((v) => ({ id: String(v.id), user_id: String(v.user_id), role: String(v.role) }));
+  const emailDe = new Map<string, string>();
+  for (const a of ativos) { const r = await db.emailDoUsuario(a.user_id); if (r.email) emailDe.set(a.user_id, r.email.trim().toLowerCase()); }
+  let admins = ativos.filter((a) => a.role === "admin").length;
+  const resultados: ResultadoMembro[] = [];
+  for (const email of alvos) {
+    if (!EMAIL.test(email)) { resultados.push({ email, ok: false, erro: "E-mail inválido." }); continue; }
+    const v = ativos.find((a) => emailDe.get(a.user_id) === email);
+    if (!v) { resultados.push({ email, ok: true, removido: false }); continue; } // já estava sem acesso
+    if (v.role === "admin" && admins <= 1) { resultados.push({ email, ok: false, erro: "É o último administrador da empresa; o acesso foi mantido." }); continue; }
+    const agora = new Date().toISOString();
+    const r = await db.atualizar("user_organizations", { id: `eq.${v.id}`, revoked_at: "is.null" }, { revoked_at: agora, updated_at: agora });
+    if (r.error) { resultados.push({ email, ok: false, erro: "Não foi possível revogar o acesso." }); continue; }
+    if (v.role === "admin") admins--;
+    resultados.push({ email, ok: true, removido: true });
+  }
+  return { slug, resultados };
 }
