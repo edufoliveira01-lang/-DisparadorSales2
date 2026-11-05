@@ -9,7 +9,7 @@ import { chaveSso } from "../atendimento/assinatura";
 import type { ClientePonte } from "../atendimento/ponte";
 
 /** Subdomínios que já existem ou não podem ser usados por escritórios (ex.: a instalação atual, disparazap). */
-export const ENDERECOS_RESERVADOS = new Set(["painel", "www", "api", "admin", "app", "mail", "webmail", "disparazap", "smtp", "imap", "pop", "ftp", "ns1", "ns2", "cpanel", "suporte", "status", "licenca", "licencas"]);
+export const ENDERECOS_RESERVADOS = new Set(["painel", "atendimento", "ponte-atendimento", "www", "api", "admin", "app", "mail", "webmail", "disparazap", "smtp", "imap", "pop", "ftp", "ns1", "ns2", "cpanel", "suporte", "status", "licenca", "licencas"]);
 
 export class ErroPainel extends Error {
   constructor(mensagem: string, public status = 400) { super(mensagem); }
