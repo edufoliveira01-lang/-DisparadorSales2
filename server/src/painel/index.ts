@@ -10,6 +10,8 @@ import { garantirAdmin } from "./auth";
 import { gerarParDeChaves } from "../licenca/token";
 import { Provisionador } from "./provisionador";
 import { ClientePonte } from "../atendimento/ponte";
+import { bancoSupabase } from "../atendimento/banco";
+import { criarRotaPonte, lerConfigPonteInterna } from "../atendimento/rotaPonte";
 
 /** Painel de controle do SaaS: planos, escritórios, cobrança (Asaas) e emissão de licenças. */
 async function main() {
@@ -35,7 +37,11 @@ async function main() {
   const versao = (JSON.parse(fs.readFileSync(path.resolve(__dirname, "../../package.json"), "utf8")) as { version: string }).version;
   const ponte = cfg.atendimento ? new ClientePonte({ url: cfg.atendimento.url, segredo: cfg.atendimento.segredo }) : null;
   const servico = new ServicoPainel(db, cfg, provedor, privada, () => new Date(), ponte);
-  const app = criarAppPainel({ db, cfg, servico: servico, chavePublicaPem: publica, versao, provisionador: new Provisionador(cfg) });
+  let pi: ReturnType<typeof lerConfigPonteInterna> = null;
+  try { pi = lerConfigPonteInterna(); } catch (e) { console.error("[painel] Ponte do atendimento NÃO ligada:", (e as Error).message); }
+  const rotaPonte = pi ? criarRotaPonte(bancoSupabase(pi.supabaseUrl, pi.chaveServico), pi) : undefined;
+  if (rotaPonte) console.log("[painel] Ponte do atendimento embutida ligada em /ponte");
+  const app = criarAppPainel({ db, cfg, servico: servico, chavePublicaPem: publica, versao, provisionador: new Provisionador(cfg), ponte: rotaPonte });
   if (ponte) {
     console.log("[painel] Atendimento (DeskcommCRM) ligado pela ponte", cfg.atendimento!.url);
     // Vencimentos mudam com o tempo sem nenhum evento: confere de tempos em tempos e repete o que tiver falhado.

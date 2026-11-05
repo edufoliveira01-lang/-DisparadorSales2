@@ -11,7 +11,7 @@ import { ErroProvisionamento, type Provisionador } from "./provisionador";
 const COOKIE = "painel_sessao";
 const IP = (req: Request) => (req.ip || req.socket.remoteAddress || "").replace(/^::ffff:/, "");
 
-export interface DepsPainel { db: Banco; cfg: ConfigPainel; servico: ServicoPainel; chavePublicaPem: string; versao: string; webDir?: string; provisionador?: Provisionador }
+export interface DepsPainel { db: Banco; cfg: ConfigPainel; servico: ServicoPainel; chavePublicaPem: string; versao: string; webDir?: string; provisionador?: Provisionador; ponte?: import("express").Router }
 
 export function criarAppPainel(deps: DepsPainel) {
   const { db, cfg, servico } = deps;
@@ -28,6 +28,8 @@ export function criarAppPainel(deps: DepsPainel) {
     next();
   });
   app.use(cookieParser());
+  // A ponte do atendimento lê o corpo bruto (a assinatura cobre o texto exato): vem ANTES do leitor de JSON.
+  if (deps.ponte) app.use("/ponte", deps.ponte);
   app.use(express.json({ limit: "100kb" }));
 
   const tentativasLogin = criarLimitador(10, 15 * 60_000);

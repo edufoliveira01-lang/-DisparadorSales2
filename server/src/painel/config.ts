@@ -61,7 +61,16 @@ export function lerConfigPainel(env: NodeJS.ProcessEnv = process.env): ConfigPai
     nginxBin: env.PAINEL_NGINX_BIN || "/usr/sbin/nginx",
     systemctlBin: env.PAINEL_SYSTEMCTL_BIN || "/usr/bin/systemctl",
     portaInicial: inteiro(env.PAINEL_PORTA_INICIAL, 3401, 1024, 65000),
-    atendimento: (() => { const a = lerConfigPonte(env); return a ? { ...a, urlNavegador: (env.ATENDIMENTO_PONTE_URL_PUBLICA || a.url).trim().replace(/\/+$/, "") } : null; })(),
+    atendimento: (() => {
+      // Ponte embutida no painel (ATENDIMENTO_SUPABASE_URL definido): os endereços da ponte são os do próprio painel.
+      const embutida = Boolean((env.ATENDIMENTO_SUPABASE_URL || "").trim());
+      const porta = inteiro(env.PAINEL_PORT, 3340, 1, 65535);
+      const efetivo = embutida && !(env.ATENDIMENTO_PONTE_URL || "").trim() ? { ...env, ATENDIMENTO_PONTE_URL: `http://127.0.0.1:${porta}/ponte` } : env;
+      const a = lerConfigPonte(efetivo);
+      if (!a) return null;
+      const publica = (env.ATENDIMENTO_PONTE_URL_PUBLICA || (embutida && env.PAINEL_PUBLIC_URL ? `${env.PAINEL_PUBLIC_URL}/ponte` : a.url)).trim().replace(/\/+$/, "");
+      return { ...a, urlNavegador: publica };
+    })(),
     pm2NomePainel: /^[A-Za-z0-9._-]{1,60}$/.test(env.PAINEL_PM2_NOME || "") ? (env.PAINEL_PM2_NOME as string) : "dz-painel",
     licencaUrlInterna: (env.PAINEL_LICENCA_URL_INTERNA || (env.PAINEL_AUTO_PROVISIONAR === "1" ? `http://127.0.0.1:${inteiro(env.PAINEL_PORT, 3340, 1, 65535)}` : "")).replace(/\/+$/, ""),
   };
