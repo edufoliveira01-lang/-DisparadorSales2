@@ -7,6 +7,7 @@ import { ErroPainel, ServicoPainel, comparar } from "./servico";
 import { criarLimitador, entrar, sair, usuarioDaSessao } from "./auth";
 import { ENTITLEMENTS } from "../licenca/entitlements";
 import { ErroProvisionamento, type Provisionador } from "./provisionador";
+import { montarExtensaoDeskcomm } from "./extensaoDeskcomm";
 
 const COOKIE = "painel_sessao";
 const IP = (req: Request) => (req.ip || req.socket.remoteAddress || "").replace(/^::ffff:/, "");
@@ -44,6 +45,18 @@ export function criarAppPainel(deps: DepsPainel) {
   };
 
   app.get("/healthz", (_req, res) => res.json({ ok: true }));
+
+  // ---------- extensão de tema do DeskcommCRM (o Deskcomm baixa o pacote de <origem>/packages/<sha256>.json) ----------
+  const extensaoDeskcomm = cfg.urlPublica.startsWith("https://") ? montarExtensaoDeskcomm(new URL(cfg.urlPublica).origin) : null;
+  if (extensaoDeskcomm) {
+    app.get("/deskcomm/catalogo.json", (_req, res) => {
+      res.set({ "Content-Type": "application/json; charset=utf-8", "Content-Disposition": 'attachment; filename="catalogo-saleseassociados.json"', "Cache-Control": "no-store" }).send(extensaoDeskcomm.catalogo);
+    });
+    app.get("/packages/:arquivo", (req, res) => {
+      if (req.params.arquivo !== `${extensaoDeskcomm.sha256}.json`) return void res.status(404).json({ error: "Não encontrado." });
+      res.set({ "Content-Type": "application/json; charset=utf-8", "Cache-Control": "public, max-age=300" }).send(extensaoDeskcomm.pacote);
+    });
+  }
 
   // ---------- consultado pelas instâncias ----------
   app.post("/api/v1/licenca/verificar", rota((req, res) => {

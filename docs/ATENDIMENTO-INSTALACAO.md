@@ -31,6 +31,19 @@ Conferência: o log do painel mostra `Ponte do atendimento embutida ligada em /p
 4. **Reiniciar sistemas** (a licença nova chega) → no sistema do escritório: **Comunicação → Atendimento e vendas → Abrir** (entra logado).
 5. Suspenda o escritório no painel → em instantes a empresa fica suspensa no Deskcomm; reative e confirme.
 
+## Aparência: extensão de tema do DisparaZap
+O painel publica uma **extensão de tema** para o Deskcomm (fundos e bordas azul-acinzentados, textos nítidos, roxo da marca), no formato de extensão declarativa do próprio Deskcomm. O arquivo é gerado e servido pelo painel (`server/src/painel/extensaoDeskcomm.ts`), com o resumo (sha256) calculado do próprio conteúdo:
+- Catálogo (para baixar): `https://painel.<dominio>/deskcomm/catalogo.json`
+- Pacote (o Deskcomm baixa sozinho): `https://painel.<dominio>/packages/<sha256>.json`
+
+Instalar (conta de administrador da plataforma, no Deskcomm; exige `PAINEL_PUBLIC_URL` com https no `painel.env`):
+1. Abra o endereço do catálogo no navegador e salve o arquivo (Ctrl+S).
+2. No Deskcomm, entre numa empresa e abra **Extensões** (`/app/extensions`) → aba **Catálogo** → **Admissão de catálogo** → escolha o arquivo e confirme. Confira que o SHA-256 mostrado é o esperado.
+3. Na entrada "Tema DisparaZap" do catálogo, **Instalar**.
+4. **Admin Plataforma → Marca → Tema da plataforma** → escolha **Tema DisparaZap** → **Salvar tema**. (Para valer só numa empresa, ative a extensão nela e escolha o tema.)
+5. A **cor de ação** (botões e destaques) vem da tela Marca, não do tema: use `#7340d9` (claro) e, se quiser, `#a07aff` (escuro).
+Atualizar o tema: altere os tokens, aumente a `version` (e a `REVISAO_DO_CATALOGO`) em `extensaoDeskcomm.ts`, publique e admita o catálogo novo. O pacote e o catálogo são validados nos testes (`tests/extensaoDeskcomm.test.ts`) e foram conferidos com o validador do próprio Deskcomm.
+
 ## Lições do piloto
 - O **e-mail do usuário** que entra no sistema do escritório (Minha conta) precisa ser o mesmo do administrador cadastrado no escritório do painel: é por ele que a entrada direta reconhece a pessoa no Deskcomm. Sem e-mail, a tela do atendimento pede o cadastro e leva a Minha conta.
 - O item **Atendimento e vendas** só aparece depois que a licença do escritório é renovada (a cada 6 horas ou ao reiniciar o sistema dele). **Reiniciar sistemas** no painel reinicia também escritórios sem porta registrada, desde que o sistema exista no servidor.
