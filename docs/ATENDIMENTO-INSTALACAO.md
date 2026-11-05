@@ -31,6 +31,12 @@ Conferência: o log do painel mostra `Ponte do atendimento embutida ligada em /p
 4. **Reiniciar sistemas** (a licença nova chega) → no sistema do escritório: **Comunicação → Atendimento e vendas → Abrir** (entra logado).
 5. Suspenda o escritório no painel → em instantes a empresa fica suspensa no Deskcomm; reative e confirme.
 
+## Lições do piloto
+- O **e-mail do usuário** que entra no sistema do escritório (Minha conta) precisa ser o mesmo do administrador cadastrado no escritório do painel: é por ele que a entrada direta reconhece a pessoa no Deskcomm. Sem e-mail, a tela do atendimento pede o cadastro e leva a Minha conta.
+- O item **Atendimento e vendas** só aparece depois que a licença do escritório é renovada (a cada 6 horas ou ao reiniciar o sistema dele). **Reiniciar sistemas** no painel reinicia também escritórios sem porta registrada, desde que o sistema exista no servidor.
+- "Onboarding" na lista de Tenants do Deskcomm é só um rótulo (empresa que ainda não concluiu a configuração inicial); o estado real no banco é `active`.
+- Suspender no painel suspende a empresa no Deskcomm (tela "Conta suspensa") e reativar a devolve ao normal — validado no piloto.
+
 ## Atualizações do Deskcomm
 O Deskcomm se atualiza sozinho pelo mecanismo dele ("Atualizar agora"/`update.sh`, com backup e retorno automático). A ponte depende das funções SQL `fn_create_tenant_with_owner`, `fn_accept_team_invite`, `fn_suspender_organizacao`, `fn_reativar_organizacao` e da rota `/auth/confirm`: depois de atualizar, repita a Fase 3 com o escritório de teste.
 

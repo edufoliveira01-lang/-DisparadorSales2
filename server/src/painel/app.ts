@@ -167,7 +167,9 @@ export function criarAppPainel(deps: DepsPainel) {
     const p = exigirProv();
     const alvo = String(req.body?.alvo || "tudo");
     if (!["escritorios", "painel", "tudo"].includes(alvo)) throw new ErroPainel("Alvo inválido.");
-    const slugs = alvo === "painel" ? [] : db.prepare("SELECT slug FROM escritorios WHERE porta IS NOT NULL ORDER BY slug").all().map((r) => (r as { slug: string }).slug);
+    // Inclui também sistemas que existem no servidor mas ainda não têm a porta registrada no painel (criados antes do provisionamento automático).
+    const slugs = alvo === "painel" ? [] : (db.prepare("SELECT slug, porta FROM escritorios ORDER BY slug").all() as { slug: string; porta: number | null }[])
+      .filter((r) => r.porta !== null || p.portaExistente(r.slug) !== null).map((r) => r.slug);
     const resultado = await p.reiniciarVarias(slugs);
     servico.registrar(null, "servidor_reiniciado", { alvo, escritorios: resultado.length, falhas: resultado.filter((r) => !r.ok).length });
     const painel = alvo !== "escritorios";
