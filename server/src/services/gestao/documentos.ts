@@ -33,13 +33,15 @@ export type Bloco =
   | { k: "titulo"; texto: string; pt: number; sublinhado: boolean }
   | { k: "p"; trechos: Trecho[]; align: Alinhamento; pt: number }
   | { k: "caixa"; trechos: Trecho[]; align: Alinhamento; pt: number }
-  | { k: "vazio"; n: number }
+  | { k: "vazio"; n: number; mm?: number }
+  | { k: "fim" }
   | { k: "assinatura"; nome: string; extra: string[]; pt: number }
   | { k: "rogo"; assina: string; extra: string[]; testemunhas: Testemunha[]; polegar: string; pt: number }
   | { k: "testemunhas"; itens: Testemunha[]; pt: number };
 export interface DocumentoMontado { id: string; nome: string; blocos: Bloco[] }
 export interface ImagemKit { dados: Buffer; mime: string }
-export interface Kit { escritorio: Escritorio; nomeExibicao: string; logo: ImagemKit | null; rodapeImagem: ImagemKit | null; alinhaCabecalho: "left" | "center" | "right"; alinhaRodape: "left" | "center" | "right"; rodape: string[]; documentos: DocumentoMontado[]; faltando: string[] }
+export interface AssinaturaCfg { espaco: number; largura: number; alinhamento: "left" | "center" | "right"; posicao: "texto" | "fim" }
+export interface Kit { assinatura: AssinaturaCfg; escritorio: Escritorio; nomeExibicao: string; logo: ImagemKit | null; rodapeImagem: ImagemKit | null; alinhaCabecalho: "left" | "center" | "right"; alinhaRodape: "left" | "center" | "right"; rodape: string[]; documentos: DocumentoMontado[]; faltando: string[] }
 
 // ---------- textos padrão ----------
 const PODERES_ESPECIFICOS_COMUM = `**PODERES ESPECÍFICOS:** A presente procuração outorga aos Advogados acima descritos os poderes especiais para receber citação, confessar, reconhecer a procedência do pedido, transigir, desistir, firmar compromissos ou acordos, RENUNCIAR DIREITOS, receber e dar quitação, cadastrar e alterar senhas, acessar o sistema gov.br, levantar ou receber RPV – Requisição de Pequeno Valor, precatórios e alvarás, pedir e declarar isenção de imposto de renda, pedir e declarar a justiça gratuita, em conformidade com a norma do art. 105 da Lei 13.105/2015, podendo ainda substabelecer, com ou sem reserva de poderes.`;
@@ -131,8 +133,17 @@ export const VARIAVEIS_DOCUMENTO = [
 export interface HonorariosPadrao { beneficios: number; percentual: number; parcela: number }
 /** Documento criado pelo escritório, que passa a fazer parte do kit (mesmo cabeçalho, rodapé e assinatura). */
 export interface DocumentoProprio { id: string; nome: string; texto: string; pt: number; assinatura: boolean }
-export interface ConfigDocumentos { textos: Partial<Record<DocId, Partial<Record<Variante, string>>>>; tamanhos: Partial<Record<DocId, number>>; honorarios: HonorariosPadrao; proprios: DocumentoProprio[] }
+export interface ConfigDocumentos { textos: Partial<Record<DocId, Partial<Record<Variante, string>>>>; tamanhos: Partial<Record<DocId, number>>; honorarios: HonorariosPadrao; proprios: DocumentoProprio[]; assinatura: AssinaturaCfg }
 const HONORARIOS_PADRAO: HonorariosPadrao = { beneficios: 3, percentual: 30, parcela: 30 };
+export const ASSINATURA_PADRAO: AssinaturaCfg = { espaco: 12, largura: 90, alinhamento: "left", posicao: "texto" };
+function assinaturaValida(x: unknown): AssinaturaCfg {
+  const o = (x && typeof x === "object" ? x : {}) as Partial<AssinaturaCfg>;
+  const n = (v: unknown, padrao: number, min: number, max: number) => { const k = Number(v); return v !== undefined && v !== "" && Number.isFinite(k) && k >= min && k <= max ? Math.round(k) : padrao; };
+  return {
+    espaco: n(o.espaco, ASSINATURA_PADRAO.espaco, 0, 150), largura: n(o.largura, ASSINATURA_PADRAO.largura, 40, 170),
+    alinhamento: o.alinhamento === "center" || o.alinhamento === "right" ? o.alinhamento : "left", posicao: o.posicao === "fim" ? "fim" : "texto",
+  };
+}
 
 function lerBruto(): ConfigDocumentos {
   const l = db.prepare("SELECT config_json FROM gestao_documentos_config WHERE id=1").get() as { config_json: string } | undefined;
@@ -155,14 +166,14 @@ function lerBruto(): ConfigDocumentos {
     const pt = Number(o?.pt);
     return /^x_[a-z0-9]{6,12}$/.test(String(o?.id)) && nome && texto.trim() ? { id: String(o!.id), nome, texto, pt: Number.isFinite(pt) && pt >= 7 && pt <= 18 ? Math.round(pt * 2) / 2 : 11, assinatura: o?.assinatura !== false } : null;
   }).filter((x): x is DocumentoProprio => x !== null);
-  return { textos, tamanhos, proprios, honorarios: { beneficios: num(h.beneficios, 3, 99), percentual: num(h.percentual, 30, 100), parcela: num(h.parcela, 30, 100) } };
+  return { textos, tamanhos, proprios, assinatura: assinaturaValida(c.assinatura), honorarios: { beneficios: num(h.beneficios, 3, 99), percentual: num(h.percentual, 30, 100), parcela: num(h.parcela, 30, 100) } };
 }
 export function lerConfigDocumentos() {
   const c = lerBruto();
   const textos = Object.fromEntries(DOCS.map((d) => [d.id, Object.fromEntries(VARIANTES.map((v) => [v, c.textos[d.id]?.[v] ?? TEXTOS_PADRAO[d.id][v]]))])) as Record<DocId, Record<Variante, string>>;
   const personalizados = Object.fromEntries(DOCS.map((d) => [d.id, VARIANTES.filter((v) => c.textos[d.id]?.[v] !== undefined)])) as Record<DocId, Variante[]>;
   const tamanhos = Object.fromEntries(DOCS.map((d) => [d.id, c.tamanhos[d.id] ?? d.pt])) as Record<DocId, number>;
-  return { textos, personalizados, tamanhos, honorarios: c.honorarios, proprios: c.proprios };
+  return { textos, personalizados, tamanhos, honorarios: c.honorarios, proprios: c.proprios, assinatura: c.assinatura };
 }
 function gravar(c: ConfigDocumentos) {
   db.prepare("INSERT INTO gestao_documentos_config(id,config_json) VALUES (1,?) ON CONFLICT(id) DO UPDATE SET config_json=excluded.config_json,atualizado_em=CURRENT_TIMESTAMP").run(JSON.stringify(c));
@@ -182,6 +193,7 @@ export function salvarConfigDocumentos(d: unknown) {
     const pt = entrada.tamanhos?.[doc.id];
     if (pt !== undefined) { if (Number(pt) === doc.pt) delete atual.tamanhos[doc.id]; else atual.tamanhos[doc.id] = Number(pt); }
   }
+  if (entrada.assinatura !== undefined) atual.assinatura = assinaturaValida({ ...atual.assinatura, ...(entrada.assinatura as object) });
   if (entrada.honorarios) atual.honorarios = { ...atual.honorarios, ...entrada.honorarios };
   gravar(atual);
   return lerConfigDocumentos();
@@ -369,7 +381,7 @@ export function montarKit(opcoes: OpcoesKit, nomeUsuario: string, exemplo = fals
     const corpo = paraBlocos(substituir(texto, v, faltando), d as typeof DOCS[number], pt);
     const contrato = d.id === "contrato";
     const extraContratado = contrato ? [`CONTRATADO: ${v["advogado_principal.nome"] || BLANK}`, ...(v["advogado_principal.oab"] ? [v["advogado_principal.oab"]] : [])] : [];
-    const blocos: Bloco[] = [...corpo, { k: "vazio", n: 1 }, { k: "p", trechos: [{ t: v["data.local"] }], align: contrato ? "r" : "l", pt: Math.min(pt, 11) }, { k: "vazio", n: 2 }];
+    const blocos: Bloco[] = [...corpo, ...(cfg.assinatura.posicao === "fim" ? [{ k: "fim" } as Bloco] : []), { k: "vazio", n: 1 }, { k: "p", trechos: [{ t: v["data.local"] }], align: contrato ? "r" : "l", pt: Math.min(pt, 11) }, { k: "vazio", n: Math.round(cfg.assinatura.espaco / 6), mm: cfg.assinatura.espaco }];
     if (d.proprio && !d.proprio.assinatura) { /* documento sem assinatura: só o texto e a data */ }
     else if (opcoes.variante === "rogo") {
       blocos.push({ k: "rogo", assina: v["a_rogo.nome"].toUpperCase(), extra: extraContratado, testemunhas: testemunhasRogo, polegar: contrato ? "Polegar direito do contratante" : "Polegar direito do outorgante", pt: Math.min(pt, 10.5) });
@@ -389,7 +401,7 @@ export function montarKit(opcoes: OpcoesKit, nomeUsuario: string, exemplo = fals
   const logo = ler(imagemAtual("cabecalho") ?? logoAtual()); // sem cabeçalho próprio, usa o logotipo enviado antes
   const rodapeImagem = ler(imagemAtual("rodape"));
   const rodape = esc.rodape_linhas.length ? esc.rodape_linhas : [esc.endereco, esc.telefones.join(" / ")].filter(Boolean);
-  return { escritorio: esc, nomeExibicao: nomeEscritorio, logo, rodapeImagem, alinhaCabecalho: esc.cabecalho_alinhamento, alinhaRodape: esc.rodape_alinhamento, rodape, documentos, faltando: [...faltando] };
+  return { assinatura: cfg.assinatura, escritorio: esc, nomeExibicao: nomeEscritorio, logo, rodapeImagem, alinhaCabecalho: esc.cabecalho_alinhamento, alinhaRodape: esc.rodape_alinhamento, rodape, documentos, faltando: [...faltando] };
 }
 
 // ---------- HTML (tela e impressão) ----------
@@ -402,18 +414,26 @@ function blocoHtml(b: Bloco): string {
     case "titulo": return `<h2 style="font-size:${b.pt}pt${b.sublinhado ? ";text-decoration:underline" : ""}">${escHtml(b.texto)}</h2>`;
     case "p": return `<p style="font-size:${b.pt}pt;text-align:${ALIGN[b.align]}">${runsHtml(b.trechos)}</p>`;
     case "caixa": return `<div class="caixa" style="font-size:${b.pt}pt;text-align:${ALIGN[b.align]}">${runsHtml(b.trechos)}</div>`;
-    case "vazio": return `<div style="height:${b.n * 6}mm"></div>`;
+    case "vazio": return `<div style="height:${b.mm ?? b.n * 6}mm"></div>`;
+    case "fim": return "";
     case "assinatura": return `<div class="assina" style="font-size:${b.pt}pt"><div class="linha"></div><b>${escHtml(b.nome)}</b>${b.extra.map((e) => `<div>${escHtml(e)}</div>`).join("")}</div>`;
     case "rogo": return `<table class="rogo" style="font-size:${b.pt}pt"><tr><td colspan="2" class="sem"><div class="linha"></div><b>${escHtml(b.assina)}</b>${b.extra.map((e) => `<div>${escHtml(e)}</div>`).join("")}<div>TESTEMUNHAS A ROGO:</div></td><td rowspan="2" class="polegar"><span>${escHtml(b.polegar)}</span></td></tr><tr>${b.testemunhas.map((t) => `<td class="sem"><div class="linha"></div><b>${escHtml(t.nome)}</b><div>CPF: ${escHtml(t.cpf)}</div></td>`).join("")}</tr></table>`;
     case "testemunhas": return `<table class="test" style="font-size:${b.pt}pt"><tr>${b.itens.map((t, i) => `<td>Testemunha ${i + 1}: <b>${escHtml(t.nome)}</b><br>CPF: ${escHtml(t.cpf)}</td>`).join("")}</tr></table>`;
   }
 }
 
+/** Os blocos do documento. Se a assinatura estiver "no fim da página", tudo depois do marcador desce para o pé da folha. */
+function corpoHtml(blocos: Bloco[]): string {
+  const i = blocos.findIndex((b) => b.k === "fim");
+  if (i < 0) return blocos.map(blocoHtml).join("\n");
+  return `<div class="conteudo">${blocos.slice(0, i).map(blocoHtml).join("\n")}<div class="fim">${blocos.slice(i + 1).map(blocoHtml).join("\n")}</div></div>`;
+}
+
 export function kitHtml(kit: Kit, opcoes: { imprimir?: boolean; zoom?: number } = {}): string {
   const logo = kit.logo ? `<img class="logo" alt="" src="data:${kit.logo.mime};base64,${kit.logo.dados.toString("base64")}">` : `<div class="nome-escritorio">${escHtml(kit.nomeExibicao)}</div>`;
   const imgRodape = kit.rodapeImagem ? `<img class="img-rodape" style="${kit.alinhaRodape === "left" ? "" : kit.alinhaRodape === "center" ? "margin-left:auto;margin-right:auto" : "margin-left:auto"}" alt="" src="data:${kit.rodapeImagem.mime};base64,${kit.rodapeImagem.dados.toString("base64")}">` : "";
   const rodape = kit.rodape.length || imgRodape ? `<div class="rodape" style="text-align:${kit.alinhaRodape}">${imgRodape}${kit.rodape.map((l, i) => (i === 0 ? `<b>${escHtml(l)}</b>` : `<div><b>${escHtml(l)}</b></div>`)).join("")}</div>` : "";
-  const folhas = kit.documentos.map((d) => `<table class="folha"><thead><tr><td class="cab" style="text-align:${kit.alinhaCabecalho}">${logo}</td></tr></thead><tbody><tr><td class="corpo">${d.blocos.map(blocoHtml).join("\n")}</td></tr></tbody><tfoot><tr><td>${rodape}</td></tr></tfoot></table>`).join("\n");
+  const folhas = kit.documentos.map((d) => `<table class="folha"><thead><tr><td class="cab" style="text-align:${kit.alinhaCabecalho}">${logo}</td></tr></thead><tbody><tr><td class="corpo">${corpoHtml(d.blocos)}</td></tr></tbody><tfoot><tr><td>${rodape}</td></tr></tfoot></table>`).join("\n");
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${escHtml(kit.documentos.map((d) => d.nome).join(" · "))}</title><style>
 @page{size:A4;margin:0}*{box-sizing:border-box}body{margin:0;background:#e5e7eb;font-family:Arial,Helvetica,sans-serif;color:#000;line-height:1.28}
 .folha{width:210mm;height:296mm;margin:8mm auto;background:#fff;border-collapse:collapse;page-break-after:always;break-after:page;box-shadow:0 1px 6px rgba(0,0,0,.25)}
@@ -423,6 +443,8 @@ thead{display:table-header-group}tfoot{display:table-footer-group}
 h2{text-align:center;margin:1mm 0 4mm}p{margin:0 0 2.6mm}
 .caixa{border:1px solid #000;padding:2mm 3mm;margin:0 0 4mm}
 .assina{margin-top:2mm}.linha{border-top:1px solid #000;width:90mm;margin-bottom:1mm}
+.conteudo{display:flex;flex-direction:column;min-height:100%}.fim{margin-top:auto}
+.assina{text-align:${kit.assinatura.alinhamento}}.assina .linha{width:${kit.assinatura.largura}mm;max-width:100%${kit.assinatura.alinhamento === "left" ? "" : kit.assinatura.alinhamento === "center" ? ";margin-left:auto;margin-right:auto" : ";margin-left:auto"}}
 table.rogo,table.test{width:100%;border-collapse:separate;border-spacing:3mm 0;table-layout:fixed}td.sem{vertical-align:bottom;padding:0 0 2mm}
 td.polegar{width:42mm;border:1px solid #000;height:30mm;vertical-align:bottom;text-align:center;font-weight:bold;padding:2mm}
 .test td{vertical-align:top;padding-top:6mm}

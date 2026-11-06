@@ -46,6 +46,7 @@ function bloco(b: Bloco, primeiro: boolean): string {
     case "titulo": return par(run({ t: b.texto, b: true }, b.pt, b.sublinhado ? '<w:u w:val="single"/>' : ""), { jc: "center", depois: 200, antes: 60, quebra });
     case "p": return par(b.trechos.map((t) => run(t, b.pt)).join(""), { jc: JC[b.align], quebra });
     case "caixa": return tabela([TOTAL], [`<w:tr>${celula(TOTAL, par(b.trechos.map((t) => run(t, b.pt)).join(""), { jc: JC[b.align], depois: 60, quebra }), { lados: ["top", "left", "bottom", "right"] })}</w:tr>`]) + vazio(4);
+    case "fim": return "";
     case "vazio": return Array.from({ length: b.n }, () => vazio(10)).join("");
     case "assinatura": return linhaAssinar(b.pt) + negrito(b.nome, b.pt) + b.extra.map((e) => simples(e, b.pt)).join("");
     case "rogo": {

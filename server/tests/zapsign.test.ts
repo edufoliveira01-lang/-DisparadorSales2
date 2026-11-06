@@ -172,3 +172,18 @@ describe("rota de integração — só aceita quem assina com a chave do escrit�
     expect((await chamar("GET", "/api/integracao/contratos/999999", "", true)).status).toBe(404);
   });
 });
+
+describe("linha de assinatura do kit — configuração", () => {
+  it("guarda espaço, largura, alinhamento e posição, e usa valores seguros fora do limite", async () => {
+    const { salvarConfigDocumentos, lerConfigDocumentos, kitHtml, montarKit } = await import("../src/services/gestao/documentos");
+    expect(lerConfigDocumentos().assinatura).toEqual({ espaco: 12, largura: 90, alinhamento: "left", posicao: "texto" });
+    expect(salvarConfigDocumentos({ assinatura: { espaco: 30, largura: 70, alinhamento: "center", posicao: "fim" } }).assinatura).toEqual({ espaco: 30, largura: 70, alinhamento: "center", posicao: "fim" });
+    expect(salvarConfigDocumentos({ assinatura: { espaco: 9999, largura: 1, alinhamento: "x", posicao: "y" } }).assinatura).toEqual({ espaco: 12, largura: 90, alinhamento: "left", posicao: "texto" });
+    salvarConfigDocumentos({ assinatura: { espaco: 30, largura: 70, alinhamento: "right", posicao: "fim" } });
+    const html = kitHtml(montarKit({ variante: "comum", documentos: ["procuracao"], data: "hoje" }, "Teste", true));
+    expect(html).toContain('class="fim"');
+    expect(html).toContain("width:70mm");
+    expect(html).toContain("height:30mm");
+    salvarConfigDocumentos({ assinatura: { espaco: 12, largura: 90, alinhamento: "left", posicao: "texto" } });
+  });
+});
