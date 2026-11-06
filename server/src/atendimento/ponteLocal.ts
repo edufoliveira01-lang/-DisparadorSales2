@@ -54,6 +54,15 @@ export async function provisionarEmpresa(db: Cliente, cfg: ConfigPonte, p: Pedid
   const donoId = await usuarioDoDono(db, email, p.owner_name);
   const vinculo = await db.rpc("fn_accept_team_invite", { p_user: donoId, p_org: org.id, p_role: "admin", p_invited_by: cfg.atorId, p_issued_at: null, p_invited_at: null, p_interface_settings: { preset: "completa" } });
   if (vinculo.error) throw new ErroPonte("A empresa foi criada, mas o administrador não pôde ser vinculado. Repita o provisionamento.", 502, "vinculo_falhou");
+  // Padrão do Sales: a área de mensagem fica travada até o atendente assumir a conversa.
+  // Só em escritório recém-criado (não sobrescreve escolha de quem já configurou). Falha aqui não derruba o provisionamento.
+  if (org.created) {
+    try {
+      const { data: atual } = await db.uma("organizations", "interface_settings", { id: `eq.${org.id}` });
+      const base = (atual && typeof (atual as any).interface_settings === "object" && (atual as any).interface_settings) || {};
+      await db.atualizar("organizations", { id: `eq.${org.id}` }, { interface_settings: { ...base, bloquearAteAssumir: true } });
+    } catch { /* o administrador pode ligar em Configurações → Empresa → Inbox */ }
+  }
   return { org_id: org.id, slug: org.slug, created: Boolean(org.created), owner_user_id: donoId };
 }
 
