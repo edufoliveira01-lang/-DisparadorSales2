@@ -55,11 +55,32 @@ function desenhar() {
   let corpo;
   if (state.aba === 'planos') corpo = telaPlanos();
   else corpo = h('div', {},
+    faixaAtendimento(),
     h('div', { class: 'tiles' }, tile('Ativos', cont('ativa'), 'ativa'), tile('Em teste', cont('teste'), 'teste'), tile('Em carência', cont('carencia'), 'carencia'), tile('Suspensos', cont('suspensa'), 'suspensa'), tile('Cancelados', cont('cancelada'), 'cancelada')),
     h('div', { class: 'bar' }, h('input', { placeholder: 'Buscar escritório, endereço ou e-mail…', value: state.busca, style: 'flex:1;min-width:220px', oninput: (e) => { state.busca = e.target.value; clearTimeout(desenhar.t); desenhar.t = setTimeout(() => { desenhar(); document.querySelector('.bar input')?.focus(); }, 250); } }), h('button', { onclick: abrirReinicio, title: 'Aplica uma atualização: reinicia os sistemas dos escritórios e o painel' }, 'Reiniciar sistemas'), h('button', { class: 'pri', onclick: abrirNovo }, '+ Novo escritório')),
     h('div', { class: 'card' }, h('table', {}, h('thead', {}, h('tr', {}, ['Escritório', 'Endereço', 'Plano', 'Situação', 'Vence em', 'Último contato'].map((t) => h('th', {}, t)))),
       h('tbody', {}, lista.length ? lista.map((e) => h('tr', { class: 'row', onclick: () => abrirDetalhe(e.id) }, h('td', {}, h('b', {}, e.nome), h('div', { class: 'mut sm' }, e.email)), h('td', {}, e.slug), h('td', {}, e.plano_nome), h('td', {}, badge(e.status)), h('td', {}, dia(e.vence_em)), h('td', {}, quando(e.ultimo_contato_em)))) : h('tr', {}, h('td', { colspan: 6, class: 'mut' }, 'Nenhum escritório.'))))));
   $app.replaceChildren(topo, h('main', {}, corpo));
+}
+
+/** Faixa de versão do atendimento (DeskcommCRM): em uso x mais nova do original. Só aparece com o atendimento configurado. */
+async function carregarVersaoAtendimento(forcar = false) {
+  if (!state.config?.atendimento_configurado) return;
+  try { state.versaoAtendimento = await api('GET', '/atendimento/versao' + (forcar ? '?forcar=1' : '')); }
+  catch (x) { state.versaoAtendimento = { erro: x.message }; }
+  desenhar();
+}
+function faixaAtendimento() {
+  if (!state.config?.atendimento_configurado) return null;
+  const v = state.versaoAtendimento;
+  const verificar = h('button', { onclick: async (ev) => { ev.target.disabled = true; await carregarVersaoAtendimento(true); } }, 'Verificar agora');
+  if (!v) return h('div', { class: 'note' }, 'Atendimento (Deskcomm): verificando a versão…');
+  if (v.erro) return h('div', { class: 'note err' }, 'Atendimento (Deskcomm): ' + v.erro + ' ', verificar);
+  const uso = v.em_uso ? `${v.em_uso.base} (imagem ${v.em_uso.imagem})` : 'versão em uso desconhecida';
+  if (v.atualizacao_disponivel) return h('div', { class: 'note warn' }, h('b', {}, 'Atendimento (Deskcomm): há versão nova do original. '), `Em uso: ${uso} · nova: ${v.original} `,
+    v.notas_url ? h('a', { href: v.notas_url, target: '_blank', rel: 'noopener noreferrer' }, 'ver novidades') : null, ' · peça ao Claude para trazer a versão nova. ', verificar);
+  const avisos = (v.avisos || []).length ? h('span', { class: 'mut sm' }, ' ' + v.avisos.join(' ')) : null;
+  return h('div', { class: 'note ' + (v.em_uso && v.original ? 'ok' : '') }, `Atendimento (Deskcomm): em uso ${uso}` + (v.original ? ` · original: ${v.original}` + (v.em_uso ? ' · em dia ✔' : '') : ''), avisos, ' ', verificar);
 }
 
 function modal(titulo, conteudo, { lateral = false } = {}) {
@@ -254,6 +275,6 @@ function abrirConfig() {
 
 async function iniciar() {
   try { await api('GET', '/me'); } catch { return mostrarLogin(); }
-  state.config = await api('GET', '/config'); await carregar();
+  state.config = await api('GET', '/config'); await carregar(); void carregarVersaoAtendimento();
 }
 iniciar();

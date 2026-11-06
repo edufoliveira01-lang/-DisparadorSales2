@@ -39,3 +39,7 @@ A equipe do sistema do escritório é mantida no atendimento **automaticamente**
 - O botão **Enviar equipe ao atendimento** (Comunicação → Atendimento e vendas) força a conferência na hora e mostra o resultado, inclusive quem ficou sem e-mail.
 
 Caminho: sistema do escritório → painel (`POST /api/v1/atendimento/equipe`, autenticado pela chave de licença) → ponte (`POST /ponte/v1/offices/:slug/members`, com `members` e/ou `remove`). Pessoas sem e-mail não entram (o e-mail é a chave da entrada direta). Limitação: um e-mail trocado só é revogado se o sistema estiver no ar na hora da troca; um e-mail antigo esquecido pode ser removido à mão no Deskcomm.
+
+## Aviso de versão nova do Deskcomm no painel
+Na aba **Escritórios** do painel aparece uma faixa do atendimento: **amarela** quando o repositório original do DeskcommCRM tem versão mais nova que a do nosso fork ("há versão nova do original · em uso 1.101.0 · nova 1.102.0 · ver novidades"), **verde** quando está em dia. Botão **Verificar agora** refaz a consulta. Como funciona: a imagem do Deskcomm publica `https://atendimento.<dominio>/sales-versao.js` (gerado no build, fora da autenticação do app) com a versão do original em que se baseia; o painel lê esse arquivo e compara com a maior tag `vX.Y.Z` de `melgarafael/DeskcommCRM` (API pública do GitHub, com cache de 6 h). Se a imagem em uso for anterior à que publica o arquivo, a faixa pede para atualizar a imagem. Endpoint: `GET /api/admin/atendimento/versao` (sessão de administrador; `?forcar=1` ignora o cache).
+

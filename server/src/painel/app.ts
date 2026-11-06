@@ -8,11 +8,12 @@ import { criarLimitador, entrar, sair, usuarioDaSessao } from "./auth";
 import { ENTITLEMENTS } from "../licenca/entitlements";
 import { ErroProvisionamento, type Provisionador } from "./provisionador";
 import { montarExtensaoDeskcomm } from "./extensaoDeskcomm";
+import { VerificadorDeVersao } from "./versaoAtendimento";
 
 const COOKIE = "painel_sessao";
 const IP = (req: Request) => (req.ip || req.socket.remoteAddress || "").replace(/^::ffff:/, "");
 
-export interface DepsPainel { db: Banco; cfg: ConfigPainel; servico: ServicoPainel; chavePublicaPem: string; versao: string; webDir?: string; provisionador?: Provisionador; ponte?: import("express").Router }
+export interface DepsPainel { db: Banco; cfg: ConfigPainel; servico: ServicoPainel; chavePublicaPem: string; versao: string; webDir?: string; provisionador?: Provisionador; ponte?: import("express").Router; versaoAtendimento?: VerificadorDeVersao }
 
 export function criarAppPainel(deps: DepsPainel) {
   const { db, cfg, servico } = deps;
@@ -119,6 +120,12 @@ export function criarAppPainel(deps: DepsPainel) {
     teste_padrao_dias: cfg.testePadraoDias,
     entitlements: Object.fromEntries(Object.entries(ENTITLEMENTS).map(([k, v]) => [k, { tipo: v.tipo, rotulo: v.rotulo, padrao: v.padrao }])),
   })));
+  // Versão do atendimento: a em uso (publicada pela imagem) e a mais nova do original — o painel mostra o aviso de atualização.
+  const versaoAtendimento = deps.versaoAtendimento ?? (cfg.atendimento?.urlPublica ? new VerificadorDeVersao(cfg.atendimento.urlPublica) : null);
+  admin.get("/atendimento/versao", rota(async (req) => {
+    if (!versaoAtendimento) throw new ErroPainel("O atendimento não está configurado no painel.", 404);
+    return await versaoAtendimento.obter(req.query.forcar === "1");
+  }));
   admin.get("/planos", rota(() => servico.listarPlanos()));
   admin.post("/planos", rota((req, res) => { res.status(201); return servico.criarPlano(req.body || {}); }));
   admin.put("/planos/:id", rota((req) => servico.atualizarPlano(String(req.params.id), req.body || {})));
