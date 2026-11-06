@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, RotateCcw, Save, Trash2 } from "lucide-react";
+import { FileUp, Plus, RotateCcw, Save, Trash2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -163,6 +163,20 @@ function NovoDocumento({ aoCriar, aoCancelar }: { aoCriar: (id: string) => Promi
   const [texto, setTexto] = useState(MODELO_INICIAL);
   const [assinatura, setAssinatura] = useState(true);
   const [salvando, setSalvando] = useState(false);
+  const [importando, setImportando] = useState(false);
+  const [avisos, setAvisos] = useState<string[]>([]);
+  const importar = async (arquivo: File | undefined) => {
+    if (!arquivo) return;
+    if (!/\.docx$/i.test(arquivo.name)) return void show("Envie um documento do Word (.docx).", "error");
+    setImportando(true);
+    try {
+      const x = await api.upload<{ nome: string; texto: string; avisos: string[] }>("/gestao/documentos/proprios/importar", arquivo);
+      setTexto(x.texto); setAvisos(x.avisos);
+      if (!nome.trim()) setNome(x.nome);
+      show("Modelo importado. Confira o texto e as variáveis antes de criar.", "success");
+    } catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível importar o arquivo.", "error"); }
+    finally { setImportando(false); }
+  };
   const criar = async () => {
     setSalvando(true);
     try { const x = await api.post<{ documento: { id: string } }>("/gestao/documentos/proprios", { nome, texto, assinatura }); show("Documento criado. Ele já aparece em Gerar documentos.", "success"); await aoCriar(x.documento.id); }
@@ -173,6 +187,14 @@ function NovoDocumento({ aoCriar, aoCancelar }: { aoCriar: (id: string) => Promi
     <div className="space-y-4 rounded-2xl border border-accent-300 bg-white p-5 dark:border-accent-700 dark:bg-zinc-900">
       <div><h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Novo documento do escritório</h2><p className="mt-1 text-sm text-zinc-500">Ele sai com o cabeçalho, o rodapé e as assinaturas do escritório, igual aos demais, e aparece no botão Gerar documentos do cliente.</p></div>
       <Campo rotulo="Nome do documento"><Input value={nome} onChange={(e) => setNome(e.target.value)} className="mt-1.5" placeholder="Ex.: Termo de renúncia" autoFocus /></Campo>
+      <div className="rounded-xl border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
+        <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-accent-700 dark:text-accent-300">
+          <FileUp className="h-4 w-4" /> {importando ? "Lendo o arquivo…" : "Importar de um arquivo do Word (.docx)"}
+          <input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="sr-only" disabled={importando} onChange={(e) => { void importar(e.target.files?.[0]); e.target.value = ""; }} />
+        </label>
+        <p className="mt-1 text-[13px] text-zinc-500">Envie o seu modelo pronto: o texto, os títulos e o negrito vêm para cá, e campos como [NOME], [CPF] ou {"{{ENDEREÇO}}"} viram os dados do cliente. O cabeçalho, o rodapé e a assinatura continuam os do escritório.</p>
+        {avisos.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5 text-[13px] text-amber-700 dark:text-amber-300">{avisos.map((a) => <li key={a}>{a}</li>)}</ul>}
+      </div>
       <Campo rotulo="Texto"><Textarea rows={14} value={texto} onChange={(e) => setTexto(e.target.value)} className="mt-1.5 font-mono text-[14px] leading-relaxed" /></Campo>
       <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300"><input type="checkbox" checked={assinatura} onChange={(e) => setAssinatura(e.target.checked)} /> Incluir data e assinatura (do cliente, a rogo ou do representante, conforme o tipo escolhido ao gerar)</label>
       <div className="flex justify-end gap-2"><Button variant="outline" onClick={aoCancelar}>Cancelar</Button><Button loading={salvando} onClick={() => void criar()}><Plus className="h-4 w-4" /> Criar documento</Button></div>

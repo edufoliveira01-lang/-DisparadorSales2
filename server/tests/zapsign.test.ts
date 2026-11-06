@@ -242,3 +242,39 @@ describe("honorários flexíveis — valores e modelos de cláusula", () => {
     expect(lerConfigDocumentos().campos).toEqual([]);
   });
 });
+
+describe("importar documento Word como modelo", () => {
+  const docx = async (corpo: string) => {
+    const { criarZip } = await import("../src/services/gestao/zip");
+    return criarZip([{ nome: "word/document.xml", dados: Buffer.from(`<?xml version="1.0"?><w:document xmlns:w="x"><w:body>${corpo}</w:body></w:document>`) }]);
+  };
+  const p = (texto: string, o: { b?: boolean; jc?: string; borda?: boolean } = {}) =>
+    `<w:p><w:pPr>${o.borda ? "<w:pBdr><w:top/></w:pBdr>" : ""}${o.jc ? `<w:jc w:val="${o.jc}"/>` : ""}</w:pPr><w:r><w:rPr>${o.b ? "<w:b/>" : ""}</w:rPr><w:t xml:space="preserve">${texto}</w:t></w:r></w:p>`;
+  it("lê título, negrito, quadro e troca os campos do modelo pelas variáveis do sistema", async () => {
+    const { docxParaModelo } = await import("../src/services/gestao/importarDocx");
+    const arq = await docx(
+      p("PROCURAÇÃO AD JUDICIA", { b: true, jc: "center" }) + p("[NOME], [CPF], residente em &lt;&lt;ENDEREÇO&gt;&gt;, outorga poderes.", { borda: true }) +
+      p("Parágrafo comum sobre o processo nº {{numero do processo}} e o campo [CAMPO ESTRANHO].") + p("____________________") + p("Santos, [DATA]"));
+    const r = docxParaModelo(arq, "modelo.docx");
+    expect(r.nome).toBe("PROCURAÇÃO AD JUDICIA");
+    expect(r.texto).toContain("# PROCURAÇÃO AD JUDICIA");
+    expect(r.texto).toContain("> {{cliente.nome}}, {{cliente.cpf}}, residente em {{cliente.endereco}}, outorga poderes.");
+    expect(r.texto).toContain("{{processo.numero}}");
+    expect(r.texto).toContain("[CAMPO ESTRANHO]");
+    expect(r.texto).toContain("Santos, {{data.extenso}}");
+    expect(r.texto).not.toContain("____");
+    expect(r.avisos.join(" ")).toContain("CAMPO ESTRANHO");
+  });
+  it("recusa o que não é .docx", async () => {
+    const { docxParaModelo } = await import("../src/services/gestao/importarDocx");
+    expect(() => docxParaModelo(Buffer.from("%PDF-1.4 nao e docx"))).toThrow(/\.docx/);
+  });
+  it("lê o próprio .docx que o sistema gera (ida e volta)", async () => {
+    const { docxParaModelo } = await import("../src/services/gestao/importarDocx");
+    const { kitDocx } = await import("../src/services/gestao/docx");
+    const { montarKit } = await import("../src/services/gestao/documentos");
+    const r = docxParaModelo(kitDocx(montarKit({ variante: "comum", documentos: ["hipossuficiencia"], data: "hoje" }, "T", true)));
+    expect(r.texto.length).toBeGreaterThan(200);
+    expect(r.texto).toMatch(/^# /);
+  });
+});

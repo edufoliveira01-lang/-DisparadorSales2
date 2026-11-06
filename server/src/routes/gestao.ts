@@ -18,6 +18,7 @@ import { adicionarCamposPrevidenciarios, atualizarCampo, criarCampo, excluirCamp
 import { anotacaoRapida, anotacoesDaPessoa, anotarNaPessoa, removerAnotacaoDaPessoa } from "../services/gestao/anotacoes";
 import { fichaDeCadastroHtml, fichaDeExemplo } from "../services/gestao/ficha";
 import { PADRAO as FICHA_PADRAO, ROTULO_SECAO, apagarFoto, apagarImagem, apagarLogo, fotoDaPessoa, imagemAtual, lerConfig, logoAtual, nomeDeImagemValido, salvarConfig, salvarFoto, salvarImagem, salvarLogo } from "../services/gestao/fichaConfig";
+import { docxParaModelo } from "../services/gestao/importarDocx";
 import { DOCS, ROTULO_VARIANTE, atualizarDocumentoProprio, criarDocumentoProprio, excluirDocumentoProprio, TEXTOS_PADRAO, VARIANTES, VARIAVEIS_DOCUMENTO, kitHtml, lerConfigDocumentos, montarKit, restaurarTexto, salvarConfigDocumentos, type OpcoesKit } from "../services/gestao/documentos";
 import { kitDocx } from "../services/gestao/docx";
 import { lerEscritorio, salvarEscritorio } from "../services/gestao/escritorio";
@@ -237,6 +238,12 @@ gestaoRouter.get("/documentos/config", rota(() => ({
   documentos: [...DOCS.map((d) => ({ id: d.id, nome: d.nome, proprio: false })), ...lerConfigDocumentos().proprios.map((p) => ({ id: p.id, nome: p.nome, proprio: true }))], escritorio_completo: Boolean(lerEscritorio().advogados.length && (lerEscritorio().nome || lerEscritorio().razao_social)),
 })));
 gestaoRouter.put("/documentos/config", rota((req) => { const c = salvarConfigDocumentos(req.body || {}); auditAccess("gestao_documentos_modelo_alterado", usuario(req).id, null); return c; }));
+gestaoRouter.post("/documentos/proprios/importar", express.raw({ type: () => true, limit: 5 * 1024 * 1024 }), rota((req) => {
+  if (!hasPermission(usuario(req), "gestao.manage")) throw new ErroGestao("Você não tem permissão para criar documentos.", 403);
+  const m = docxParaModelo(Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0), String(req.headers["x-nome-arquivo"] ? decodeURIComponent(String(req.headers["x-nome-arquivo"])) : ""));
+  auditAccess("gestao_documento_importado", usuario(req).id, null);
+  return m;
+}));
 gestaoRouter.post("/documentos/proprios", rota((req, res) => { const r = criarDocumentoProprio(req.body || {}); res.status(201); auditAccess("gestao_documento_proprio_criado", usuario(req).id, null, { documento: r.documento.id }); return r; }));
 gestaoRouter.put("/documentos/proprios/:docId", rota((req) => atualizarDocumentoProprio(String(req.params.docId), req.body || {})));
 gestaoRouter.delete("/documentos/proprios/:docId", rota((req) => { const r = excluirDocumentoProprio(String(req.params.docId)); auditAccess("gestao_documento_proprio_excluido", usuario(req).id, null, { documento: String(req.params.docId) }); return r; }));
