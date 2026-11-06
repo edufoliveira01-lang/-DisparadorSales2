@@ -18,6 +18,7 @@ import { adicionarCamposPrevidenciarios, atualizarCampo, criarCampo, excluirCamp
 import { anotacaoRapida, anotacoesDaPessoa, anotarNaPessoa, removerAnotacaoDaPessoa } from "../services/gestao/anotacoes";
 import { fichaDeCadastroHtml, fichaDeExemplo } from "../services/gestao/ficha";
 import { PADRAO as FICHA_PADRAO, ROTULO_SECAO, apagarFoto, apagarImagem, apagarLogo, fotoDaPessoa, imagemAtual, lerConfig, logoAtual, nomeDeImagemValido, salvarConfig, salvarFoto, salvarImagem, salvarLogo } from "../services/gestao/fichaConfig";
+import { AREAS_PRONTAS, lerAtendimentoIa, montarPromptDoAgente, pendenciasDoAtendimentoIa, salvarAtendimentoIa } from "../services/gestao/atendimentoIa";
 import { docxParaModelo } from "../services/gestao/importarDocx";
 import { DOCS, ROTULO_VARIANTE, atualizarDocumentoProprio, criarDocumentoProprio, excluirDocumentoProprio, TEXTOS_PADRAO, VARIANTES, VARIAVEIS_DOCUMENTO, kitHtml, lerConfigDocumentos, montarKit, restaurarTexto, salvarConfigDocumentos, type OpcoesKit } from "../services/gestao/documentos";
 import { kitDocx } from "../services/gestao/docx";
@@ -237,6 +238,10 @@ gestaoRouter.put("/escritorio", rota((req) => { const e = salvarEscritorio(req.b
 const metaImagens = <T extends { imagens?: { mime: string; b64: string }[] }>(p: T) => ({ ...p, imagens: (p.imagens ?? []).map((i) => ({ mime: i.mime, bytes: Math.round((i.b64.length * 3) / 4) })) });
 const semImagens = <C extends { proprios: { imagens?: { mime: string; b64: string }[] }[]; documento?: { imagens?: { mime: string; b64: string }[] } }>(c: C) => ({ ...c, proprios: c.proprios.map(metaImagens), ...(c.documento ? { documento: metaImagens(c.documento) } : {}) });
 const configSemImagens = () => semImagens(lerConfigDocumentos());
+// ---------- Atendimento com IA (cadastro do agente do Deskcomm) ----------
+const atendimentoIaCompleto = () => { const c = lerAtendimentoIa(); return { ...c, pendencias: pendenciasDoAtendimentoIa(c), prompt: montarPromptDoAgente(c), areas_prontas: AREAS_PRONTAS }; };
+gestaoRouter.get("/atendimento-ia", rota(() => atendimentoIaCompleto()));
+gestaoRouter.put("/atendimento-ia", rota((req) => { salvarAtendimentoIa(req.body || {}); auditAccess("gestao_atendimento_ia_alterado", usuario(req).id, null); return atendimentoIaCompleto(); }));
 gestaoRouter.get("/documentos/config", rota(() => ({
   ...configSemImagens(), padroes: TEXTOS_PADRAO, variaveis: [...VARIAVEIS_DOCUMENTO, ...lerConfigDocumentos().campos.map((c) => `campo.${c.id}`)], variantes: VARIANTES.map((v) => ({ id: v, nome: ROTULO_VARIANTE[v] })),
   documentos: [...DOCS.map((d) => ({ id: d.id, nome: d.nome, proprio: false })), ...lerConfigDocumentos().proprios.map((p) => ({ id: p.id, nome: p.nome, proprio: true }))], escritorio_completo: Boolean(lerEscritorio().advogados.length && (lerEscritorio().nome || lerEscritorio().razao_social)),

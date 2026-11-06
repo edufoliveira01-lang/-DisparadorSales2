@@ -2,6 +2,7 @@ import { Router, type Request } from "express";
 import { verificarRequisicao } from "../atendimento/assinatura";
 import { atendimentoDaInstancia } from "../atendimento/instancia";
 import { auditAccess } from "../services/accessService";
+import { lerAtendimentoIa, montarPromptDoAgente, pendenciasDoAtendimentoIa } from "../services/gestao/atendimentoIa";
 import { lerConfigDocumentos, ROTULO_VARIANTE, VARIANTES } from "../services/gestao/documentos";
 import { ErroZapSign } from "../zapsign/api";
 import { ErroContrato, estadoDoContrato, gerarContrato, type DadosContrato } from "../zapsign/contratos";
@@ -42,6 +43,12 @@ integracaoContratosRouter.post("/contratos", async (req, res) => {
 });
 
 /** O que o escritório configurou e o atendimento precisa mostrar no formulário: tipos de documento, valores e modelos de honorários. */
+/** O prompt do agente de IA deste escritório, já montado do cadastro (Atendimento com IA + dados do escritório). O Deskcomm o guarda como RASCUNHO. */
+integracaoContratosRouter.get("/agente/prompt", (_req, res) => {
+  const c = lerAtendimentoIa();
+  res.json({ prompt: montarPromptDoAgente(c), nome_agente: c.nome_agente, pendencias: pendenciasDoAtendimentoIa(c) });
+});
+
 integracaoContratosRouter.get("/contratos/opcoes", (_req, res) => {
   const c = lerConfigDocumentos();
   res.json({

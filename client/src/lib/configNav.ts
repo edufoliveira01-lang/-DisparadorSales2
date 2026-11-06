@@ -17,6 +17,7 @@ export const GRUPOS_CONFIG: GrupoConfig[] = [
   ] },
   { id: "documentos", titulo: "Documentos e modelos", itens: [
     { to: "/configuracoes/documentos", titulo: "Documentos do escritório", descricao: "Procuração, contrato, declarações e os documentos que você criar: comum, a rogo e representado.", icon: FileText },
+    { to: "/configuracoes/atendimento-ia", titulo: "Atendimento com IA", descricao: "Nome do agente, áreas atendidas, triagem e horário: o agente do WhatsApp é montado daqui.", icon: BrainCircuit },
     { to: "/gestao/ficha", titulo: "Ficha de cadastro", descricao: "Visual da ficha impressa, logotipo e campos personalizados.", icon: Printer },
     { to: "/templates", titulo: "Modelos de mensagens", descricao: "Textos e prévias dos avisos enviados por WhatsApp.", icon: MessageSquareText },
   ] },
