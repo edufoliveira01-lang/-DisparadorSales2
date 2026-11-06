@@ -4,7 +4,7 @@ import { lerConfigDocumentos, montarKit, type Kit } from "../services/gestao/doc
 import { salvarArquivo } from "../services/gestao/arquivos";
 import { atualizarPessoa, criarPessoa } from "../services/gestao/pessoas";
 import { soDigitos } from "../services/gestao/validacao";
-import { consultarDocumento, criarDocumento, ErroZapSign, posicionarAssinaturas, type ConfigZapSign, type DocumentoZapSign } from "./api";
+import { consultarDocumento, criarDocumento, criarDocumentoDeModelo, ErroZapSign, posicionarAssinaturas, type ConfigZapSign, type DocumentoZapSign } from "./api";
 import { lerConfigZapSign } from "./config";
 import { pdfDoKit, type PdfDoKit } from "./pdf";
 
@@ -49,6 +49,20 @@ export interface DadosContrato {
 export interface EnvelopeGerado { tipo: string; nome: string; sign_url: string }
 export interface ContratoGerado { id: number; pessoa_id: number; status: string; sign_url: string; documentos: EnvelopeGerado[]; email_enviado: boolean }
 
+const formatarCpf = (d: string) => (d.length === 11 ? `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}` : d.length === 14 ? `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}` : d);
+const formatarCep = (d: string) => (d.length === 8 ? `${d.slice(0, 5)}-${d.slice(5)}` : d);
+
+/** As variáveis do modelo do ZapSign ({{NOME}}, {{INSCRITO}}…), com a concordância de gênero resolvida aqui. */
+export function variaveisDoModelo(c: { nome: string; nacionalidade: string; sexo: string; estado_civil: string; profissao: string; rg: string; documento: string; logradouro: string; numero: string; complemento: string; bairro: string; cidade: string; uf: string; cep: string }): Record<string, string> {
+  const a = (masc: string, fem: string) => (c.sexo === "F" ? fem : c.sexo === "M" ? masc : `${masc}(a)`);
+  return {
+    NOME: c.nome, NACIONALIDADE: c.nacionalidade || a("brasileiro", "brasileira"), ESTADO_CIVIL: c.estado_civil, PROFISSAO: c.profissao, RG: c.rg,
+    INSCRITO: a("inscrito", "inscrita"), CPF: formatarCpf(c.documento), DOMICILIADO: a("domiciliado", "domiciliada"),
+    LOGRADOURO: c.logradouro, NUMERO: c.numero, COMPLEMENTO: c.complemento ? `, ${c.complemento}` : "", BAIRRO: c.bairro,
+    CIDADE: c.cidade, UF: c.uf, CEP: formatarCep(c.cep),
+  };
+}
+
 /** Os 3 envelopes, cada um com UMA assinatura do cliente: procuração; declaração de hipossuficiência; contrato + declaração de honorários + termo (+ documentos próprios do escritório). */
 export function envelopesDoContrato(proprios: string[] = []): { tipo: string; nome: string; ids: string[] }[] {
   return [
@@ -86,6 +100,20 @@ export async function gerarContrato(d: DadosContrato, nomeUsuario: string, deps:
   }
 
   const http = deps.http ?? fetch;
+  // Com o MODELO do ZapSign configurado: um único link e uma única assinatura valem para todos os documentos (principal + complementares).
+  if (config.modeloId) {
+    const doc = await criarDocumentoDeModelo(config, {
+      modeloId: config.modeloId,
+      signatario: { nome, email: campos.email || undefined, telefone: campos.telefone || undefined },
+      variaveis: variaveisDoModelo({ ...campos, documento: cpf }),
+      idExterno: `pessoa-${pessoaId}`,
+    }, http);
+    const r = db.prepare("INSERT INTO zapsign_contratos(pessoa_id,doc_token,sign_url,status,conversa_ref,criado_por) VALUES (?,?,?,?,?,?)")
+      .run(pessoaId, doc.token, doc.signUrl, "enviado", txt(d.conversa_ref, 80), txt(d.criado_por, 120));
+    const contratoId = Number(r.lastInsertRowid);
+    db.prepare("INSERT INTO zapsign_documentos(contrato_id,tipo,nome,doc_token,sign_url) VALUES (?,?,?,?,?)").run(contratoId, "modelo", doc.nome || "Documentos", doc.token, doc.signUrl);
+    return { id: contratoId, pessoa_id: pessoaId, status: "enviado", sign_url: doc.signUrl!, email_enviado: Boolean(campos.email), documentos: [{ tipo: "modelo", nome: "Documentos do cliente", sign_url: doc.signUrl! }] };
+  }
   const proprios = lerConfigDocumentos().proprios.map((p) => p.id);
   const gerarPdf = deps.pdf ?? pdfDoKit;
   const criados: { tipo: string; nome: string; doc: DocumentoZapSign }[] = [];
@@ -150,15 +178,29 @@ export async function estadoDoContrato(id: number, deps: { config?: ConfigZapSig
   if (l.status === "assinado" && docs.every((d) => d.arquivo_id)) return resumo(l, docs);
   const config = deps.config === undefined ? lerConfigZapSign() : deps.config;
   if (!config) throw new ErroContrato("O ZapSign ainda não foi configurado neste escritório.", 409);
-  for (const d of docs) {
-    if (d.status === "assinado" && d.arquivo_id) continue;
+  for (const d of [...docs]) {
+    if (d.tipo === "extra") continue;
+    if (d.status === "assinado" && d.arquivo_id && d.tipo !== "modelo") continue;
     let doc: DocumentoZapSign;
     try { doc = await consultarDocumento(config, d.doc_token, http); } catch (e) { if (e instanceof ErroZapSign) throw new ErroContrato(e.message, e.status); throw e; }
     if (d.status !== "assinado" && doc.status !== "signed") continue;
     if (d.status !== "assinado") db.prepare("UPDATE zapsign_documentos SET status='assinado', assinado_em=CURRENT_TIMESTAMP WHERE id=?").run(d.id);
     d.status = "assinado";
-    const arquivoId = doc.arquivoAssinado ? await guardarAssinado(id, l.pessoa_id, d.nome, doc.arquivoAssinado, http) : null;
+    const arquivoId = doc.arquivoAssinado ? await guardarAssinado(id, l.pessoa_id, d.nome || doc.nome || "Documento", doc.arquivoAssinado, http) : null;
     if (arquivoId) { db.prepare("UPDATE zapsign_documentos SET arquivo_id=? WHERE id=?").run(arquivoId, d.id); d.arquivo_id = arquivoId; }
+    // Modelo com documentos complementares: cada um vira um arquivo separado na pasta do cliente (uma linha por complementar).
+    for (const extra of doc.extras) {
+      if (!extra.arquivoAssinado) continue;
+      const ja = docs.find((x) => x.tipo === "extra" && x.nome === extra.nome);
+      if (ja?.arquivo_id) continue;
+      const arq = await guardarAssinado(id, l.pessoa_id, extra.nome || "Documento complementar", extra.arquivoAssinado, http);
+      if (!arq) continue;
+      if (ja) { db.prepare("UPDATE zapsign_documentos SET arquivo_id=? WHERE id=?").run(arq, ja.id); ja.arquivo_id = arq; }
+      else {
+        const ins = db.prepare("INSERT INTO zapsign_documentos(contrato_id,tipo,nome,doc_token,sign_url,status,arquivo_id) VALUES (?,?,?,?,?,?,?)").run(id, "extra", extra.nome, d.doc_token, "", "assinado", arq);
+        docs.push({ id: Number(ins.lastInsertRowid), contrato_id: id, tipo: "extra", nome: extra.nome, doc_token: d.doc_token, sign_url: "", status: "assinado", arquivo_id: arq });
+      }
+    }
   }
   if (l.status !== "assinado" && docs.length > 0 && docs.every((d) => d.status === "assinado")) {
     db.prepare("UPDATE zapsign_contratos SET status='assinado', assinado_em=CURRENT_TIMESTAMP WHERE id=?").run(id);

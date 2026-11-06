@@ -1,5 +1,5 @@
 /** Cliente mínimo da API do ZapSign (criar documento a partir de PDF em base64 e consultar o estado). */
-export interface ConfigZapSign { token: string; ambiente: "producao" | "sandbox"; urlBase?: string }
+export interface ConfigZapSign { token: string; ambiente: "producao" | "sandbox"; urlBase?: string; /** ID do modelo (com documentos complementares) criado no ZapSign: um link e uma assinatura para todos os documentos. */ modeloId?: string }
 
 export class ErroZapSign extends Error {
   constructor(message: string, public status = 502) { super(message); }
@@ -9,7 +9,8 @@ const BASES = { producao: "https://api.zapsign.com.br/api/v1", sandbox: "https:/
 export const urlBaseDe = (c: ConfigZapSign) => (c.urlBase || BASES[c.ambiente] || BASES.producao).replace(/\/+$/, "");
 
 export interface Signatario { nome: string; email?: string; telefone?: string }
-export interface DocumentoZapSign { token: string; status: string; signUrl: string | null; arquivoAssinado: string | null; signerToken: string | null }
+export interface ExtraZapSign { nome: string; arquivoAssinado: string | null }
+export interface DocumentoZapSign { token: string; status: string; signUrl: string | null; arquivoAssinado: string | null; signerToken: string | null; nome: string; extras: ExtraZapSign[] }
 
 const soDigitos = (v: string) => v.replace(/\D/g, "");
 
@@ -18,9 +19,11 @@ function lerDocumento(corpo: any): DocumentoZapSign {
   return {
     token: String(corpo?.token ?? ""),
     status: String(corpo?.status ?? ""),
-    signUrl: s?.sign_url ? String(s.sign_url) : null,
+    signUrl: s?.sign_url ? String(s.sign_url) : corpo?.sign_url ? String(corpo.sign_url) : null,
     arquivoAssinado: corpo?.signed_file ? String(corpo.signed_file) : null,
     signerToken: s?.token ? String(s.token) : null,
+    nome: String(corpo?.name ?? ""),
+    extras: Array.isArray(corpo?.extra_docs) ? corpo.extra_docs.map((e: any) => ({ nome: String(e?.name ?? ""), arquivoAssinado: e?.signed_file ? String(e.signed_file) : null })) : [],
   };
 }
 
@@ -106,4 +109,30 @@ export async function posicionarAssinaturas(c: ConfigZapSign, docToken: string, 
     console.error("[contratos] não foi possível posicionar a assinatura no ZapSign:", e instanceof Error ? e.message : e);
     return false;
   }
+}
+
+/**
+ * Cria o documento a partir de um MODELO do ZapSign (o principal + os documentos complementares do modelo): um único link e uma única
+ * assinatura valem para todos. As variáveis do modelo ({{NOME}}, {{CPF}}…) são preenchidas com `de`/`para`.
+ */
+export async function criarDocumentoDeModelo(
+  c: ConfigZapSign,
+  d: { modeloId: string; signatario: Signatario; variaveis: Record<string, string>; idExterno?: string },
+  http: typeof fetch = fetch,
+): Promise<DocumentoZapSign> {
+  const tel = soDigitos(d.signatario.telefone ?? "");
+  const local = tel.startsWith("55") && tel.length >= 12 ? tel.slice(2) : tel;
+  const json = await chamar(c, "POST", "/models/create-doc/", {
+    template_id: d.modeloId,
+    signer_name: d.signatario.nome,
+    ...(d.signatario.email ? { signer_email: d.signatario.email } : {}),
+    ...(local.length >= 10 ? { signer_phone_country: "55", signer_phone_number: local } : {}),
+    send_automatic_email: Boolean(d.signatario.email),
+    lang: "pt-br",
+    external_id: d.idExterno,
+    data: Object.entries(d.variaveis).map(([de, para]) => ({ de: `{{${de}}}`, para })),
+  }, http);
+  const doc = lerDocumento(json);
+  if (!doc.token || !doc.signUrl) throw new ErroZapSign("O ZapSign não devolveu o link de assinatura do modelo. Confira o ID do modelo em Atendimento → ZapSign.");
+  return doc;
 }

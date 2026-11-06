@@ -7,7 +7,7 @@ import { db } from "../src/db";
 import { integracaoContratosRouter } from "../src/routes/integracaoContratos";
 import { consultarDocumento, criarDocumento, ErroZapSign, posicionarAssinaturas, urlBaseDe } from "../src/zapsign/api";
 import { posicoesDasAssinaturas } from "../src/zapsign/pdf";
-import { envelopesDoContrato, ErroContrato, estadoDoContrato, gerarContrato } from "../src/zapsign/contratos";
+import { envelopesDoContrato, ErroContrato, estadoDoContrato, gerarContrato, variaveisDoModelo } from "../src/zapsign/contratos";
 
 const CONFIG = { token: "x".repeat(40), ambiente: "sandbox" as const };
 
@@ -119,6 +119,39 @@ describe("contrato — gerar e acompanhar", () => {
   it("se o ZapSign recusar o posicionamento, o contrato segue (a assinatura fica na posição padrão)", async () => {
     expect(await posicionarAssinaturas(CONFIG, "t", "s", [{ pagina: 0, esquerda: 1, baixo: 1 }], http([{ status: 400, corpo: {} }]))).toBe(false);
     expect(await posicionarAssinaturas(CONFIG, "t", "s", [], http([]))).toBe(true);
+  });
+});
+
+describe("contrato pelo MODELO do ZapSign — um link, uma assinatura, todos os documentos", () => {
+  const COM_MODELO = { ...CONFIG, modeloId: "modelo-123456" };
+  it("as variáveis do modelo saem com a concordância de gênero e o endereço no formato do escritório", () => {
+    const v = variaveisDoModelo({ nome: "Maria", nacionalidade: "", sexo: "F", estado_civil: "casada", profissao: "costureira", rg: "1", documento: "52998224725", logradouro: "Rua A", numero: "10", complemento: "apto 2", bairro: "Centro", cidade: "Santos", uf: "SP", cep: "11010000" });
+    expect(v).toMatchObject({ NOME: "Maria", NACIONALIDADE: "brasileira", INSCRITO: "inscrita", DOMICILIADO: "domiciliada", CPF: "529.982.247-25", COMPLEMENTO: ", apto 2", CEP: "11010-000", UF: "SP" });
+    expect(variaveisDoModelo({ nome: "J", nacionalidade: "", sexo: "", estado_civil: "", profissao: "", rg: "", documento: "", logradouro: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "", cep: "" })).toMatchObject({ INSCRITO: "inscrito(a)", COMPLEMENTO: "" });
+  });
+  it("cria UM documento a partir do modelo (de/para) e devolve um único link", async () => {
+    const chamadas: { url: string; init: RequestInit }[] = [];
+    const r = await gerarContrato(CLIENTE, "Ana", { config: COM_MODELO, http: http([{ corpo: doc(9, { name: "Procuração" }) }], chamadas) });
+    expect(chamadas).toHaveLength(1);
+    expect(chamadas[0].url).toMatch(/\/models\/create-doc\/$/);
+    const corpo = JSON.parse(String(chamadas[0].init.body));
+    expect(corpo).toMatchObject({ template_id: "modelo-123456", signer_name: "Maria Aparecida de Souza", send_automatic_email: true, lang: "pt-br" });
+    expect(corpo.data).toContainEqual({ de: "{{NOME}}", para: "Maria Aparecida de Souza" });
+    expect(corpo.data).toContainEqual({ de: "{{INSCRITO}}", para: "inscrita" });
+    expect(r.documentos).toHaveLength(1);
+    expect(r.sign_url).toBe("https://app.zapsign.com.br/verificar/9");
+  });
+  it("ao assinar, o principal e cada complementar viram arquivos separados na pasta do cliente", async () => {
+    const g = await gerarContrato(CLIENTE, "Ana", { config: COM_MODELO, http: http([{ corpo: doc(8, { name: "Procuração" }) }]) });
+    const zap = (async (url: string) => {
+      const u = String(url);
+      if (u.includes("/arquivos/")) return new Response(Buffer.from("%PDF-1.4 assinado"), { status: 200 });
+      return new Response(JSON.stringify(doc(8, { name: "Procuração", status: "signed", signed_file: "https://x/arquivos/principal.pdf", extra_docs: [{ name: "Contrato + Declaração + Termo", signed_file: "https://x/arquivos/c.pdf" }, { name: "Declaração", signed_file: "https://x/arquivos/d.pdf" }] })), { status: 200 });
+    }) as unknown as typeof fetch;
+    const e = await estadoDoContrato(g.id, { config: COM_MODELO, http: zap });
+    expect(e).toMatchObject({ status: "assinado", arquivo_salvo: true });
+    const nomes = (db.prepare("SELECT a.nome FROM gestao_arquivos a JOIN zapsign_documentos d ON d.arquivo_id=a.id WHERE d.contrato_id=? ORDER BY d.id").all(g.id) as { nome: string }[]).map((x) => x.nome.split(" assinado")[0]);
+    expect(nomes).toEqual(["Procuração", "Contrato + Declaração + Termo", "Declaração"]);
   });
 });
 
