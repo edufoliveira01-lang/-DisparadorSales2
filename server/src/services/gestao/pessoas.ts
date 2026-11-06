@@ -14,7 +14,7 @@ export interface Pessoa {
   id: number; tipo: TipoPessoa; pessoa_juridica: number; nome: string; documento: string; rg: string; email: string; telefone: string; telefone2: string;
   cep: string; logradouro: string; numero: string; complemento: string; bairro: string; cidade: string; uf: string;
   data_nascimento: string; profissao: string; estado_civil: string; origem: string; observacoes: string;
-  escolaridade: string; pis: string; nome_mae: string; filiacao: string;
+  escolaridade: string; pis: string; nome_mae: string; filiacao: string; nacionalidade: string; sexo: string;
   contact_id: number | null; ativo: number; criado_em: string; atualizado_em: string;
 }
 
@@ -41,10 +41,10 @@ function limpar(d: Record<string, unknown>, atual?: Pessoa) {
     complemento: txt(d.complemento ?? atual?.complemento, 100), bairro: txt(d.bairro ?? atual?.bairro, 100), cidade: txt(d.cidade ?? atual?.cidade, 100), uf,
     data_nascimento: nasc, profissao: txt(d.profissao ?? atual?.profissao, 100), estado_civil: txt(d.estado_civil ?? atual?.estado_civil, 40),
     origem: txt(d.origem ?? atual?.origem, 100), observacoes: txt(d.observacoes ?? atual?.observacoes, 4000),
-    escolaridade: txt(d.escolaridade ?? atual?.escolaridade, 60), pis, nome_mae: txt(d.nome_mae ?? atual?.nome_mae, 200), filiacao: txt(d.filiacao ?? atual?.filiacao, 300),
+    escolaridade: txt(d.escolaridade ?? atual?.escolaridade, 60), nacionalidade: txt(d.nacionalidade ?? atual?.nacionalidade, 40), sexo: ["M", "F"].includes(txt(d.sexo ?? atual?.sexo, 1).toUpperCase()) ? txt(d.sexo ?? atual?.sexo, 1).toUpperCase() : "", pis, nome_mae: txt(d.nome_mae ?? atual?.nome_mae, 200), filiacao: txt(d.filiacao ?? atual?.filiacao, 300),
   };
 }
-const CAMPOS = ["tipo", "pessoa_juridica", "nome", "documento", "rg", "email", "telefone", "telefone2", "cep", "logradouro", "numero", "complemento", "bairro", "cidade", "uf", "data_nascimento", "profissao", "estado_civil", "origem", "observacoes", "escolaridade", "pis", "nome_mae", "filiacao"] as const;
+const CAMPOS = ["tipo", "pessoa_juridica", "nome", "documento", "rg", "email", "telefone", "telefone2", "cep", "logradouro", "numero", "complemento", "bairro", "cidade", "uf", "data_nascimento", "profissao", "estado_civil", "origem", "observacoes", "escolaridade", "pis", "nome_mae", "filiacao", "nacionalidade", "sexo"] as const;
 
 const visao = (p: Pessoa) => ({ ...p, documento_formatado: formatarDocumento(p.documento), pis_formatado: formatarPis(p.pis), cep_formatado: formatarCep(p.cep), ativo: Boolean(p.ativo), pessoa_juridica: Boolean(p.pessoa_juridica) });
 

@@ -1,0 +1,49 @@
+import { Router, type Request } from "express";
+import { verificarRequisicao } from "../atendimento/assinatura";
+import { atendimentoDaInstancia } from "../atendimento/instancia";
+import { auditAccess } from "../services/accessService";
+import { ErroZapSign } from "../zapsign/api";
+import { ErroContrato, estadoDoContrato, gerarContrato, type DadosContrato } from "../zapsign/contratos";
+
+/**
+ * Contratos pedidos pelo atendimento (Deskcomm). NÃO usa a sessão de ninguém: quem chama é o painel de assinaturas,
+ * assinando o corpo com a chave deste escritório (a mesma da entrada direta). Só existe com o módulo de atendimento liberado.
+ */
+export const integracaoContratosRouter = Router();
+
+const cabecalho = (req: Request, nome: string) => { const v = req.headers[nome]; return Array.isArray(v) ? v[0] : v; };
+
+integracaoContratosRouter.use((req, res, next) => {
+  const a = atendimentoDaInstancia();
+  if (!a) return void res.status(404).json({ error: "O atendimento não está liberado para este escritório." });
+  const corpo = (req as Request & { rawBody?: string }).rawBody ?? "";
+  const caminho = req.originalUrl.split("?")[0];
+  if (!verificarRequisicao(a.chaveSso, { metodo: req.method, caminho, corpo }, cabecalho(req, "x-sales-timestamp"), cabecalho(req, "x-sales-signature"))) {
+    return void res.status(401).json({ error: "Assinatura inválida." });
+  }
+  res.setHeader("Cache-Control", "no-store");
+  next();
+});
+
+function erro(res: import("express").Response, e: unknown) {
+  if (e instanceof ErroContrato || e instanceof ErroZapSign) return void res.status(e.status).json({ error: e.message });
+  console.error("[contratos] erro inesperado:", e instanceof Error ? e.message : e);
+  res.status(500).json({ error: "Erro interno ao gerar o contrato." });
+}
+
+integracaoContratosRouter.post("/contratos", async (req, res) => {
+  try {
+    const d = (req.body ?? {}) as DadosContrato;
+    const r = await gerarContrato(d, String(d.criado_por || "Atendimento"));
+    auditAccess("contrato_gerado_atendimento", null, null, { contrato: r.id, pessoa: r.pessoa_id });
+    res.status(201).json(r);
+  } catch (e) { erro(res, e); }
+});
+
+integracaoContratosRouter.get("/contratos/:id", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return void res.status(400).json({ error: "Contrato inválido." });
+    res.json(await estadoDoContrato(id));
+  } catch (e) { erro(res, e); }
+});

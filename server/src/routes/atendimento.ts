@@ -2,6 +2,7 @@ import { Router } from "express";
 import { atendimentoDaInstancia, enderecoDeEntrada } from "../atendimento/instancia";
 import { auditAccess, hasPermission } from "../services/accessService";
 import { ErroEquipe, sincronizarEquipe } from "../atendimento/equipe";
+import { configPublicaZapSign, salvarConfigZapSign } from "../zapsign/config";
 
 /** Atendimento e vendas por WhatsApp com IA (DeskcommCRM, em outro servidor). Permissão: atendimento.use. */
 export const atendimentoRouter = Router();
@@ -34,4 +35,18 @@ atendimentoRouter.post("/equipe/sincronizar", async (req, res) => {
     if (e instanceof ErroEquipe) return void res.status(e.status).json({ error: e.message });
     throw e;
   }
+});
+
+/** ZapSign (assinatura dos contratos): o token fica criptografado e nunca volta inteiro para a tela. Só quem gerencia a equipe. */
+atendimentoRouter.get("/zapsign", (req, res) => {
+  if (!req.accessUser || !hasPermission(req.accessUser, "team.manage")) return void res.status(403).json({ error: "Somente quem gerencia a equipe pode ver esta configuração." });
+  res.json(configPublicaZapSign());
+});
+atendimentoRouter.put("/zapsign", (req, res) => {
+  if (!req.accessUser || !hasPermission(req.accessUser, "team.manage")) return void res.status(403).json({ error: "Somente quem gerencia a equipe pode alterar esta configuração." });
+  try {
+    const r = salvarConfigZapSign(req.body || {});
+    auditAccess("zapsign_configurado", req.accessUser.id, null, { ambiente: r.ambiente });
+    res.json(r);
+  } catch (e) { res.status(400).json({ error: e instanceof Error ? e.message : "Configuração inválida." }); }
 });

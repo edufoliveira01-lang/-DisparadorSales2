@@ -162,5 +162,5 @@ export function runGestaoMigrations(db: Database.Database) {
   `);
   // Ficha de cadastro: escolaridade, PIS/NIT, nome da mãe e filiação (colunas acrescentadas sem tocar nas existentes).
   const colunas = (db.prepare("PRAGMA table_info(gestao_pessoas)").all() as { name: string }[]).map((c) => c.name);
-  for (const nome of ["escolaridade", "pis", "nome_mae", "filiacao"]) if (!colunas.includes(nome)) db.exec(`ALTER TABLE gestao_pessoas ADD COLUMN ${nome} TEXT NOT NULL DEFAULT ''`);
+  for (const nome of ["escolaridade", "pis", "nome_mae", "filiacao", "nacionalidade", "sexo"]) if (!colunas.includes(nome)) db.exec(`ALTER TABLE gestao_pessoas ADD COLUMN ${nome} TEXT NOT NULL DEFAULT ''`);
 }

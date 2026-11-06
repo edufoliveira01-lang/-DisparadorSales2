@@ -126,6 +126,10 @@ export class ServicoPainel {
     };
   }
 
+  /** Porta da instância do escritório (pelo endereço), ou null. */
+  portaDoSlug(slug: string): number | null {
+    return (this.db.prepare("SELECT porta FROM escritorios WHERE slug=?").get(slug) as { porta: number | null } | undefined)?.porta ?? null;
+  }
   portasRegistradas(): number[] {
     return (this.db.prepare("SELECT porta FROM escritorios WHERE porta IS NOT NULL").all() as { porta: number }[]).map((r) => r.porta);
   }

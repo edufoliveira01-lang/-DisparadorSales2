@@ -10,6 +10,7 @@ import { garantirAdmin } from "./auth";
 import { gerarParDeChaves } from "../licenca/token";
 import { Provisionador } from "./provisionador";
 import { ClientePonte } from "../atendimento/ponte";
+import { criarRotaContratos } from "../atendimento/rotaContratos";
 import { bancoSupabase } from "../atendimento/banco";
 import { criarRotaPonte, lerConfigPonteInterna } from "../atendimento/rotaPonte";
 
@@ -41,7 +42,13 @@ async function main() {
   try { pi = lerConfigPonteInterna(); } catch (e) { console.error("[painel] Ponte do atendimento NÃO ligada:", (e as Error).message); }
   const rotaPonte = pi ? criarRotaPonte(bancoSupabase(pi.supabaseUrl, pi.chaveServico), pi) : undefined;
   if (rotaPonte) console.log("[painel] Ponte do atendimento embutida ligada em /ponte");
-  const app = criarAppPainel({ db, cfg, servico: servico, chavePublicaPem: publica, versao, provisionador: new Provisionador(cfg), ponte: rotaPonte });
+  const segredoContratos = (process.env.CONTRATOS_SEGREDO || "").trim();
+  const rotaContratos = cfg.atendimento && segredoContratos.length >= 32
+    ? criarRotaContratos({ segredoDeskcomm: segredoContratos, segredoAtendimento: cfg.atendimento.segredo, porta: (slug) => servico.portaDoSlug(slug) })
+    : undefined;
+  if (rotaContratos) console.log("[painel] Contratos do atendimento ligados em /contratos");
+  else if (cfg.atendimento) console.log("[painel] Contratos do atendimento DESLIGADOS (defina CONTRATOS_SEGREDO com 32+ caracteres para ligar).");
+  const app = criarAppPainel({ db, cfg, servico: servico, chavePublicaPem: publica, versao, provisionador: new Provisionador(cfg), ponte: rotaPonte, contratos: rotaContratos });
   if (ponte) {
     console.log("[painel] Atendimento (DeskcommCRM) ligado pela ponte", cfg.atendimento!.url);
     // Vencimentos mudam com o tempo sem nenhum evento: confere de tempos em tempos e repete o que tiver falhado.

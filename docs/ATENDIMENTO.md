@@ -43,3 +43,15 @@ Caminho: sistema do escritório → painel (`POST /api/v1/atendimento/equipe`, a
 ## Aviso de versão nova do Deskcomm no painel
 Na aba **Escritórios** do painel aparece uma faixa do atendimento: **amarela** quando o repositório original do DeskcommCRM tem versão mais nova que a do nosso fork ("há versão nova do original · em uso 1.101.0 · nova 1.102.0 · ver novidades"), **verde** quando está em dia. Botão **Verificar agora** refaz a consulta. Como funciona: a imagem do Deskcomm publica `https://atendimento.<dominio>/sales-versao.js` (gerado no build, fora da autenticação do app) com a versão do original em que se baseia; o painel lê esse arquivo e compara com a maior tag `vX.Y.Z` de `melgarafael/DeskcommCRM` (API pública do GitHub, com cache de 6 h). Se a imagem em uso for anterior à que publica o arquivo, a faixa pede para atualizar a imagem. Endpoint: `GET /api/admin/atendimento/versao` (sessão de administrador; `?forcar=1` ignora o cache).
 
+
+## Contratos pelo atendimento (ZapSign)
+
+Fluxo: o atendente clica em **Gerar contrato** no Deskcomm → o Deskcomm pede ao painel (`/contratos`, assinado com `CONTRATOS_SEGREDO`) →
+o painel repassa à instância do escritório (`/api/integracao/contratos`, assinado com a chave do escritório) → o sistema cadastra/atualiza o cliente
+(pelo CPF), monta **todos os documentos do kit**, converte em PDF (LibreOffice) e envia ao ZapSign → o link de assinatura volta ao Deskcomm, que o
+manda ao cliente pelo WhatsApp. O ZapSign envia a cópia por e-mail quando o cliente tem e-mail.
+
+Configuração:
+- No painel (Ubuntu): `CONTRATOS_SEGREDO` (32+ caracteres) no `.env` do painel; reiniciar o painel.
+- No Deskcomm (VPS): `SALES_PAINEL_URL` (endereço público do painel) e o mesmo `CONTRATOS_SEGREDO`.
+- No sistema do escritório: Atendimento → "Contratos com assinatura (ZapSign)": token da API e ambiente (produção ou testes).

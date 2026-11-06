@@ -8,6 +8,7 @@ import http from "node:http";
 import { djenRouter } from "./routes/djen";
 import { gestaoRouter } from "./routes/gestao";
 import { atendimentoRouter } from "./routes/atendimento";
+import { integracaoContratosRouter } from "./routes/integracaoContratos";
 import { iniciarSincronizacaoPeriodicaDaEquipe } from "./atendimento/equipe";
 import { iniciarMonitorDjen, pararMonitorDjen } from "./services/djen/sync";
 import { cardsRouter } from "./routes/cards";
@@ -44,7 +45,11 @@ app.use(cors({
   credentials: true
 }));
 app.use(cookieParser());
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({
+  limit: "2mb",
+  // O atendimento assina o corpo exato: guardamos o texto bruto só para essas rotas.
+  verify: (req, _res, buf) => { if ((req as { url?: string }).url?.startsWith("/api/integracao")) (req as { rawBody?: string }).rawBody = buf.toString("utf8"); },
+}));
 
 // Rotas públicas
 app.use("/api/auth", authRouter);
@@ -53,6 +58,9 @@ app.use("/api/auth", authRouter);
 app.use("/api", licencaSomenteLeitura);
 
 // Middleware de autenticação para as demais rotas
+// Contratos pedidos pelo atendimento: assinatura HMAC no lugar da sessão (por isso antes da autenticação)
+app.use("/api/integracao", integracaoContratosRouter);
+
 app.use("/api", authenticatedApi);
 
 app.use("/api", notifyDashboardChanges);

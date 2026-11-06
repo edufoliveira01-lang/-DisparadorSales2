@@ -76,6 +76,12 @@ export function excluirModelo(id: number) {
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 
+/** Endereço no formato do escritório: "LOGRADOURO, NÚMERO, COMPLEMENTO – BAIRRO, CIDADE/UF, CEP: 00000-000". Vazio se não há logradouro. */
+function enderecoSales(p: Pessoa) {
+  if (!p.logradouro) return "";
+  const cep = p.cep && p.cep.length === 8 ? `${p.cep.slice(0, 5)}-${p.cep.slice(5)}` : p.cep;
+  return `${[p.logradouro, p.numero, p.complemento].filter(Boolean).join(", ")}${p.bairro ? ` – ${p.bairro}` : ""}${p.cidade || p.uf ? `, ${[p.cidade, p.uf].filter(Boolean).join("/")}` : ""}${cep ? `, CEP: ${cep}` : ""}`;
+}
 function enderecoDe(p: Pessoa) {
   return [[p.logradouro, p.numero].filter(Boolean).join(", "), p.complemento, p.bairro, [p.cidade, p.uf].filter(Boolean).join("/"), p.cep && p.cep.length === 8 ? `CEP ${p.cep.slice(0, 5)}-${p.cep.slice(5)}` : p.cep].filter(Boolean).join(", ");
 }
@@ -95,7 +101,7 @@ export function contextoDoDocumento(opcoes: { pessoaId?: number; processoId?: nu
     pessoa = db.prepare("SELECT * FROM gestao_pessoas WHERE id=?").get(opcoes.pessoaId) as Pessoa | undefined;
     if (!pessoa) throw new ErroGestao("Pessoa não encontrada.", 404);
   }
-  if (pessoa) Object.assign(v, { "cliente.nome": pessoa.nome, "cliente.cpf": formatarDocumento(pessoa.documento), "cliente.rg": pessoa.rg, "cliente.estado_civil": pessoa.estado_civil, "cliente.profissao": pessoa.profissao, "cliente.endereco": enderecoDe(pessoa), "cliente.telefone": pessoa.telefone, "cliente.email": pessoa.email });
+  if (pessoa) Object.assign(v, { "cliente.nome": pessoa.nome, "cliente.cpf": formatarDocumento(pessoa.documento), "cliente.rg": pessoa.rg, "cliente.estado_civil": pessoa.estado_civil, "cliente.profissao": pessoa.profissao, "cliente.endereco": enderecoDe(pessoa), "cliente.telefone": pessoa.telefone, "cliente.email": pessoa.email, "cliente.nacionalidade": pessoa.nacionalidade ?? "", "cliente.sexo": pessoa.sexo ?? "", "cliente.endereco_sales": enderecoSales(pessoa) });
   if (contraria) v["parte_contraria.nome"] = contraria;
   const agora = new Date(Date.now() - 3 * 3600_000); // referência de Brasília
   v["data.hoje"] = `${String(agora.getUTCDate()).padStart(2, "0")}/${String(agora.getUTCMonth() + 1).padStart(2, "0")}/${agora.getUTCFullYear()}`;

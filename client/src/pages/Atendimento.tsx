@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ExternalLink, Headset, Users } from "lucide-react";
+import { ExternalLink, FileSignature, Headset, Users } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -31,6 +31,7 @@ export function Atendimento() {
             ) : (
               <Button onClick={() => window.open("/api/atendimento/entrar", "_blank", "noopener")}><ExternalLink className="h-4 w-4" /> Abrir o atendimento</Button>
             )}
+            {can("team.manage") && <CartaoZapSign />}
             {can("team.manage") && (
               <div className="space-y-3 border-t border-zinc-200 pt-4 dark:border-zinc-800">
                 <p className="flex items-center gap-2 text-sm font-semibold text-zinc-800 dark:text-zinc-100"><Users className="h-4 w-4" /> Equipe no atendimento</p>
@@ -59,6 +60,38 @@ export function Atendimento() {
           </>
         ) : <p className="text-sm text-zinc-600 dark:text-zinc-300">O atendimento não está liberado para este escritório. Fale com o suporte para incluí-lo no plano.</p>}
       </div>
+    </div>
+  );
+}
+
+interface ZapSignInfo { configurado: boolean; ambiente: "producao" | "sandbox"; token_final: string }
+
+/** Chave do ZapSign deste escritório (assinatura dos contratos gerados no atendimento). O token fica criptografado e nunca volta inteiro. */
+function CartaoZapSign() {
+  const [info, setInfo] = useState<ZapSignInfo | null>(null);
+  const [token, setToken] = useState("");
+  const [ambiente, setAmbiente] = useState<"producao" | "sandbox">("producao");
+  const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
+  const [salvando, setSalvando] = useState(false);
+  useEffect(() => { api.get<ZapSignInfo>("/atendimento/zapsign", { fresh: true } as never).then((i) => { setInfo(i); setAmbiente(i.ambiente); }).catch(() => setInfo(null)); }, []);
+  return (
+    <div className="space-y-3 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+      <p className="flex items-center gap-2 text-sm font-semibold text-zinc-800 dark:text-zinc-100"><FileSignature className="h-4 w-4" /> Contratos com assinatura (ZapSign)</p>
+      <p className="text-sm text-zinc-600 dark:text-zinc-300">Quando o atendente clica em <b>Gerar contrato</b> no atendimento, o sistema monta todos os documentos do kit com os dados do cliente e envia ao ZapSign para ele assinar. Cole aqui o <b>token da API</b> da conta ZapSign do escritório.{info?.configurado && <> Token atual: <b>{info.token_final}</b> ({info.ambiente === "sandbox" ? "ambiente de testes" : "produção"}).</>}</p>
+      <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+        <input type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} placeholder={info?.configurado ? "Deixe em branco para manter o token atual" : "Token da API do ZapSign"} className="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950" />
+        <select value={ambiente} onChange={(e) => setAmbiente(e.target.value as "producao" | "sandbox")} className="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950">
+          <option value="producao">Produção</option><option value="sandbox">Testes (sandbox)</option>
+        </select>
+      </div>
+      <Button disabled={salvando || (!token.trim() && !info?.configurado)} onClick={() => {
+        setSalvando(true); setMsg(null);
+        api.put<ZapSignInfo>("/atendimento/zapsign", { token, ambiente })
+          .then((i) => { setInfo(i); setToken(""); setMsg({ ok: true, texto: "ZapSign configurado." }); })
+          .catch((e: unknown) => setMsg({ ok: false, texto: e instanceof Error ? e.message : "Não foi possível salvar." }))
+          .finally(() => setSalvando(false));
+      }}>{salvando ? "Salvando…" : "Salvar ZapSign"}</Button>
+      {msg && <p role={msg.ok ? "status" : "alert"} className={msg.ok ? "text-sm text-emerald-700 dark:text-emerald-300" : "text-sm text-red-600 dark:text-red-400"}>{msg.texto}</p>}
     </div>
   );
 }

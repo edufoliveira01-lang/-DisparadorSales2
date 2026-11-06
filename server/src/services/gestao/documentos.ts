@@ -257,6 +257,25 @@ function qualificar(q: { nome: string; nacionalidade?: string; estado_civil?: st
   ].filter(Boolean);
   return partes.join(", ");
 }
+/**
+ * Qualificação no modelo do escritório:
+ * "NOME, nacionalidade, estado civil, profissão, portador(a) do RG nº X, inscrito(a) no CPF nº Y, residente e domiciliado(a) no endereço Z".
+ * Com o sexo informado, a concordância sai certa (inscrito/inscrita, portador/portadora, domiciliado/domiciliada).
+ */
+function qualificarSales(q: { nome: string; nacionalidade?: string; sexo?: string; estado_civil?: string; profissao?: string; rg?: string; cpf?: string; endereco?: string }) {
+  const f = q.sexo === "F", m = q.sexo === "M";
+  const a = (masc: string, fem: string) => (f ? fem : m ? masc : `${masc}(a)`);
+  const digitos = String(q.cpf ?? "").replace(/\D/g, "");
+  const doc = digitos.length === 14 ? "CNPJ" : "CPF";
+  const nac = limpo(q.nacionalidade) || a("brasileiro", "brasileira");
+  const partes = [
+    `**${limpo(q.nome) || BLANK}**`, nac, limpo(q.estado_civil), limpo(q.profissao),
+    `${a("portador", "portadora")} do RG nº ${limpo(q.rg, 40) || BLANK}`,
+    `${a("inscrito", "inscrita")} no ${doc} nº ${limpo(q.cpf, 30) || BLANK}`,
+    `residente e ${a("domiciliado", "domiciliada")} no endereço ${limpo(q.endereco, 250) || BLANK}`,
+  ].filter(Boolean);
+  return partes.join(", ");
+}
 function trechos(texto: string): Trecho[] {
   return texto.split("**").map((t, i) => ({ t, b: i % 2 === 1 })).filter((x) => x.t !== "");
 }
@@ -301,7 +320,9 @@ export function montarKit(opcoes: OpcoesKit, nomeUsuario: string, exemplo = fals
   const v: Record<string, string> = {};
   for (const [k, val] of Object.entries(ctx)) v[k] = limpo(val, 600);
   const cliente = { nome: v["cliente.nome"], estado_civil: v["cliente.estado_civil"], profissao: v["cliente.profissao"], rg: v["cliente.rg"], cpf: v["cliente.cpf"], endereco: v["cliente.endereco"] };
-  v["cliente.qualificacao"] = qualificar(cliente);
+  v["cliente.qualificacao"] = v["cliente.endereco_sales"] || v["cliente.sexo"] || v["cliente.nacionalidade"]
+    ? qualificarSales({ ...cliente, nacionalidade: v["cliente.nacionalidade"], sexo: v["cliente.sexo"], endereco: v["cliente.endereco_sales"] || v["cliente.endereco"] })
+    : qualificar(cliente);
 
   const rep = opcoes.representante ?? {}, rogo = opcoes.a_rogo ?? {};
   if (opcoes.variante === "representado" && !limpo(rep.nome)) throw new ErroGestao("Informe o nome de quem representa o cliente.");
