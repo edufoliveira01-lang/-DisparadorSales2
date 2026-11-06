@@ -20,6 +20,7 @@ import { authenticatedApi } from "./middleware/access";
 import { licencaSomenteLeitura } from "./middleware/licenca";
 import { licenseRouter } from "./routes/license";
 import { licenca, licencaPermiteOperar } from "./licenca/cliente";
+import { verificarEspacoEmDisco } from "./services/espacoEmDisco";
 import { contactsRouter } from "./routes/contacts";
 import { logsRouter } from "./routes/logs";
 import { pendingRepliesRouter } from "./routes/pendingReplies";
@@ -173,6 +174,14 @@ function podarPericiasAgendadas(): void {
 }
 setTimeout(podarPericiasAgendadas, 90_000);
 setInterval(podarPericiasAgendadas, INTERVALO_PODA_PERICIAS_MS);
+
+// Pouco espaço em disco: confere de hora em hora. Só a instância própria (a do dono do servidor) avisa; as dos escritórios não.
+function conferirDisco(): void {
+  if (licenca().estado().modo !== "proprio") return;
+  verificarEspacoEmDisco().catch((err) => console.error("[Disco] Erro ao conferir o espaço:", err));
+}
+setTimeout(conferirDisco, 120_000).unref();
+setInterval(conferirDisco, 3_600_000).unref();
 
 async function shutdown() {
   console.log("Encerrando servidor...");

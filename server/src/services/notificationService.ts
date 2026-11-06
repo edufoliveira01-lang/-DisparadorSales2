@@ -42,7 +42,7 @@ function montarMensagemResposta(pendentes: PendingReply[], horasLimite: number):
   return `${titulo}\n\nOrigem: verificação automática do sistema.\nResumo: ${pendentes.length} com dois tiques de entrega e sem resposta há mais de ${horasLimite}h.\n\nConfira os acompanhamentos em Aguardando resposta no DisparaZap.`;
 }
 
-interface CanalNotificacao {
+export interface CanalNotificacao {
   nome: NotificationChannel;
   enviar: (texto: string) => Promise<void>;
 }
@@ -67,7 +67,7 @@ function registrarCanalIndisponivel(canal: NotificationChannel, err: unknown): v
 
 /** Monta a lista de canais de notificação configurados (Telegram e/ou Whapi) — cada um é opcional
  * e independente, então o usuário pode ligar um, o outro, ou os dois ao mesmo tempo. */
-function canaisConfigurados(): CanalNotificacao[] {
+export function canaisConfigurados(): CanalNotificacao[] {
   const canais: CanalNotificacao[] = [];
 
   try {
@@ -94,7 +94,7 @@ function canaisConfigurados(): CanalNotificacao[] {
   return canais;
 }
 
-async function enviarPeloCanal(canal: CanalNotificacao, texto: string): Promise<ResultadoCanal> {
+export async function enviarPeloCanal(canal: CanalNotificacao, texto: string): Promise<ResultadoCanal> {
   try {
     await canal.enviar(texto);
     return { canal: canal.nome, sucesso: true, erro: null };
