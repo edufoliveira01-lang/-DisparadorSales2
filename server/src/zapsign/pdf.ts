@@ -28,6 +28,8 @@ export async function docxParaPdf(docx: Buffer, executavel = process.env.SOFFICE
   }
 }
 
+const PREFIXO_MARCA = "https://sales.invalid/assinatura/";
+
 export interface PdfDoKit { pdf: Buffer; assinaturas: PosicaoAssinatura[] }
 
 /**
@@ -45,18 +47,27 @@ export async function pdfDoKit(kit: Kit): Promise<PdfDoKit> {
       const pagina = await navegador.newPage();
       await pagina.setContent(kitHtml(kit), { waitUntil: "load", timeout: 60_000 });
       await pagina.emulateMediaType("print");
-      const medidas: { paginas: number; esquerda: number; topo: number }[] = await pagina.evaluate(() => {
+      // Marca a linha de assinatura de cada documento com um link invisível (sem mexer no layout): o Chromium grava no PDF a página e a
+      // posição exatas do link — assim vale para documento de qualquer tamanho, de qualquer escritório e com qualquer estilo.
+      const medidas: { paginas: number; esquerda: number; topo: number }[] = await pagina.evaluate((prefixo: string) => {
         const altura = (297 * 96) / 25.4;
-        return Array.from(document.querySelectorAll(".folha")).map((f) => {
+        return Array.from(document.querySelectorAll(".folha")).map((f, i) => {
           const r = f.getBoundingClientRect();
-          const l = f.querySelector(".assina .linha");
+          const l = f.querySelector(".assina .linha") as HTMLElement | null;
           const paginas = Math.max(1, Math.ceil((r.height - 2) / altura));
-          if (!l || paginas > 1) return { paginas, esquerda: -1, topo: -1 };
+          if (!l) return { paginas, esquerda: -1, topo: -1 };
+          if (getComputedStyle(l).position === "static") l.style.position = "relative";
+          const a = document.createElement("a");
+          a.href = `${prefixo}${i}`;
+          a.style.cssText = "position:absolute;left:0;top:0;width:100%;height:2px;display:block";
+          l.appendChild(a);
           const lr = l.getBoundingClientRect();
-          return { paginas, esquerda: ((lr.left - r.left) / r.width) * 100, topo: ((lr.top - r.top) / altura) * 100 };
+          return { paginas, esquerda: ((lr.left - r.left) / r.width) * 100, topo: paginas > 1 ? -1 : ((lr.top - r.top) / altura) * 100 };
         });
-      });
+      }, PREFIXO_MARCA);
       const pdf = await pagina.pdf({ format: "A4", printBackground: true, preferCSSPageSize: true });
+      const marcadas = posicoesPorMarcadores(Buffer.from(pdf));
+      if (marcadas.size > 0) return { pdf: Buffer.from(pdf), assinaturas: Array.from(marcadas.entries()).sort((x, y) => x[0] - y[0]).map(([, v]) => v) };
       return { pdf: Buffer.from(pdf), assinaturas: posicoesDasAssinaturas(medidas) };
     } finally {
       await navegador.close().catch(() => undefined);
@@ -85,3 +96,37 @@ export function posicoesDasAssinaturas(medidas: { paginas: number; esquerda: num
   }
   return saida;
 }
+
+/**
+ * Lê do PDF gerado pelo Chromium os links invisíveis que marcam a linha de assinatura de cada documento (índice → página e posição).
+ * Posição em % da folha, origem embaixo à esquerda, já com o ajuste para o campo cair em cima da linha.
+ */
+export function posicoesPorMarcadores(pdf: Buffer): Map<number, PosicaoAssinatura> {
+  const t = pdf.toString("latin1");
+  const marcas = new Map<number, { x: number; y: number }>(); // nº do objeto da anotação -> topo-esquerdo do link (pt)
+  const indices = new Map<number, number>();
+  for (const m of t.matchAll(/(\d+) 0 obj\s*<<((?:(?!endobj)[\s\S])*?)>>\s*endobj/g)) {
+    const corpo = m[2]!;
+    if (!/\/Subtype\s*\/Link/.test(corpo)) continue;
+    const uri = /\/URI\s*\(([^)]*)\)/.exec(corpo)?.[1];
+    const rect = /\/Rect\s*\[\s*([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s*\]/.exec(corpo);
+    if (!uri?.startsWith(PREFIXO_MARCA) || !rect) continue;
+    const n = Number(m[1]);
+    indices.set(n, Number(uri.slice(PREFIXO_MARCA.length)));
+    marcas.set(n, { x: Math.min(Number(rect[1]), Number(rect[3])), y: Math.max(Number(rect[2]), Number(rect[4])) });
+  }
+  const saida = new Map<number, PosicaoAssinatura>();
+  let pagina = -1;
+  for (const m of t.matchAll(/\/Type\s*\/Page(?![s\w])([\s\S]*?)(?=\/Type\s*\/Page(?![s\w])|\/Type\s*\/Pages|$)/g)) {
+    pagina++;
+    const lista = /\/Annots\s*\[([^\]]*)\]/.exec(m[1]!)?.[1] ?? "";
+    for (const r of lista.matchAll(/(\d+) 0 R/g)) {
+      const n = Number(r[1]);
+      const marca = marcas.get(n);
+      if (!marca) continue;
+      saida.set(indices.get(n)!, { pagina, esquerda: (marca.x / A4_LARGURA_PT) * 100 + 1, baixo: (marca.y / A4_ALTURA_PT) * 100 + 0.4 });
+    }
+  }
+  return saida;
+}
+const A4_LARGURA_PT = 595.28, A4_ALTURA_PT = 841.89;

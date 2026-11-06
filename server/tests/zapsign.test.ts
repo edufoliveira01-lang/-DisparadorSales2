@@ -6,7 +6,7 @@ import { assinarRequisicao, chaveSso } from "../src/atendimento/assinatura";
 import { db } from "../src/db";
 import { integracaoContratosRouter } from "../src/routes/integracaoContratos";
 import { adicionarDocumentoExtra, consultarDocumento, criarDocumento, ErroZapSign, posicionarAssinaturas, urlBaseDe } from "../src/zapsign/api";
-import { posicoesDasAssinaturas } from "../src/zapsign/pdf";
+import { posicoesDasAssinaturas, posicoesPorMarcadores } from "../src/zapsign/pdf";
 import { envelopesDoContrato, ErroContrato, estadoDoContrato, gerarContrato } from "../src/zapsign/contratos";
 
 const CONFIG = { token: "x".repeat(40), ambiente: "sandbox" as const };
@@ -125,6 +125,16 @@ describe("contrato — gerar e acompanhar", () => {
   it("converte a medida da linha de assinatura nas coordenadas do ZapSign (origem embaixo) e pula documento de 2 páginas", () => {
     expect(posicoesDasAssinaturas([{ paginas: 1, esquerda: 9, topo: 60 }, { paginas: 2, esquerda: -1, topo: -1 }, { paginas: 1, esquerda: 9, topo: 50 }]))
       .toEqual([{ pagina: 0, esquerda: 10, baixo: 40.4 }, { pagina: 3, esquerda: 10, baixo: 50.4 }]);
+  });
+  it("lê do PDF a página e a posição exatas da linha de assinatura, mesmo em documento de várias páginas", () => {
+    const link = (n: number, i: number, y: number) => `${n} 0 obj\n<</Type /Annot\n/Subtype /Link\n/Rect [59.5 ${y - 1.5} 238 ${y}]\n/A <</Type /Action\n/S /URI\n/URI (https://sales.invalid/assinatura/${i})>>>>\nendobj\n`;
+    const pdf = `%PDF-1.4\n${link(6, 0, 420.945)}${link(9, 1, 200)}<</Type /Page\n/Parent 1 0 R\n>>\n<</Type /Page\n/Annots [6 0 R]\n>>\n<</Type /Page\n>>\n<</Type /Page\n/Annots [9 0 R]\n>>\n<</Type /Pages\n/Kids [2 0 R]>>`;
+    const r = posicoesPorMarcadores(Buffer.from(pdf, "latin1"));
+    expect(r.get(0)).toMatchObject({ pagina: 1 });
+    expect(r.get(0)!.baixo).toBeCloseTo((420.945 / 841.89) * 100 + 0.4, 2);
+    expect(r.get(0)!.esquerda).toBeCloseTo((59.5 / 595.28) * 100 + 1, 2);
+    expect(r.get(1)).toMatchObject({ pagina: 3 });
+    expect(posicoesPorMarcadores(Buffer.from("%PDF-1.4 sem marcas")).size).toBe(0);
   });
   it("se o ZapSign recusar o posicionamento, o contrato segue (a assinatura fica na posição padrão)", async () => {
     expect(await posicionarAssinaturas(CONFIG, "t", "s", [{ pagina: 0, esquerda: 1, baixo: 1 }], http([{ status: 400, corpo: {} }]))).toBe(false);
