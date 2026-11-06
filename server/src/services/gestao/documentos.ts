@@ -126,14 +126,91 @@ export const VARIAVEIS_DOCUMENTO = [
   "representante.qualificacao", "representante.nome", "representante.qualidade", "a_rogo.qualificacao", "a_rogo.nome",
   "outorgados.lista", "outorgados.vinculo", "advogado_principal.nome", "advogado_principal.oab", "advogado_principal.cpf",
   "escritorio.nome", "escritorio.razao_social", "escritorio.oab_sociedade", "escritorio.cnpj", "escritorio.endereco", "escritorio.cidade", "escritorio.foro", "escritorio.telefones", "escritorio.email",
-  "honorarios.beneficios", "honorarios.parcela", "honorarios.percentual", "processo.numero", "data.local", "data.extenso",
+  "honorarios.beneficios", "honorarios.parcela", "honorarios.percentual", "honorarios.clausula", "processo.numero", "data.local", "data.extenso",
 ];
 
 // ---------- configuração editável ----------
 export interface HonorariosPadrao { beneficios: number; percentual: number; parcela: number }
 /** Documento criado pelo escritório, que passa a fazer parte do kit (mesmo cabeçalho, rodapé e assinatura). */
 export interface DocumentoProprio { id: string; nome: string; texto: string; pt: number; assinatura: boolean }
-export interface ConfigDocumentos { textos: Partial<Record<DocId, Partial<Record<Variante, string>>>>; tamanhos: Partial<Record<DocId, number>>; honorarios: HonorariosPadrao; proprios: DocumentoProprio[]; assinatura: AssinaturaCfg }
+/** Valor que o escritório define (honorários por mês, valor fixo, entrada…) e usa nos textos como {{campo.id}}. */
+export interface CampoValor { id: string; rotulo: string; tipo: "texto" | "numero" | "percentual" | "moeda"; padrao: string }
+/** Cláusula de honorários alternativa (cada área/forma de cobrança), escolhida ao gerar e inserida onde houver {{honorarios.clausula}}. */
+export interface ModeloHonorarios { id: string; nome: string; texto: string }
+export interface ConfigDocumentos { textos: Partial<Record<DocId, Partial<Record<Variante, string>>>>; tamanhos: Partial<Record<DocId, number>>; honorarios: HonorariosPadrao; proprios: DocumentoProprio[]; assinatura: AssinaturaCfg; campos: CampoValor[]; modelos_honorarios: ModeloHonorarios[] }
+const slug = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 30);
+function camposValidos(x: unknown): CampoValor[] {
+  const usados = new Set<string>(), saida: CampoValor[] = [];
+  for (const o0 of (Array.isArray(x) ? x : []).slice(0, 30)) {
+    const o = (o0 ?? {}) as Partial<CampoValor>;
+    const rotulo = String(o.rotulo ?? "").replace(/\*\*/g, "").trim().slice(0, 60);
+    let id = /^[a-z][a-z0-9_]{1,29}$/.test(String(o.id)) ? String(o.id) : slug(rotulo);
+    if (!rotulo || !/^[a-z]/.test(id)) { if (!rotulo) continue; id = `c_${id}`.slice(0, 30); }
+    if (id.length < 2 || usados.has(id)) continue;
+    usados.add(id);
+    const tipo = (["texto", "numero", "percentual", "moeda"] as const).find((t) => t === o.tipo) ?? "texto";
+    saida.push({ id, rotulo, tipo, padrao: String(o.padrao ?? "").replace(/\*\*/g, "").trim().slice(0, 200) });
+  }
+  return saida;
+}
+function modelosValidos(x: unknown): ModeloHonorarios[] {
+  const usados = new Set<string>(), saida: ModeloHonorarios[] = [];
+  for (const o0 of (Array.isArray(x) ? x : []).slice(0, 20)) {
+    const o = (o0 ?? {}) as Partial<ModeloHonorarios>;
+    const nome = String(o.nome ?? "").replace(/\*\*/g, "").trim().slice(0, 80), texto = String(o.texto ?? "").slice(0, 8000);
+    if (!nome || !texto.trim()) continue;
+    let id = /^m_[a-z0-9]{4,12}$/.test(String(o.id)) ? String(o.id) : `m_${crypto.randomBytes(4).toString("hex")}`;
+    if (usados.has(id)) id = `m_${crypto.randomBytes(4).toString("hex")}`;
+    usados.add(id); saida.push({ id, nome, texto });
+  }
+  return saida;
+}
+const MILHARES = ["", "mil", "milhão", "bilhão"];
+const CENTENAS = ["", "cento", "duzentos", "trezentos", "quatrocentos", "quinhentos", "seiscentos", "setecentos", "oitocentos", "novecentos"];
+function ate999(n: number): string {
+  if (n === 100) return "cem";
+  const c = Math.floor(n / 100), r = n % 100, partes: string[] = [];
+  if (c) partes.push(CENTENAS[c]);
+  if (r) partes.push(r < 20 ? MESES_EXTENSO[r] : DEZENAS[Math.floor(r / 10)] + (r % 10 ? ` e ${MESES_EXTENSO[r % 10]}` : ""));
+  return partes.join(" e ");
+}
+/** Número inteiro por extenso (até bilhões), em português. */
+export function inteiroPorExtenso(n: number): string {
+  if (!Number.isInteger(n) || n < 0 || n > 999_999_999_999) return String(n);
+  if (n === 0) return "zero";
+  const grupos: number[] = [];
+  for (let x = n; x > 0; x = Math.floor(x / 1000)) grupos.push(x % 1000);
+  const partes: string[] = [];
+  grupos.forEach((g, i) => {
+    if (!g) return;
+    if (i === 1 && g === 1) { partes.unshift("mil"); return; }
+    const nome = i === 0 ? "" : i === 1 ? "mil" : g > 1 ? MILHARES[i]!.replace("ão", "ões") : MILHARES[i]!;
+    partes.unshift(`${ate999(g)}${nome ? ` ${nome}` : ""}`);
+  });
+  // "e" antes do último grupo quando ele é menor que 100 ou múltiplo de 100 (mil e quinhentos; dois mil e dez)
+  return partes.reduce((acc, p, i) => {
+    if (i === 0) return p;
+    const ultimo = i === partes.length - 1, g = grupos[0]!;
+    return `${acc}${ultimo && g && (g < 100 || g % 100 === 0) ? " e " : ", "}${p}`;
+  }, "");
+}
+export function moedaPorExtenso(v: number): string {
+  const reais = Math.floor(v + 1e-9), centavos = Math.round((v - reais) * 100);
+  const r = reais ? `${inteiroPorExtenso(reais)} ${reais === 1 ? "real" : "reais"}` : "";
+  const c = centavos ? `${inteiroPorExtenso(centavos)} ${centavos === 1 ? "centavo" : "centavos"}` : "";
+  return [r, c].filter(Boolean).join(" e ") || "zero real";
+}
+const numeroDe = (t: string) => { const n = Number(String(t).replace(/[R$\s%]/g, "").replace(/\./g, "").replace(",", ".")); return Number.isFinite(n) && String(t).trim() !== "" ? n : null; };
+/** Formata o valor de um campo conforme o tipo: "30% (trinta por cento)", "R$ 1.500,00 (mil e quinhentos reais)", "3 (três)". */
+export function formatarCampo(tipo: CampoValor["tipo"], bruto: string): string {
+  const t = String(bruto ?? "").trim();
+  if (!t || tipo === "texto") return t;
+  const n = numeroDe(t);
+  if (n === null || n < 0) return t;
+  if (tipo === "moeda") return `R$ ${n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${moedaPorExtenso(n)})`;
+  if (tipo === "percentual") return `${fmtNum(n)}%${Number.isInteger(n) ? ` (${inteiroPorExtenso(n)} por cento)` : ""}`;
+  return Number.isInteger(n) ? `${n} (${inteiroPorExtenso(n)})` : fmtNum(n);
+}
 const HONORARIOS_PADRAO: HonorariosPadrao = { beneficios: 3, percentual: 30, parcela: 30 };
 export const ASSINATURA_PADRAO: AssinaturaCfg = { espaco: 12, largura: 90, alinhamento: "left", posicao: "texto" };
 function assinaturaValida(x: unknown): AssinaturaCfg {
@@ -166,14 +243,14 @@ function lerBruto(): ConfigDocumentos {
     const pt = Number(o?.pt);
     return /^x_[a-z0-9]{6,12}$/.test(String(o?.id)) && nome && texto.trim() ? { id: String(o!.id), nome, texto, pt: Number.isFinite(pt) && pt >= 7 && pt <= 18 ? Math.round(pt * 2) / 2 : 11, assinatura: o?.assinatura !== false } : null;
   }).filter((x): x is DocumentoProprio => x !== null);
-  return { textos, tamanhos, proprios, assinatura: assinaturaValida(c.assinatura), honorarios: { beneficios: num(h.beneficios, 3, 99), percentual: num(h.percentual, 30, 100), parcela: num(h.parcela, 30, 100) } };
+  return { textos, tamanhos, proprios, assinatura: assinaturaValida(c.assinatura), campos: camposValidos(c.campos), modelos_honorarios: modelosValidos(c.modelos_honorarios), honorarios: { beneficios: num(h.beneficios, 3, 99), percentual: num(h.percentual, 30, 100), parcela: num(h.parcela, 30, 100) } };
 }
 export function lerConfigDocumentos() {
   const c = lerBruto();
   const textos = Object.fromEntries(DOCS.map((d) => [d.id, Object.fromEntries(VARIANTES.map((v) => [v, c.textos[d.id]?.[v] ?? TEXTOS_PADRAO[d.id][v]]))])) as Record<DocId, Record<Variante, string>>;
   const personalizados = Object.fromEntries(DOCS.map((d) => [d.id, VARIANTES.filter((v) => c.textos[d.id]?.[v] !== undefined)])) as Record<DocId, Variante[]>;
   const tamanhos = Object.fromEntries(DOCS.map((d) => [d.id, c.tamanhos[d.id] ?? d.pt])) as Record<DocId, number>;
-  return { textos, personalizados, tamanhos, honorarios: c.honorarios, proprios: c.proprios, assinatura: c.assinatura };
+  return { textos, personalizados, tamanhos, honorarios: c.honorarios, proprios: c.proprios, assinatura: c.assinatura, campos: c.campos, modelos_honorarios: c.modelos_honorarios };
 }
 function gravar(c: ConfigDocumentos) {
   db.prepare("INSERT INTO gestao_documentos_config(id,config_json) VALUES (1,?) ON CONFLICT(id) DO UPDATE SET config_json=excluded.config_json,atualizado_em=CURRENT_TIMESTAMP").run(JSON.stringify(c));
@@ -194,6 +271,8 @@ export function salvarConfigDocumentos(d: unknown) {
     if (pt !== undefined) { if (Number(pt) === doc.pt) delete atual.tamanhos[doc.id]; else atual.tamanhos[doc.id] = Number(pt); }
   }
   if (entrada.assinatura !== undefined) atual.assinatura = assinaturaValida({ ...atual.assinatura, ...(entrada.assinatura as object) });
+  if (entrada.campos !== undefined) atual.campos = camposValidos(entrada.campos);
+  if (entrada.modelos_honorarios !== undefined) atual.modelos_honorarios = modelosValidos(entrada.modelos_honorarios);
   if (entrada.honorarios) atual.honorarios = { ...atual.honorarios, ...entrada.honorarios };
   gravar(atual);
   return lerConfigDocumentos();
@@ -253,7 +332,7 @@ const fmtNum = (n: number) => String(n).replace(".", ",");
 export interface Qualificacao { nome: string; nacionalidade: string; estado_civil: string; profissao: string; rg: string; cpf: string; endereco: string; qualidade: string }
 export interface OpcoesKit {
   pessoaId?: number; processoId?: number; variante: Variante; documentos: string[]; data: "hoje" | "branco";
-  honorarios?: Partial<HonorariosPadrao>; representante?: Partial<Qualificacao>; a_rogo?: Partial<Qualificacao>; testemunhas_rogo?: Testemunha[];
+  honorarios?: Partial<HonorariosPadrao>; campos?: Record<string, string>; modelo_honorarios?: string; representante?: Partial<Qualificacao>; a_rogo?: Partial<Qualificacao>; testemunhas_rogo?: Testemunha[];
 }
 const limpo = (v: unknown, max = 300) => String(v ?? "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").replace(/\*\*/g, "").replace(/\s+/g, " ").trim().slice(0, max);
 const BLANK = "________";
@@ -292,7 +371,7 @@ function trechos(texto: string): Trecho[] {
   return texto.split("**").map((t, i) => ({ t, b: i % 2 === 1 })).filter((x) => x.t !== "");
 }
 function substituir(texto: string, v: Record<string, string>, faltando: Set<string>) {
-  return texto.replace(/\{\{\s*([a-z_.]+)\s*\}\}/g, (_m, chave: string) => {
+  return texto.replace(/\{\{\s*([a-z0-9_.]+)\s*\}\}/g, (_m, chave: string) => {
     const valor = v[chave];
     if (valor !== undefined && valor !== "") return valor;
     if (valor === undefined || valor === "") { if (!chave.endsWith("_complemento")) faltando.add(chave); }
@@ -365,6 +444,10 @@ export function montarKit(opcoes: OpcoesKit, nomeUsuario: string, exemplo = fals
   v["honorarios.beneficios"] = `${fmtNum(h.beneficios)} (${numeroPorExtenso(h.beneficios)})`;
   v["honorarios.percentual"] = `${fmtNum(h.percentual)}% (${numeroPorExtenso(h.percentual)} por cento)`;
   v["honorarios.parcela"] = `${fmtNum(h.parcela)}%`;
+  const cfgCampos = cfg.campos;
+  for (const c of cfgCampos) v[`campo.${c.id}`] = formatarCampo(c.tipo, limpo(opcoes.campos?.[c.id] ?? c.padrao, 200)) || BLANK;
+  const modelo = cfg.modelos_honorarios.find((m) => m.id === opcoes.modelo_honorarios);
+  v["honorarios.clausula"] = modelo ? substituir(modelo.texto, v, faltando) : "";
   const cidade = esc.cidade || BLANK;
   v["data.local"] = opcoes.data === "branco" ? `${cidade}, ______ de ________________ de 20____` : `${cidade}, ${v["data.extenso"]}`;
 

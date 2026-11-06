@@ -187,3 +187,58 @@ describe("linha de assinatura do kit — configuração", () => {
     salvarConfigDocumentos({ assinatura: { espaco: 12, largura: 90, alinhamento: "left", posicao: "texto" } });
   });
 });
+
+describe("contrato — a rogo e representado", () => {
+  const PDFOK = async () => ({ pdf: Buffer.from("%PDF"), assinaturas: [] });
+  it("neste ato representado: quem assina no ZapSign é o representante e o texto leva a qualificação dele", async () => {
+    const chamadas: { url: string; init: RequestInit }[] = [];
+    const nomes: string[] = [];
+    await gerarContrato({ ...CLIENTE, cpf: "111.444.777-35", nome: "Pedro Menor de Souza", variante: "representado", representante: { nome: "Maria de Souza", qualidade: "mãe", cpf: "529.982.247-25" } }, "Ana", {
+      config: CONFIG, http: http(TRES(), chamadas), pdf: async (kit) => { nomes.push(JSON.stringify(kit.documentos[0]!.blocos)); return PDFOK(); } });
+    expect(JSON.parse(String(chamadas[0]!.init.body)).signers[0].name).toBe("Maria de Souza");
+    expect(nomes[0]).toContain("neste ato representado(a) por");
+    expect(nomes[0]).toContain("MARIA DE SOUZA");
+  });
+  it("a rogo: assina quem assina a rogo, com as testemunhas; sem o nome a pedido é recusado", async () => {
+    const chamadas: { url: string; init: RequestInit }[] = [];
+    let bloco = "";
+    await gerarContrato({ ...CLIENTE, cpf: "111.444.777-35", variante: "rogo", a_rogo: { nome: "João Pessoa" } }, "Ana", { config: CONFIG, http: http(TRES(), chamadas), pdf: async (kit) => { bloco = JSON.stringify(kit.documentos[0]!.blocos); return PDFOK(); } });
+    expect(JSON.parse(String(chamadas[0]!.init.body)).signers[0].name).toBe("João Pessoa");
+    expect(bloco).toContain('"k":"rogo"');
+    await expect(gerarContrato({ ...CLIENTE, variante: "rogo" }, "Ana", { config: CONFIG, http: http([]), pdf: PDFOK })).rejects.toMatchObject({ status: 422 });
+    await expect(gerarContrato({ ...CLIENTE, variante: "representado" }, "Ana", { config: CONFIG, http: http([]), pdf: PDFOK })).rejects.toMatchObject({ status: 422 });
+  });
+});
+
+describe("honorários flexíveis — valores e modelos de cláusula", () => {
+  it("escreve por extenso e formata cada tipo de valor", async () => {
+    const { formatarCampo, inteiroPorExtenso, moedaPorExtenso } = await import("../src/services/gestao/documentos");
+    expect(inteiroPorExtenso(1500)).toBe("mil e quinhentos");
+    expect(inteiroPorExtenso(2010)).toBe("dois mil e dez");
+    expect(inteiroPorExtenso(1_250_000)).toBe("um milhão, duzentos e cinquenta mil");
+    expect(moedaPorExtenso(1500)).toBe("mil e quinhentos reais");
+    expect(moedaPorExtenso(1.5)).toBe("um real e cinquenta centavos");
+    expect(formatarCampo("moeda", "1.500,00")).toBe("R$ 1.500,00 (mil e quinhentos reais)");
+    expect(formatarCampo("percentual", "30")).toBe("30% (trinta por cento)");
+    expect(formatarCampo("numero", "3")).toBe("3 (três)");
+    expect(formatarCampo("texto", "à vista")).toBe("à vista");
+    expect(formatarCampo("moeda", "a combinar")).toBe("a combinar");
+  });
+  it("valores e modelos do escritório entram no contrato e podem ser trocados ao gerar", async () => {
+    const { salvarConfigDocumentos, lerConfigDocumentos, montarKit } = await import("../src/services/gestao/documentos");
+    const c = salvarConfigDocumentos({
+      campos: [{ id: "", rotulo: "Valor da entrada", tipo: "moeda", padrao: "1000" }],
+      modelos_honorarios: [{ id: "", nome: "Fixo + êxito", texto: "Entrada de {{campo.valor_da_entrada}} e êxito de {{honorarios.percentual}}." }],
+    });
+    expect(c.campos[0]).toMatchObject({ id: "valor_da_entrada", tipo: "moeda" });
+    const modelo = c.modelos_honorarios[0]!.id;
+    const textos = (o: object) => montarKit({ variante: "comum", documentos: ["contrato"], data: "hoje", ...o }, "T", true).documentos[0]!.blocos.map((b) => JSON.stringify(b)).join(" ");
+    const base = salvarConfigDocumentos({ textos: { contrato: { comum: "# CONTRATO\n\n{{honorarios.clausula}}" } } });
+    expect(base).toBeTruthy();
+    expect(textos({ modelo_honorarios: modelo })).toContain("Entrada de R$ 1.000,00 (mil reais) e êxito de 30% (trinta por cento).");
+    expect(textos({ modelo_honorarios: modelo, campos: { valor_da_entrada: "2.500,50" } })).toContain("R$ 2.500,50 (dois mil e quinhentos reais e cinquenta centavos)");
+    salvarConfigDocumentos({ campos: [], modelos_honorarios: [] });
+    (await import("../src/services/gestao/documentos")).restaurarTexto("contrato", "comum");
+    expect(lerConfigDocumentos().campos).toEqual([]);
+  });
+});

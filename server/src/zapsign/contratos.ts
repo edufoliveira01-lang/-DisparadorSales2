@@ -1,6 +1,6 @@
 import { db } from "../db";
 import { ErroGestao } from "../services/gestao/erro";
-import { lerConfigDocumentos, montarKit, type Kit } from "../services/gestao/documentos";
+import { lerConfigDocumentos, montarKit, VARIANTES, ROTULO_VARIANTE, type Kit, type Qualificacao } from "../services/gestao/documentos";
 import { salvarArquivo } from "../services/gestao/arquivos";
 import { atualizarPessoa, criarPessoa } from "../services/gestao/pessoas";
 import { soDigitos } from "../services/gestao/validacao";
@@ -44,6 +44,11 @@ export interface DadosContrato {
   nome: string; cpf: string; rg?: string; nacionalidade?: string; sexo?: string; estado_civil?: string; profissao?: string;
   logradouro?: string; numero?: string; complemento?: string; bairro?: string; cidade?: string; uf?: string; cep?: string;
   email?: string; telefone?: string; conversa_ref?: string; criado_por?: string;
+  /** Tipo do documento: "comum", "representado" (assina o representante) ou "rogo" (assina outra pessoa a rogo). */
+  variante?: "comum" | "representado" | "rogo";
+  representante?: Partial<Qualificacao>; a_rogo?: Partial<Qualificacao>; testemunhas_rogo?: { nome?: string; cpf?: string }[];
+  /** Valores do escritório (entrada, mensalidade…) e a cláusula de honorários escolhida. */
+  campos?: Record<string, string>; modelo_honorarios?: string;
 }
 
 export interface EnvelopeGerado { tipo: string; nome: string; sign_url: string }
@@ -85,6 +90,19 @@ export async function gerarContrato(d: DadosContrato, nomeUsuario: string, deps:
     throw e;
   }
 
+  const variante = (VARIANTES as readonly string[]).includes(String(d.variante)) ? (d.variante as "comum" | "representado" | "rogo") : "comum";
+  const qual = (q: Partial<Qualificacao> | undefined): Partial<Qualificacao> => ({
+    nome: txt(q?.nome, 120), nacionalidade: txt(q?.nacionalidade, 40), estado_civil: txt(q?.estado_civil, 40), profissao: txt(q?.profissao, 100),
+    rg: txt(q?.rg, 30), cpf: txt(q?.cpf, 25), endereco: txt(q?.endereco, 250), qualidade: txt(q?.qualidade, 60),
+  });
+  const representante = qual(d.representante), aRogo = qual(d.a_rogo);
+  if (variante === "representado" && !representante.nome) throw new ErroContrato("Informe quem representa o cliente (nome do representante).", 422);
+  if (variante === "rogo" && !aRogo.nome) throw new ErroContrato("Informe quem assina a rogo (nome).", 422);
+  const valores = d.campos && typeof d.campos === "object" && !Array.isArray(d.campos) ? Object.fromEntries(Object.entries(d.campos).slice(0, 40).map(([k, v]) => [txt(k, 40), txt(v, 200)])) : undefined;
+  const testemunhas = Array.isArray(d.testemunhas_rogo) ? d.testemunhas_rogo.slice(0, 2).map((t) => ({ nome: txt(t?.nome, 120), cpf: txt(t?.cpf, 25) })) : undefined;
+  // Quem assina de fato pelo ZapSign: o cliente (comum), o representante (representado) ou a pessoa que assina a rogo.
+  const assinante = variante === "representado" ? representante.nome! : variante === "rogo" ? aRogo.nome! : nome;
+
   const http = deps.http ?? fetch;
   const envs = envelopesDoContrato(lerConfigDocumentos().proprios.map((p) => p.id));
   // Gera os 3 PDFs ANTES de criar qualquer coisa no ZapSign: se um falhar, nada fica pela metade.
@@ -92,7 +110,7 @@ export async function gerarContrato(d: DadosContrato, nomeUsuario: string, deps:
   for (const env of envs) {
     let kit: Kit;
     try {
-      kit = montarKit({ pessoaId, variante: "comum", documentos: env.ids, data: "hoje" }, nomeUsuario || "Atendimento");
+      kit = montarKit({ pessoaId, variante, documentos: env.ids, data: "hoje", representante, a_rogo: aRogo, testemunhas_rogo: testemunhas, campos: valores, modelo_honorarios: txt(d.modelo_honorarios, 20) || undefined }, nomeUsuario || "Atendimento");
     } catch (e) {
       if (e instanceof ErroGestao) throw new ErroContrato(e.message, 422);
       throw e;
@@ -103,7 +121,7 @@ export async function gerarContrato(d: DadosContrato, nomeUsuario: string, deps:
   // O 1º documento cria o envelope; os demais entram como DOCUMENTOS EXTRAS do mesmo envelope: um link só, e cada documento com a sua validade.
   const principal = await criarDocumento(config, {
     nome: titulo(envs[0]!), pdfBase64: pdfs[0]!.pdf.toString("base64"),
-    signatario: { nome, email: campos.email || undefined, telefone: campos.telefone || undefined },
+    signatario: { nome: assinante, email: campos.email || undefined, telefone: campos.telefone || undefined },
     idExterno: `pessoa-${pessoaId}`,
   }, http);
   if (principal.signerToken) await posicionarAssinaturas(config, principal.token, principal.signerToken, pdfs[0]!.assinaturas, http);

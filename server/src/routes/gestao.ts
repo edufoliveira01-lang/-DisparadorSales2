@@ -233,7 +233,7 @@ gestaoRouter.post("/imagens/:nome", express.raw({ type: () => true, limit: 2 * 1
 gestaoRouter.delete("/imagens/:nome", rota((req) => { const n = String(req.params.nome); if (!nomeDeImagemValido(n)) throw new ErroGestao("Imagem desconhecida.", 404); apagarImagem(n); return { ok: true, ...imagensDoEscritorio() }; }));
 gestaoRouter.put("/escritorio", rota((req) => { const e = salvarEscritorio(req.body || {}); auditAccess("gestao_escritorio_alterado", usuario(req).id, null); return { escritorio: e, ...imagensDoEscritorio() }; }));
 gestaoRouter.get("/documentos/config", rota(() => ({
-  ...lerConfigDocumentos(), padroes: TEXTOS_PADRAO, variaveis: VARIAVEIS_DOCUMENTO, variantes: VARIANTES.map((v) => ({ id: v, nome: ROTULO_VARIANTE[v] })),
+  ...lerConfigDocumentos(), padroes: TEXTOS_PADRAO, variaveis: [...VARIAVEIS_DOCUMENTO, ...lerConfigDocumentos().campos.map((c) => `campo.${c.id}`)], variantes: VARIANTES.map((v) => ({ id: v, nome: ROTULO_VARIANTE[v] })),
   documentos: [...DOCS.map((d) => ({ id: d.id, nome: d.nome, proprio: false })), ...lerConfigDocumentos().proprios.map((p) => ({ id: p.id, nome: p.nome, proprio: true }))], escritorio_completo: Boolean(lerEscritorio().advogados.length && (lerEscritorio().nome || lerEscritorio().razao_social)),
 })));
 gestaoRouter.put("/documentos/config", rota((req) => { const c = salvarConfigDocumentos(req.body || {}); auditAccess("gestao_documentos_modelo_alterado", usuario(req).id, null); return c; }));
@@ -251,6 +251,8 @@ function opcoesDoKit(b: Record<string, unknown>): OpcoesKit {
     documentos: Array.isArray(b.documentos) ? b.documentos.map(String) : [], data: b.data === "branco" ? "branco" : "hoje",
     honorarios: { beneficios: h.beneficios === undefined || h.beneficios === "" ? undefined : Number(h.beneficios), percentual: h.percentual === undefined || h.percentual === "" ? undefined : Number(h.percentual), parcela: h.parcela === undefined || h.parcela === "" ? undefined : Number(h.parcela) },
     representante: qual(b.representante), a_rogo: qual(b.a_rogo),
+    campos: b.campos && typeof b.campos === "object" && !Array.isArray(b.campos) ? Object.fromEntries(Object.entries(b.campos as Record<string, unknown>).slice(0, 40).map(([k, x]) => [k.slice(0, 40), texto(x, 200)])) : undefined,
+    modelo_honorarios: b.modelo_honorarios ? texto(b.modelo_honorarios, 20) : undefined,
     testemunhas_rogo: Array.isArray(b.testemunhas_rogo) ? b.testemunhas_rogo.slice(0, 2).map((t) => ({ nome: texto((t as Record<string, unknown>)?.nome, 120), cpf: texto((t as Record<string, unknown>)?.cpf, 25) })) : undefined,
   };
 }

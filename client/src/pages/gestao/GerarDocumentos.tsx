@@ -9,7 +9,7 @@ import { useToast } from "@/components/ui/Toast";
 import { Campo } from "./comum";
 
 type Variante = "comum" | "rogo" | "representado";
-interface Cfg { documentos: { id: string; nome: string }[]; honorarios: { beneficios: number; percentual: number; parcela: number }; escritorio_completo: boolean }
+interface Cfg { documentos: { id: string; nome: string }[]; honorarios: { beneficios: number; percentual: number; parcela: number }; campos?: { id: string; rotulo: string; tipo: string; padrao: string }[]; modelos_honorarios?: { id: string; nome: string }[]; escritorio_completo: boolean }
 interface Qual { nome: string; nacionalidade: string; estado_civil: string; rg: string; cpf: string; endereco: string; qualidade: string }
 const qualVazia = (): Qual => ({ nome: "", nacionalidade: "brasileiro(a)", estado_civil: "", rg: "", cpf: "", endereco: "", qualidade: "" });
 const TIPOS: { id: Variante; nome: string; texto: string }[] = [
@@ -26,6 +26,8 @@ export function GerarDocumentos({ aberto, aoFechar, pessoa, processo }: { aberto
   const [docs, setDocs] = useState<string[]>([]);
   const [data, setData] = useState<"hoje" | "branco">("hoje");
   const [hon, setHon] = useState({ beneficios: "", percentual: "", parcela: "" });
+  const [campos, setCampos] = useState<Record<string, string>>({});
+  const [modeloHon, setModeloHon] = useState("");
   const [rep, setRep] = useState<Qual>({ ...qualVazia(), qualidade: "genitora" });
   const [rogo, setRogo] = useState<Qual>(qualVazia());
   const [test, setTest] = useState([{ nome: "", cpf: "" }, { nome: "", cpf: "" }]);
@@ -41,7 +43,7 @@ export function GerarDocumentos({ aberto, aoFechar, pessoa, processo }: { aberto
     try {
       const r = await api.post<{ token: string; faltando: string[] }>("/gestao/documentos/preparar", {
         pessoa_id: pessoa?.id, processo_id: processo?.id, variante, documentos: docs, data,
-        honorarios: { beneficios: hon.beneficios, percentual: hon.percentual, parcela: hon.parcela }, representante: rep, a_rogo: rogo, testemunhas_rogo: test,
+        honorarios: { beneficios: hon.beneficios, percentual: hon.percentual, parcela: hon.parcela }, campos: Object.fromEntries(Object.entries(campos).filter(([, v]) => v.trim())), modelo_honorarios: modeloHon || undefined, representante: rep, a_rogo: rogo, testemunhas_rogo: test,
       });
       const url = `/api/gestao/documentos/kit/${r.token}`;
       if (acao === "docx") window.open(`${url}?formato=docx`, "_self");
@@ -104,6 +106,19 @@ export function GerarDocumentos({ aberto, aoFechar, pessoa, processo }: { aberto
             </div>
           ) : null}
         </div>
+        {(cfg?.modelos_honorarios?.length ?? 0) > 0 && (docs.includes("contrato") || docs.includes("declaracao_honorarios")) && (
+          <Campo rotulo="Modelo de honorários">
+            <select className="mt-1.5 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-900" value={modeloHon} onChange={(e) => setModeloHon(e.target.value)}>
+              <option value="">Nenhum (usa só o texto do contrato)</option>
+              {cfg!.modelos_honorarios!.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
+            </select>
+          </Campo>
+        )}
+        {(cfg?.campos?.length ?? 0) > 0 && (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {cfg!.campos!.map((c) => <Campo key={c.id} rotulo={c.rotulo}><Input value={campos[c.id] ?? ""} onChange={(e) => setCampos({ ...campos, [c.id]: e.target.value })} placeholder={c.padrao || "—"} className="mt-1.5" /></Campo>)}
+          </div>
+        )}
         <p className="text-xs text-zinc-500">Os textos e o visual ficam em <Link className="underline" to="/configuracoes/documentos" onClick={aoFechar}>Configurações → Documentos do escritório</Link>.</p>
       </div>
     </Modal>

@@ -49,6 +49,8 @@ describe("painel — repasse de contratos do atendimento para o escritório", ()
     const m = await montar(3407, { status: 200, corpo: { status: "assinado" } });
     expect((await m.chamar("GET", "/v1/offices/alfa/contratos/12")).json.status).toBe("assinado");
     expect(m.vistos[0].url).toBe("http://127.0.0.1:3407/api/integracao/contratos/12");
+    expect((await m.chamar("GET", "/v1/offices/alfa/contratos/opcoes")).status).toBe(200);
+    expect(m.vistos[1].url).toBe("http://127.0.0.1:3407/api/integracao/contratos/opcoes");
     expect((await m.chamar("GET", "/v1/offices/alfa/contratos")).status).toBe(405);
     await m.fechar();
   });

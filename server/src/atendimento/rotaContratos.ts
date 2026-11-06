@@ -20,7 +20,7 @@ export function criarRotaContratos(cfg: ConfigRotaContratos, agora: () => number
   const http = cfg.http ?? fetch;
   r.use(express.raw({ type: () => true, limit: "128kb" }));
 
-  r.all(/^\/v1\/offices\/([a-z0-9-]{2,42})\/contratos(?:\/(\d{1,12}))?$/, async (req: Request, res: Response) => {
+  r.all(/^\/v1\/offices\/([a-z0-9-]{2,42})\/contratos(?:\/(\d{1,12}|opcoes))?$/, async (req: Request, res: Response) => {
     res.set("Cache-Control", "no-store");
     try {
       const metodo = req.method.toUpperCase();
@@ -29,7 +29,7 @@ export function criarRotaContratos(cfg: ConfigRotaContratos, agora: () => number
       if (!verificarRequisicao(cfg.segredoDeskcomm, { metodo, caminho: req.path, corpo }, h("x-sales-timestamp"), h("x-sales-signature"), agora())) {
         return void res.status(401).json({ error: "Assinatura inválida." });
       }
-      const m = /^\/v1\/offices\/([a-z0-9-]+)\/contratos(?:\/(\d+))?$/.exec(req.path)!;
+      const m = /^\/v1\/offices\/([a-z0-9-]+)\/contratos(?:\/(\d+|opcoes))?$/.exec(req.path)!;
       const slug = m[1], id = m[2];
       if (!((metodo === "POST" && !id) || (metodo === "GET" && id))) return void res.status(405).json({ error: "Método não permitido." });
       const porta = cfg.porta(slug);

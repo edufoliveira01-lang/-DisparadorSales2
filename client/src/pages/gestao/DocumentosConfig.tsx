@@ -10,10 +10,12 @@ import { useToast } from "@/components/ui/Toast";
 import { Campo } from "./comum";
 
 type Variante = "comum" | "rogo" | "representado";
+interface CampoValor { id: string; rotulo: string; tipo: "texto" | "numero" | "percentual" | "moeda"; padrao: string }
+interface ModeloHon { id: string; nome: string; texto: string }
 interface Assinatura { espaco: number; largura: number; alinhamento: "left" | "center" | "right"; posicao: "texto" | "fim" }
 const ASSINATURA_INICIAL: Assinatura = { espaco: 12, largura: 90, alinhamento: "left", posicao: "texto" };
 interface Resp {
-  textos: Record<string, Record<Variante, string>>; personalizados: Record<string, Variante[]>; tamanhos: Record<string, number>; honorarios: { beneficios: number; percentual: number; parcela: number }; assinatura: Assinatura;
+  textos: Record<string, Record<Variante, string>>; personalizados: Record<string, Variante[]>; tamanhos: Record<string, number>; honorarios: { beneficios: number; percentual: number; parcela: number }; assinatura: Assinatura; campos: CampoValor[]; modelos_honorarios: ModeloHon[];
   padroes: Record<string, Record<Variante, string>>; variaveis: string[]; variantes: { id: Variante; nome: string }[]; documentos: { id: string; nome: string; proprio?: boolean }[];
   proprios: { id: string; nome: string; texto: string; pt: number; assinatura: boolean }[];
 }
@@ -27,6 +29,8 @@ export function DocumentosConfig() {
   const [textos, setTextos] = useState<Resp["textos"]>({});
   const [tamanhos, setTamanhos] = useState<Record<string, number>>({});
   const [hon, setHon] = useState({ beneficios: 3, percentual: 30, parcela: 30 });
+  const [campos, setCampos] = useState<CampoValor[]>([]);
+  const [modelos, setModelos] = useState<ModeloHon[]>([]);
   const [ass, setAss] = useState<Assinatura>(ASSINATURA_INICIAL);
   const [doc, setDoc] = useState("procuracao");
   const [variante, setVariante] = useState<Variante>("comum");
@@ -34,15 +38,15 @@ export function DocumentosConfig() {
   const [versao, setVersao] = useState(0);
   const [novo, setNovo] = useState(false);
   const carregar = useCallback(async () => {
-    try { const x = await api.get<Resp>("/gestao/documentos/config", { fresh: true } as never); setR(x); setTextos(x.textos); setTamanhos(x.tamanhos); setHon(x.honorarios); setAss(x.assinatura ?? ASSINATURA_INICIAL); }
+    try { const x = await api.get<Resp>("/gestao/documentos/config", { fresh: true } as never); setR(x); setTextos(x.textos); setTamanhos(x.tamanhos); setHon(x.honorarios); setAss(x.assinatura ?? ASSINATURA_INICIAL); setCampos(x.campos ?? []); setModelos(x.modelos_honorarios ?? []); }
     catch { show("Não foi possível carregar os modelos de documento.", "error"); }
   }, [show]);
   useEffect(() => { void carregar(); }, [carregar]);
   if (!r) return <p className="text-sm text-zinc-500" role="status">Carregando…</p>;
-  const sujo = JSON.stringify(textos) !== JSON.stringify(r.textos) || JSON.stringify(tamanhos) !== JSON.stringify(r.tamanhos) || JSON.stringify(hon) !== JSON.stringify(r.honorarios) || JSON.stringify(ass) !== JSON.stringify(r.assinatura ?? ASSINATURA_INICIAL);
+  const sujo = JSON.stringify(textos) !== JSON.stringify(r.textos) || JSON.stringify(tamanhos) !== JSON.stringify(r.tamanhos) || JSON.stringify(hon) !== JSON.stringify(r.honorarios) || JSON.stringify(ass) !== JSON.stringify(r.assinatura ?? ASSINATURA_INICIAL) || JSON.stringify(campos) !== JSON.stringify(r.campos ?? []) || JSON.stringify(modelos) !== JSON.stringify(r.modelos_honorarios ?? []);
   const salvar = async () => {
     setSalvando(true);
-    try { const x = await api.put<Resp>("/gestao/documentos/config", { textos, tamanhos, honorarios: hon, assinatura: ass }); setR((a) => (a ? { ...a, ...x } : a)); setTextos(x.textos); setTamanhos(x.tamanhos); setHon(x.honorarios); setAss(x.assinatura); setVersao((v) => v + 1); show("Modelos salvos.", "success"); }
+    try { const x = await api.put<Resp>("/gestao/documentos/config", { textos, tamanhos, honorarios: hon, assinatura: ass, campos, modelos_honorarios: modelos }); setR((a) => (a ? { ...a, ...x } : a)); setTextos(x.textos); setTamanhos(x.tamanhos); setHon(x.honorarios); setAss(x.assinatura); setCampos(x.campos); setModelos(x.modelos_honorarios); setVersao((v) => v + 1); show("Modelos salvos.", "success"); }
     catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível salvar.", "error"); }
     finally { setSalvando(false); }
   };
@@ -110,6 +114,31 @@ export function DocumentosConfig() {
               <Campo rotulo="% do benefício por mês"><Input type="number" min={0} max={100} value={hon.parcela} onChange={(e) => setHon({ ...hon, parcela: Number(e.target.value) })} className="mt-1.5" /></Campo>
             </div>
             <p className="text-[13px] text-zinc-500">Valores sugeridos ao gerar; dá para mudar caso a caso.</p>
+          </fieldset>
+          <fieldset disabled={!gerir} className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <h2 className="text-base font-semibold">Outros valores do contrato</h2>
+            <p className="text-[13px] text-zinc-500">Crie os valores do seu jeito de cobrar (entrada, mensalidade, taxa de êxito…). No texto, use <code>{"{{campo.nome_do_valor}}"}</code>; a lista de variáveis acima mostra o código de cada um. Ao gerar, dá para mudar caso a caso.</p>
+            {campos.map((c, i) => (
+              <div key={`${c.id}-${i}`} className="grid grid-cols-[1fr_9rem_8rem_auto] items-end gap-2">
+                <Campo rotulo="Nome"><Input value={c.rotulo} onChange={(e) => setCampos(campos.map((x, j) => (j === i ? { ...x, rotulo: e.target.value } : x)))} className="mt-1.5" placeholder="Ex.: Entrada" /></Campo>
+                <Campo rotulo="Tipo"><select value={c.tipo} onChange={(e) => setCampos(campos.map((x, j) => (j === i ? { ...x, tipo: e.target.value as CampoValor["tipo"] } : x)))} className="mt-1.5 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"><option value="moeda">Valor em R$</option><option value="percentual">Percentual</option><option value="numero">Número</option><option value="texto">Texto</option></select></Campo>
+                <Campo rotulo="Padrão"><Input value={c.padrao} onChange={(e) => setCampos(campos.map((x, j) => (j === i ? { ...x, padrao: e.target.value } : x)))} className="mt-1.5" /></Campo>
+                <Button type="button" variant="ghost" size="sm" aria-label="Remover valor" onClick={() => setCampos(campos.filter((_, j) => j !== i))}><Trash2 className="h-4 w-4" /></Button>
+                <p className="col-span-4 -mt-1 text-xs text-zinc-500">{c.id ? <>Código no texto: <code>{`{{campo.${c.id}}}`}</code></> : "O código para usar no texto aparece depois de salvar."}</p>
+              </div>
+            ))}
+            {gerir && <Button type="button" variant="outline" size="sm" onClick={() => setCampos([...campos, { id: "", rotulo: "", tipo: "moeda", padrao: "" }])}><Plus className="h-4 w-4" /> Adicionar valor</Button>}
+          </fieldset>
+          <fieldset disabled={!gerir} className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <h2 className="text-base font-semibold">Modelos de cláusula de honorários</h2>
+            <p className="text-[13px] text-zinc-500">Uma cláusula para cada área ou forma de cobrança (êxito, valor fixo, mensalidade…). Ao gerar o contrato, escolha qual usar: ela entra onde o texto tiver <code>{"{{honorarios.clausula}}"}</code>. Pode usar <code>{"{{campo.…}}"}</code> e as demais variáveis.</p>
+            {modelos.map((m, i) => (
+              <div key={m.id + i} className="space-y-2 rounded-xl border border-zinc-200 p-3 dark:border-zinc-700">
+                <div className="flex items-end gap-2"><div className="flex-1"><Campo rotulo="Nome do modelo"><Input value={m.nome} onChange={(e) => setModelos(modelos.map((x, j) => (j === i ? { ...x, nome: e.target.value } : x)))} className="mt-1.5" placeholder="Ex.: Trabalhista — êxito" /></Campo></div><Button type="button" variant="ghost" size="sm" aria-label="Remover modelo" onClick={() => setModelos(modelos.filter((_, j) => j !== i))}><Trash2 className="h-4 w-4" /></Button></div>
+                <Textarea rows={6} value={m.texto} onChange={(e) => setModelos(modelos.map((x, j) => (j === i ? { ...x, texto: e.target.value } : x)))} className="font-mono text-[14px] leading-relaxed" />
+              </div>
+            ))}
+            {gerir && <Button type="button" variant="outline" size="sm" onClick={() => setModelos([...modelos, { id: `m_${Math.random().toString(36).slice(2, 8)}`, nome: "", texto: "" }])}><Plus className="h-4 w-4" /> Adicionar modelo</Button>}
           </fieldset>
         </div>
         <div className="min-w-0">

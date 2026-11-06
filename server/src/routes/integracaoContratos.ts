@@ -2,6 +2,7 @@ import { Router, type Request } from "express";
 import { verificarRequisicao } from "../atendimento/assinatura";
 import { atendimentoDaInstancia } from "../atendimento/instancia";
 import { auditAccess } from "../services/accessService";
+import { lerConfigDocumentos, ROTULO_VARIANTE, VARIANTES } from "../services/gestao/documentos";
 import { ErroZapSign } from "../zapsign/api";
 import { ErroContrato, estadoDoContrato, gerarContrato, type DadosContrato } from "../zapsign/contratos";
 
@@ -38,6 +39,16 @@ integracaoContratosRouter.post("/contratos", async (req, res) => {
     auditAccess("contrato_gerado_atendimento", null, null, { contrato: r.id, pessoa: r.pessoa_id });
     res.status(201).json(r);
   } catch (e) { erro(res, e); }
+});
+
+/** O que o escritório configurou e o atendimento precisa mostrar no formulário: tipos de documento, valores e modelos de honorários. */
+integracaoContratosRouter.get("/contratos/opcoes", (_req, res) => {
+  const c = lerConfigDocumentos();
+  res.json({
+    variantes: VARIANTES.map((v) => ({ id: v, nome: ROTULO_VARIANTE[v] })),
+    campos: c.campos.map(({ id, rotulo, tipo, padrao }) => ({ id, rotulo, tipo, padrao })),
+    modelos_honorarios: c.modelos_honorarios.map(({ id, nome }) => ({ id, nome })),
+  });
 });
 
 integracaoContratosRouter.get("/contratos/:id", async (req, res) => {
