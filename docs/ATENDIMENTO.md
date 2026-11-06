@@ -46,7 +46,7 @@ Na aba **Escritórios** do painel aparece uma faixa do atendimento: **amarela** 
 
 ## Contratos pelo atendimento (ZapSign)
 
-Fluxo (3 envelopes, cada um com UMA assinatura: procuração; hipossuficiência; contrato + declarações): o atendente clica em **Gerar contrato** no Deskcomm → o Deskcomm pede ao painel (`/contratos`, assinado com `CONTRATOS_SEGREDO`) →
+Fluxo (UM envelope, um link e uma assinatura valem para os 3 documentos — procuração; hipossuficiência; contrato + declarações —, cada um com a sua validade no ZapSign, pelo recurso "documento extra"): o atendente clica em **Gerar contrato** no Deskcomm → o Deskcomm pede ao painel (`/contratos`, assinado com `CONTRATOS_SEGREDO`) →
 o painel repassa à instância do escritório (`/api/integracao/contratos`, assinado com a chave do escritório) → o sistema cadastra/atualiza o cliente
 (pelo CPF), monta **todos os documentos do kit**, converte em PDF (LibreOffice) e envia ao ZapSign → o link de assinatura volta ao Deskcomm, que o
 manda ao cliente pelo WhatsApp. O ZapSign envia a cópia por e-mail quando o cliente tem e-mail.

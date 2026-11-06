@@ -64,17 +64,16 @@ export function Atendimento() {
   );
 }
 
-interface ZapSignInfo { configurado: boolean; ambiente: "producao" | "sandbox"; token_final: string; modelo_id: string }
+interface ZapSignInfo { configurado: boolean; ambiente: "producao" | "sandbox"; token_final: string }
 
 /** Chave do ZapSign deste escritório (assinatura dos contratos gerados no atendimento). O token fica criptografado e nunca volta inteiro. */
 function CartaoZapSign() {
   const [info, setInfo] = useState<ZapSignInfo | null>(null);
   const [token, setToken] = useState("");
   const [ambiente, setAmbiente] = useState<"producao" | "sandbox">("producao");
-  const [modelo, setModelo] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [salvando, setSalvando] = useState(false);
-  useEffect(() => { api.get<ZapSignInfo>("/atendimento/zapsign", { fresh: true } as never).then((i) => { setInfo(i); setAmbiente(i.ambiente); setModelo(i.modelo_id || ""); }).catch(() => setInfo(null)); }, []);
+  useEffect(() => { api.get<ZapSignInfo>("/atendimento/zapsign", { fresh: true } as never).then((i) => { setInfo(i); setAmbiente(i.ambiente); }).catch(() => setInfo(null)); }, []);
   return (
     <div className="space-y-3 border-t border-zinc-200 pt-4 dark:border-zinc-800">
       <p className="flex items-center gap-2 text-sm font-semibold text-zinc-800 dark:text-zinc-100"><FileSignature className="h-4 w-4" /> Contratos com assinatura (ZapSign)</p>
@@ -85,14 +84,9 @@ function CartaoZapSign() {
           <option value="producao">Produção</option><option value="sandbox">Testes (sandbox)</option>
         </select>
       </div>
-      <div className="space-y-1">
-        <label htmlFor="zs-modelo" className="text-sm font-medium text-zinc-700 dark:text-zinc-200">ID do modelo (opcional)</label>
-        <input id="zs-modelo" value={modelo} onChange={(e) => setModelo(e.target.value)} placeholder="Código do modelo criado no ZapSign" className="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950" />
-        <p className="text-xs text-zinc-500">Com o modelo (documento principal + documentos complementares, com variáveis como {"{{NOME}}"} e {"{{CPF}}"}), o cliente recebe <b>um único link</b> e uma assinatura vale para todos os documentos. Sem o modelo, o sistema envia os documentos do kit em 3 envelopes.</p>
-      </div>
       <Button disabled={salvando || (!token.trim() && !info?.configurado)} onClick={() => {
         setSalvando(true); setMsg(null);
-        api.put<ZapSignInfo>("/atendimento/zapsign", { token, ambiente, modelo_id: modelo })
+        api.put<ZapSignInfo>("/atendimento/zapsign", { token, ambiente })
           .then((i) => { setInfo(i); setToken(""); setMsg({ ok: true, texto: "ZapSign configurado." }); })
           .catch((e: unknown) => setMsg({ ok: false, texto: e instanceof Error ? e.message : "Não foi possível salvar." }))
           .finally(() => setSalvando(false));

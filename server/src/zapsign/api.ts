@@ -1,5 +1,5 @@
 /** Cliente mínimo da API do ZapSign (criar documento a partir de PDF em base64 e consultar o estado). */
-export interface ConfigZapSign { token: string; ambiente: "producao" | "sandbox"; urlBase?: string; /** ID do modelo (com documentos complementares) criado no ZapSign: um link e uma assinatura para todos os documentos. */ modeloId?: string }
+export interface ConfigZapSign { token: string; ambiente: "producao" | "sandbox"; urlBase?: string; }
 
 export class ErroZapSign extends Error {
   constructor(message: string, public status = 502) { super(message); }
@@ -112,27 +112,10 @@ export async function posicionarAssinaturas(c: ConfigZapSign, docToken: string, 
 }
 
 /**
- * Cria o documento a partir de um MODELO do ZapSign (o principal + os documentos complementares do modelo): um único link e uma única
- * assinatura valem para todos. As variáveis do modelo ({{NOME}}, {{CPF}}…) são preenchidas com `de`/`para`.
+ * Anexa um DOCUMENTO EXTRA ao documento principal (até 14): o signatário assina todos de uma vez, pelo MESMO link, e cada um é um documento
+ * próprio no ZapSign (com a sua assinatura, o seu selo e o seu certificado). Só PDF, até 10 MB; cada extra consome um crédito.
  */
-export async function criarDocumentoDeModelo(
-  c: ConfigZapSign,
-  d: { modeloId: string; signatario: Signatario; variaveis: Record<string, string>; idExterno?: string },
-  http: typeof fetch = fetch,
-): Promise<DocumentoZapSign> {
-  const tel = soDigitos(d.signatario.telefone ?? "");
-  const local = tel.startsWith("55") && tel.length >= 12 ? tel.slice(2) : tel;
-  const json = await chamar(c, "POST", "/models/create-doc/", {
-    template_id: d.modeloId,
-    signer_name: d.signatario.nome,
-    ...(d.signatario.email ? { signer_email: d.signatario.email } : {}),
-    ...(local.length >= 10 ? { signer_phone_country: "55", signer_phone_number: local } : {}),
-    send_automatic_email: Boolean(d.signatario.email),
-    lang: "pt-br",
-    external_id: d.idExterno,
-    data: Object.entries(d.variaveis).map(([de, para]) => ({ de: `{{${de}}}`, para })),
-  }, http);
-  const doc = lerDocumento(json);
-  if (!doc.token || !doc.signUrl) throw new ErroZapSign("O ZapSign não devolveu o link de assinatura do modelo. Confira o ID do modelo em Atendimento → ZapSign.");
-  return doc;
+export async function adicionarDocumentoExtra(c: ConfigZapSign, docToken: string, d: { nome: string; pdfBase64: string }, http: typeof fetch = fetch): Promise<{ token: string | null }> {
+  const json = await chamar(c, "POST", `/docs/${encodeURIComponent(docToken)}/upload-extra-doc/`, { name: d.nome, base64_pdf: d.pdfBase64 }, http);
+  return { token: json?.token ? String(json.token) : null };
 }
