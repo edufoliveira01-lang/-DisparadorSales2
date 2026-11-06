@@ -52,8 +52,8 @@ const CLIENTE = { nome: "Maria Aparecida de Souza", cpf: "529.982.247-25", rg: "
 describe("contrato — gerar e acompanhar", () => {
   it("cadastra o cliente, monta os documentos, manda o PDF ao ZapSign e guarda o contrato", async () => {
     let pdfRecebido = 0;
-    const r = await gerarContrato(CLIENTE, "Ana", { config: CONFIG, http: http([{ corpo: DOC }]), pdf: async (docx) => { pdfRecebido = docx.length; return Buffer.from("%PDF-1.4 teste"); } });
-    expect(pdfRecebido).toBeGreaterThan(1000);
+    const r = await gerarContrato(CLIENTE, "Ana", { config: CONFIG, http: http([{ corpo: DOC }]), pdf: async (kit) => { pdfRecebido = kit.documentos.length; return Buffer.from("%PDF-1.4 teste"); } });
+    expect(pdfRecebido).toBeGreaterThanOrEqual(5);
     expect(r).toMatchObject({ status: "enviado", sign_url: "https://app.zapsign.com.br/verificar/abc", email_enviado: true });
     const pessoa = db.prepare("SELECT nome, documento, sexo, nacionalidade, cidade FROM gestao_pessoas WHERE id=?").get(r.pessoa_id) as Record<string, string>;
     expect(pessoa).toMatchObject({ nome: "Maria Aparecida de Souza", documento: "52998224725", sexo: "F", nacionalidade: "brasileira", cidade: "Santos" });

@@ -1,12 +1,11 @@
 import { db } from "../db";
 import { ErroGestao } from "../services/gestao/erro";
-import { DOCS, lerConfigDocumentos, montarKit } from "../services/gestao/documentos";
-import { kitDocx } from "../services/gestao/docx";
+import { DOCS, lerConfigDocumentos, montarKit, type Kit } from "../services/gestao/documentos";
 import { atualizarPessoa, criarPessoa } from "../services/gestao/pessoas";
 import { soDigitos } from "../services/gestao/validacao";
 import { consultarDocumento, criarDocumento, ErroZapSign, type ConfigZapSign, type DocumentoZapSign } from "./api";
 import { lerConfigZapSign } from "./config";
-import { docxParaPdf } from "./pdf";
+import { pdfDoKit } from "./pdf";
 
 db.exec(`CREATE TABLE IF NOT EXISTS zapsign_contratos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -37,7 +36,7 @@ export interface ContratoGerado { id: number; pessoa_id: number; status: string;
 const txt = (v: unknown, max = 200) => String(v ?? "").trim().slice(0, max);
 
 /** Cria/atualiza o cliente no cadastro (pelo CPF), monta TODOS os documentos do kit, converte em PDF e manda ao ZapSign. */
-export async function gerarContrato(d: DadosContrato, nomeUsuario: string, deps: { config?: ConfigZapSign | null; http?: typeof fetch; pdf?: (b: Buffer) => Promise<Buffer> } = {}): Promise<ContratoGerado> {
+export async function gerarContrato(d: DadosContrato, nomeUsuario: string, deps: { config?: ConfigZapSign | null; http?: typeof fetch; pdf?: (kit: Kit) => Promise<Buffer> } = {}): Promise<ContratoGerado> {
   const config = deps.config === undefined ? lerConfigZapSign() : deps.config;
   if (!config) throw new ErroContrato("O ZapSign ainda não foi configurado neste escritório (Atendimento → ZapSign).", 409);
   const nome = txt(d.nome);
@@ -62,15 +61,15 @@ export async function gerarContrato(d: DadosContrato, nomeUsuario: string, deps:
   }
 
   const ids = [...DOCS.map((x) => x.id), ...lerConfigDocumentos().proprios.map((p) => p.id)];
-  let docx: Buffer;
+  let kit: Kit;
   try {
-    docx = kitDocx(montarKit({ pessoaId, variante: "comum", documentos: ids, data: "hoje" }, nomeUsuario || "Atendimento"));
+    kit = montarKit({ pessoaId, variante: "comum", documentos: ids, data: "hoje" }, nomeUsuario || "Atendimento");
   } catch (e) {
     if (e instanceof ErroGestao) throw new ErroContrato(e.message, 422);
     throw e;
   }
   let pdf: Buffer;
-  try { pdf = await (deps.pdf ?? docxParaPdf)(docx); } catch { throw new ErroContrato("Não foi possível gerar o PDF do contrato. Tente de novo.", 502); }
+  try { pdf = await (deps.pdf ?? pdfDoKit)(kit); } catch { throw new ErroContrato("Não foi possível gerar o PDF do contrato neste servidor (conversor de documentos indisponível).", 424); }
 
   const doc = await criarDocumento(config, {
     nome: `Contrato - ${nome}`,
