@@ -75,8 +75,19 @@ describe("contrato — gerar e acompanhar", () => {
   it("acompanha: pendente continua enviado; assinado é gravado", async () => {
     const g = await gerarContrato(CLIENTE, "Ana", { config: CONFIG, http: http([{ corpo: DOC }]), pdf: async () => Buffer.from("%PDF") });
     expect((await estadoDoContrato(g.id, { config: CONFIG, http: http([{ corpo: { ...DOC, status: "pending" } }]) })).status).toBe("enviado");
-    const ass = await estadoDoContrato(g.id, { config: CONFIG, http: http([{ corpo: { ...DOC, status: "signed", signed_file: "https://x/arquivo.pdf" } }]) });
+    const chamadas: { url: string; init: RequestInit }[] = [];
+    const comPdf = (async (url: string, init: RequestInit) => {
+      chamadas.push({ url: String(url), init });
+      if (String(url).includes("arquivo.pdf")) return new Response(Buffer.from("%PDF-1.4 assinado"), { status: 200 });
+      return new Response(JSON.stringify({ ...DOC, status: "signed", signed_file: "https://x/arquivo.pdf" }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const ass = await estadoDoContrato(g.id, { config: CONFIG, http: comPdf });
     expect(ass.status).toBe("assinado");
+    expect(ass.arquivo_salvo).toBe(true);
+    // o PDF assinado foi para a pasta do cliente, na categoria "Contrato assinado"
+    const arq = db.prepare("SELECT a.nome, a.categoria, a.pessoa_id FROM gestao_arquivos a JOIN zapsign_contratos c ON c.arquivo_id=a.id WHERE c.id=?").get(g.id) as { nome: string; categoria: string; pessoa_id: number };
+    expect(arq).toMatchObject({ categoria: "Contrato assinado", pessoa_id: g.pessoa_id });
+    expect(arq.nome).toMatch(/^Contrato assinado - /);
     expect((await estadoDoContrato(g.id, { config: CONFIG, http: http([]) })).status).toBe("assinado");
   });
 });

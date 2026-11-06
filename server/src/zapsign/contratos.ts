@@ -1,6 +1,7 @@
 import { db } from "../db";
 import { ErroGestao } from "../services/gestao/erro";
 import { DOCS, lerConfigDocumentos, montarKit, type Kit } from "../services/gestao/documentos";
+import { salvarArquivo } from "../services/gestao/arquivos";
 import { atualizarPessoa, criarPessoa } from "../services/gestao/pessoas";
 import { soDigitos } from "../services/gestao/validacao";
 import { consultarDocumento, criarDocumento, ErroZapSign, type ConfigZapSign, type DocumentoZapSign } from "./api";
@@ -20,6 +21,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS zapsign_contratos (
   assinado_em TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_zapsign_contratos_token ON zapsign_contratos(doc_token);`);
+if (!(db.prepare("PRAGMA table_info(zapsign_contratos)").all() as { name: string }[]).some((c) => c.name === "arquivo_id")) db.exec("ALTER TABLE zapsign_contratos ADD COLUMN arquivo_id INTEGER");
 
 export class ErroContrato extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -83,16 +85,37 @@ export async function gerarContrato(d: DadosContrato, nomeUsuario: string, deps:
   return { id: Number(r.lastInsertRowid), pessoa_id: pessoaId, status: "enviado", sign_url: doc.signUrl!, email_enviado: Boolean(campos.email) };
 }
 
-/** Consulta o ZapSign e guarda o novo estado (enviado → assinado). */
+/** Baixa o PDF assinado e o guarda na pasta do cliente (categoria "Contrato assinado"). Devolve o id do arquivo, ou null se não deu. */
+async function guardarAssinado(l: { id: number; pessoa_id: number | null }, url: string, http: typeof fetch): Promise<number | null> {
+  if (!l.pessoa_id || !url) return null;
+  try {
+    const r = await http(url, { signal: AbortSignal.timeout(60_000) });
+    if (!r.ok) return null;
+    const pdf = Buffer.from(await r.arrayBuffer());
+    const nome = (db.prepare("SELECT nome FROM gestao_pessoas WHERE id=?").get(l.pessoa_id) as { nome: string } | undefined)?.nome ?? "cliente";
+    const arq = salvarArquivo({ pessoaId: l.pessoa_id }, `Contrato assinado - ${nome}.pdf`, pdf, { categoria: "Contrato assinado", descricao: `Assinado pelo ZapSign (contrato nº ${l.id})` }, { id: null, nome: "ZapSign" });
+    db.prepare("UPDATE zapsign_contratos SET arquivo_id=? WHERE id=?").run(arq.id, l.id);
+    return arq.id;
+  } catch (e) {
+    console.error("[contratos] não foi possível guardar o PDF assinado:", e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+/** Consulta o ZapSign e guarda o novo estado (enviado → assinado). Ao assinar, o PDF assinado vai para a pasta do cliente. */
 export async function estadoDoContrato(id: number, deps: { config?: ConfigZapSign | null; http?: typeof fetch } = {}) {
-  const l = db.prepare("SELECT * FROM zapsign_contratos WHERE id=?").get(id) as { id: number; pessoa_id: number | null; doc_token: string; sign_url: string; status: string; assinado_em: string | null } | undefined;
+  const l = db.prepare("SELECT * FROM zapsign_contratos WHERE id=?").get(id) as { id: number; pessoa_id: number | null; doc_token: string; sign_url: string; status: string; assinado_em: string | null; arquivo_id: number | null } | undefined;
   if (!l) throw new ErroContrato("Contrato não encontrado.", 404);
-  if (l.status === "assinado") return { id: l.id, status: l.status, sign_url: l.sign_url, assinado_em: l.assinado_em };
+  const http = deps.http ?? fetch;
   const config = deps.config === undefined ? lerConfigZapSign() : deps.config;
   if (!config) throw new ErroContrato("O ZapSign ainda não foi configurado neste escritório.", 409);
+  // Já assinado: só tenta de novo guardar o PDF se na primeira vez não deu (o ZapSign pode demorar a liberar o arquivo).
+  if (l.status === "assinado" && l.arquivo_id) return { id: l.id, status: l.status, sign_url: l.sign_url, assinado_em: l.assinado_em, arquivo_salvo: true };
   let doc: DocumentoZapSign;
-  try { doc = await consultarDocumento(config, l.doc_token, deps.http ?? fetch); } catch (e) { if (e instanceof ErroZapSign) throw new ErroContrato(e.message, e.status); throw e; }
-  const assinado = doc.status === "signed";
-  if (assinado) db.prepare("UPDATE zapsign_contratos SET status='assinado', assinado_em=CURRENT_TIMESTAMP, arquivo_assinado=? WHERE id=?").run(doc.arquivoAssinado ?? "", id);
-  return { id: l.id, status: assinado ? "assinado" : l.status, sign_url: l.sign_url, assinado_em: assinado ? new Date().toISOString() : null };
+  try { doc = await consultarDocumento(config, l.doc_token, http); } catch (e) { if (e instanceof ErroZapSign) throw new ErroContrato(e.message, e.status); throw e; }
+  const assinado = l.status === "assinado" || doc.status === "signed";
+  if (!assinado) return { id: l.id, status: l.status, sign_url: l.sign_url, assinado_em: null, arquivo_salvo: false };
+  if (l.status !== "assinado") db.prepare("UPDATE zapsign_contratos SET status='assinado', assinado_em=CURRENT_TIMESTAMP, arquivo_assinado=? WHERE id=?").run(doc.arquivoAssinado ?? "", id);
+  const arquivoId = doc.arquivoAssinado ? await guardarAssinado(l, doc.arquivoAssinado, http) : null;
+  return { id: l.id, status: "assinado" as const, sign_url: l.sign_url, assinado_em: l.assinado_em ?? new Date().toISOString(), arquivo_salvo: arquivoId !== null };
 }

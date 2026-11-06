@@ -45,7 +45,7 @@ function conferirEscopo(e: Escopo) {
   if (!e.processoId && !e.pessoaId) throw new ErroGestao("Informe o processo ou a pessoa.");
 }
 
-export function salvarArquivo(e: Escopo, nomeBruto: unknown, conteudo: Buffer, meta: { categoria?: string; descricao?: string }, user: { id: number; nome: string }): Arquivo {
+export function salvarArquivo(e: Escopo, nomeBruto: unknown, conteudo: Buffer, meta: { categoria?: string; descricao?: string }, user: { id: number | null; nome: string }): Arquivo {
   conferirEscopo(e);
   const nome = nomeSeguro(nomeBruto);
   if (!Buffer.isBuffer(conteudo) || conteudo.length === 0) throw new ErroGestao("O arquivo está vazio.");
