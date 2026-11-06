@@ -1,7 +1,7 @@
 {
   "name": "disparador-pericias",
   "private": true,
-  "version": "2.79.0",
+  "version": "2.79.1",
   "scripts": {
     "install:all": "npm install && npm install --prefix server --include=optional && npm install --prefix client && npm run codex:install --prefix server",
     "dev": "concurrently -n server,client -c blue,green \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
