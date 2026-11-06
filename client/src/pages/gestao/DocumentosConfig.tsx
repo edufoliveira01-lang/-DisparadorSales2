@@ -17,7 +17,7 @@ const ASSINATURA_INICIAL: Assinatura = { espaco: 12, largura: 90, alinhamento: "
 interface Resp {
   textos: Record<string, Record<Variante, string>>; personalizados: Record<string, Variante[]>; tamanhos: Record<string, number>; honorarios: { beneficios: number; percentual: number; parcela: number }; assinatura: Assinatura; campos: CampoValor[]; modelos_honorarios: ModeloHon[];
   padroes: Record<string, Record<Variante, string>>; variaveis: string[]; variantes: { id: Variante; nome: string }[]; documentos: { id: string; nome: string; proprio?: boolean }[];
-  proprios: { id: string; nome: string; texto: string; pt: number; assinatura: boolean }[];
+  proprios: { id: string; nome: string; texto: string; pt: number; assinatura: boolean; imagens?: { mime: string; bytes: number }[] }[];
 }
 
 /** Textos do kit de documentos do escritório (procuração, hipossuficiência, contrato, declaração, termo) em cada tipo. */
@@ -88,7 +88,7 @@ export function DocumentosConfig() {
           <details className="rounded-xl border border-zinc-200 p-3 text-xs text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">
             <summary className="cursor-pointer font-medium">Como escrever (variáveis e formatação)</summary>
             <div className="mt-2 space-y-2">
-              <p>Separe os parágrafos com uma linha em branco. <code># Título</code> cria o título centralizado; <code>&gt; texto</code> cria um quadro com borda; <code>**negrito**</code> destaca.</p>
+              <p>Separe os parágrafos com uma linha em branco. <code># Título</code> cria o título centralizado; <code>&gt; texto</code> cria um quadro com borda; <code>**negrito**</code> destaca, <code>*itálico*</code> e <code>++sublinhado++</code> também. Linhas começando com <code>|</code> viram tabela (<code>| Item | Valor |</code>). <code>[[imagem:1]]</code> coloca a figura 1 do documento (a largura em mm pode vir depois: <code>[[imagem:1|60]]</code>).</p>
               <p>Onde houver <code>{"{{variável}}"}</code> entram os dados do cliente e do escritório. Dado que falta sai como <code>________</code> para preencher à mão.</p>
               <p className="break-words font-mono">{r.variaveis.map((v) => `{{${v}}}`).join("  ")}</p>
               <p>A data, a assinatura (do cliente, a rogo com testemunhas e digital, ou do representante) e as testemunhas do contrato entram sozinhas, conforme o tipo escolhido ao gerar.</p>
@@ -165,13 +165,14 @@ function NovoDocumento({ aoCriar, aoCancelar }: { aoCriar: (id: string) => Promi
   const [salvando, setSalvando] = useState(false);
   const [importando, setImportando] = useState(false);
   const [avisos, setAvisos] = useState<string[]>([]);
+  const [imagens, setImagens] = useState<{ mime: string; b64: string }[]>([]);
   const importar = async (arquivo: File | undefined) => {
     if (!arquivo) return;
     if (!/\.docx$/i.test(arquivo.name)) return void show("Envie um documento do Word (.docx).", "error");
     setImportando(true);
     try {
-      const x = await api.upload<{ nome: string; texto: string; avisos: string[] }>("/gestao/documentos/proprios/importar", arquivo);
-      setTexto(x.texto); setAvisos(x.avisos);
+      const x = await api.upload<{ nome: string; texto: string; avisos: string[]; imagens: { mime: string; b64: string }[] }>("/gestao/documentos/proprios/importar", arquivo);
+      setTexto(x.texto); setAvisos(x.avisos); setImagens(x.imagens ?? []);
       if (!nome.trim()) setNome(x.nome);
       show("Modelo importado. Confira o texto e as variáveis antes de criar.", "success");
     } catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível importar o arquivo.", "error"); }
@@ -179,7 +180,7 @@ function NovoDocumento({ aoCriar, aoCancelar }: { aoCriar: (id: string) => Promi
   };
   const criar = async () => {
     setSalvando(true);
-    try { const x = await api.post<{ documento: { id: string } }>("/gestao/documentos/proprios", { nome, texto, assinatura }); show("Documento criado. Ele já aparece em Gerar documentos.", "success"); await aoCriar(x.documento.id); }
+    try { const x = await api.post<{ documento: { id: string } }>("/gestao/documentos/proprios", { nome, texto, assinatura, imagens }); show("Documento criado. Ele já aparece em Gerar documentos.", "success"); await aoCriar(x.documento.id); }
     catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível criar o documento.", "error"); }
     finally { setSalvando(false); }
   };
@@ -192,7 +193,8 @@ function NovoDocumento({ aoCriar, aoCancelar }: { aoCriar: (id: string) => Promi
           <FileUp className="h-4 w-4" /> {importando ? "Lendo o arquivo…" : "Importar de um arquivo do Word (.docx)"}
           <input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="sr-only" disabled={importando} onChange={(e) => { void importar(e.target.files?.[0]); e.target.value = ""; }} />
         </label>
-        <p className="mt-1 text-[13px] text-zinc-500">Envie o seu modelo pronto: o texto, os títulos e o negrito vêm para cá, e campos como [NOME], [CPF] ou {"{{ENDEREÇO}}"} viram os dados do cliente. O cabeçalho, o rodapé e a assinatura continuam os do escritório.</p>
+        <p className="mt-1 text-[13px] text-zinc-500">Envie o seu modelo pronto: o texto, os títulos, o negrito, o itálico, as tabelas e as figuras vêm para cá, e campos como [NOME], [CPF] ou {"{{ENDEREÇO}}"} viram os dados do cliente. O cabeçalho, o rodapé e a assinatura continuam os do escritório.</p>
+        {imagens.length > 0 && <p className="mt-2 text-[13px] text-zinc-600 dark:text-zinc-300">{imagens.length} figura(s) vão junto com o documento: <code>{imagens.map((_, i) => `[[imagem:${i + 1}]]`).join(" ")}</code> no texto marca onde cada uma aparece.</p>}
         {avisos.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5 text-[13px] text-amber-700 dark:text-amber-300">{avisos.map((a) => <li key={a}>{a}</li>)}</ul>}
       </div>
       <Campo rotulo="Texto"><Textarea rows={14} value={texto} onChange={(e) => setTexto(e.target.value)} className="mt-1.5 font-mono text-[14px] leading-relaxed" /></Campo>
@@ -203,7 +205,7 @@ function NovoDocumento({ aoCriar, aoCancelar }: { aoCriar: (id: string) => Promi
 }
 
 /** Edita ou exclui um documento próprio. */
-function EditorProprio({ doc, gerir, aoMudar, versao }: { doc: { id: string; nome: string; texto: string; pt: number; assinatura: boolean }; gerir: boolean; aoMudar: (apagou?: boolean) => Promise<void>; versao: number }) {
+function EditorProprio({ doc, gerir, aoMudar, versao }: { doc: { id: string; nome: string; texto: string; pt: number; assinatura: boolean; imagens?: { mime: string; bytes: number }[] }; gerir: boolean; aoMudar: (apagou?: boolean) => Promise<void>; versao: number }) {
   const { show } = useToast();
   const [nome, setNome] = useState(doc.nome);
   const [texto, setTexto] = useState(doc.texto);
@@ -227,6 +229,7 @@ function EditorProprio({ doc, gerir, aoMudar, versao }: { doc: { id: string; nom
       <fieldset disabled={!gerir} className="space-y-4">
         <Campo rotulo="Nome do documento"><Input value={nome} onChange={(e) => setNome(e.target.value)} className="mt-1.5" /></Campo>
         <Campo rotulo="Texto"><Textarea rows={24} value={texto} onChange={(e) => setTexto(e.target.value)} className="mt-1.5 font-mono text-[14px] leading-relaxed" /></Campo>
+        {(doc.imagens?.length ?? 0) > 0 && <p className="text-[13px] text-zinc-600 dark:text-zinc-300">Figuras deste documento: <code>{doc.imagens!.map((_, i) => `[[imagem:${i + 1}]]`).join(" ")}</code>. A linha com o código marca onde a figura aparece; apague a linha para tirá-la do texto.</p>}
         <div className="flex flex-wrap items-end justify-between gap-3">
           <Campo rotulo="Tamanho da letra (pt)"><Input type="number" min={7} max={18} step={0.5} value={pt} onChange={(e) => setPt(Number(e.target.value))} className="mt-1.5 w-28" /></Campo>
           <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300"><input type="checkbox" checked={assinatura} onChange={(e) => setAssinatura(e.target.checked)} /> Incluir data e assinatura</label>

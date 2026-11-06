@@ -233,21 +233,25 @@ gestaoRouter.post("/imagens/:nome", express.raw({ type: () => true, limit: 2 * 1
 }));
 gestaoRouter.delete("/imagens/:nome", rota((req) => { const n = String(req.params.nome); if (!nomeDeImagemValido(n)) throw new ErroGestao("Imagem desconhecida.", 404); apagarImagem(n); return { ok: true, ...imagensDoEscritorio() }; }));
 gestaoRouter.put("/escritorio", rota((req) => { const e = salvarEscritorio(req.body || {}); auditAccess("gestao_escritorio_alterado", usuario(req).id, null); return { escritorio: e, ...imagensDoEscritorio() }; }));
+/** A configuração dos documentos sem o conteúdo das figuras (só tipo e tamanho), para a tela não carregar megabytes. */
+const metaImagens = <T extends { imagens?: { mime: string; b64: string }[] }>(p: T) => ({ ...p, imagens: (p.imagens ?? []).map((i) => ({ mime: i.mime, bytes: Math.round((i.b64.length * 3) / 4) })) });
+const semImagens = <C extends { proprios: { imagens?: { mime: string; b64: string }[] }[]; documento?: { imagens?: { mime: string; b64: string }[] } }>(c: C) => ({ ...c, proprios: c.proprios.map(metaImagens), ...(c.documento ? { documento: metaImagens(c.documento) } : {}) });
+const configSemImagens = () => semImagens(lerConfigDocumentos());
 gestaoRouter.get("/documentos/config", rota(() => ({
-  ...lerConfigDocumentos(), padroes: TEXTOS_PADRAO, variaveis: [...VARIAVEIS_DOCUMENTO, ...lerConfigDocumentos().campos.map((c) => `campo.${c.id}`)], variantes: VARIANTES.map((v) => ({ id: v, nome: ROTULO_VARIANTE[v] })),
+  ...configSemImagens(), padroes: TEXTOS_PADRAO, variaveis: [...VARIAVEIS_DOCUMENTO, ...lerConfigDocumentos().campos.map((c) => `campo.${c.id}`)], variantes: VARIANTES.map((v) => ({ id: v, nome: ROTULO_VARIANTE[v] })),
   documentos: [...DOCS.map((d) => ({ id: d.id, nome: d.nome, proprio: false })), ...lerConfigDocumentos().proprios.map((p) => ({ id: p.id, nome: p.nome, proprio: true }))], escritorio_completo: Boolean(lerEscritorio().advogados.length && (lerEscritorio().nome || lerEscritorio().razao_social)),
 })));
-gestaoRouter.put("/documentos/config", rota((req) => { const c = salvarConfigDocumentos(req.body || {}); auditAccess("gestao_documentos_modelo_alterado", usuario(req).id, null); return c; }));
+gestaoRouter.put("/documentos/config", rota((req) => { const c = salvarConfigDocumentos(req.body || {}); auditAccess("gestao_documentos_modelo_alterado", usuario(req).id, null); return semImagens(c); }));
 gestaoRouter.post("/documentos/proprios/importar", express.raw({ type: () => true, limit: 5 * 1024 * 1024 }), rota((req) => {
   if (!hasPermission(usuario(req), "gestao.manage")) throw new ErroGestao("Você não tem permissão para criar documentos.", 403);
   const m = docxParaModelo(Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0), String(req.headers["x-nome-arquivo"] ? decodeURIComponent(String(req.headers["x-nome-arquivo"])) : ""));
   auditAccess("gestao_documento_importado", usuario(req).id, null);
   return m;
 }));
-gestaoRouter.post("/documentos/proprios", rota((req, res) => { const r = criarDocumentoProprio(req.body || {}); res.status(201); auditAccess("gestao_documento_proprio_criado", usuario(req).id, null, { documento: r.documento.id }); return r; }));
-gestaoRouter.put("/documentos/proprios/:docId", rota((req) => atualizarDocumentoProprio(String(req.params.docId), req.body || {})));
-gestaoRouter.delete("/documentos/proprios/:docId", rota((req) => { const r = excluirDocumentoProprio(String(req.params.docId)); auditAccess("gestao_documento_proprio_excluido", usuario(req).id, null, { documento: String(req.params.docId) }); return r; }));
-gestaoRouter.post("/documentos/config/restaurar", rota((req) => restaurarTexto(String(req.body?.documento ?? ""), String(req.body?.variante ?? ""))));
+gestaoRouter.post("/documentos/proprios", rota((req, res) => { const r = criarDocumentoProprio(req.body || {}); res.status(201); auditAccess("gestao_documento_proprio_criado", usuario(req).id, null, { documento: r.documento.id }); return semImagens(r); }));
+gestaoRouter.put("/documentos/proprios/:docId", rota((req) => semImagens(atualizarDocumentoProprio(String(req.params.docId), req.body || {}))));
+gestaoRouter.delete("/documentos/proprios/:docId", rota((req) => { const r = excluirDocumentoProprio(String(req.params.docId)); auditAccess("gestao_documento_proprio_excluido", usuario(req).id, null, { documento: String(req.params.docId) }); return semImagens(r); }));
+gestaoRouter.post("/documentos/config/restaurar", rota((req) => semImagens(restaurarTexto(String(req.body?.documento ?? ""), String(req.body?.variante ?? "")))));
 const CSP_DOC = "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:";
 const texto = (v: unknown, max = 200) => String(v ?? "").slice(0, max);
 const qual = (v: unknown) => { const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>; return { nome: texto(o.nome, 120), nacionalidade: texto(o.nacionalidade, 30), estado_civil: texto(o.estado_civil, 30), profissao: texto(o.profissao, 60), rg: texto(o.rg, 30), cpf: texto(o.cpf, 25), endereco: texto(o.endereco, 250), qualidade: texto(o.qualidade, 40) }; };

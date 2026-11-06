@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { db } from "../../db";
 import { ErroGestao } from "./erro";
 import { contextoDoDocumento } from "./modelos";
+import { dimensoesDaImagem } from "./docx";
 import { lerEscritorio, type Escritorio, type Testemunha } from "./escritorio";
 import { imagemAtual, logoAtual } from "./fichaConfig";
 
@@ -27,7 +28,7 @@ export type DocId = typeof DOCS[number]["id"];
 const SUBLINHADOS: string[] = ["hipossuficiencia", "declaracao_honorarios"];
 
 // ---------- blocos (estrutura neutra, usada pelo HTML e pelo Word) ----------
-export interface Trecho { t: string; b?: boolean }
+export interface Trecho { t: string; b?: boolean; i?: boolean; u?: boolean }
 export type Alinhamento = "j" | "c" | "r" | "l";
 export type Bloco =
   | { k: "titulo"; texto: string; pt: number; sublinhado: boolean }
@@ -35,6 +36,8 @@ export type Bloco =
   | { k: "caixa"; trechos: Trecho[]; align: Alinhamento; pt: number }
   | { k: "vazio"; n: number; mm?: number }
   | { k: "fim" }
+  | { k: "tabela"; linhas: Trecho[][][]; pt: number }
+  | { k: "imagem"; dados: Buffer; mime: string; w: number; h: number; align: "l" | "c" | "r" }
   | { k: "assinatura"; nome: string; extra: string[]; pt: number }
   | { k: "rogo"; assina: string; extra: string[]; testemunhas: Testemunha[]; polegar: string; pt: number }
   | { k: "testemunhas"; itens: Testemunha[]; pt: number };
@@ -132,7 +135,24 @@ export const VARIAVEIS_DOCUMENTO = [
 // ---------- configuração editável ----------
 export interface HonorariosPadrao { beneficios: number; percentual: number; parcela: number }
 /** Documento criado pelo escritório, que passa a fazer parte do kit (mesmo cabeçalho, rodapé e assinatura). */
-export interface DocumentoProprio { id: string; nome: string; texto: string; pt: number; assinatura: boolean }
+/** Imagem que faz parte do texto de um documento próprio (selo, carimbo, quadro): aparece onde o texto tiver [[imagem:N]]. */
+export interface ImagemDoDocumento { mime: string; b64: string }
+export interface DocumentoProprio { id: string; nome: string; texto: string; pt: number; assinatura: boolean; imagens?: ImagemDoDocumento[] }
+const IMAGEM_MAX_BYTES = 1_500_000;
+export const mimeDaImagem = (d: Buffer): string | null =>
+  d.length > 8 && d.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ? "image/png"
+  : d.length > 3 && d[0] === 0xff && d[1] === 0xd8 ? "image/jpeg"
+  : d.length > 12 && d.toString("ascii", 0, 4) === "RIFF" && d.toString("ascii", 8, 12) === "WEBP" ? "image/webp" : null;
+function imagensValidas(x: unknown): ImagemDoDocumento[] {
+  const saida: ImagemDoDocumento[] = [];
+  for (const o of (Array.isArray(x) ? x : []).slice(0, 8)) {
+    const b64 = String((o as ImagemDoDocumento | undefined)?.b64 ?? "");
+    if (!b64 || b64.length > IMAGEM_MAX_BYTES * 1.4) continue;
+    const dados = Buffer.from(b64, "base64"), mime = mimeDaImagem(dados);
+    if (mime && dados.length <= IMAGEM_MAX_BYTES && dimensoesDaImagem(dados)) saida.push({ mime, b64: dados.toString("base64") });
+  }
+  return saida;
+}
 /** Valor que o escritório define (honorários por mês, valor fixo, entrada…) e usa nos textos como {{campo.id}}. */
 export interface CampoValor { id: string; rotulo: string; tipo: "texto" | "numero" | "percentual" | "moeda"; padrao: string }
 /** Cláusula de honorários alternativa (cada área/forma de cobrança), escolhida ao gerar e inserida onde houver {{honorarios.clausula}}. */
@@ -241,7 +261,7 @@ function lerBruto(): ConfigDocumentos {
     const o = x as Partial<DocumentoProprio>;
     const nome = String(o?.nome ?? "").replace(/\*\*/g, "").trim().slice(0, 80), texto = String(o?.texto ?? "").slice(0, 20000);
     const pt = Number(o?.pt);
-    return /^x_[a-z0-9]{6,12}$/.test(String(o?.id)) && nome && texto.trim() ? { id: String(o!.id), nome, texto, pt: Number.isFinite(pt) && pt >= 7 && pt <= 18 ? Math.round(pt * 2) / 2 : 11, assinatura: o?.assinatura !== false } : null;
+    return /^x_[a-z0-9]{6,12}$/.test(String(o?.id)) && nome && texto.trim() ? { id: String(o!.id), nome, texto, pt: Number.isFinite(pt) && pt >= 7 && pt <= 18 ? Math.round(pt * 2) / 2 : 11, assinatura: o?.assinatura !== false, ...(imagensValidas(o?.imagens).length ? { imagens: imagensValidas(o?.imagens) } : {}) } : null;
   }).filter((x): x is DocumentoProprio => x !== null);
   return { textos, tamanhos, proprios, assinatura: assinaturaValida(c.assinatura), campos: camposValidos(c.campos), modelos_honorarios: modelosValidos(c.modelos_honorarios), honorarios: { beneficios: num(h.beneficios, 3, 99), percentual: num(h.percentual, 30, 100), parcela: num(h.parcela, 30, 100) } };
 }
@@ -295,7 +315,7 @@ function dadosDoProprio(d: unknown, atual?: DocumentoProprio): DocumentoProprio 
   if (texto.trim().length < 10) throw new ErroGestao("Escreva o texto do documento.");
   if (texto.length > 20000) throw new ErroGestao("O texto do documento é grande demais.");
   const pt = Number(o.pt ?? atual?.pt ?? 11);
-  return { id: atual?.id ?? `x_${crypto.randomBytes(5).toString("hex")}`, nome, texto, pt: Number.isFinite(pt) && pt >= 7 && pt <= 18 ? Math.round(pt * 2) / 2 : 11, assinatura: o.assinatura === undefined ? atual?.assinatura ?? true : o.assinatura !== false };
+  return { id: atual?.id ?? `x_${crypto.randomBytes(5).toString("hex")}`, nome, texto, pt: Number.isFinite(pt) && pt >= 7 && pt <= 18 ? Math.round(pt * 2) / 2 : 11, assinatura: o.assinatura === undefined ? atual?.assinatura ?? true : o.assinatura !== false, ...((): { imagens?: ImagemDoDocumento[] } => { const im = o.imagens === undefined ? atual?.imagens ?? [] : imagensValidas(o.imagens); return im.length ? { imagens: im } : {}; })() };
 }
 export function criarDocumentoProprio(d: unknown) {
   const c = lerBruto();
@@ -334,7 +354,7 @@ export interface OpcoesKit {
   pessoaId?: number; processoId?: number; variante: Variante; documentos: string[]; data: "hoje" | "branco";
   honorarios?: Partial<HonorariosPadrao>; campos?: Record<string, string>; modelo_honorarios?: string; representante?: Partial<Qualificacao>; a_rogo?: Partial<Qualificacao>; testemunhas_rogo?: Testemunha[];
 }
-const limpo = (v: unknown, max = 300) => String(v ?? "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").replace(/\*\*/g, "").replace(/\s+/g, " ").trim().slice(0, max);
+const limpo = (v: unknown, max = 300) => String(v ?? "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").replace(/\*+/g, "").replace(/\+\+/g, "").replace(/\s+/g, " ").trim().slice(0, max);
 const BLANK = "________";
 
 function qualificar(q: { nome: string; nacionalidade?: string; estado_civil?: string; profissao?: string; rg?: string; cpf?: string; endereco?: string }, pj = false) {
@@ -367,9 +387,18 @@ function qualificarSales(q: { nome: string; nacionalidade?: string; sexo?: strin
   ].filter(Boolean);
   return partes.join(", ");
 }
+/** Texto com marcas: **negrito**, *itálico* e ++sublinhado++ (podem se combinar). */
 function trechos(texto: string): Trecho[] {
-  return texto.split("**").map((t, i) => ({ t, b: i % 2 === 1 })).filter((x) => x.t !== "");
+  const saida: Trecho[] = [];
+  let b = false, i = false, u = false;
+  for (const parte of texto.split(/(\*\*|\+\+|\*)/)) {
+    if (parte === "**") b = !b; else if (parte === "*") i = !i; else if (parte === "++") u = !u;
+    else if (parte !== "") saida.push({ t: parte, ...(b ? { b } : {}), ...(i ? { i } : {}), ...(u ? { u } : {}) });
+  }
+  return saida;
 }
+const semMarcas = (t: string) => t.replace(/\*\*|\+\+|\*/g, "");
+const IMAGEM_MAX_MM = { w: 170, h: 120 };
 function substituir(texto: string, v: Record<string, string>, faltando: Set<string>) {
   return texto.replace(/\{\{\s*([a-z0-9_.]+)\s*\}\}/g, (_m, chave: string) => {
     const valor = v[chave];
@@ -378,13 +407,30 @@ function substituir(texto: string, v: Record<string, string>, faltando: Set<stri
     return chave.endsWith("_complemento") ? "" : BLANK;
   });
 }
-function paraBlocos(texto: string, doc: typeof DOCS[number], pt: number): Bloco[] {
+function paraBlocos(texto: string, doc: typeof DOCS[number], pt: number, imagens: ImagemDoDocumento[] = []): Bloco[] {
   const saida: Bloco[] = [];
   for (const bruto of texto.split(/\n{2,}/)) {
     const b = bruto.trim();
     if (!b) continue;
-    if (b.startsWith("# ")) { saida.push({ k: "titulo", texto: b.slice(2).replace(/\*\*/g, ""), pt: doc.titulo, sublinhado: SUBLINHADOS.includes(doc.id) }); continue; }
-    if (b.startsWith("> ")) { const t = b.slice(2); saida.push({ k: "caixa", trechos: trechos(t), align: t.replace(/\*\*/g, "").length < 60 ? "c" : "j", pt: t.replace(/\*\*/g, "").length < 60 ? Math.max(8, pt - 2) : pt }); continue; }
+    const im = /^\[\[imagem:(\d{1,2})(?:\|(\d{1,3}))?(?:\|([lcr]))?\]\]$/.exec(b);
+    if (im) {
+      const img = imagens[Number(im[1]) - 1];
+      const dados = img ? Buffer.from(img.b64, "base64") : null, dim = dados ? dimensoesDaImagem(dados) : null;
+      if (img && dados && dim) {
+        const pedida = im[2] ? Number(im[2]) : (dim.w * 25.4) / 96; // sem largura pedida, o tamanho natural (96 dpi)
+        const w = Math.min(IMAGEM_MAX_MM.w, Math.max(5, pedida)), h = (w / dim.w) * dim.h;
+        const k = Math.min(1, IMAGEM_MAX_MM.h / h);
+        saida.push({ k: "imagem", dados, mime: img.mime, w: Math.round(w * k * 100) / 100, h: Math.round(h * k * 100) / 100, align: (im[3] as "l" | "c" | "r" | undefined) ?? "c" });
+      }
+      continue;
+    }
+    const linhas = b.split("\n");
+    if (linhas.length >= 1 && linhas.every((l) => /^\|.*\|\s*$/.test(l.trim()))) {
+      saida.push({ k: "tabela", linhas: linhas.map((l) => l.trim().replace(/^\||\|$/g, "").split("|").map((c) => trechos(c.trim()))), pt: Math.min(pt, 10.5) });
+      continue;
+    }
+    if (b.startsWith("# ")) { saida.push({ k: "titulo", texto: semMarcas(b.slice(2)), pt: doc.titulo, sublinhado: SUBLINHADOS.includes(doc.id) }); continue; }
+    if (b.startsWith("> ")) { const t = b.slice(2); saida.push({ k: "caixa", trechos: trechos(t), align: semMarcas(t).length < 60 ? "c" : "j", pt: semMarcas(t).length < 60 ? Math.max(8, pt - 2) : pt }); continue; }
     saida.push({ k: "p", trechos: trechos(b), align: "j", pt });
   }
   return saida;
@@ -461,7 +507,7 @@ export function montarKit(opcoes: OpcoesKit, nomeUsuario: string, exemplo = fals
   const documentos = escolhidos.map((d): DocumentoMontado => {
     const pt = d.proprio ? d.proprio.pt : cfg.tamanhos[d.id as DocId];
     const texto = d.proprio ? (/^\s*# /.test(d.proprio.texto) ? d.proprio.texto : `# ${d.proprio.nome}\n\n${d.proprio.texto}`) : cfg.textos[d.id as DocId][opcoes.variante];
-    const corpo = paraBlocos(substituir(texto, v, faltando), d as typeof DOCS[number], pt);
+    const corpo = paraBlocos(substituir(texto, v, faltando), d as typeof DOCS[number], pt, d.proprio?.imagens);
     const contrato = d.id === "contrato";
     const extraContratado = contrato ? [`CONTRATADO: ${v["advogado_principal.nome"] || BLANK}`, ...(v["advogado_principal.oab"] ? [v["advogado_principal.oab"]] : [])] : [];
     const blocos: Bloco[] = [...corpo, ...(cfg.assinatura.posicao === "fim" ? [{ k: "fim" } as Bloco] : []), { k: "vazio", n: 1 }, { k: "p", trechos: [{ t: v["data.local"] }], align: contrato ? "r" : "l", pt: Math.min(pt, 11) }, { k: "vazio", n: Math.round(cfg.assinatura.espaco / 6), mm: cfg.assinatura.espaco }];
@@ -489,7 +535,7 @@ export function montarKit(opcoes: OpcoesKit, nomeUsuario: string, exemplo = fals
 
 // ---------- HTML (tela e impressão) ----------
 const escHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-const runsHtml = (t: Trecho[]) => t.map((x) => { const h = escHtml(x.t).replace(/\n/g, "<br>"); return x.b ? `<b>${h}</b>` : h; }).join("");
+const runsHtml = (t: Trecho[]) => t.map((x) => { let h = escHtml(x.t).replace(/\n/g, "<br>"); if (x.u) h = `<u>${h}</u>`; if (x.i) h = `<i>${h}</i>`; return x.b ? `<b>${h}</b>` : h; }).join("");
 const ALIGN: Record<Alinhamento, string> = { j: "justify", c: "center", r: "right", l: "left" };
 
 function blocoHtml(b: Bloco): string {
@@ -499,6 +545,8 @@ function blocoHtml(b: Bloco): string {
     case "caixa": return `<div class="caixa" style="font-size:${b.pt}pt;text-align:${ALIGN[b.align]}">${runsHtml(b.trechos)}</div>`;
     case "vazio": return `<div style="height:${b.mm ?? b.n * 6}mm"></div>`;
     case "fim": return "";
+    case "tabela": return `<table class="tab" style="font-size:${b.pt}pt">${b.linhas.map((l) => `<tr>${l.map((c) => `<td>${runsHtml(c)}</td>`).join("")}</tr>`).join("")}</table>`;
+    case "imagem": return `<div style="text-align:${ALIGN[b.align]};margin:0 0 2.6mm"><img alt="" style="width:${b.w}mm;height:${b.h}mm" src="data:${b.mime};base64,${b.dados.toString("base64")}"></div>`;
     case "assinatura": return `<div class="assina" style="font-size:${b.pt}pt"><div class="linha"></div><b>${escHtml(b.nome)}</b>${b.extra.map((e) => `<div>${escHtml(e)}</div>`).join("")}</div>`;
     case "rogo": return `<table class="rogo" style="font-size:${b.pt}pt"><tr><td colspan="2" class="sem"><div class="linha"></div><b>${escHtml(b.assina)}</b>${b.extra.map((e) => `<div>${escHtml(e)}</div>`).join("")}<div>TESTEMUNHAS A ROGO:</div></td><td rowspan="2" class="polegar"><span>${escHtml(b.polegar)}</span></td></tr><tr>${b.testemunhas.map((t) => `<td class="sem"><div class="linha"></div><b>${escHtml(t.nome)}</b><div>CPF: ${escHtml(t.cpf)}</div></td>`).join("")}</tr></table>`;
     case "testemunhas": return `<table class="test" style="font-size:${b.pt}pt"><tr>${b.itens.map((t, i) => `<td>Testemunha ${i + 1}: <b>${escHtml(t.nome)}</b><br>CPF: ${escHtml(t.cpf)}</td>`).join("")}</tr></table>`;
@@ -512,20 +560,37 @@ function corpoHtml(blocos: Bloco[]): string {
   return `<div class="conteudo">${blocos.slice(0, i).map(blocoHtml).join("\n")}<div class="fim">${blocos.slice(i + 1).map(blocoHtml).join("\n")}</div></div>`;
 }
 
+/**
+ * Tamanho (mm) com que a imagem do cabeçalho/rodapé sai no papel: cabe na caixa (largura x altura máximas) mantendo a proporção, seja qual for o
+ * tamanho em pixels do arquivo. Não depende do navegador respeitar "max-height": a medida vai escrita na própria imagem.
+ */
+export function tamanhoNoPapel(dados: Buffer, maxLarguraMm: number, maxAlturaMm: number): { w: number; h: number } | null {
+  const d = dimensoesDaImagem(dados);
+  if (!d || d.w <= 0 || d.h <= 0) return null;
+  const f = Math.min(maxLarguraMm / d.w, maxAlturaMm / d.h, 25.4 / 96); // nunca amplia além do tamanho natural (96 dpi)
+  return { w: Math.round(d.w * f * 100) / 100, h: Math.round(d.h * f * 100) / 100 };
+}
+const imagemHtml = (img: ImagemKit, classe: string, maxW: number, maxH: number, extra = "") => {
+  const t = tamanhoNoPapel(img.dados, maxW, maxH);
+  const medida = t ? `width:${t.w}mm;height:${t.h}mm;` : `width:auto;height:auto;max-width:${maxW}mm;max-height:${maxH}mm;`;
+  return `<img class="${classe}" style="${medida}${extra}" alt="" src="data:${img.mime};base64,${img.dados.toString("base64")}">`;
+};
+
 export function kitHtml(kit: Kit, opcoes: { imprimir?: boolean; zoom?: number } = {}): string {
-  const logo = kit.logo ? `<img class="logo" alt="" src="data:${kit.logo.mime};base64,${kit.logo.dados.toString("base64")}">` : `<div class="nome-escritorio">${escHtml(kit.nomeExibicao)}</div>`;
-  const imgRodape = kit.rodapeImagem ? `<img class="img-rodape" style="${kit.alinhaRodape === "left" ? "" : kit.alinhaRodape === "center" ? "margin-left:auto;margin-right:auto" : "margin-left:auto"}" alt="" src="data:${kit.rodapeImagem.mime};base64,${kit.rodapeImagem.dados.toString("base64")}">` : "";
+  const logo = kit.logo ? `<div class="caixa-logo">${imagemHtml(kit.logo, "logo", 170, 24)}</div>` : `<div class="nome-escritorio">${escHtml(kit.nomeExibicao)}</div>`;
+  const imgRodape = kit.rodapeImagem ? `<div class="caixa-rodape">${imagemHtml(kit.rodapeImagem, "img-rodape", 170, 14, kit.alinhaRodape === "left" ? "" : kit.alinhaRodape === "center" ? "margin-left:auto;margin-right:auto;" : "margin-left:auto;")}</div>` : "";
   const rodape = kit.rodape.length || imgRodape ? `<div class="rodape" style="text-align:${kit.alinhaRodape}">${imgRodape}${kit.rodape.map((l, i) => (i === 0 ? `<b>${escHtml(l)}</b>` : `<div><b>${escHtml(l)}</b></div>`)).join("")}</div>` : "";
   const folhas = kit.documentos.map((d) => `<table class="folha"><thead><tr><td class="cab" style="text-align:${kit.alinhaCabecalho}">${logo}</td></tr></thead><tbody><tr><td class="corpo">${corpoHtml(d.blocos)}</td></tr></tbody><tfoot><tr><td>${rodape}</td></tr></tfoot></table>`).join("\n");
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${escHtml(kit.documentos.map((d) => d.nome).join(" · "))}</title><style>
 @page{size:A4;margin:0}*{box-sizing:border-box}body{margin:0;background:#e5e7eb;font-family:Arial,Helvetica,sans-serif;color:#000;line-height:1.28}
 .folha{width:210mm;height:296mm;margin:8mm auto;background:#fff;border-collapse:collapse;page-break-after:always;break-after:page;box-shadow:0 1px 6px rgba(0,0,0,.25)}
 thead{display:table-header-group}tfoot{display:table-footer-group}
-.cab{padding:8mm 20mm 2mm;height:30mm;vertical-align:middle}.logo{max-height:24mm;max-width:170mm;object-fit:contain}.img-rodape{display:block;max-height:14mm;max-width:170mm;object-fit:contain;margin-bottom:1.5mm}.nome-escritorio{font-size:16pt;font-weight:bold;letter-spacing:.5px}
+.cab{padding:8mm 20mm 2mm;height:30mm;vertical-align:middle}.caixa-logo{max-height:24mm;max-width:170mm;overflow:hidden}.caixa-rodape{max-height:14mm;overflow:hidden;margin-bottom:1.5mm}.logo{vertical-align:top;max-height:24mm;max-width:170mm;object-fit:contain}.img-rodape{display:block;max-height:14mm;max-width:170mm;object-fit:contain}.nome-escritorio{font-size:16pt;font-weight:bold;letter-spacing:.5px}
 .corpo{padding:1mm 20mm;vertical-align:top;height:100%}
 h2{text-align:center;margin:1mm 0 4mm}p{margin:0 0 2.6mm}
 .caixa{border:1px solid #000;padding:2mm 3mm;margin:0 0 4mm}
 .assina{margin-top:2mm}.linha{border-top:1px solid #000;width:90mm;margin-bottom:1mm}
+table.tab{width:100%;border-collapse:collapse;margin:0 0 3mm}.tab td{border:1px solid #000;padding:1.2mm 2mm;vertical-align:top}
 .conteudo{display:flex;flex-direction:column;min-height:100%}.fim{margin-top:auto}
 .assina{text-align:${kit.assinatura.alinhamento}}.assina .linha{width:${kit.assinatura.largura}mm;max-width:100%${kit.assinatura.alinhamento === "left" ? "" : kit.assinatura.alinhamento === "center" ? ";margin-left:auto;margin-right:auto" : ";margin-left:auto"}}
 table.rogo,table.test{width:100%;border-collapse:separate;border-spacing:3mm 0;table-layout:fixed}td.sem{vertical-align:bottom;padding:0 0 2mm}

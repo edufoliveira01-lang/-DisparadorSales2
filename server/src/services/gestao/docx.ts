@@ -27,7 +27,7 @@ export function dimensoesDaImagem(d: Buffer): { w: number; h: number } | null {
 }
 
 const run = (t: Trecho, pt: number, extra = "") =>
-  t.t.split("\n").map((linha, i) => `${i ? "<w:r><w:br/></w:r>" : ""}<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>${t.b ? "<w:b/>" : ""}${extra}<w:sz w:val="${Math.round(pt * 2)}"/></w:rPr><w:t xml:space="preserve">${x(linha)}</w:t></w:r>`).join("");
+  t.t.split("\n").map((linha, i) => `${i ? "<w:r><w:br/></w:r>" : ""}<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>${t.b ? "<w:b/>" : ""}${t.i ? "<w:i/>" : ""}${t.u ? '<w:u w:val="single"/>' : ""}${extra}<w:sz w:val="${Math.round(pt * 2)}"/></w:rPr><w:t xml:space="preserve">${x(linha)}</w:t></w:r>`).join("");
 const par = (conteudo: string, o: { jc?: string; depois?: number; antes?: number; quebra?: boolean; borda?: string; manter?: boolean } = {}) =>
   `<w:p><w:pPr>${o.manter ? "<w:keepNext/>" : ""}${o.quebra ? "<w:pageBreakBefore/>" : ""}${o.borda ?? ""}<w:spacing w:before="${o.antes ?? 0}" w:after="${o.depois ?? 120}" w:line="252" w:lineRule="auto"/><w:jc w:val="${o.jc ?? "left"}"/></w:pPr>${conteudo}</w:p>`;
 const vazio = (pt = 10, quebra = false) => par(`<w:r><w:rPr><w:sz w:val="${Math.round(pt * 2)}"/></w:rPr><w:t></w:t></w:r>`, { quebra, depois: 0 });
@@ -40,6 +40,10 @@ const negrito = (t: string, pt: number, jc = "left") => par(run({ t, b: true }, 
 const simples = (t: string, pt: number, jc = "left") => par(run({ t }, pt), { jc, depois: 0 });
 const TOTAL = 9638; // largura útil (A4 com margens de 2 cm) em twips
 
+/** Imagens do corpo dos documentos (documentos próprios com figura), reunidas durante a montagem para entrarem no .docx. */
+let imagensDoCorpo: { rid: string; dados: Buffer; mime: string }[] = [];
+const EMU_MM = 36000;
+
 function bloco(b: Bloco, primeiro: boolean): string {
   const quebra = primeiro;
   switch (b.k) {
@@ -47,6 +51,16 @@ function bloco(b: Bloco, primeiro: boolean): string {
     case "p": return par(b.trechos.map((t) => run(t, b.pt)).join(""), { jc: JC[b.align], quebra });
     case "caixa": return tabela([TOTAL], [`<w:tr>${celula(TOTAL, par(b.trechos.map((t) => run(t, b.pt)).join(""), { jc: JC[b.align], depois: 60, quebra }), { lados: ["top", "left", "bottom", "right"] })}</w:tr>`]) + vazio(4);
     case "fim": return "";
+    case "tabela": {
+      const n = Math.max(1, ...b.linhas.map((l) => l.length)), w = Array.from({ length: n }, () => Math.floor(TOTAL / n));
+      return tabela(w, b.linhas.map((l) => `<w:tr>${Array.from({ length: n }, (_v, i) => celula(w[i]!, par((l[i] ?? []).map((t) => run(t, b.pt)).join(""), { depois: 0 }), { lados: ["top", "left", "bottom", "right"] })).join("")}</w:tr>`)) + vazio(4);
+    }
+    case "imagem": {
+      const id = imagensDoCorpo.length + 10, rid = `rIdImg${imagensDoCorpo.length + 1}`;
+      imagensDoCorpo.push({ rid, dados: b.dados, mime: b.mime });
+      const w = Math.round(b.w * EMU_MM), h = Math.round(b.h * EMU_MM);
+      return par(`<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${w}" cy="${h}"/><wp:docPr id="${id}" name="Imagem ${id}"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="img${id}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`, { jc: b.align === "c" ? "center" : b.align === "r" ? "right" : "left", quebra });
+    }
     case "vazio": return Array.from({ length: b.n }, () => vazio(10)).join("");
     case "assinatura": return linhaAssinar(b.pt) + negrito(b.nome, b.pt) + b.extra.map((e) => simples(e, b.pt)).join("");
     case "rogo": {
@@ -67,6 +81,7 @@ function bloco(b: Bloco, primeiro: boolean): string {
 }
 
 export function kitDocx(kit: Kit): Buffer {
+  imagensDoCorpo = [];
   const corpo = kit.documentos.map((d, i) => d.blocos.map((b, j) => bloco(b, i > 0 && j === 0)).join("")).join("");
   const ext = (m: string) => (m === "image/png" ? "png" : m === "image/webp" ? "webp" : "jpeg");
   const JCA = { left: "left", center: "center", right: "right" } as const;
@@ -74,8 +89,8 @@ export function kitDocx(kit: Kit): Buffer {
   const figura = (img: { dados: Buffer; mime: string }, rid: string, id: number, alturaEmu: number, align: string) => {
     const dim = dimensoesDaImagem(img.dados);
     const max = 6120000;
-    let w = dim ? Math.round((dim.w / dim.h) * alturaEmu) : 2160000;
-    let h = alturaEmu;
+    let h = dim ? Math.min(alturaEmu, dim.h * 9525) : alturaEmu; // nunca amplia além do tamanho natural (96 dpi)
+    let w = dim ? Math.round((dim.w / dim.h) * h) : 2160000;
     if (w > max) { h = Math.round(h * (max / w)); w = max; }
     return par(`<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${w}" cy="${h}"/><wp:docPr id="${id}" name="Imagem ${id}"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="img${id}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`, { jc: align, depois: 120 });
   };
@@ -104,6 +119,11 @@ export function kitDocx(kit: Kit): Buffer {
   if (kit.rodapeImagem) {
     arquivos.push({ nome: `word/media/rodape.${ext(kit.rodapeImagem.mime)}`, dados: kit.rodapeImagem.dados });
     arquivos.push({ nome: "word/_rels/footer1.xml.rels", dados: Buffer.from(`${xml}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rel("rIdRodape", `rodape.${ext(kit.rodapeImagem.mime)}`)}</Relationships>`) });
+  }
+  if (imagensDoCorpo.length) {
+    imagensDoCorpo.forEach((im, i) => arquivos.push({ nome: `word/media/corpo${i + 1}.${ext(im.mime)}`, dados: im.dados }));
+    const r = arquivos.find((f) => f.nome === "word/_rels/document.xml.rels")!;
+    r.dados = Buffer.from(r.dados.toString("utf8").replace("</Relationships>", `${imagensDoCorpo.map((im, i) => rel(im.rid, `corpo${i + 1}.${ext(im.mime)}`)).join("")}</Relationships>`));
   }
   return criarZip(arquivos);
 }

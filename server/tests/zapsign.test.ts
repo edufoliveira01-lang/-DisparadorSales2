@@ -265,6 +265,55 @@ describe("importar documento Word como modelo", () => {
     expect(r.texto).not.toContain("____");
     expect(r.avisos.join(" ")).toContain("CAMPO ESTRANHO");
   });
+  it("traz itálico, sublinhado, tabelas e figuras (com o tamanho do Word) e o documento sai com tudo isso", async () => {
+    const { criarZip, crc32 } = await import("../src/services/gestao/zip");
+    const zlib = await import("node:zlib");
+    const chunk = (t: string, d: Buffer) => { const b = Buffer.alloc(12 + d.length); b.writeUInt32BE(d.length, 0); b.write(t, 4); d.copy(b, 8); b.writeUInt32BE(crc32(Buffer.concat([Buffer.from(t), d])), 8 + d.length); return b; };
+    const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(200, 0); ihdr.writeUInt32BE(100, 4); ihdr[8] = 8; ihdr[9] = 2;
+    const raw = Buffer.concat(Array.from({ length: 100 }, () => Buffer.alloc(1 + 200 * 3, 120)));
+    const png = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", ihdr), chunk("IDAT", zlib.deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
+    const corpo = `<w:p><w:r><w:t xml:space="preserve">Veja </w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>itálico</w:t></w:r><w:r><w:t xml:space="preserve"> e </w:t></w:r><w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>sublinhado</w:t></w:r></w:p>`
+      + `<w:tbl><w:tr><w:tc><w:p><w:r><w:t>Item</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Valor</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>{{CPF}}</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`
+      + `<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:drawing><wp:inline><wp:extent cx="1800000" cy="900000"/><a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed="rId9"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
+    const arq = criarZip([
+      { nome: "word/document.xml", dados: Buffer.from(`<w:document><w:body>${corpo}</w:body></w:document>`) },
+      { nome: "word/_rels/document.xml.rels", dados: Buffer.from(`<Relationships><Relationship Id="rId9" Type="x/image" Target="media/image1.png"/></Relationships>`) },
+      { nome: "word/media/image1.png", dados: png },
+    ]);
+    const { docxParaModelo } = await import("../src/services/gestao/importarDocx");
+    const r = docxParaModelo(arq);
+    expect(r.texto).toContain("Veja *itálico* e ++sublinhado++");
+    expect(r.texto).toContain("| Item | Valor |\n| A | {{cliente.cpf}} |");
+    expect(r.texto).toContain("[[imagem:1|50|c]]");
+    expect(r.imagens).toHaveLength(1);
+    const { montarKit, kitHtml } = await import("../src/services/gestao/documentos");
+    const { kitDocx } = await import("../src/services/gestao/docx");
+    const { criarDocumentoProprio, excluirDocumentoProprio } = await import("../src/services/gestao/documentos");
+    const novo = criarDocumentoProprio({ nome: "Com figura", texto: r.texto, imagens: r.imagens }).documento;
+    expect(novo.imagens).toHaveLength(1);
+    const kit = montarKit({ variante: "comum", documentos: [novo.id], data: "hoje" }, "T", true);
+    const html = kitHtml(kit);
+    expect(html).toContain("<i>itálico</i>");
+    expect(html).toContain("<u>sublinhado</u>");
+    expect(html).toContain('<table class="tab"');
+    expect(html).toContain("width:50mm;height:25mm");
+    const zip = kitDocx(kit);
+    const { lerArquivoDoZip } = await import("../src/services/gestao/zip");
+    expect(lerArquivoDoZip(zip, "word/media/corpo1.png")?.length).toBe(png.length);
+    expect(lerArquivoDoZip(zip, "word/_rels/document.xml.rels")?.toString()).toContain("rIdImg1");
+    excluirDocumentoProprio(novo.id);
+  });
+  it("a figura do cabeçalho e do rodapé tem medida escrita e cabe na caixa, mesmo sendo enorme em pixels", async () => {
+    const { tamanhoNoPapel } = await import("../src/services/gestao/documentos");
+    const zlib = await import("node:zlib");
+    const { crc32 } = await import("../src/services/gestao/zip");
+    const chunk = (t: string, d: Buffer) => { const b = Buffer.alloc(12 + d.length); b.writeUInt32BE(d.length, 0); b.write(t, 4); d.copy(b, 8); b.writeUInt32BE(crc32(Buffer.concat([Buffer.from(t), d])), 8 + d.length); return b; };
+    const png = (w: number, h: number) => { const ih = Buffer.alloc(13); ih.writeUInt32BE(w, 0); ih.writeUInt32BE(h, 4); ih[8] = 8; ih[9] = 2; return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", ih), chunk("IDAT", zlib.deflateSync(Buffer.alloc(10))), chunk("IEND", Buffer.alloc(0))]); };
+    expect(tamanhoNoPapel(png(6000, 1500), 170, 24)).toEqual({ w: 96, h: 24 });
+    expect(tamanhoNoPapel(png(1200, 6000), 170, 24)).toEqual({ w: 4.8, h: 24 });
+    expect(tamanhoNoPapel(png(30, 10), 170, 24)).toEqual({ w: 7.94, h: 2.65 });
+    expect(tamanhoNoPapel(Buffer.from("nao e imagem"), 170, 24)).toBeNull();
+  });
   it("recusa o que não é .docx", async () => {
     const { docxParaModelo } = await import("../src/services/gestao/importarDocx");
     expect(() => docxParaModelo(Buffer.from("%PDF-1.4 nao e docx"))).toThrow(/\.docx/);
