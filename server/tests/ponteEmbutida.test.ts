@@ -162,8 +162,11 @@ describe("equipe da empresa no atendimento", () => {
       { email: "nunca@alfa.com.br", ok: true, removido: false },
       { email: "sem-arroba", ok: false, erro: "E-mail inválido." },
     ]);
-    expect(f.e.atualizacoes.length).toBe(1);
-    expect(f.e.atualizacoes[0][1]).toEqual({ id: "eq.v2", revoked_at: "is.null" });
+    // a primeira atualização é a do escritório novo (trava de mensagem até assumir); as demais são revogações
+    const revogacoes = f.e.atualizacoes.filter((a: any[]) => a[0] === "user_organizations");
+    expect(f.e.atualizacoes.some((a: any[]) => a[0] === "organizations" && a[2]?.interface_settings?.bloquearAteAssumir === true)).toBe(true);
+    expect(revogacoes.length).toBe(1);
+    expect(revogacoes[0][1]).toEqual({ id: "eq.v2", revoked_at: "is.null" });
     expect(f.e.vinculos.find((v) => v.id === "v2")!.revoked_at).not.toBeNull();
     expect(f.e.vinculos.find((v) => v.id === "v1")!.revoked_at).toBeNull();
     // adicionar e remover na mesma chamada: o administrador novo entra antes da saída do antigo
