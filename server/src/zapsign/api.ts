@@ -9,7 +9,7 @@ const BASES = { producao: "https://api.zapsign.com.br/api/v1", sandbox: "https:/
 export const urlBaseDe = (c: ConfigZapSign) => (c.urlBase || BASES[c.ambiente] || BASES.producao).replace(/\/+$/, "");
 
 export interface Signatario { nome: string; email?: string; telefone?: string }
-export interface DocumentoZapSign { token: string; status: string; signUrl: string | null; arquivoAssinado: string | null }
+export interface DocumentoZapSign { token: string; status: string; signUrl: string | null; arquivoAssinado: string | null; signerToken: string | null }
 
 const soDigitos = (v: string) => v.replace(/\D/g, "");
 
@@ -20,6 +20,7 @@ function lerDocumento(corpo: any): DocumentoZapSign {
     status: String(corpo?.status ?? ""),
     signUrl: s?.sign_url ? String(s.sign_url) : null,
     arquivoAssinado: corpo?.signed_file ? String(corpo.signed_file) : null,
+    signerToken: s?.token ? String(s.token) : null,
   };
 }
 
@@ -74,4 +75,35 @@ export async function criarDocumento(
 
 export async function consultarDocumento(c: ConfigZapSign, token: string, http: typeof fetch = fetch): Promise<DocumentoZapSign> {
   return lerDocumento(await chamar(c, "GET", `/docs/${encodeURIComponent(token)}/`, undefined, http));
+}
+
+/** Onde a assinatura do cliente cai no PDF: página (a partir de 0) e posição relativa (0–100, origem no canto inferior esquerdo). */
+export interface PosicaoAssinatura { pagina: number; esquerda: number; baixo: number }
+
+const TAMANHO_ASSINATURA = { x: 19.55, y: 9.42 }; // medida de referência do ZapSign para folha A4 em pé
+
+/**
+ * Coloca o campo de assinatura do signatário em cada posição (em cima da linha de assinatura do documento).
+ * É um complemento: se o ZapSign recusar, o documento segue com a posição padrão e o contrato não falha.
+ */
+export async function posicionarAssinaturas(c: ConfigZapSign, docToken: string, signerToken: string, posicoes: PosicaoAssinatura[], http: typeof fetch = fetch): Promise<boolean> {
+  if (posicoes.length === 0) return true;
+  const limitar = (v: number, max: number) => Math.max(0, Math.min(max, Math.round(v * 100) / 100));
+  try {
+    await chamar(c, "POST", `/docs/${encodeURIComponent(docToken)}/place-signatures/`, {
+      rubricas: posicoes.map((p) => ({
+        page: p.pagina,
+        relative_position_bottom: limitar(p.baixo, 100 - TAMANHO_ASSINATURA.y),
+        relative_position_left: limitar(p.esquerda, 100 - TAMANHO_ASSINATURA.x),
+        type: "signature",
+        relative_size_x: TAMANHO_ASSINATURA.x,
+        relative_size_y: TAMANHO_ASSINATURA.y,
+        signer_token: signerToken,
+      })),
+    }, http);
+    return true;
+  } catch (e) {
+    console.error("[contratos] não foi possível posicionar a assinatura no ZapSign:", e instanceof Error ? e.message : e);
+    return false;
+  }
 }
