@@ -2,6 +2,7 @@ import { Router, type Request } from "express";
 import { verificarRequisicao } from "../atendimento/assinatura";
 import { atendimentoDaInstancia } from "../atendimento/instancia";
 import { auditAccess } from "../services/accessService";
+import { tratarJsonRpc } from "../atendimento/mcp/servidor";
 import { lerAtendimentoIa, montarPromptDoAgente, pendenciasDoAtendimentoIa } from "../services/gestao/atendimentoIa";
 import { lerConfigDocumentos, ROTULO_VARIANTE, VARIANTES } from "../services/gestao/documentos";
 import { ErroZapSign } from "../zapsign/api";
@@ -43,6 +44,22 @@ integracaoContratosRouter.post("/contratos", async (req, res) => {
 });
 
 /** O que o escritório configurou e o atendimento precisa mostrar no formulário: tipos de documento, valores e modelos de honorários. */
+/**
+ * Servidor de ferramentas (MCP) do escritório, só para o agente de IA do Deskcomm. O painel repassa o JSON-RPC assinado com a chave do escritório,
+ * dentro de `{ contato: { telefone }, rpc }`: o telefone vem do Deskcomm (do banco dele), e as ferramentas só enxergam o cliente desse telefone.
+ */
+integracaoContratosRouter.post("/mcp", (req, res) => {
+  const corpo = (req.body ?? {}) as { contato?: { telefone?: unknown }; rpc?: unknown };
+  const telefone = typeof corpo.contato?.telefone === "string" ? corpo.contato.telefone : "";
+  if (Array.isArray(corpo.rpc)) {
+    const r = corpo.rpc.map((m) => tratarJsonRpc(m, { telefone })).filter((x) => x !== null);
+    return void (r.length ? res.json(r) : res.status(202).end());
+  }
+  const r = tratarJsonRpc(corpo.rpc, { telefone });
+  if (r === null) return void res.status(202).end();
+  res.json(r);
+});
+
 /** O prompt do agente de IA deste escritório, já montado do cadastro (Atendimento com IA + dados do escritório). O Deskcomm o guarda como RASCUNHO. */
 integracaoContratosRouter.get("/agente/prompt", (_req, res) => {
   const c = lerAtendimentoIa();

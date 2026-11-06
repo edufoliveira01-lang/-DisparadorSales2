@@ -36,6 +36,8 @@ describe("Atendimento com IA — cadastro e prompt do agente", () => {
     expect(p).toContain("segunda a sexta, das 9h às 18h");
     expect(p).toContain("(13) 99999-0000");
     expect(p).not.toMatch(/\{\{|\}\}/);
+    for (const f of ["consultar_cliente", "andamento_do_processo", "proximos_compromissos", "documentos_do_cliente", "financeiro_do_cliente"]) expect(p).toContain(f);
+    expect(p).toContain("Só responda com o que a ferramenta devolveu");
   });
   it("sem política de honorários o agente não informa valores; área ligada exige triagem; chaves {{ }} são removidas", () => {
     salvarAtendimentoIa({ areas: [{ id: "previdenciario", ativa: true }] });
