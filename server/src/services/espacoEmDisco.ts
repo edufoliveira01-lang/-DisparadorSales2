@@ -13,14 +13,14 @@ export interface EspacoDoDisco { caminho: string; totalGb: number; livreGb: numb
 const GB = 1024 ** 3;
 const REPETIR_APOS_MS = 24 * 3_600_000;
 
-/** Mesma conta do `df`: usado / (usado + disponível para usuários). */
+/** Mesma conta do `df` (arredondando para cima): usado / (usado + disponível para usuários). */
 export function lerEspaco(caminho: string, statfs: typeof fs.statfsSync = fs.statfsSync): EspacoDoDisco | null {
   try {
     const s = statfs(caminho);
     const usado = (Number(s.blocks) - Number(s.bfree)) * Number(s.bsize);
     const disponivel = Number(s.bavail) * Number(s.bsize);
     if (usado + disponivel <= 0) return null;
-    return { caminho, totalGb: Math.round(((usado + disponivel) / GB) * 10) / 10, livreGb: Math.round((disponivel / GB) * 10) / 10, usoPct: Math.round((usado / (usado + disponivel)) * 100) };
+    return { caminho, totalGb: Math.round(((usado + disponivel) / GB) * 10) / 10, livreGb: Math.round((disponivel / GB) * 10) / 10, usoPct: Math.ceil((usado / (usado + disponivel)) * 100) };
   } catch { return null; }
 }
 

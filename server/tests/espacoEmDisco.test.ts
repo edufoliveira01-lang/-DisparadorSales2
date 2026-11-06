@@ -20,7 +20,7 @@ function montar(usoPct: number | (() => number), relogio = { t: 1_000_000 }) {
 describe("aviso de pouco espaço em disco", () => {
   it("calcula o uso como o df (usado / usado + disponível)", () => {
     const e = lerEspaco("/x", (() => ({ blocks: 1000, bfree: 150, bavail: 120, bsize: 1024 ** 3 / 1000 })) as never);
-    expect(e).toMatchObject({ usoPct: Math.round((850 / (850 + 120)) * 100) });
+    expect(e).toMatchObject({ usoPct: Math.ceil((850 / (850 + 120)) * 100) });
     expect(lerEspaco("/nao-existe", () => { throw new Error("x"); })).toBeNull();
   });
   it("avisa uma vez quando passa do limite e não repete antes de 24 horas", async () => {
