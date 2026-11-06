@@ -38,6 +38,9 @@ describe("Atendimento com IA — cadastro e prompt do agente", () => {
     expect(p).not.toMatch(/\{\{|\}\}/);
     for (const f of ["consultar_cliente", "andamento_do_processo", "proximos_compromissos", "documentos_do_cliente", "financeiro_do_cliente"]) expect(p).toContain(f);
     expect(p).toContain("Só responda com o que a ferramenta devolveu");
+    expect(p).toContain("DADOS PARA CONTRATO");
+    expect(p).toContain("a rogo");
+    expect(p).toContain("Você ainda **não** envia o contrato sozinho");
   });
   it("sem política de honorários o agente não informa valores; área ligada exige triagem; chaves {{ }} são removidas", () => {
     salvarAtendimentoIa({ areas: [{ id: "previdenciario", ativa: true }] });
