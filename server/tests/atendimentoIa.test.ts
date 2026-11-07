@@ -40,8 +40,10 @@ describe("Atendimento com IA — cadastro e prompt do agente", () => {
     expect(p).toContain("Só responda com o que a ferramenta devolveu");
     expect(p).toContain("a rogo");
     expect(p).toContain("crm_enviar_contrato");
-    expect(p).toContain("Só use a ferramenta depois que ela confirmar os dados");
+    expect(p).toContain("Nunca use a ferramenta na mesma vez");
     expect(p).toContain("não mande outra igual");
+    expect(p).toContain("Espere a resposta dela");
+    expect(p).toContain("não envie o link de novo");
     expect(p).toContain("Documento nunca trava o atendimento nem o contrato");
     expect(p).toContain("nunca repita pergunta");
     expect(p).toContain("Uma pergunta por mensagem");
