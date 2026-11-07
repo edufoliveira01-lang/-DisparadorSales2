@@ -54,4 +54,13 @@ describe("Atendimento com IA — cadastro e prompt do agente", () => {
     // volta ao estado inicial para os outros testes
     salvarAtendimentoIa({});
   });
+  it("honorários longos não são cortados e, sem nome do escritório, o texto não sai 'do o escritório'", () => {
+    const longo = "Linha de honorários. ".repeat(100) + "FIM";
+    const salvo = salvarAtendimentoIa({ areas: [{ id: "previdenciario", ativa: true }], honorarios_politica: longo });
+    expect(salvo.honorarios_politica.endsWith("FIM")).toBe(true);
+    const p = montarPromptDoAgente(salvo, { nome: "", razao_social: "" } as never);
+    expect(p).not.toContain("do o escritório");
+    expect(p).toContain("FIM");
+    salvarAtendimentoIa({});
+  });
 });

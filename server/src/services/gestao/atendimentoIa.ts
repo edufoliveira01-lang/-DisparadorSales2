@@ -48,6 +48,8 @@ const PADRAO: ConfigAtendimentoIa = {
   honorarios_politica: "", horario: "", urgencia: "", observacoes: "",
 };
 
+export const LIMITE_HONORARIOS = 3000;
+export const LIMITE_OBSERVACOES = 3000;
 const txt = (v: unknown, max: number) => String(v ?? "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").replace(/\{\{|\}\}/g, "").trim().slice(0, max);
 const linhas = (v: unknown, maxItens: number, maxTam: number) =>
   (Array.isArray(v) ? v : typeof v === "string" ? v.split("\n") : []).map((l) => txt(l, maxTam)).filter(Boolean).slice(0, maxItens);
@@ -70,7 +72,7 @@ function normalizar(c: Partial<ConfigAtendimentoIa> | null | undefined): ConfigA
   for (const p of AREAS_PRONTAS) if (!usados.has(p.id)) areas.unshift({ ...p, ativa: false });
   return {
     nome_agente: txt(c?.nome_agente, 40), areas,
-    honorarios_politica: txt(c?.honorarios_politica, 800), horario: txt(c?.horario, 160), urgencia: txt(c?.urgencia, 160), observacoes: txt(c?.observacoes, 1500),
+    honorarios_politica: txt(c?.honorarios_politica, LIMITE_HONORARIOS), horario: txt(c?.horario, 160), urgencia: txt(c?.urgencia, 160), observacoes: txt(c?.observacoes, LIMITE_OBSERVACOES),
   };
 }
 
@@ -104,8 +106,9 @@ const lista = (itens: string[]) => itens.map((i) => `- ${i}`).join("\n");
 
 /** O prompt do agente deste escritório, montado do modelo + cadastro. É só texto: quem publica o agente é o Deskcomm, como rascunho. */
 export function montarPromptDoAgente(c: ConfigAtendimentoIa = lerAtendimentoIa(), e: Escritorio = lerEscritorio()): string {
-  const escritorio = e.nome || e.razao_social || "o escritório";
-  const quem = c.nome_agente ? `**${c.nome_agente}**, assistente virtual do **${escritorio}**` : `a assistente virtual do **${escritorio}**`;
+  const nomeDoEscritorio = e.nome || e.razao_social;
+  const escritorio = nomeDoEscritorio || "escritório";
+  const quem = c.nome_agente ? `**${c.nome_agente}**, assistente virtual do ${nomeDoEscritorio ? `**${escritorio}**` : escritorio}` : `a assistente virtual do ${nomeDoEscritorio ? `**${escritorio}**` : escritorio}`;
   const ativas = c.areas.filter((a) => a.ativa);
   const nomesDasAreas = ativas.length ? ativas.map((a) => a.nome.toLowerCase()).join(", ") : "as áreas do escritório";
   const apresentacao = c.nome_agente ? `Olá! Sou ${c.nome_agente}, assistente virtual do ${escritorio}. Em que posso ajudar o(a) senhor(a) hoje?` : `Olá! Sou a assistente virtual do ${escritorio}. Em que posso ajudar o(a) senhor(a) hoje?`;

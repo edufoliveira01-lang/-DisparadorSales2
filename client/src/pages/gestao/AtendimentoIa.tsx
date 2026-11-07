@@ -83,10 +83,10 @@ export function AtendimentoIa() {
           <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
             <h2 className="text-base font-semibold">Honorários e orientações</h2>
             <Campo rotulo="O que o agente pode dizer sobre honorários">
-              <Textarea rows={4} value={c.honorarios_politica} onChange={(e) => setC({ ...c, honorarios_politica: e.target.value })} className="mt-1.5 text-[14px]" placeholder="Deixe em branco para o agente NÃO informar valores e passar ao atendente. Ex.: Trabalhamos com êxito; o atendente apresenta as condições." />
+              <Textarea rows={8} maxLength={3000} value={c.honorarios_politica} onChange={(e) => setC({ ...c, honorarios_politica: e.target.value })} className="mt-1.5 text-[14px]" placeholder="Deixe em branco para o agente NÃO informar valores e passar ao atendente. Ex.: Trabalhamos com êxito; o atendente apresenta as condições." />
             </Campo>
             <Campo rotulo="Outras orientações do escritório (opcional)">
-              <Textarea rows={4} value={c.observacoes} onChange={(e) => setC({ ...c, observacoes: e.target.value })} className="mt-1.5 text-[14px]" placeholder="Ex.: Não atendemos causas abaixo de determinado valor. Sempre pergunte se o cliente já tem advogado." />
+              <Textarea rows={5} maxLength={3000} value={c.observacoes} onChange={(e) => setC({ ...c, observacoes: e.target.value })} className="mt-1.5 text-[14px]" placeholder="Ex.: Não atendemos causas abaixo de determinado valor. Sempre pergunte se o cliente já tem advogado." />
             </Campo>
           </section>
         </fieldset>
