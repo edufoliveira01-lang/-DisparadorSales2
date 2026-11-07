@@ -43,6 +43,8 @@ describe("Atendimento com IA — cadastro e prompt do agente", () => {
     expect(p).toContain("Só use a ferramenta depois que ela confirmar os dados");
     expect(p).toContain("não mande outra igual");
     expect(p).toContain("Documento nunca trava o atendimento nem o contrato");
+    expect(p).toContain("nunca repita pergunta");
+    expect(p).toContain("Uma pergunta por mensagem");
     // querer contratar não pode estar na lista de motivos para passar a conversa a um humano
     const secao8 = p.slice(p.indexOf("### 8."), p.indexOf("### 9."));
     expect(secao8).not.toMatch(/pronta para \*\*contratar/);
