@@ -47,6 +47,8 @@ describe("Atendimento com IA — cadastro e prompt do agente", () => {
     expect(p).toContain("crm_registrar_dados_do_cliente");
     expect(p).toContain("nunca pergunte de novo o que já está lá");
     expect(p).toContain("O primeiro nome basta");
+    expect(p).toContain("Não presuma o nome a partir do perfil do WhatsApp");
+    expect(p).toContain("Com quem eu falo");
     expect(p).toContain("obrigatório só aqui, na hora do contrato");
     expect(p).toContain("Depois da assinatura a conversa continua, com você");
     expect(p).toContain("proposta aceita");

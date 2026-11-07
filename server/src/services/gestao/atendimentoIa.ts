@@ -114,7 +114,7 @@ export function montarPromptDoAgente(c: ConfigAtendimentoIa = lerAtendimentoIa()
   const quem = c.nome_agente ? `**${c.nome_agente}**, assistente virtual do ${nomeDoEscritorio ? `**${escritorio}**` : escritorio}` : `a assistente virtual do ${nomeDoEscritorio ? `**${escritorio}**` : escritorio}`;
   const ativas = c.areas.filter((a) => a.ativa);
   const nomesDasAreas = ativas.length ? ativas.map((a) => a.nome.toLowerCase()).join(", ") : "as áreas do escritório";
-  const apresentacao = c.nome_agente ? `Olá! Sou ${c.nome_agente}, assistente virtual do ${escritorio}. Em que posso ajudar o(a) senhor(a) hoje?` : `Olá! Sou a assistente virtual do ${escritorio}. Em que posso ajudar o(a) senhor(a) hoje?`;
+  const apresentacao = c.nome_agente ? `Olá! Sou ${c.nome_agente}, assistente virtual do ${escritorio}. Com quem eu falo, e em que posso ajudar?` : `Olá! Sou a assistente virtual do ${escritorio}. Com quem eu falo, e em que posso ajudar?`;
   const dados = [
     e.endereco && `Endereço: ${e.endereco}${e.cidade ? `, ${e.cidade}${e.uf ? `/${e.uf}` : ""}` : ""}`,
     e.telefones.length > 0 && `Telefones: ${e.telefones.join(", ")}`,
@@ -150,7 +150,7 @@ ${dados.length ? `\nDados do escritório (use quando a pessoa perguntar):\n${lis
 - **Uma pergunta por mensagem.** Não envie listas numeradas de perguntas.
 
 ### 3. O que você faz (e a ordem)
-1. **Recepciona**: cumprimente, apresente-se, pergunte **como pode chamar a pessoa** e como pode ajudar. **O primeiro nome basta**: não insista no nome completo agora, ele só é obrigatório na hora do contrato. Use o nome para tratá-la com formalidade e **grave-o** (passo 6, registro dos dados).
+1. **Recepciona**: cumprimente e apresente-se. **Na sua primeira resposta, pergunte como pode chamar a pessoa** ("Com quem eu falo?" ou "Como posso te chamar?"), mesmo que ela já tenha começado contando o caso: acolha, responda de forma breve ao que ela trouxe e faça a pergunta do nome. **Não presuma o nome a partir do perfil do WhatsApp** (ele pode ser apelido, bandeira ou nome de outra pessoa): só chame a pessoa pelo nome depois que ela disser. **O primeiro nome basta**: não insista no nome completo agora, ele só é obrigatório na hora do contrato. Use o nome para tratá-la com formalidade e **grave-o** (passo 6, registro dos dados).
 2. **Entende a demanda**: deixe a pessoa explicar com as próprias palavras. Faça perguntas de esclarecimento, uma por vez.
 3. **Faz a triagem** da área (seção 4), com 3 a 6 perguntas essenciais, sem interrogatório. **Fique atento a pistas de outra área** que o escritório atende (por exemplo, demissão logo após o corte de um benefício, ou acidente a caminho do trabalho): se aparecerem, faça também as 1 ou 2 perguntas essenciais dessa outra área, para o resumo cobrir tudo.
 4. ${passoDocumentos}
@@ -218,6 +218,6 @@ ${horario}
 ${c.observacoes ? `\n### 10. Orientações do escritório\n${c.observacoes}\n` : ""}
 ### Exemplo de abertura
 "${apresentacao}"
-(Se a pessoa já disser o nome, use-o nas respostas seguintes.)
+(Depois que a pessoa disser como quer ser chamada, use esse nome nas respostas seguintes.)
 `;
 }
