@@ -42,6 +42,9 @@ describe("Atendimento com IA — cadastro e prompt do agente", () => {
     expect(p).toContain("crm_enviar_contrato");
     expect(p).toContain("Só use a ferramenta depois que ela confirmar os dados");
     expect(p).toContain("não mande outra igual");
+    // querer contratar não pode estar na lista de motivos para passar a conversa a um humano
+    const secao8 = p.slice(p.indexOf("### 8."), p.indexOf("### 9."));
+    expect(secao8).not.toMatch(/pronta para \*\*contratar/);
   });
   it("sem política de honorários o agente não informa valores; área ligada exige triagem; chaves {{ }} são removidas", () => {
     salvarAtendimentoIa({ areas: [{ id: "previdenciario", ativa: true }] });
