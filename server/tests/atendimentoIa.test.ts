@@ -44,6 +44,8 @@ describe("Atendimento com IA — cadastro e prompt do agente", () => {
     expect(p).toContain("não mande outra igual");
     expect(p).toContain("Espere a resposta dela");
     expect(p).toContain("Você quer seguir com a gente?");
+    expect(p).toContain("Identifique todas as áreas do escritório que o caso toca");
+    expect(p).toContain("pistas de outra área");
     expect(p).toContain("etapa obrigatória, antes de qualquer dado do contrato");
     expect(p).toContain("não envie o link de novo");
     expect(p).toContain("Documento nunca trava o atendimento nem o contrato");
