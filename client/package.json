@@ -1,7 +1,7 @@
 {
   "name": "disparador-pericias-client",
   "private": true,
-  "version": "2.91.6",
+  "version": "2.91.7",
   "type": "module",
   "scripts": {
     "dev": "vite",
