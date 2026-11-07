@@ -9,7 +9,7 @@ import { useToast } from "@/components/ui/Toast";
 import { Campo } from "./comum";
 
 interface Area { id: string; nome: string; ativa: boolean; triagem: string[]; documentos: string[]; propria?: boolean }
-interface Config { nome_agente: string; areas: Area[]; honorarios_politica: string; horario: string; urgencia: string; observacoes: string; pendencias: string[]; prompt: string }
+interface Config { nome_agente: string; areas: Area[]; honorarios_politica: string; horario: string; urgencia: string; observacoes: string; exigir_documentos: boolean; pendencias: string[]; prompt: string }
 
 const linhas = (t: string) => t.split("\n");
 
@@ -21,7 +21,7 @@ export function AtendimentoIa() {
   const [r, setR] = useState<Config | null>(null);
   const [c, setC] = useState<Omit<Config, "pendencias" | "prompt"> | null>(null);
   const [salvando, setSalvando] = useState(false);
-  const aplicar = (x: Config) => { setR(x); setC({ nome_agente: x.nome_agente, areas: x.areas, honorarios_politica: x.honorarios_politica, horario: x.horario, urgencia: x.urgencia, observacoes: x.observacoes }); };
+  const aplicar = (x: Config) => { setR(x); setC({ nome_agente: x.nome_agente, areas: x.areas, honorarios_politica: x.honorarios_politica, horario: x.horario, urgencia: x.urgencia, observacoes: x.observacoes, exigir_documentos: x.exigir_documentos }); };
   const carregar = useCallback(async () => {
     try { aplicar(await api.get<Config>("/gestao/atendimento-ia", { fresh: true } as never)); }
     catch { show("Não foi possível carregar o cadastro do atendimento com IA.", "error"); }
@@ -29,7 +29,7 @@ export function AtendimentoIa() {
   useEffect(() => { void carregar(); }, [carregar]);
   if (!r || !c) return <p className="text-sm text-zinc-500" role="status">Carregando…</p>;
 
-  const sujo = JSON.stringify(c) !== JSON.stringify({ nome_agente: r.nome_agente, areas: r.areas, honorarios_politica: r.honorarios_politica, horario: r.horario, urgencia: r.urgencia, observacoes: r.observacoes });
+  const sujo = JSON.stringify(c) !== JSON.stringify({ nome_agente: r.nome_agente, areas: r.areas, honorarios_politica: r.honorarios_politica, horario: r.horario, urgencia: r.urgencia, observacoes: r.observacoes, exigir_documentos: r.exigir_documentos });
   const salvar = async () => {
     setSalvando(true);
     try { aplicar(await api.put<Config>("/gestao/atendimento-ia", c)); show("Cadastro salvo. Atualize o agente no Deskcomm para usar o texto novo.", "success"); }
@@ -85,6 +85,13 @@ export function AtendimentoIa() {
             <Campo rotulo="O que o agente pode dizer sobre honorários">
               <Textarea rows={8} maxLength={3000} value={c.honorarios_politica} onChange={(e) => setC({ ...c, honorarios_politica: e.target.value })} className="mt-1.5 text-[14px]" placeholder="Deixe em branco para o agente NÃO informar valores e passar ao atendente. Ex.: Trabalhamos com êxito; o atendente apresenta as condições." />
             </Campo>
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
+              <input type="checkbox" className="mt-1 h-4 w-4" checked={c.exigir_documentos} onChange={(e) => setC({ ...c, exigir_documentos: e.target.checked })} />
+              <span className="text-sm">
+                <strong className="block font-medium">Exigir os documentos antes de enviar o contrato</strong>
+                <span className="text-[13px] text-zinc-500">Desligado (padrão): o agente pede os documentos, mas segue para o contrato mesmo que o cliente não os tenha em mãos; eles podem ser enviados depois da assinatura. Ligado: o agente só envia o contrato depois de receber os documentos essenciais da área.</span>
+              </span>
+            </label>
             <Campo rotulo="Outras orientações do escritório (opcional)">
               <Textarea rows={5} maxLength={3000} value={c.observacoes} onChange={(e) => setC({ ...c, observacoes: e.target.value })} className="mt-1.5 text-[14px]" placeholder="Ex.: Não atendemos causas abaixo de determinado valor. Sempre pergunte se o cliente já tem advogado." />
             </Campo>

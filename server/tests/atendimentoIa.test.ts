@@ -40,10 +40,15 @@ describe("Atendimento com IA — cadastro e prompt do agente", () => {
     expect(p).toContain("Só responda com o que a ferramenta devolveu");
     expect(p).toContain("a rogo");
     expect(p).toContain("crm_enviar_contrato");
-    expect(p).toContain("Nunca use a ferramenta na mesma vez");
+    expect(p).toContain("Nunca use a ferramenta de contrato na mesma vez");
     expect(p).toContain("não mande outra igual");
     expect(p).toContain("Espere a resposta dela");
     expect(p).toContain("Você quer seguir com a gente?");
+    expect(p).toContain("crm_registrar_dados_do_cliente");
+    expect(p).toContain("nunca pergunte de novo o que já está lá");
+    expect(p).toContain("O primeiro nome basta");
+    expect(p).toContain("obrigatório só aqui, na hora do contrato");
+    expect(p).toContain("Depois da assinatura a conversa continua, com você");
     expect(p).toContain("proposta aceita");
     expect(p).toContain("Nunca marque o negócio como ganho por conta própria");
     expect(p).toContain("Identifique todas as áreas do escritório que o caso toca");
@@ -73,5 +78,16 @@ describe("Atendimento com IA — cadastro e prompt do agente", () => {
     expect(p).not.toContain("do o escritório");
     expect(p).toContain("FIM");
     salvarAtendimentoIa({});
+  });
+  it("exigir documentos é opção do escritório: desligado, o documento não trava; ligado, o contrato espera os essenciais", () => {
+    salvarAtendimentoIa({ areas: [{ id: "previdenciario", ativa: true }] });
+    expect(montarPromptDoAgente()).toContain("Documento nunca trava o atendimento nem o contrato");
+    const ligado = salvarAtendimentoIa({ areas: [{ id: "previdenciario", ativa: true }], exigir_documentos: true });
+    expect(ligado.exigir_documentos).toBe(true);
+    const p = montarPromptDoAgente();
+    expect(p).toContain("exige os documentos essenciais antes do contrato");
+    expect(p).not.toContain("Documento nunca trava");
+    salvarAtendimentoIa({});
+    expect(lerAtendimentoIa().exigir_documentos).toBe(false);
   });
 });
