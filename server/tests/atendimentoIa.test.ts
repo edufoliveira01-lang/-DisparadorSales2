@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { lerAtendimentoIa, montarPromptDoAgente, pendenciasDoAtendimentoIa, salvarAtendimentoIa, AREAS_PRONTAS } from "../src/services/gestao/atendimentoIa";
-import { salvarEscritorio } from "../src/services/gestao/escritorio";
+import { lerEscritorio, salvarEscritorio } from "../src/services/gestao/escritorio";
 
 describe("Atendimento com IA — cadastro e prompt do agente", () => {
   it("começa com as áreas prontas desligadas e mostra o que falta", () => {
@@ -58,7 +58,7 @@ describe("Atendimento com IA — cadastro e prompt do agente", () => {
     const longo = "Linha de honorários. ".repeat(100) + "FIM";
     const salvo = salvarAtendimentoIa({ areas: [{ id: "previdenciario", ativa: true }], honorarios_politica: longo });
     expect(salvo.honorarios_politica.endsWith("FIM")).toBe(true);
-    const p = montarPromptDoAgente(salvo, { nome: "", razao_social: "" } as never);
+    const p = montarPromptDoAgente(salvo, { ...lerEscritorio(), nome: "", razao_social: "" });
     expect(p).not.toContain("do o escritório");
     expect(p).toContain("FIM");
     salvarAtendimentoIa({});
