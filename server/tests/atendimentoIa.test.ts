@@ -52,7 +52,7 @@ describe("Atendimento com IA — cadastro e prompt do agente", () => {
     expect(p).toContain("faça a conta da renda por pessoa");
     expect(p).toContain("CadÚnico");
     expect(p).toContain("Acidente de trabalho (CAT)");
-    expect(p).toContain("Sem opinião sobre o mérito");
+    expect(p).toContain("Responda como especialista, sem prometer ganho");
     expect(p).toContain("Pensão por morte:");
     expect(p).toContain("cpf_para_confirmar");
     expect(p).toContain("Nunca marque o atendimento como \"ganho\"");
