@@ -141,4 +141,21 @@ describe("Atendimento com IA — cadastro e prompt do agente", () => {
     expect(editada.areas.find((a) => a.id === "previdenciario")!.triagem).toEqual(["Só esta pergunta."]);
     salvarAtendimentoIa({});
   });
+
+  it("o texto sai em três partes (Roteiro, Regras, FAQ) separadas pelas marcas do editor do Deskcomm", () => {
+    const p = montarPromptDoAgente();
+    const iRegras = p.indexOf("\n=== REGRAS ===\n");
+    const iFaq = p.indexOf("\n=== FAQ (respostas aprovadas) ===\n");
+    expect(iRegras).toBeGreaterThan(0);
+    expect(iFaq).toBeGreaterThan(iRegras);
+    const roteiro = p.slice(0, iRegras), regras = p.slice(iRegras, iFaq), faq = p.slice(iFaq);
+    // Roteiro: quem é, o passo a passo, as áreas, quem já é cliente e a abertura
+    for (const f of ["### 1. Quem você é", "### 3. O que você faz (e a ordem)", "### 4. Áreas atendidas", "### 7. Quem já é cliente", "### Exemplo de abertura"]) expect(roteiro).toContain(f);
+    // Regras: como fala, o que nunca faz, quando passar ao humano, horário
+    for (const f of ["### 2. Como você fala", "### 5. O que você NUNCA faz", "### 8. Quando passar para um humano", "### 9. Horário"]) expect(regras).toContain(f);
+    // FAQ: honorários como pergunta e resposta aprovada, contrato e como confirmar que é o escritório
+    expect(faq).toContain("**Pergunta:** Quanto custa? Como vocês cobram?");
+    expect(faq).toContain("**Pergunta:** Como funciona o contrato e a assinatura?");
+    expect(roteiro).not.toContain("=== REGRAS ===");
+  });
 });
