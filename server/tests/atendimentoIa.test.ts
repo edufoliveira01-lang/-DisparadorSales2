@@ -51,6 +51,8 @@ describe("Atendimento com IA — cadastro e prompt do agente", () => {
     expect(p).toContain("a idade basta");
     expect(p).toContain("faça a conta da renda por pessoa");
     expect(p).toContain("CadÚnico");
+    expect(p).toContain("Acidente de trabalho (CAT)");
+    expect(p).toContain("Sem opinião sobre o mérito");
     expect(p).toContain("Não fale de porcentagem antes do resumo do caso");
     expect(p).toContain("Inclua no resumo as ressalvas que apareceram");
     expect(p).toContain("Faça a pergunta de decisão uma única vez");
