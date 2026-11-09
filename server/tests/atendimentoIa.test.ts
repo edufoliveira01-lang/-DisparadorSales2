@@ -45,6 +45,14 @@ describe("Atendimento com IA — cadastro e prompt do agente", () => {
     expect(p).toContain("Espere a resposta dela");
     expect(p).toContain("Você quer seguir com a gente?");
     expect(p).toContain("A triagem tem fim");
+    expect(p).toContain("Não presuma o enquadramento pelo que a pessoa diz no começo");
+    expect(p).toContain("sem sugerir ação contra a empresa ou o aplicativo");
+    expect(p).toContain("Não cite resultados que o escritório não atende");
+    expect(p).toContain("Não fale de porcentagem antes do resumo do caso");
+    expect(p).toContain("Inclua no resumo as ressalvas que apareceram");
+    expect(p).toContain("Faça a pergunta de decisão uma única vez");
+    expect(p).toContain("nunca escreva o CPF inteiro na conversa");
+    expect(p).toContain("data de nascimento e nome da mãe");
     expect(p).toContain("Nunca** envie listas numeradas de perguntas");
     expect(p).toContain("Irritação não é motivo para passar a conversa à equipe");
     expect(p).toContain("Peça os dados em blocos curtos");
@@ -101,5 +109,29 @@ describe("Atendimento com IA — cadastro e prompt do agente", () => {
     expect(p).not.toContain("Documento nunca trava");
     salvarAtendimentoIa({});
     expect(lerAtendimentoIa().exigir_documentos).toBe(false);
+  });
+  it("revisão humana é opção do escritório: desligada, o agente envia o contrato; ligada, reúne os dados e passa à equipe", () => {
+    salvarAtendimentoIa({ areas: [{ id: "previdenciario", ativa: true }] });
+    expect(montarPromptDoAgente()).toContain("você mesma envia o contrato para assinatura");
+    const ligado = salvarAtendimentoIa({ areas: [{ id: "previdenciario", ativa: true }], revisao_humana: true });
+    expect(ligado.revisao_humana).toBe(true);
+    const p = montarPromptDoAgente();
+    expect(p).toContain("Contrato (com revisão da equipe)");
+    expect(p).toContain("NÃO use crm_enviar_contrato");
+    expect(p).not.toContain("você mesma envia o contrato para assinatura");
+    salvarAtendimentoIa({});
+    expect(lerAtendimentoIa().revisao_humana).toBe(false);
+  });
+  it("a triagem previdenciária nova (carta do INSS, vínculo e contribuições, BO) chega a quem nunca editou a antiga, e quem editou mantém a sua", () => {
+    const antiga = ["Qual benefício ou problema (aposentadoria, auxílio por incapacidade, BPC, pensão, revisão, benefício negado ou cortado)?", "Já pediu ao INSS? Qual foi a resposta?", "Qual a idade e se está trabalhando ou contribuindo.", "Se for doença ou acidente: qual a condição e desde quando está afastado do trabalho.", "Se existem laudos ou atestados."];
+    const sem = salvarAtendimentoIa({ areas: [{ id: "previdenciario", ativa: true, triagem: antiga }] });
+    const t = sem.areas.find((a) => a.id === "previdenciario")!.triagem.join(" | ");
+    expect(t).toMatch(/número do requerimento/);
+    expect(t).toMatch(/autônomo ou MEI/);
+    expect(t).toMatch(/boletim de ocorrência/);
+    expect(sem.areas.find((a) => a.id === "previdenciario")!.triagem.length).toBeLessThanOrEqual(6);
+    const editada = salvarAtendimentoIa({ areas: [{ id: "previdenciario", ativa: true, triagem: ["Só esta pergunta."] }] });
+    expect(editada.areas.find((a) => a.id === "previdenciario")!.triagem).toEqual(["Só esta pergunta."]);
+    salvarAtendimentoIa({});
   });
 });

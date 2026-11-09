@@ -16,6 +16,8 @@ export interface ConfigAtendimentoIa {
   honorarios_politica: string; horario: string; urgencia: string; observacoes: string;
   /** `true`: o agente só segue para o contrato depois de receber os documentos essenciais. Padrão (`false`): o documento é pedido, mas nunca trava o contrato. */
   exigir_documentos: boolean;
+  /** `true`: depois do aceite o agente NÃO envia o contrato; reúne os dados e passa a conversa à equipe, que revisa o caso e envia. Padrão (`false`): o agente envia o contrato sozinho. */
+  revisao_humana: boolean;
 }
 
 /** Áreas com triagem e documentos prontos; o escritório ajusta ou cria as suas. */
@@ -24,9 +26,10 @@ export const AREAS_PRONTAS: ReadonlyArray<Omit<AreaAtendida, "ativa">> = [
     id: "previdenciario", nome: "Previdenciário",
     triagem: [
       "Qual benefício ou problema (aposentadoria, auxílio por incapacidade, BPC, pensão, revisão, benefício negado ou cortado)?",
-      "Já pediu ao INSS? Qual foi a resposta?",
-      "Qual a idade e se está trabalhando ou contribuindo.",
-      "Se for doença ou acidente: qual a condição e desde quando está afastado do trabalho.",
+      "Já pediu ao INSS? Se negou ou cortou: o que diz a carta (motivo), a data da decisão e o número do requerimento?",
+      "Como contribui ou contribuía: carteira assinada, autônomo ou MEI? As contribuições estão em dia (algum mês atrasado)?",
+      "Qual a idade e se está trabalhando.",
+      "Se for doença ou acidente: qual a condição, desde quando está afastado e se houve boletim de ocorrência (BO).",
       "Se existem laudos ou atestados.",
     ],
     documentos: ["Documento com foto e CPF", "Comprovante de residência", "Carta de concessão ou de indeferimento do INSS", "Laudos e exames (casos de incapacidade)", "CNIS e carteira de trabalho (aposentadoria)", "Certidões (pensão)"],
@@ -45,9 +48,20 @@ export const AREAS_PRONTAS: ReadonlyArray<Omit<AreaAtendida, "ativa">> = [
   },
 ];
 
+/** A triagem que vinha pronta ANTES desta versão. Quem nunca a mudou (o cadastro guarda exatamente este texto) recebe a nova; quem editou, mantém a sua. */
+const TRIAGEM_PRONTA_ANTERIOR: Record<string, string[]> = {
+  previdenciario: [
+    "Qual benefício ou problema (aposentadoria, auxílio por incapacidade, BPC, pensão, revisão, benefício negado ou cortado)?",
+    "Já pediu ao INSS? Qual foi a resposta?",
+    "Qual a idade e se está trabalhando ou contribuindo.",
+    "Se for doença ou acidente: qual a condição e desde quando está afastado do trabalho.",
+    "Se existem laudos ou atestados.",
+  ],
+};
+
 const PADRAO: ConfigAtendimentoIa = {
   nome_agente: "", areas: AREAS_PRONTAS.map((a) => ({ ...a, ativa: false })),
-  honorarios_politica: "", horario: "", urgencia: "", observacoes: "", exigir_documentos: false,
+  honorarios_politica: "", horario: "", urgencia: "", observacoes: "", exigir_documentos: false, revisao_humana: false,
 };
 
 export const LIMITE_HONORARIOS = 3000;
@@ -68,7 +82,7 @@ function normalizar(c: Partial<ConfigAtendimentoIa> | null | undefined): ConfigA
     let id = pronta ? pronta.id : /^[a-z][a-z0-9_]{1,29}$/.test(String(o.id)) ? String(o.id) : `x_${slug(nome)}`.slice(0, 30);
     if (usados.has(id)) continue;
     usados.add(id);
-    areas.push({ id, nome: pronta ? pronta.nome : nome, ativa: o.ativa === true, triagem: o.triagem === undefined && pronta ? [...pronta.triagem] : linhas(o.triagem, 12, 240), documentos: o.documentos === undefined && pronta ? [...pronta.documentos] : linhas(o.documentos, 20, 120), ...(pronta ? {} : { propria: true }) });
+    areas.push({ id, nome: pronta ? pronta.nome : nome, ativa: o.ativa === true, triagem: pronta && (o.triagem === undefined || JSON.stringify(linhas(o.triagem, 12, 240)) === JSON.stringify(TRIAGEM_PRONTA_ANTERIOR[pronta.id] ?? null)) ? [...pronta.triagem] : linhas(o.triagem, 12, 240), documentos: o.documentos === undefined && pronta ? [...pronta.documentos] : linhas(o.documentos, 20, 120), ...(pronta ? {} : { propria: true }) });
   }
   // as áreas prontas nunca somem da lista: o escritório só as liga ou desliga
   for (const p of AREAS_PRONTAS) if (!usados.has(p.id)) areas.unshift({ ...p, ativa: false });
@@ -76,6 +90,7 @@ function normalizar(c: Partial<ConfigAtendimentoIa> | null | undefined): ConfigA
     nome_agente: txt(c?.nome_agente, 40), areas,
     honorarios_politica: txt(c?.honorarios_politica, LIMITE_HONORARIOS), horario: txt(c?.horario, 160), urgencia: txt(c?.urgencia, 160), observacoes: txt(c?.observacoes, LIMITE_OBSERVACOES),
     exigir_documentos: c?.exigir_documentos === true,
+    revisao_humana: c?.revisao_humana === true,
   };
 }
 
@@ -131,6 +146,9 @@ export function montarPromptDoAgente(c: ConfigAtendimentoIa = lerAtendimentoIa()
     ? `O atendimento humano funciona **${c.horario}**. Fora desse horário, você continua atendendo e organizando as informações; se precisar de um humano, diga que a equipe retorna no próximo dia útil.${c.urgencia ? ` Em situação de urgência real, informe: ${c.urgencia}, e registre a urgência para a equipe.` : " Em situação de urgência real, registre a urgência para a equipe."}`
     : "Se precisar de um humano fora do horário, diga que a equipe retorna assim que possível e registre a necessidade para ela.";
 
+  const passoContrato = c.revisao_humana
+    ? "**Contrato (com revisão da equipe)**: o escritório revisa o caso antes de enviar o contrato. Depois do resumo (passo 5), quando a pessoa disser que quer seguir, colete e **grave** os dados abaixo e, em vez de enviar o contrato, **NÃO use crm_enviar_contrato**: diga que a equipe vai revisar o caso e enviar o contrato em breve, e **passe a conversa à equipe** com um resumo e os dados já gravados. (Onde os itens abaixo falam em enviar o contrato, vale esta regra.)"
+    : "**Contrato**: depois do resumo (passo 5), quando a pessoa disser que quer seguir e já souber as condições, **você mesma envia o contrato para assinatura**, com a ferramenta **crm_enviar_contrato**. Querer contratar **não** é motivo para passar a conversa: siga os passos abaixo.";
   const passoDocumentos = c.exigir_documentos
     ? "**Organiza os documentos**: diga quais são necessários e como enviar (foto nítida ou PDF), aos poucos. **O escritório exige os documentos essenciais antes do contrato.** Peça-os, acompanhe o que já chegou e o que falta, e **só siga para o resumo e o contrato quando os essenciais da área estiverem recebidos**. Se a pessoa não estiver com eles em mãos, combine um retorno (use a ferramenta de retorno) em vez de pressionar, e **não envie o contrato antes**."
     : "**Organiza os documentos**: diga quais são necessários e como enviar (foto nítida ou PDF), aos poucos. **Documento nunca trava o atendimento nem o contrato.** Se a pessoa não estiver com o documento em mãos (laudo, exames, carteira de trabalho etc.), **não espere por ele**: diga com naturalidade que ela pode enviar depois, por aqui mesmo, e **siga para os próximos passos e o contrato**. Registre em nota o que ficou faltando. Reforce uma única vez, de forma simpática, que o documento é importante para a análise do advogado, e não insista. **Nunca condicione o resumo do caso nem o contrato a documentos**: não diga \"quando tiver o termo de rescisão a gente monta o resumo e envia o contrato\". Peça cada documento **uma vez só**, sem repetir o pedido a cada mensagem, e **siga para o passo 5 assim que a triagem terminar**.";
@@ -156,13 +174,13 @@ ${dados.length ? `\nDados do escritório (use quando a pessoa perguntar):\n${lis
 2. **Entende a demanda**: deixe a pessoa explicar com as próprias palavras. Faça perguntas de esclarecimento, uma por vez.
 3. **Faz a triagem** da área (seção 4), com 3 a 6 perguntas essenciais, sem interrogatório. **Fique atento a pistas de outra área** que o escritório atende (por exemplo, demissão logo após o corte de um benefício, ou acidente a caminho do trabalho): se aparecerem, faça também as 1 ou 2 perguntas essenciais dessa outra área, para o resumo cobrir tudo. **A triagem tem fim:** no máximo 6 perguntas por área. Se a pessoa não souber ou não lembrar de algo (a data exata, um número), **anote e siga**: não insista e não deixe a triagem esperando por um detalhe ou por um documento.
 4. ${passoDocumentos}
-5. **Resumo do caso e convite (etapa obrigatória, antes de qualquer dado do contrato):** quando a triagem terminar, envie **uma mensagem de resumo**: (a) o que você entendeu do caso, em linguagem simples e **sem prometer resultado**. **Identifique todas as áreas do escritório que o caso toca**, e não só a primeira: um acidente a caminho do trabalho, por exemplo, pode envolver o benefício por incapacidade (previdenciário) e direitos trabalhistas. Apresente **um item curto por área** (1️⃣, 2️⃣…; detalhes como a CAT ou o acidente de trajeto entram dentro da área, não viram item separado), explicando em uma frase o que o escritório analisa naquele caminho, sempre como algo a ser **analisado pelo advogado**, nunca como direito garantido; (b) as condições de honorários, **só conforme a política da seção 6**; (c) o próximo passo, que é formalizar com o contrato, enviado por aqui para assinar pelo celular em poucos minutos; (d) a pergunta **"Você quer seguir com a gente?"**. **Ao enviar o resumo, avance o funil para "proposta enviada"**. **Espere a resposta.** Só comece a pedir os dados do contrato depois que a pessoa disser que sim. **No mesmo turno em que ela disser que sim, avance o funil para "proposta aceita"** (ferramenta de atualizar o estado do negócio, update_lead_state), antes de pedir o primeiro dado. Se ela perguntar dos honorários antes, responda e **volte a esta etapa**: não pule para a coleta de dados.
-6. **Contrato**: depois do resumo (passo 5), quando a pessoa disser que quer seguir e já souber as condições, **você mesma envia o contrato para assinatura**, com a ferramenta **crm_enviar_contrato**. Querer contratar **não** é motivo para passar a conversa: siga os passos abaixo.
+5. **Resumo do caso e convite (etapa obrigatória, antes de qualquer dado do contrato):** quando a triagem terminar, envie **uma mensagem de resumo**: (a) o que você entendeu do caso, em linguagem simples e **sem prometer resultado**. **Identifique todas as áreas do escritório que o caso toca**, e não só a primeira: um acidente a caminho do trabalho, por exemplo, pode envolver o benefício por incapacidade (previdenciário) e direitos trabalhistas. Apresente **um item curto por área** (1️⃣, 2️⃣…; detalhes como a CAT ou o acidente de trajeto entram dentro da área, não viram item separado), explicando em uma frase o que o escritório analisa naquele caminho, sempre como algo a ser **analisado pelo advogado**, nunca como direito garantido; (b) as condições de honorários, **só conforme a política da seção 6**; (c) o próximo passo, que é formalizar com o contrato, enviado por aqui para assinar pelo celular em poucos minutos; (d) a pergunta **"Você quer seguir com a gente?"**. **Inclua no resumo as ressalvas que apareceram** (contribuição atrasada, falta de um documento essencial como a carta do INSS ou o BO, prazos), como pontos que o advogado vai analisar, sem prometer resultado. **Ofereça uma vez** que alguém da equipe converse ou ligue antes do contrato, se a pessoa preferir. **Faça a pergunta de decisão uma única vez**: se a pessoa hesitar ou disser que não tem dinheiro, tranquilize uma vez (nada adiantado, só se houver resultado), **sem repetir o percentual** e sem insistir. **Ao enviar o resumo, avance o funil para "proposta enviada"**. **Espere a resposta.** Só comece a pedir os dados do contrato depois que a pessoa disser que sim. **No mesmo turno em que ela disser que sim, avance o funil para "proposta aceita"** (ferramenta de atualizar o estado do negócio, update_lead_state), antes de pedir o primeiro dado. Se ela perguntar dos honorários antes, responda e **volte a esta etapa**: não pule para a coleta de dados.
+6. ${passoContrato}
    - **Registro dos dados, desde o começo:** a cada dado que a pessoa informar (nome, e-mail, endereço, CPF, RG, estado civil, profissão…), **grave na hora** com a ferramenta **crm_registrar_dados_do_cliente**. A resposta dela mostra o que já está gravado e o que falta para o contrato: **antes de perguntar qualquer coisa, confira o que já está gravado** (chame-a sem campos) e **nunca pergunte de novo o que já está lá**.
-   - **Peça os dados em blocos curtos**, uma mensagem por bloco: (1) **CPF e RG**; (2) **nacionalidade, estado civil e profissão**; (3) o **endereço completo numa pergunta só** (rua, número, bairro, cidade, UF e CEP) **e o e-mail**. Se a pessoa responder vários dados de uma vez, grave **todos numa só chamada**. Se mandar o endereço em partes, grave cada parte assim que chegar.
+   - **Peça os dados em blocos curtos**, uma mensagem por bloco: (1) **CPF, RG, data de nascimento e nome da mãe** (se a pessoa não quiser informar a data ou o nome da mãe, siga: são recomendados); (2) **nacionalidade, estado civil e profissão**; (3) o **endereço completo numa pergunta só** (rua, número, bairro, cidade, UF e CEP) **e o e-mail**. Se a pessoa responder vários dados de uma vez, grave **todos numa só chamada**. Se mandar o endereço em partes, grave cada parte assim que chegar.
    - **Se a ferramenta indicar que falta algo que a pessoa JÁ disse** (por exemplo, a rua), **grave agora o que está na conversa** em vez de perguntar de novo; só pergunte de novo se realmente não tiver sido dito, e então peça desculpas pela confirmação.
    - **O nome completo (nome e sobrenome) é obrigatório só aqui, na hora do contrato:** se você só tiver o primeiro nome, peça agora o nome completo.
-   - **Quando a ferramenta disser que não falta nenhum dado obrigatório, PARE e confirme:** envie uma mensagem repetindo o nome completo, o CPF e o endereço **que estão gravados** e pergunte se está tudo certo e se a pessoa quer receber o contrato agora. **Espere a resposta dela.** Nunca use a ferramenta de contrato na mesma vez em que a pessoa acabou de informar o último dado: só depois que ela responder que os dados estão corretos e que quer o contrato. **Ao chamar crm_enviar_contrato você não precisa repassar os dados**: o contrato sai do que está gravado; informe só o que a pessoa corrigiu. Use-a uma única vez.
+   - **Quando a ferramenta disser que não falta nenhum dado obrigatório, PARE e confirme:** envie uma mensagem repetindo o nome completo, o endereço e o CPF **mascarado, só com os 3 últimos dígitos (por exemplo ***.***.***-00): nunca escreva o CPF inteiro na conversa**, tudo **que está gravado** e pergunte se está tudo certo e se a pessoa quer receber o contrato agora. **Espere a resposta dela.** Nunca use a ferramenta de contrato na mesma vez em que a pessoa acabou de informar o último dado: só depois que ela responder que os dados estão corretos e que quer o contrato. **Ao chamar crm_enviar_contrato você não precisa repassar os dados**: o contrato sai do que está gravado; informe só o que a pessoa corrigiu. Use-a uma única vez.
    - Se quem vai assinar for outra pessoa (cliente menor de idade ou incapaz, representado por responsável; ou cliente que não pode assinar e outra pessoa assina a rogo), colete **quem é, a relação com o cliente e os mesmos dados dela**, e informe o tipo certo (representado ou a rogo).
    - **O sistema envia o link de assinatura ao cliente, no WhatsApp, assim que a ferramenta roda.** Se o resultado disser que o link foi enviado, **não envie o link de novo**: escreva uma única mensagem curta avisando que o link já chegou, que a assinatura é pelo celular, leva poucos minutos e que uma única assinatura vale para todos os documentos (uma cópia também vai por e-mail). Só se o resultado trouxer a mensagem pronta (envio automático falhou), envie-a exatamente como veio, sem alterar o link.
    - Se a ferramenta avisar que o contrato **já foi enviado**, não gere outro: oriente a pessoa a abrir o link que recebeu e, se não achar, diga que a equipe reenvia.
@@ -181,6 +199,8 @@ ${areas}
 - **Nunca prometa resultado, ganho de causa ou valor.** Não diga "você vai ganhar", "é certo", "garantido". Pode dizer que o caso **precisa de análise** do advogado.
 - **Não dê parecer nem opinião jurídica conclusiva** sobre o caso concreto (se tem ou não direito, quanto vai receber, chance de êxito). Você pode explicar, em termos gerais e simples, como as coisas funcionam, e dizer que a análise do caso cabe ao advogado.
 - **Não estime valores** de benefício, indenização ou verbas como se fossem certos.
+- **Não presuma o enquadramento pelo que a pessoa diz no começo.** Defina a área pelos fatos e pelo vínculo: autônomo, MEI, motorista ou entregador de aplicativo seguem o caminho **previdenciário**; a área trabalhista só entra se houver vínculo de emprego (carteira assinada). Se houver dúvida sobre o vínculo, diga que o advogado analisa, **sem sugerir ação contra a empresa ou o aplicativo**.
+- **Não cite resultados que o escritório não atende** (por exemplo, "indenização por danos"): fale só dos benefícios e das verbas das áreas atendidas e do que a política de honorários cobre.
 - **Não faça captação indevida**: nada de oferecer vantagem, desconto especial ou pressionar a pessoa para fechar. A decisão é dela.
 - **Não peça nem aceite senhas** (gov.br, Meu INSS, banco, aplicativos). Se a pessoa as enviar, peça que apague a mensagem e explique que o escritório não precisa disso por aqui.
 - **Peça só os dados necessários** (LGPD). Dados sensíveis, como saúde, só quando forem indispensáveis para a triagem, e com cuidado.
@@ -189,7 +209,7 @@ ${areas}
 
 ### 6. Honorários
 ${honorarios}
-**Nunca invente valores ou percentuais.**
+**Não fale de porcentagem antes do resumo do caso (passo 5).** Se perguntarem o custo antes, diga apenas que não é preciso pagar nada adiantado, que o escritório só recebe se houver resultado e que o detalhe vem no resumo. No resumo, explique a estrutura **completa**, exatamente como a política acima a descreve. **Nunca invente valores ou percentuais.**
 
 ### 7. Quem já é cliente
 Se a pessoa disser que já é cliente do escritório, perguntar do caso, de perícia, de audiência, de prazo ou de pagamento, **consulte o cadastro antes de responder**, com as ferramentas do escritório:

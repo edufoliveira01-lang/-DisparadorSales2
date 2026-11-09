@@ -9,7 +9,7 @@ import { useToast } from "@/components/ui/Toast";
 import { Campo } from "./comum";
 
 interface Area { id: string; nome: string; ativa: boolean; triagem: string[]; documentos: string[]; propria?: boolean }
-interface Config { nome_agente: string; areas: Area[]; honorarios_politica: string; horario: string; urgencia: string; observacoes: string; exigir_documentos: boolean; pendencias: string[]; prompt: string }
+interface Config { nome_agente: string; areas: Area[]; honorarios_politica: string; horario: string; urgencia: string; observacoes: string; exigir_documentos: boolean; revisao_humana: boolean; pendencias: string[]; prompt: string }
 
 const linhas = (t: string) => t.split("\n");
 
@@ -21,7 +21,7 @@ export function AtendimentoIa() {
   const [r, setR] = useState<Config | null>(null);
   const [c, setC] = useState<Omit<Config, "pendencias" | "prompt"> | null>(null);
   const [salvando, setSalvando] = useState(false);
-  const aplicar = (x: Config) => { setR(x); setC({ nome_agente: x.nome_agente, areas: x.areas, honorarios_politica: x.honorarios_politica, horario: x.horario, urgencia: x.urgencia, observacoes: x.observacoes, exigir_documentos: x.exigir_documentos }); };
+  const aplicar = (x: Config) => { setR(x); setC({ nome_agente: x.nome_agente, areas: x.areas, honorarios_politica: x.honorarios_politica, horario: x.horario, urgencia: x.urgencia, observacoes: x.observacoes, exigir_documentos: x.exigir_documentos, revisao_humana: x.revisao_humana }); };
   const carregar = useCallback(async () => {
     try { aplicar(await api.get<Config>("/gestao/atendimento-ia", { fresh: true } as never)); }
     catch { show("Não foi possível carregar o cadastro do atendimento com IA.", "error"); }
@@ -29,7 +29,7 @@ export function AtendimentoIa() {
   useEffect(() => { void carregar(); }, [carregar]);
   if (!r || !c) return <p className="text-sm text-zinc-500" role="status">Carregando…</p>;
 
-  const sujo = JSON.stringify(c) !== JSON.stringify({ nome_agente: r.nome_agente, areas: r.areas, honorarios_politica: r.honorarios_politica, horario: r.horario, urgencia: r.urgencia, observacoes: r.observacoes, exigir_documentos: r.exigir_documentos });
+  const sujo = JSON.stringify(c) !== JSON.stringify({ nome_agente: r.nome_agente, areas: r.areas, honorarios_politica: r.honorarios_politica, horario: r.horario, urgencia: r.urgencia, observacoes: r.observacoes, exigir_documentos: r.exigir_documentos, revisao_humana: r.revisao_humana });
   const salvar = async () => {
     setSalvando(true);
     try { aplicar(await api.put<Config>("/gestao/atendimento-ia", c)); show("Cadastro salvo. Atualize o agente no Deskcomm para usar o texto novo.", "success"); }
@@ -90,6 +90,13 @@ export function AtendimentoIa() {
               <span className="text-sm">
                 <strong className="block font-medium">Exigir os documentos antes de enviar o contrato</strong>
                 <span className="text-[13px] text-zinc-500">Desligado (padrão): o agente pede os documentos, mas segue para o contrato mesmo que o cliente não os tenha em mãos; eles podem ser enviados depois da assinatura. Ligado: o agente só envia o contrato depois de receber os documentos essenciais da área.</span>
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
+              <input type="checkbox" className="mt-1 h-4 w-4" checked={c.revisao_humana} onChange={(e) => setC({ ...c, revisao_humana: e.target.checked })} />
+              <span className="text-sm">
+                <strong className="block font-medium">A equipe revisa o caso antes de enviar o contrato</strong>
+                <span className="text-[13px] text-zinc-500">Desligado (padrão): depois do aceite e da confirmação dos dados, o agente envia o contrato sozinho. Ligado: o agente reúne os dados e passa a conversa à equipe, que revisa o caso e envia o contrato.</span>
               </span>
             </label>
             <Campo rotulo="Outras orientações do escritório (opcional)">
