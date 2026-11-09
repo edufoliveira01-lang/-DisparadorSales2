@@ -48,14 +48,10 @@ describe("Atendimento com IA — cadastro e prompt do agente", () => {
     expect(p).toContain("Não presuma o enquadramento pelo que a pessoa diz no começo");
     expect(p).toContain("sem sugerir ação contra a empresa ou o aplicativo");
     expect(p).toContain("Não cite resultados que o escritório não atende");
-    expect(p).toContain("a idade basta");
-    expect(p).toContain("faça a conta da renda por pessoa");
-    expect(p).toContain("CadÚnico");
-    expect(p).toContain("Acidente de trabalho (CAT)");
     expect(p).toContain("Responda como especialista, sem prometer ganho");
     expect(p).toContain("crm_consultar_base_juridica");
+    expect(p).toContain("Cada benefício e cada tema trabalhista está na base jurídica");
     expect(p).toContain("crm_calcular_renda_per_capita");
-    expect(p).toContain("Pensão por morte:");
     expect(p).toContain("completa sozinho a rua");
     expect(p).toContain("cpf_para_confirmar");
     expect(p).toContain("Nunca marque o atendimento como \"ganho\"");
