@@ -25,6 +25,13 @@ const ROTULO_DO_STATUS: Record<ItemRecente["status"], { texto: string; tom: "suc
   erro: { texto: "Erro", tom: "danger" },
 };
 const TIPO_DE_CONTA: Record<string, string> = { basic: "Dropbox Basic", pro: "Dropbox Plus/Professional", business: "Dropbox Business" };
+/** Servidor ainda na versão antiga (sem `pastas` na resposta): a tela segue com os nomes padrão em vez de quebrar. */
+const TIPOS_PADRAO = ["PARTE MÉDICA", "DOCUMENTOS PESSOAIS", "DOCUMENTOS ADMINISTRATIVO", "CONTRATOS E PROCURAÇÕES", "A CLASSIFICAR"];
+function comPastas(e: Estado): Estado {
+  if (e.pastas && Array.isArray(e.pastas.tipos)) return e;
+  return { ...e, pastas: { raiz: e.pasta_raiz || "/CLIENTES", tipos: TIPOS_PADRAO.map((t) => ({ chave: t, nome: t })) } };
+}
+
 const mensagemDe = (e: unknown, padrao: string) => (e instanceof ApiError || e instanceof Error ? e.message : padrao);
 
 /** Armazenamento externo (Dropbox): conectar, acompanhar os envios e escolher as pastas dos clientes. */
@@ -46,8 +53,9 @@ export function ArmazenamentoSettings() {
   const carregar = useCallback(async () => {
     try {
       const [e, p] = await Promise.all([api.get<Estado>("/armazenamento/dropbox", { fresh: true }), api.get<{ pendencias: Pendencia[] }>("/armazenamento/pendencias", { fresh: true })]);
-      setEstado(e); setPendencias(p.pendencias);
-      setRaiz(e.pastas.raiz); setNomes(Object.fromEntries(e.pastas.tipos.map((t) => [t.chave, t.nome])));
+      const est = comPastas({ ...e, fila: e.fila ?? { pendente: 0, aguardando_pasta: 0, enviado: 0, erro: 0, recentes: [] } });
+      setEstado(est); setPendencias(p.pendencias ?? []);
+      setRaiz(est.pastas.raiz); setNomes(Object.fromEntries(est.pastas.tipos.map((t) => [t.chave, t.nome])));
     } catch (e) { show(mensagemDe(e, "Não foi possível carregar o Dropbox."), "error"); }
   }, [show]);
 
@@ -232,7 +240,7 @@ export function ArmazenamentoSettings() {
                 <ul className="divide-y divide-zinc-100 text-sm dark:divide-zinc-800">
                   {estado.fila.recentes.map((i) => (
                     <li key={i.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
-                      <Badge tone={ROTULO_DO_STATUS[i.status].tom}>{ROTULO_DO_STATUS[i.status].texto}</Badge>
+                      <Badge tone={(ROTULO_DO_STATUS[i.status] ?? ROTULO_DO_STATUS.erro).tom}>{(ROTULO_DO_STATUS[i.status] ?? ROTULO_DO_STATUS.erro).texto}</Badge>
                       <span className="font-medium">{i.cliente ?? "Cliente removido"}</span>
                       <span className="text-zinc-500">{i.titulo}</span>
                       <span className="min-w-0 flex-1 truncate text-xs text-zinc-400" title={i.caminho_final || i.ultimo_erro}>{i.caminho_final || i.ultimo_erro}</span>
