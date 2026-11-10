@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, Cloud, Copy, FolderSearch, FolderSync, RefreshCw, Send, Unplug } from "lucide-react";
+import { CheckCircle2, Cloud, Copy, FolderCog, FolderSearch, FolderSync, RefreshCw, Send, Unplug } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { Badge } from "@/components/ui/Badge";
@@ -11,7 +11,7 @@ import { Input, Label } from "@/components/ui/Input";
 interface Candidata { id: string; nome: string; caminho: string; nota: number }
 interface ItemRecente { id: number; status: "pendente" | "aguardando_pasta" | "enviado" | "erro"; titulo: string; tipo_pasta: string; caminho_final: string; ultimo_erro: string; tentativas: number; cliente: string | null }
 interface Estado {
-  credenciais_salvas: boolean; app_key_final: string; conectado: boolean; conectado_em: string | null; redirect_uri: string; pasta_raiz: string;
+  credenciais_salvas: boolean; app_key_final: string; conectado: boolean; conectado_em: string | null; redirect_uri: string; pasta_raiz: string; pastas: { raiz: string; tipos: Array<{ chave: string; nome: string }> };
   conta: { nome: string; email: string; tipo: string; equipe: boolean } | null;
   fila: { pendente: number; aguardando_pasta: number; enviado: number; erro: number; recentes: ItemRecente[] };
 }
@@ -38,12 +38,16 @@ export function ArmazenamentoSettings() {
   const [desconectando, setDesconectando] = useState(false);
   const [confirmarDesconectar, setConfirmarDesconectar] = useState(false);
   const [ocupado, setOcupado] = useState<string | null>(null);
+  const [raiz, setRaiz] = useState("");
+  const [nomes, setNomes] = useState<Record<string, string>>({});
+  const [salvandoPastas, setSalvandoPastas] = useState(false);
   const [sugestoes, setSugestoes] = useState<{ total_de_pastas: number; sugestoes: Sugestao[] } | null>(null);
 
   const carregar = useCallback(async () => {
     try {
       const [e, p] = await Promise.all([api.get<Estado>("/armazenamento/dropbox", { fresh: true }), api.get<{ pendencias: Pendencia[] }>("/armazenamento/pendencias", { fresh: true })]);
       setEstado(e); setPendencias(p.pendencias);
+      setRaiz(e.pastas.raiz); setNomes(Object.fromEntries(e.pastas.tipos.map((t) => [t.chave, t.nome])));
     } catch (e) { show(mensagemDe(e, "Não foi possível carregar o Dropbox."), "error"); }
   }, [show]);
 
@@ -68,6 +72,17 @@ export function ArmazenamentoSettings() {
       show("Dados do app salvos. Agora clique em Conectar ao Dropbox.", "success");
       await carregar();
     } catch (e) { show(mensagemDe(e, "Não foi possível salvar."), "error"); } finally { setSalvando(false); }
+  }
+
+  async function salvarPastas() {
+    setSalvandoPastas(true);
+    try {
+      const r = await api.put<{ vinculos_removidos: number }>("/armazenamento/dropbox/pastas", { raiz, tipos: nomes });
+      show(r.vinculos_removidos > 0
+        ? `Pastas salvas. ${r.vinculos_removidos} vínculo(s) de cliente foram desfeitos porque a pasta-raiz mudou; o sistema procura de novo pelo nome.`
+        : "Pastas salvas. Valem para os próximos documentos.", "success");
+      await carregar();
+    } catch (e) { show(mensagemDe(e, "Não foi possível salvar as pastas."), "error"); } finally { setSalvandoPastas(false); }
   }
 
   async function acao(chave: string, fn: () => Promise<unknown>, sucesso: string) {
@@ -111,7 +126,7 @@ export function ArmazenamentoSettings() {
         </CardHeader>
         <CardContent className="space-y-4 text-sm text-zinc-600 dark:text-zinc-300">
           <p>
-            Os documentos assinados no ZapSign são copiados para <strong>{estado.pasta_raiz}/NOME DO CLIENTE/CONTRATOS E PROCURAÇÕES</strong> no Dropbox do escritório.
+            Os documentos assinados no ZapSign são copiados para <strong>{estado.pasta_raiz}/NOME DO CLIENTE/{estado.pastas.tipos.find((t) => t.chave === "CONTRATOS E PROCURAÇÕES")?.nome}</strong> no Dropbox do escritório.
             O sistema só grava dentro de <strong>{estado.pasta_raiz}</strong>.
           </p>
           {estado.conta && (
@@ -150,6 +165,38 @@ export function ArmazenamentoSettings() {
                 </>
               )}
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><FolderCog className="h-4 w-4 text-amber-500" /> Onde salvar os documentos</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4 text-sm text-zinc-600 dark:text-zinc-300">
+          <p>Cada escritório organiza o Dropbox do seu jeito. Defina a pasta onde ficam os clientes e o nome da subpasta de cada tipo de documento. O sistema só grava dentro da pasta dos clientes.</p>
+          <div>
+            <Label htmlFor="dbx-raiz">Pasta dos clientes</Label>
+            <Input id="dbx-raiz" value={raiz} onChange={(e) => setRaiz(e.target.value)} placeholder="/CLIENTES" />
+            <p className="mt-1 text-xs text-zinc-500">Exemplos: /CLIENTES ou /ESCRITÓRIO/CLIENTES (até 3 níveis). Se a pasta não existir, o sistema cria.</p>
+            {raiz.trim().toLowerCase().replace(/\/+$/, "") !== estado.pasta_raiz.toLowerCase() && (
+              <p className="mt-1 text-xs text-amber-600">Ao trocar a pasta dos clientes, os vínculos cliente → pasta são desfeitos e o sistema procura de novo pelo nome na pasta nova. Nada é movido nem apagado no Dropbox.</p>
+            )}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {estado.pastas.tipos.map((t) => (
+              <div key={t.chave}>
+                <Label htmlFor={`dbx-tipo-${t.chave}`}>{t.chave === "A CLASSIFICAR" ? "Sem classificação" : t.chave.charAt(0) + t.chave.slice(1).toLowerCase()}</Label>
+                <Input id={`dbx-tipo-${t.chave}`} value={nomes[t.chave] ?? t.nome} onChange={(e) => setNomes((n) => ({ ...n, [t.chave]: e.target.value }))} placeholder={t.chave} />
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-zinc-500">
+            Resultado: <code>{(raiz.trim() || "/CLIENTES").replace(/\/+$/, "")}/NOME DO CLIENTE/{nomes["CONTRATOS E PROCURAÇÕES"] || "CONTRATOS E PROCURAÇÕES"}/AAAA-MM-DD - Contrato (assinado).pdf</code>
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => void salvarPastas()} disabled={salvandoPastas}>{salvandoPastas ? "Salvando…" : "Salvar pastas"}</Button>
+            <Button variant="outline" onClick={() => { setRaiz("/CLIENTES"); setNomes(Object.fromEntries(estado.pastas.tipos.map((t) => [t.chave, t.chave]))); }}>Voltar ao padrão</Button>
           </div>
         </CardContent>
       </Card>

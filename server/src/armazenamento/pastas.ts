@@ -15,8 +15,11 @@ export class ErroItemNaoEncontrado extends ErroArmazenamento {
   constructor(message = "A pasta não existe mais no drive.") { super(message, 404); }
 }
 
-/** A pasta-raiz dos clientes, na raiz do drive do escritório. */
+/** A pasta-raiz PADRÃO dos clientes, na raiz do drive do escritório. Cada escritório pode trocar (ver `aplicarConfigDePastas`). */
 export const RAIZ_DOS_CLIENTES = "/CLIENTES";
+let raizAtual = RAIZ_DOS_CLIENTES;
+/** A pasta-raiz em uso neste escritório (a padrão, ou a que a tela de configuração definiu). */
+export const raizDosClientes = () => raizAtual;
 
 /** As pastas de tipo dentro da pasta de cada cliente. "A CLASSIFICAR" recebe o que o sistema não soube identificar. */
 export const TIPOS_DE_PASTA = [
@@ -27,6 +30,10 @@ export const TIPOS_DE_PASTA = [
   "A CLASSIFICAR",
 ] as const;
 export type TipoDePasta = (typeof TIPOS_DE_PASTA)[number];
+
+/** Nomes que o escritório escolheu para as pastas de tipo (a chave é sempre o nome padrão acima). */
+let nomesDosTipos: Partial<Record<TipoDePasta, string>> = {};
+export const nomeDaPastaDoTipo = (tipo: TipoDePasta): string => nomesDosTipos[tipo] || tipo;
 
 export const ehTipoDePasta = (v: unknown): v is TipoDePasta => typeof v === "string" && (TIPOS_DE_PASTA as readonly string[]).includes(v);
 
@@ -57,6 +64,39 @@ export function chaveDeComparacao(nome: string): string {
     .replace(/[^a-z0-9 ]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** Valida e normaliza a pasta-raiz escolhida: "/CLIENTES", "/Escritório/Clientes"… (até 3 níveis; nunca o drive inteiro). */
+export function normalizarRaiz(v: unknown): string {
+  const bruto = String(v ?? "").trim().replace(/\\/g, "/");
+  const partes = bruto.split("/").map((x) => x.trim()).filter(Boolean);
+  if (partes.length === 0) throw new ErroArmazenamento("Informe a pasta onde os documentos dos clientes ficam (ex.: /CLIENTES).");
+  if (partes.length > 3) throw new ErroArmazenamento("Use no máximo 3 níveis de pasta (ex.: /ESCRITÓRIO/CLIENTES).");
+  for (const x of partes) {
+    if (x === "." || x === "..") throw new ErroArmazenamento("Caminho inválido.");
+    if (/[\\/:*?"<>|\u0000-\u001f\u007f]/.test(x)) throw new ErroArmazenamento(`O nome de pasta "${x}" tem caracteres que o Dropbox não aceita.`);
+    if (x.length > 100) throw new ErroArmazenamento("Nome de pasta muito longo.");
+  }
+  return `/${partes.join("/")}`;
+}
+
+/** Valida o nome de uma pasta de tipo. */
+export function normalizarNomeDeTipo(v: unknown): string {
+  const n = String(v ?? "").replace(PROIBIDOS, " ").replace(/\s+/g, " ").trim().replace(/[. ]+$/g, "");
+  if (!n) throw new ErroArmazenamento("O nome da pasta não pode ficar vazio.");
+  if (n.length > 80) throw new ErroArmazenamento("Nome de pasta muito longo.");
+  return n;
+}
+
+/** Aplica a configuração do escritório (vinda do banco). Valores inválidos são ignorados e voltam ao padrão. */
+export function aplicarConfigDePastas(raiz: string | null | undefined, tipos: Record<string, unknown> | null | undefined) {
+  try { raizAtual = raiz ? normalizarRaiz(raiz) : RAIZ_DOS_CLIENTES; } catch { raizAtual = RAIZ_DOS_CLIENTES; }
+  const novos: Partial<Record<TipoDePasta, string>> = {};
+  for (const t of TIPOS_DE_PASTA) {
+    const v = tipos?.[t];
+    if (typeof v === "string" && v.trim() && v !== t) { try { novos[t] = normalizarNomeDeTipo(v); } catch { /* ignora */ } }
+  }
+  nomesDosTipos = novos;
 }
 
 const PARTICULAS = new Set(["de", "da", "do", "das", "dos", "e"]);
@@ -143,8 +183,8 @@ export function nomeDoArquivo(quando: Date | string, titulo: string, extensao: s
   return `${dataDoArquivo(quando)} - ${base}${ext ? `.${ext}` : ""}`;
 }
 
-export const caminhoDoCliente = (nomeDaPasta: string) => `${RAIZ_DOS_CLIENTES}/${nomeDaPasta}`;
-export const caminhoDoTipo = (nomeDaPasta: string, tipo: TipoDePasta) => `${caminhoDoCliente(nomeDaPasta)}/${tipo}`;
+export const caminhoDoCliente = (nomeDaPasta: string) => `${raizAtual}/${nomeDaPasta}`;
+export const caminhoDoTipo = (nomeDaPasta: string, tipo: TipoDePasta) => `${caminhoDoCliente(nomeDaPasta)}/${nomeDaPastaDoTipo(tipo)}`;
 
 /**
  * A TRAVA: todo caminho que sai do sistema para o drive passa por aqui. O app tem acesso à conta inteira (o Dropbox não deixa restringir uma
@@ -156,8 +196,8 @@ export function dentroDaRaiz(caminho: string): string {
   const partes = c.split("/");
   if (partes.includes("..") || partes.includes(".")) throw new ErroArmazenamento("Caminho inválido.", 400);
   const normal = c.replace(/\/+$/g, "");
-  if (normal.toLowerCase() !== RAIZ_DOS_CLIENTES.toLowerCase() && !normal.toLowerCase().startsWith(`${RAIZ_DOS_CLIENTES.toLowerCase()}/`)) {
-    throw new ErroArmazenamento(`Por segurança, só é permitido gravar dentro de ${RAIZ_DOS_CLIENTES}.`, 403);
+  if (normal.toLowerCase() !== raizAtual.toLowerCase() && !normal.toLowerCase().startsWith(`${raizAtual.toLowerCase()}/`)) {
+    throw new ErroArmazenamento(`Por segurança, só é permitido gravar dentro de ${raizAtual}.`, 403);
   }
   return normal;
 }

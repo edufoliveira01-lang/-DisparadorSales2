@@ -8,7 +8,7 @@ O código nasce independente de provedor (`server/src/armazenamento/`): Dropbox 
 - **Nome do arquivo:** `AAAA-MM-DD - Título.ext` (data de Brasília; ordena por data no Dropbox e nunca sobrescreve).
 - **Pasta do cliente:** nome do cadastro em MAIÚSCULAS e com acento. Se já existir pasta com o mesmo nome (ignorando caixa, acento e pontuação), ela é usada. Se existir uma **parecida** (ex.: «DA» no lugar de «DE»), o documento **espera** e a equipe escolhe em Configurações › Dropbox. Nada parecido: a pasta é criada.
 - O vínculo cliente → pasta é gravado pelo **identificador da pasta no Dropbox** (sobrevive a renomeação).
-- **Trava de segurança:** o app tem acesso à conta inteira (o Dropbox não restringe a uma pasta só), então o código só grava dentro de `/CLIENTES/` e recusa qualquer outro caminho.
+- **Trava de segurança:** o app tem acesso à conta inteira (o Dropbox não restringe a uma pasta só), então o código só grava dentro da pasta dos clientes configurada (padrão `/CLIENTES/`) e recusa qualquer outro caminho.
 
 ## Tipos de pasta
 PARTE MÉDICA · DOCUMENTOS PESSOAIS · DOCUMENTOS ADMINISTRATIVO · CONTRATOS E PROCURAÇÕES · A CLASSIFICAR
@@ -24,3 +24,7 @@ A App secret e o acesso ficam guardados **criptografados** (AES-256-GCM, `ENCRYP
 
 ## Permissão
 Tudo em `/api/armazenamento` e `/api/dropbox` exige `integrations.manage` (a mesma das demais integrações). O card **Dropbox** fica em Configurações › Conexões e avisos.
+
+## Onde salvar (configurável por escritório)
+
+Em **Configurações › Dropbox › Onde salvar os documentos** cada escritório define a **pasta dos clientes** (ex.: `/CLIENTES` ou `/ESCRITÓRIO/CLIENTES`, até 3 níveis) e o **nome de cada subpasta de tipo**. Fica no banco do escritório (`armazenamento_config.pasta_raiz` e `nomes_dos_tipos`). Valem para os próximos documentos; o que já foi enviado não é movido. Trocar a pasta dos clientes desfaz os vínculos cliente → pasta (o sistema procura de novo pelo nome na pasta nova).

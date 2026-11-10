@@ -9,7 +9,7 @@
  * devolve as candidatas para a equipe escolher; nada parecido cria a pasta nova com o nome do cadastro.
  */
 import {
-  caminhoDoCliente, casarPasta, dentroDaRaiz, ErroItemNaoEncontrado, nomeDaPastaDoCliente, RAIZ_DOS_CLIENTES,
+  caminhoDoCliente, casarPasta, dentroDaRaiz, ErroItemNaoEncontrado, nomeDaPastaDoCliente, nomeDaPastaDoTipo, raizDosClientes,
   type Candidata, type PastaExistente, type TipoDePasta,
 } from "./pastas";
 
@@ -36,10 +36,10 @@ export type Resolucao =
 const naoEncontrado = (e: unknown) => e instanceof ErroItemNaoEncontrado;
 
 async function pastasDosClientes(drive: Drive): Promise<PastaExistente[]> {
-  try { return await drive.listarPastas(RAIZ_DOS_CLIENTES); }
+  try { return await drive.listarPastas(raizDosClientes()); }
   catch (e) {
     // A pasta-raiz ainda não existe: cria (é só o contêiner dos clientes) e segue com a lista vazia.
-    if (naoEncontrado(e)) { await drive.criarPasta(RAIZ_DOS_CLIENTES); return []; }
+    if (naoEncontrado(e)) { await drive.criarPasta(raizDosClientes()); return []; }
     throw e;
   }
 }
@@ -91,7 +91,7 @@ export async function enviarDocumento(a: {
 }): Promise<ResultadoDoEnvio> {
   const r = await resolverPastaDoCliente(a);
   if (r.situacao === "aguardando") return r;
-  const pastaDoTipo = dentroDaRaiz(`${r.vinculo.caminho}/${a.tipo}`);
+  const pastaDoTipo = dentroDaRaiz(`${r.vinculo.caminho}/${nomeDaPastaDoTipo(a.tipo)}`);
   await a.drive.criarPasta(pastaDoTipo);
   const up = await a.drive.enviar(`${pastaDoTipo}/${a.nomeDoArquivo}`, a.conteudo);
   return { situacao: "enviado", caminho: up.caminho, id: up.id };

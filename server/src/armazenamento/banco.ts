@@ -8,7 +8,7 @@
 import crypto from "node:crypto";
 import { db } from "../db";
 import { cifrar, decifrar } from "../services/gestao/segredos";
-import { ErroArmazenamento } from "./pastas";
+import { aplicarConfigDePastas, ErroArmazenamento, nomeDaPastaDoTipo, normalizarNomeDeTipo, normalizarRaiz, raizDosClientes, TIPOS_DE_PASTA } from "./pastas";
 import type { RepositorioDeVinculos, Vinculo } from "./servico";
 
 export type Provedor = "dropbox";
@@ -59,11 +59,54 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_armazenamento_fila_arquivo ON armazenamento
 CREATE INDEX IF NOT EXISTS idx_armazenamento_fila_status ON armazenamento_fila(status, proxima_tentativa_em);
 `);
 
+// Colunas novas (pasta-raiz e nomes das pastas de tipo, por escritório) em bancos que já tinham a tabela.
+for (const col of ["pasta_raiz TEXT NOT NULL DEFAULT ''", "nomes_dos_tipos TEXT NOT NULL DEFAULT '{}'"]) {
+  try { db.exec(`ALTER TABLE armazenamento_config ADD COLUMN ${col}`); } catch { /* já existe */ }
+}
+
 interface LinhaConfig {
+  pasta_raiz?: string; nomes_dos_tipos?: string;
   provedor: string; app_key: string; app_secret_cifrado: string; refresh_token_cifrado: string;
   conta_nome: string; conta_email: string; conta_tipo: string; raiz_de_nomes: string; conectado_em: string | null;
 }
 const linhaConfig = () => db.prepare("SELECT * FROM armazenamento_config WHERE id=1").get() as LinhaConfig | undefined;
+
+function carregarConfigDePastas() {
+  const l = linhaConfig();
+  let tipos: Record<string, unknown> = {};
+  try { tipos = JSON.parse(l?.nomes_dos_tipos || "{}"); } catch { /* padrão */ }
+  aplicarConfigDePastas(l?.pasta_raiz, tipos);
+}
+carregarConfigDePastas();
+
+/** As pastas em uso: a raiz e o nome de cada tipo (a chave é o nome padrão). */
+export function pastasConfiguradas() {
+  return { raiz: raizDosClientes(), tipos: TIPOS_DE_PASTA.map((chave) => ({ chave, nome: nomeDaPastaDoTipo(chave) })) };
+}
+
+/**
+ * Salva onde os documentos ficam. Trocar a RAIZ invalida os vínculos cliente → pasta (apontam para a raiz antiga): são apagados e o sistema volta a
+ * procurar por nome na raiz nova. Arquivos já enviados NÃO são movidos nem apagados no drive.
+ */
+export function salvarPastas(d: { raiz?: unknown; tipos?: unknown }) {
+  const raiz = normalizarRaiz(d.raiz ?? raizDosClientes());
+  const recebidos = (d.tipos && typeof d.tipos === "object" ? d.tipos : {}) as Record<string, unknown>;
+  const nomes: Record<string, string> = {};
+  const usados = new Set<string>();
+  for (const t of TIPOS_DE_PASTA) {
+    const n = normalizarNomeDeTipo(recebidos[t] ?? nomeDaPastaDoTipo(t));
+    if (usados.has(n.toLowerCase())) throw new ErroArmazenamento(`Duas pastas de tipo não podem ter o mesmo nome ("${n}").`);
+    usados.add(n.toLowerCase());
+    if (n !== t) nomes[t] = n;
+  }
+  const mudouRaiz = raiz.toLowerCase() !== raizDosClientes().toLowerCase();
+  db.prepare("INSERT INTO armazenamento_config(id) VALUES (1) ON CONFLICT(id) DO NOTHING").run();
+  db.prepare("UPDATE armazenamento_config SET pasta_raiz=?, nomes_dos_tipos=? WHERE id=1").run(raiz === "/CLIENTES" ? "" : raiz, JSON.stringify(nomes));
+  let vinculosRemovidos = 0;
+  if (mudouRaiz) vinculosRemovidos = db.prepare("DELETE FROM armazenamento_pastas").run().changes;
+  carregarConfigDePastas();
+  return { ...pastasConfiguradas(), vinculos_removidos: vinculosRemovidos };
+}
 
 /** Credenciais completas (em claro) — SÓ para uso interno do servidor. `null` enquanto não houver app key, secret e conexão. */
 export function lerConexao(): { appKey: string; appSecret: string; refreshToken: string; raizDeNomes: string } | null {
@@ -110,7 +153,7 @@ export function salvarCredenciais(d: { appKey?: unknown; appSecret?: unknown }) 
 }
 
 export function salvarConexao(c: { refreshToken: string; conta: { nome: string; email: string; tipo: string; raizDeNomes: string } }) {
-  if (!linhaConfig()) throw new ErroArmazenamento("Salve a App key e a App secret antes de conectar.", 409);
+  if (!linhaConfig()?.app_key) throw new ErroArmazenamento("Salve a App key e a App secret antes de conectar.", 409);
   db.prepare("UPDATE armazenamento_config SET refresh_token_cifrado=?, conta_nome=?, conta_email=?, conta_tipo=?, raiz_de_nomes=?, conectado_em=CURRENT_TIMESTAMP WHERE id=1")
     .run(cifrar(c.refreshToken), c.conta.nome, c.conta.email, c.conta.tipo, c.conta.raizDeNomes);
 }

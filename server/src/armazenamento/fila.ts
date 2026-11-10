@@ -11,7 +11,7 @@ import { obterArquivo } from "../services/gestao/arquivos";
 import { lerConexao, lerCredenciais, repositorioDeVinculos } from "./banco";
 import { criarClienteDropbox } from "./dropbox";
 import {
-  casarPasta, dentroDaRaiz, ehTipoDePasta, ErroArmazenamento, nomeDaPastaDoCliente, nomeDoArquivo, RAIZ_DOS_CLIENTES, caminhoDoCliente,
+  casarPasta, dentroDaRaiz, ehTipoDePasta, ErroArmazenamento, nomeDaPastaDoCliente, nomeDoArquivo, raizDosClientes, caminhoDoCliente,
   type PastaExistente, type TipoDePasta,
 } from "./pastas";
 import { enviarDocumento, type Drive } from "./servico";
@@ -176,7 +176,7 @@ export interface SugestaoDeVinculo {
  */
 export async function sugestoesDeVinculo(drive: Drive, limite = 500): Promise<{ total_de_pastas: number; sugestoes: SugestaoDeVinculo[] }> {
   let pastas: PastaExistente[] = [];
-  try { pastas = await drive.listarPastas(RAIZ_DOS_CLIENTES); } catch (e) { if (!(e instanceof ErroArmazenamento) || e.status !== 404) throw e; }
+  try { pastas = await drive.listarPastas(raizDosClientes()); } catch (e) { if (!(e instanceof ErroArmazenamento) || e.status !== 404) throw e; }
   const clientes = db.prepare(
     `SELECT p.id, p.nome FROM gestao_pessoas p
      WHERE p.tipo='cliente' AND p.ativo=1 AND NOT EXISTS (SELECT 1 FROM armazenamento_pastas a WHERE a.pessoa_id=p.id)

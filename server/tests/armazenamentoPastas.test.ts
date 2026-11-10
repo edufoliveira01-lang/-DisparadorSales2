@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   casarPasta, caminhoDoTipo, chaveDeComparacao, dataDoArquivo, dentroDaRaiz, ehTipoDePasta, ErroArmazenamento, nomeDaPastaDoCliente, nomeDoArquivo,
   similaridade, TIPOS_DE_PASTA, type PastaExistente,
@@ -98,5 +98,35 @@ describe("a TRAVA de /CLIENTES", () => {
     expect(ehTipoDePasta("PARTE MÉDICA")).toBe(true);
     expect(ehTipoDePasta("OUTRA")).toBe(false);
     expect(dentroDaRaiz(caminhoDoTipo("ANA LIMA", "DOCUMENTOS PESSOAIS"))).toBe("/CLIENTES/ANA LIMA/DOCUMENTOS PESSOAIS");
+  });
+});
+
+import { aplicarConfigDePastas, caminhoDoCliente as caminhoCli, caminhoDoTipo as caminhoTipo, dentroDaRaiz as trava, normalizarNomeDeTipo, normalizarRaiz, raizDosClientes } from "../src/armazenamento/pastas";
+
+describe("pastas configuráveis por escritório", () => {
+  afterEach(() => aplicarConfigDePastas("", {}));
+  it("normaliza a raiz escolhida", () => {
+    expect(normalizarRaiz("clientes")).toBe("/clientes");
+    expect(normalizarRaiz(" /Escritório / Clientes/ ")).toBe("/Escritório/Clientes");
+    for (const ruim of ["", "/", "/a/b/c/d", "/../x", "/a:b", "/a*b"]) expect(() => normalizarRaiz(ruim), ruim).toThrow(ErroArmazenamento);
+  });
+  it("a raiz nova vale para o caminho e para a trava", () => {
+    aplicarConfigDePastas("/ESCRITÓRIO/CLIENTES", {});
+    expect(raizDosClientes()).toBe("/ESCRITÓRIO/CLIENTES");
+    expect(caminhoCli("ANA")).toBe("/ESCRITÓRIO/CLIENTES/ANA");
+    expect(trava("/ESCRITÓRIO/CLIENTES/ANA")).toBe("/ESCRITÓRIO/CLIENTES/ANA");
+    expect(() => trava("/CLIENTES/ANA")).toThrow(ErroArmazenamento);
+    expect(() => trava("/ESCRITÓRIO/OUTRA")).toThrow(ErroArmazenamento);
+  });
+  it("renomeia a pasta de tipo sem mudar a chave interna", () => {
+    aplicarConfigDePastas("", { "CONTRATOS E PROCURAÇÕES": "Contratos" });
+    expect(caminhoTipo("ANA", "CONTRATOS E PROCURAÇÕES")).toBe("/CLIENTES/ANA/Contratos");
+    expect(caminhoTipo("ANA", "PARTE MÉDICA")).toBe("/CLIENTES/ANA/PARTE MÉDICA");
+    expect(() => normalizarNomeDeTipo("  ")).toThrow(ErroArmazenamento);
+  });
+  it("configuração inválida volta ao padrão", () => {
+    aplicarConfigDePastas("/a/../b", { "PARTE MÉDICA": "" });
+    expect(raizDosClientes()).toBe("/CLIENTES");
+    expect(caminhoTipo("ANA", "PARTE MÉDICA")).toBe("/CLIENTES/ANA/PARTE MÉDICA");
   });
 });

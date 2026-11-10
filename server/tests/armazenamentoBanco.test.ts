@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 process.env.ENCRYPTION_KEY = "chave-somente-para-testes-0123456789abcdef";
 
@@ -210,5 +210,41 @@ describe("o gancho do ZapSign", () => {
     const lido = db.prepare("SELECT armazenado FROM gestao_arquivos WHERE id=?").get(a) as { armazenado: string };
     expect(lido.armazenado).toBeTruthy();
     expect(fs.existsSync(`${process.env.DATA_DIR}/arquivos/${lido.armazenado}`)).toBe(true);
+  });
+});
+
+import { pastasConfiguradas, salvarPastas } from "../src/armazenamento/banco";
+import { aplicarConfigDePastas as zerarPastas } from "../src/armazenamento/pastas";
+
+describe("onde os documentos ficam (por escritório)", () => {
+  const limpar = () => { db.exec("DELETE FROM armazenamento_config; DELETE FROM armazenamento_pastas;"); zerarPastas("", {}); };
+  beforeEach(limpar);
+  afterEach(limpar);
+  it("salva a raiz e os nomes e os mantém ao recarregar; trocar a raiz apaga os vínculos", () => {
+    const p = novaPessoa("ANA LIMA");
+    repositorioDeVinculos.salvarVinculo({ pessoaId: p, pastaId: "id:1", caminho: "/CLIENTES/ANA LIMA", nomePasta: "ANA LIMA", origem: "auto" });
+    const so = salvarPastas({ tipos: { "CONTRATOS E PROCURAÇÕES": "Contratos" } });
+    expect(so.vinculos_removidos).toBe(0);
+    expect(so.tipos.find((t) => t.chave === "CONTRATOS E PROCURAÇÕES")?.nome).toBe("Contratos");
+    const r = salvarPastas({ raiz: "/Escritório/Clientes", tipos: { "CONTRATOS E PROCURAÇÕES": "Contratos" } });
+    expect(r.raiz).toBe("/Escritório/Clientes");
+    expect(r.vinculos_removidos).toBe(1);
+    expect(repositorioDeVinculos.vinculoDaPessoa(p)).toBeNull();
+    expect(pastasConfiguradas().raiz).toBe("/Escritório/Clientes");
+  });
+  it("recusa nomes repetidos e raiz inválida", () => {
+    expect(() => salvarPastas({ tipos: { "PARTE MÉDICA": "X", "DOCUMENTOS PESSOAIS": "x" } })).toThrow();
+    expect(() => salvarPastas({ raiz: "/a/../b" })).toThrow();
+  });
+  it("o envio usa a raiz e o nome configurados", async () => {
+    salvarCredenciais({ appKey: "appkey1234", appSecret: SECRET });
+    salvarConexao({ refreshToken: "r", conta: CONTA });
+    salvarPastas({ raiz: "/Meus Clientes", tipos: { "CONTRATOS E PROCURAÇÕES": "Contratos" } });
+    const p = novaPessoa("ANA LIMA");
+    const drive = driveFalso();
+    const { enviarDocumento } = await import("../src/armazenamento/servico");
+    const r = await enviarDocumento({ pessoaId: p, nomeDoCliente: "ANA LIMA", tipo: "CONTRATOS E PROCURAÇÕES", nomeDoArquivo: "2026-01-01 - x.pdf", conteudo: Buffer.from("x"), drive: drive.drive, repo: repositorioDeVinculos });
+    expect(r.situacao).toBe("enviado");
+    if (r.situacao === "enviado") expect(r.caminho).toBe("/Meus Clientes/ANA LIMA/Contratos/2026-01-01 - x.pdf");
   });
 });

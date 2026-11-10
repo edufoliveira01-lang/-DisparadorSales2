@@ -1,13 +1,13 @@
 import { Router, type Request, type Response } from "express";
 import { auditAccess } from "../services/accessService";
 import {
-  configPublica, consumirEstado, desconectar, lerConexao, lerCredenciais, novoEstado, salvarConexao, salvarCredenciais,
+  configPublica, consumirEstado, desconectar, lerConexao, lerCredenciais, novoEstado, pastasConfiguradas, salvarConexao, salvarCredenciais, salvarPastas,
 } from "../armazenamento/banco";
 import { criarClienteDropbox, trocarCodigo, urlDeAutorizacao, type ClienteDropbox } from "../armazenamento/dropbox";
 import {
   pendenciasDePasta, processarFila, reenviar, situacaoDaFila, sugestoesDeVinculo, vincularCriandoPasta, vincularPasta,
 } from "../armazenamento/fila";
-import { ErroArmazenamento, RAIZ_DOS_CLIENTES } from "../armazenamento/pastas";
+import { ErroArmazenamento, raizDosClientes } from "../armazenamento/pastas";
 
 /**
  * Armazenamento externo (Dropbox): conexão, vínculo cliente → pasta e fila de envio.
@@ -44,13 +44,22 @@ function clienteConectado(): ClienteDropbox {
 }
 
 armazenamentoRouter.get("/dropbox", (req, res) => {
-  res.json({ ...configPublica(), fila: situacaoDaFila(), redirect_uri: redirectUriDoDropbox(req), pasta_raiz: RAIZ_DOS_CLIENTES });
+  res.json({ ...configPublica(), fila: situacaoDaFila(), redirect_uri: redirectUriDoDropbox(req), pasta_raiz: raizDosClientes(), pastas: pastasConfiguradas() });
 });
 
 armazenamentoRouter.put("/dropbox/credenciais", (req, res) => {
   try {
     const r = salvarCredenciais(req.body || {});
     auditAccess("armazenamento_credenciais", req.accessUser!.id, null, { provedor: "dropbox" });
+    res.json(r);
+  } catch (e) { erro(res, e); }
+});
+
+/** Onde os documentos ficam: a pasta-raiz dos clientes e o nome de cada pasta de tipo. Cada escritório define as suas. */
+armazenamentoRouter.put("/dropbox/pastas", (req, res) => {
+  try {
+    const r = salvarPastas(req.body || {});
+    auditAccess("armazenamento_pastas_configuradas", req.accessUser!.id, null, { raiz: r.raiz, vinculos_removidos: r.vinculos_removidos });
     res.json(r);
   } catch (e) { erro(res, e); }
 });
@@ -100,7 +109,7 @@ armazenamentoRouter.get("/pendencias", (_req, res) => res.json({ pendencias: pen
 
 /** As pastas que já existem em CLIENTES, para escolher uma. */
 armazenamentoRouter.get("/pastas", async (_req, res) => {
-  try { res.json({ pastas: await clienteConectado().listarPastas(RAIZ_DOS_CLIENTES) }); } catch (e) { erro(res, e); }
+  try { res.json({ pastas: await clienteConectado().listarPastas(raizDosClientes()) }); } catch (e) { erro(res, e); }
 });
 
 /** O legado, uma vez só: o que o nome de cada cliente sem vínculo casa nas pastas existentes. Não grava nada. */
