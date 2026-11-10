@@ -28,3 +28,8 @@ Tudo em `/api/armazenamento` e `/api/dropbox` exige `integrations.manage` (a mes
 ## Onde salvar (configurável por escritório)
 
 Em **Configurações › Dropbox › Onde salvar os documentos** cada escritório define a **pasta dos clientes** (ex.: `/CLIENTES` ou `/ESCRITÓRIO/CLIENTES`, até 3 níveis) e o **nome de cada subpasta de tipo**. Fica no banco do escritório (`armazenamento_config.pasta_raiz` e `nomes_dos_tipos`). Valem para os próximos documentos; o que já foi enviado não é movido. Trocar a pasta dos clientes desfaz os vínculos cliente → pasta (o sistema procura de novo pelo nome na pasta nova).
+
+## Documentos já assinados e acompanhamento próprio
+
+- **Enviar documentos já assinados** (aba Dropbox › Envios): coloca na fila os contratos que o ZapSign guardou **antes** de o Dropbox estar ligado (a cópia só entra na fila no instante em que o PDF assinado é registrado). Não duplica o que já está na fila.
+- **Acompanhamento próprio:** a cada 5 minutos o Sales confere os contratos enviados nos últimos 30 dias e ainda não assinados (até 10 por rodada), só em escritórios que já salvaram os dados do app do Dropbox. Assim o registro da assinatura — e a cópia — não dependem de um sistema de fora consultar o contrato.

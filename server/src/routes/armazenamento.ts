@@ -5,7 +5,7 @@ import {
 } from "../armazenamento/banco";
 import { criarClienteDropbox, trocarCodigo, urlDeAutorizacao, type ClienteDropbox } from "../armazenamento/dropbox";
 import {
-  pendenciasDePasta, processarFila, reenviar, situacaoDaFila, sugestoesDeVinculo, vincularCriandoPasta, vincularPasta,
+  enfileirarAssinadosAntigos, pendenciasDePasta, processarFila, reenviar, situacaoDaFila, sugestoesDeVinculo, vincularCriandoPasta, vincularPasta,
 } from "../armazenamento/fila";
 import { ErroArmazenamento, raizDosClientes } from "../armazenamento/pastas";
 
@@ -144,6 +144,16 @@ armazenamentoRouter.post("/reenviar", (req, res) => {
   const id = Number(req.body?.id);
   if (!Number.isInteger(id) || id <= 0) return void res.status(400).json({ error: "Item inválido." });
   res.json({ ok: reenviar(id) });
+});
+
+/** "Enviar documentos já assinados": coloca na fila o que o ZapSign guardou antes de o Dropbox estar ligado. */
+armazenamentoRouter.post("/enfileirar-assinados", (req, res) => {
+  try {
+    const n = enfileirarAssinadosAntigos();
+    auditAccess("armazenamento_assinados_enfileirados", req.accessUser!.id, null, { quantidade: n });
+    void processarFila().catch(() => undefined);
+    res.json({ enfileirados: n });
+  } catch (e) { erro(res, e); }
 });
 
 /** "Enviar agora": roda uma rodada da fila sem esperar o minuto. */

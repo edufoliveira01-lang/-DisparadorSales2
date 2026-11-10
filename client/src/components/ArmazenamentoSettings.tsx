@@ -85,6 +85,15 @@ export function ArmazenamentoSettings() {
     } catch (e) { show(mensagemDe(e, "Não foi possível salvar as pastas."), "error"); } finally { setSalvandoPastas(false); }
   }
 
+  async function acaoAssinados() {
+    setOcupado("assinados");
+    try {
+      const r = await api.post<{ enfileirados: number }>("/armazenamento/enfileirar-assinados");
+      show(r.enfileirados > 0 ? `${r.enfileirados} documento(s) assinado(s) entraram na fila e estão sendo enviados.` : "Não há documentos assinados pendentes de cópia.", "success");
+      await carregar();
+    } catch (e) { show(mensagemDe(e, "Não foi possível enfileirar os documentos."), "error"); } finally { setOcupado(null); }
+  }
+
   async function acao(chave: string, fn: () => Promise<unknown>, sucesso: string) {
     setOcupado(chave);
     try { await fn(); show(sucesso, "success"); await carregar(); }
@@ -205,7 +214,10 @@ export function ArmazenamentoSettings() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Send className="h-4 w-4 text-violet-500" /> Envios</CardTitle>
-            <Button variant="outline" size="sm" loading={ocupado === "processar"} onClick={() => void acao("processar", () => api.post("/armazenamento/processar"), "Fila processada.")}>Enviar agora</Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" loading={ocupado === "assinados"} onClick={() => void acaoAssinados()}>Enviar documentos já assinados</Button>
+              <Button variant="outline" size="sm" loading={ocupado === "processar"} onClick={() => void acao("processar", () => api.post("/armazenamento/processar"), "Fila processada.")}>Enviar agora</Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-wrap gap-2 text-xs">

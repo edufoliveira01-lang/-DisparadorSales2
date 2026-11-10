@@ -35,6 +35,7 @@ import { whatsappRouter } from "./routes/whatsapp";
 import { googleCalendarRouter } from "./routes/googleCalendar";
 import { armazenamentoRouter, dropboxRetornoRouter } from "./routes/armazenamento";
 import { iniciarFilaDoArmazenamento, pararFilaDoArmazenamento } from "./armazenamento/fila";
+import { iniciarAcompanhamentoDeContratos, pararAcompanhamentoDeContratos } from "./armazenamento/acompanhamento";
 import { initWebsocket } from "./websocket";
 import { notifyDashboardChanges } from "./websocket/dashboardChanges";
 import { whatsappManager } from "./services/whatsappService";
@@ -126,7 +127,7 @@ httpServer.listen(port, () => {
     console.error("[Calendário] Falha ao reconciliar remarcações antigas:", error);
   }
   iniciarMonitorDjen();
-  try { iniciarFilaDoArmazenamento(); } catch (error) { console.error("[Armazenamento]", (error as Error).message); }
+  try { iniciarFilaDoArmazenamento(); iniciarAcompanhamentoDeContratos(); } catch (error) { console.error("[Armazenamento]", (error as Error).message); }
   if (whatsappManager.restoreSavedSession()) {
     console.log("[WhatsApp] Restaurando sessão salva automaticamente...");
   }
@@ -192,6 +193,7 @@ async function shutdown() {
   console.log("Encerrando servidor...");
   pararMonitorDjen();
   pararFilaDoArmazenamento();
+  pararAcompanhamentoDeContratos();
   stopChatgptAuth();
   await whatsappManager.shutdown().catch(() => {});
   process.exit(0);

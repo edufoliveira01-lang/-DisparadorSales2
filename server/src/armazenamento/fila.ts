@@ -43,6 +43,26 @@ export function enfileirarCopia(d: { pessoaId: number; arquivoId: number; tipoPa
   return r.changes > 0;
 }
 
+/**
+ * Coloca na fila os documentos JÁ assinados (guardados pelo ZapSign antes de o drive estar ligado) que ainda não foram copiados.
+ * Idempotente: o que já está na fila (em qualquer estado) não entra de novo. Devolve quantos entraram.
+ */
+export function enfileirarAssinadosAntigos(): number {
+  if (!lerCredenciais()) throw new ErroArmazenamento("Salve a App key e a App secret do Dropbox primeiro.", 409);
+  let linhas: Array<{ arquivo_id: number; nome: string; pessoa_id: number; quando: string | null }>;
+  try {
+    linhas = db.prepare(`SELECT d.arquivo_id AS arquivo_id, d.nome AS nome, c.pessoa_id AS pessoa_id, COALESCE(d.assinado_em, c.assinado_em) AS quando
+      FROM zapsign_documentos d JOIN zapsign_contratos c ON c.id = d.contrato_id
+      WHERE d.arquivo_id IS NOT NULL AND c.pessoa_id IS NOT NULL AND d.status = 'assinado'
+        AND d.arquivo_id NOT IN (SELECT arquivo_id FROM armazenamento_fila) ORDER BY d.id`).all() as typeof linhas;
+  } catch { return 0; } // escritório sem ZapSign: nada a copiar
+  let n = 0;
+  for (const l of linhas) {
+    if (enfileirarCopia({ pessoaId: l.pessoa_id, arquivoId: l.arquivo_id, tipoPasta: "CONTRATOS E PROCURAÇÕES", titulo: `${l.nome} (assinado)`, extensao: "pdf", dataDocumento: l.quando ?? new Date() })) n++;
+  }
+  return n;
+}
+
 const pessoaDe = (id: number) => db.prepare("SELECT nome FROM gestao_pessoas WHERE id=?").get(id) as { nome: string } | undefined;
 
 function marcarErro(item: ItemDaFila, e: unknown, agora: number): void {

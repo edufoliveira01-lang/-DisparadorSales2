@@ -248,3 +248,37 @@ describe("onde os documentos ficam (por escritório)", () => {
     if (r.situacao === "enviado") expect(r.caminho).toBe("/Meus Clientes/ANA LIMA/Contratos/2026-01-01 - x.pdf");
   });
 });
+
+import "../src/zapsign/contratos";
+import { enfileirarAssinadosAntigos } from "../src/armazenamento/fila";
+import { conferirContratosPendentes } from "../src/armazenamento/acompanhamento";
+
+describe("contratos assinados antes de o drive estar ligado", () => {
+  function contratoAssinado(pessoaId: number | null, nome: string, assinado = true) {
+    const arq = pessoaId ? novoPdf(pessoaId, `${nome}.pdf`) : null;
+    const c = db.prepare("INSERT INTO zapsign_contratos(pessoa_id,doc_token,sign_url,status,assinado_em) VALUES (?, 't', 'u', ?, '2026-11-07 12:00:00')").run(pessoaId, assinado ? "assinado" : "enviado");
+    db.prepare("INSERT INTO zapsign_documentos(contrato_id,tipo,nome,doc_token,sign_url,status,arquivo_id,assinado_em) VALUES (?, 'principal', ?, 't', 'u', ?, ?, '2026-11-07 12:00:00')")
+      .run(c.lastInsertRowid, nome, assinado ? "assinado" : "enviado", arq);
+  }
+  beforeEach(() => { db.exec("DELETE FROM zapsign_documentos; DELETE FROM zapsign_contratos;"); });
+  it("coloca na fila uma vez só o que já estava assinado, com a data da assinatura", () => {
+    salvarCredenciais({ appKey: "appkey1234", appSecret: SECRET });
+    const p = novaPessoa("EDUARDO FREITAS OLIVEIRA");
+    contratoAssinado(p, "Procuração assinado - Eduardo");
+    contratoAssinado(p, "Ainda não assinado", false);
+    contratoAssinado(null, "Sem cliente");
+    expect(enfileirarAssinadosAntigos()).toBe(1);
+    expect(enfileirarAssinadosAntigos()).toBe(0);
+    const f = fila();
+    expect(f).toHaveLength(1);
+    expect(f[0]).toMatchObject({ pessoa_id: p, tipo_pasta: "CONTRATOS E PROCURAÇÕES", titulo: "Procuração assinado - Eduardo (assinado)", status: "pendente" });
+    expect(String(f[0]!.data_documento)).toContain("2026-11-07");
+  });
+  it("sem o app do Dropbox salvo, recusa", () => {
+    expect(() => enfileirarAssinadosAntigos()).toThrow(/App key/);
+  });
+  it("o acompanhamento não faz nada sem o drive ligado", async () => {
+    contratoAssinado(novaPessoa("ANA"), "Contrato", false);
+    expect(await conferirContratosPendentes()).toBe(0);
+  });
+});
