@@ -41,7 +41,7 @@ describe("Atendimento com IA — cadastro e prompt do agente", () => {
     expect(p).toContain("a rogo");
     expect(p).toContain("crm_enviar_contrato");
     expect(p).toContain("Nunca use a ferramenta de contrato na mesma vez");
-    expect(p).toContain("não mande outro agradecimento igual");
+    expect(p).toContain("não mande outra igual");
     expect(p).toContain("Espere a resposta dela");
     expect(p).toContain("Você quer seguir com a gente?");
     expect(p).toContain("A triagem tem fim");
@@ -56,7 +56,7 @@ describe("Atendimento com IA — cadastro e prompt do agente", () => {
     expect(p).toContain("cpf_para_confirmar");
     expect(p).toContain("Nunca marque o atendimento como \"ganho\"");
     expect(p).toContain("Não fale de porcentagem antes do resumo do caso");
-    expect(p).toContain("inclua no resumo as ressalvas que apareceram");
+    expect(p).toContain("Inclua no resumo as ressalvas que apareceram");
     expect(p).toContain("Faça a pergunta de decisão uma única vez");
     expect(p).toContain("nunca escreva o CPF inteiro na conversa");
     expect(p).toContain("data de nascimento e nome da mãe");
@@ -67,12 +67,13 @@ describe("Atendimento com IA — cadastro e prompt do agente", () => {
     expect(p).toContain("grave agora o que está na conversa");
     expect(p).toContain("um item curto por área");
     expect(p).toContain("Nunca condicione o resumo do caso nem o contrato a documentos");
-    expect(p).toContain("mova o funil para \"proposta aceita\"");
-    expect(p).toContain("mova o funil para \"proposta enviada\"");
+    expect(p).toContain("avance o funil para \"proposta aceita\"");
+    expect(p).toContain("avance o funil para \"proposta enviada\"");
     expect(p).toContain("crm_registrar_dados_do_cliente");
     expect(p).toContain("nunca pergunte de novo o que já está lá");
     expect(p).toContain("O primeiro nome basta");
     expect(p).toContain("Não presuma o nome a partir do perfil do WhatsApp");
+    expect(p).toContain("Com quem eu falo");
     expect(p).toContain("obrigatório só aqui, na hora do contrato");
     expect(p).toContain("Depois da assinatura a conversa continua, com você");
     expect(p).toContain("proposta aceita");
@@ -80,7 +81,7 @@ describe("Atendimento com IA — cadastro e prompt do agente", () => {
     expect(p).toContain("Identifique todas as áreas do escritório que o caso toca");
     expect(p).toContain("pistas de outra área");
     expect(p).toContain("etapa obrigatória, antes de qualquer dado do contrato");
-    expect(p).toContain("sem enviar o link de novo");
+    expect(p).toContain("não envie o link de novo");
     expect(p).toContain("Documento nunca trava o atendimento nem o contrato");
     expect(p).toContain("nunca repita pergunta");
     expect(p).toContain("Uma pergunta por mensagem");
@@ -148,13 +149,10 @@ describe("Atendimento com IA — cadastro e prompt do agente", () => {
     expect(iRegras).toBeGreaterThan(0);
     expect(iFaq).toBeGreaterThan(iRegras);
     const roteiro = p.slice(0, iRegras), regras = p.slice(iRegras, iFaq), faq = p.slice(iFaq);
-    // Roteiro: quem é e os onze itens de ação, com as ações do menu @ (etapas, dados, contrato, retorno, equipe)
-    for (const f of ["### 1. Quem você é", "### AÇÕES", "**1. Receber a pessoa**", "**5. Enviar o resumo e apresentar a proposta**", "**9. Atender quem já é cliente**", "**11. Atualizar o funil**"]) expect(roteiro).toContain(f);
-    for (const f of ["Etapa: Novo contato", "Etapa: Em triagem", "Etapa: Proposta enviada", "Etapa: Proposta aceita", "Envie o contrato para assinatura", "Agende um retorno para amanhã", "Passe a conversa para a equipe"]) expect(roteiro).toContain(f);
-    expect(roteiro.split("⚙ AÇÃO — execute uma única vez; nunca mostre isto ao cliente:").length - 1).toBeGreaterThanOrEqual(8);
-    expect(roteiro).not.toContain("Exemplo de abertura");
-    // Regras: como executar as ações, como fala, o que nunca faz, horário
-    for (const f of ["### Como executar as ações do roteiro", "### 2. Como você fala", "### 5. O que você NUNCA faz", "### 9. Horário"]) expect(regras).toContain(f);
+    // Roteiro: quem é, o passo a passo, as áreas, quem já é cliente e a abertura
+    for (const f of ["### 1. Quem você é", "### 3. O que você faz (e a ordem)", "### 4. Áreas atendidas", "### 7. Quem já é cliente", "### Exemplo de abertura"]) expect(roteiro).toContain(f);
+    // Regras: como fala, o que nunca faz, quando passar ao humano, horário
+    for (const f of ["### 2. Como você fala", "### 5. O que você NUNCA faz", "### 8. Quando passar para um humano", "### 9. Horário"]) expect(regras).toContain(f);
     // FAQ: honorários como pergunta e resposta aprovada, contrato e como confirmar que é o escritório
     expect(faq).toContain("**Pergunta:** Quanto custa? Como vocês cobram?");
     expect(faq).toContain("**Pergunta:** Como funciona o contrato e a assinatura?");
