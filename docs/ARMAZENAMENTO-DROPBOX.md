@@ -23,4 +23,4 @@ PARTE MÉDICA · DOCUMENTOS PESSOAIS · DOCUMENTOS ADMINISTRATIVO · CONTRATOS E
 A App secret e o acesso ficam guardados **criptografados** (AES-256-GCM, `ENCRYPTION_KEY` do servidor) e nunca voltam para a tela. Variável opcional: `DROPBOX_REDIRECT_URI` (força o endereço de retorno atrás de proxy).
 
 ## Permissão
-Tudo em `/api/armazenamento` e `/api/dropbox` exige `team.manage`.
+Tudo em `/api/armazenamento` e `/api/dropbox` exige `integrations.manage` (a mesma das demais integrações). O card **Dropbox** fica em Configurações › Conexões e avisos.

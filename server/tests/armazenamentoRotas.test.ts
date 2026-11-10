@@ -38,7 +38,7 @@ beforeEach(() => { db.exec("DELETE FROM armazenamento_estados; DELETE FROM armaz
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("permissões", () => {
-  it("sem sessão: 401; quem não gerencia a equipe: 403; administrador entra", async () => {
+  it("sem sessão: 401; quem não gerencia integrações: 403; administrador entra", async () => {
     expect((await req("/api/armazenamento/dropbox")).status).toBe(401);
     for (const papel of ["atendimento", "consulta", "advogado"]) {
       const { cookie } = await entrar(papel);

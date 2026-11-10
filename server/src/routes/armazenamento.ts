@@ -11,7 +11,7 @@ import { ErroArmazenamento, RAIZ_DOS_CLIENTES } from "../armazenamento/pastas";
 
 /**
  * Armazenamento externo (Dropbox): conexão, vínculo cliente → pasta e fila de envio.
- * Montado em `/api/armazenamento` (e só o retorno do OAuth em `/api/dropbox/retorno`). Permissão: `team.manage` (ver `middleware/access.ts`).
+ * Montado em `/api/armazenamento` (e só o retorno do OAuth em `/api/dropbox/retorno`). Permissão: `integrations.manage` (ver `middleware/access.ts`), a mesma das demais integrações.
  * Nada secreto volta para a tela: só o final da App key e o nome da conta.
  */
 export const armazenamentoRouter = Router();

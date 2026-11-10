@@ -1,6 +1,6 @@
 import {
   BrainCircuit, Bell, Building2, CalendarDays, Database, FileText, KeyRound, MessageCircle, MessageSquareText, Palette, Printer, ScrollText, Search, Timer,
-  Trello, UserRound, UserRoundCog, BriefcaseBusiness, Scale, Plug, type LucideIcon,
+  Trello, UserRound, UserRoundCog, BriefcaseBusiness, Scale, Plug, Cloud, type LucideIcon,
 } from "lucide-react";
 import type { Permission } from "@/context/AuthContext";
 import { navigationPermission } from "./navigation";
@@ -27,6 +27,7 @@ export const GRUPOS_CONFIG: GrupoConfig[] = [
     { to: "/configuracoes?secao=intervalo", titulo: "Intervalo entre envios", descricao: "Espera usada nos disparos individuais e em lote.", icon: Timer, permissao: "integrations.manage" },
     { to: "/configuracoes?secao=trello", titulo: "Trello", descricao: "Quadro, listas e importação dos compromissos.", icon: Trello, permissao: "integrations.manage" },
     { to: "/configuracoes?secao=google", titulo: "Google Agenda", descricao: "Conta, destinos e sincronização do calendário.", icon: CalendarDays, permissao: "integrations.manage" },
+    { to: "/configuracoes?secao=dropbox", titulo: "Dropbox", descricao: "Cópia dos documentos dos clientes para as pastas do escritório.", icon: Cloud, permissao: "integrations.manage" },
     { to: "/configuracoes?secao=ia", titulo: "Inteligência artificial", descricao: "Provedor, modelos e conexão da conta ChatGPT.", icon: BrainCircuit, permissao: "integrations.manage" },
   ] },
   { id: "djen", titulo: "DJEN e prazos", itens: [
