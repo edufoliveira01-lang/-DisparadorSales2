@@ -7,6 +7,7 @@ import { soDigitos } from "../services/gestao/validacao";
 import { adicionarDocumentoExtra, consultarDocumento, criarDocumento, ErroZapSign, posicionarAssinaturas, type ConfigZapSign, type DocumentoZapSign } from "./api";
 import { lerConfigZapSign } from "./config";
 import { pdfDoKit, type PdfDoKit } from "./pdf";
+import { enfileirarCopia } from "../armazenamento/fila";
 
 db.exec(`CREATE TABLE IF NOT EXISTS zapsign_contratos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -188,7 +189,12 @@ export async function estadoDoContrato(id: number, deps: { config?: ConfigZapSig
   const salvar = async (linha: LinhaDocumento, url: string | null) => {
     if (linha.arquivo_id || !url) return;
     const a = await guardarAssinado(id, l.pessoa_id, linha.nome, url, http);
-    if (a) { db.prepare("UPDATE zapsign_documentos SET arquivo_id=? WHERE id=?").run(a, linha.id); linha.arquivo_id = a; }
+    if (a) {
+      db.prepare("UPDATE zapsign_documentos SET arquivo_id=? WHERE id=?").run(a, linha.id); linha.arquivo_id = a;
+      // Cópia para o drive do escritório (Dropbox): só entra na fila, em segundo plano — nunca atrapalha a assinatura.
+      try { enfileirarCopia({ pessoaId: l.pessoa_id!, arquivoId: a, tipoPasta: "CONTRATOS E PROCURAÇÕES", titulo: `${linha.nome} (assinado)`, extensao: "pdf", dataDocumento: l.assinado_em ?? new Date() }); }
+      catch (e) { console.error("[contratos] não foi possível enfileirar a cópia para o drive:", e instanceof Error ? e.message : e); }
+    }
   };
   await salvar(principal, doc.arquivoAssinado);
   for (let i = 0; i < linhasExtras.length; i++) {

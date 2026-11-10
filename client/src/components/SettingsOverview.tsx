@@ -9,6 +9,7 @@ import {
   Palette,
   Timer,
   Trello,
+  Cloud,
 } from "lucide-react";
 import { Badge } from "./ui/Badge";
 
@@ -33,6 +34,12 @@ const sections = [
     title: "Google Agenda",
     description: "Conta, destinos e sincronização do calendário de perícias.",
     icon: CalendarDays,
+  },
+  {
+    key: "dropbox",
+    title: "Dropbox",
+    description: "Cópia dos documentos dos clientes para as pastas do escritório.",
+    icon: Cloud,
   },
   {
     key: "notificacoes",

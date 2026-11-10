@@ -14,6 +14,7 @@ function permissionsFor(path: string, method: string): Permission[] {
   if (path.startsWith("/license")) return ["team.manage"];
   if (path === "/ai" || path.startsWith("/ai/")) return ["integrations.manage"];
   if (path.startsWith("/team")) return ["team.manage"];
+  if (path.startsWith("/armazenamento") || path.startsWith("/dropbox")) return ["team.manage"]; // drive externo (Dropbox): quem gerencia a equipe
   if (path.startsWith("/branding")) return ["team.manage"];
   if (path.startsWith("/backup")) return ["backup.manage"];
   if (path.startsWith("/settings") || path.startsWith("/trello") || path.startsWith("/google-calendar")) return ["integrations.manage"];

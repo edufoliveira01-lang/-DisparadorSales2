@@ -48,6 +48,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { useTheme } from "@/context/ThemeContext";
 import { cn } from "@/lib/utils";
 import { GoogleCalendarSettings } from "@/components/GoogleCalendarSettings";
+import { ArmazenamentoSettings } from "@/components/ArmazenamentoSettings";
 import { LoginBrandingSettings } from "@/components/LoginBrandingSettings";
 import { useAuth } from "@/context/AuthContext";
 
@@ -944,6 +945,7 @@ export function Configuracoes({ secao }: { secao?: string | null } = {}) {
 
       {configSection === "prazos" && <DeadlineSettings/>}
       <section hidden={configSection !== "google"}><GoogleCalendarSettings alwaysOpen /></section>
+      {configSection === "dropbox" && <ArmazenamentoSettings />}
 
       <section hidden={configSection !== "notificacoes"}><CollapsibleCard alwaysOpen
         icon={<MessageCircle className="h-4 w-4 text-emerald-500" />}

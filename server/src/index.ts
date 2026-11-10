@@ -33,6 +33,8 @@ import { templatesRouter } from "./routes/templates";
 import { trelloRouter } from "./routes/trello";
 import { whatsappRouter } from "./routes/whatsapp";
 import { googleCalendarRouter } from "./routes/googleCalendar";
+import { armazenamentoRouter, dropboxRetornoRouter } from "./routes/armazenamento";
+import { iniciarFilaDoArmazenamento, pararFilaDoArmazenamento } from "./armazenamento/fila";
 import { initWebsocket } from "./websocket";
 import { notifyDashboardChanges } from "./websocket/dashboardChanges";
 import { whatsappManager } from "./services/whatsappService";
@@ -86,6 +88,8 @@ app.use("/api/system-logs", systemLogsRouter);
 app.use("/api/pending-replies", pendingRepliesRouter);
 app.use("/api/pericias-agendadas", periciasAgendadasRouter);
 app.use("/api/google-calendar", googleCalendarRouter);
+app.use("/api/armazenamento", armazenamentoRouter);
+app.use("/api/dropbox", dropboxRetornoRouter);
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
@@ -122,6 +126,7 @@ httpServer.listen(port, () => {
     console.error("[Calendário] Falha ao reconciliar remarcações antigas:", error);
   }
   iniciarMonitorDjen();
+  try { iniciarFilaDoArmazenamento(); } catch (error) { console.error("[Armazenamento]", (error as Error).message); }
   if (whatsappManager.restoreSavedSession()) {
     console.log("[WhatsApp] Restaurando sessão salva automaticamente...");
   }
@@ -186,6 +191,7 @@ setInterval(conferirDisco, 3_600_000).unref();
 async function shutdown() {
   console.log("Encerrando servidor...");
   pararMonitorDjen();
+  pararFilaDoArmazenamento();
   stopChatgptAuth();
   await whatsappManager.shutdown().catch(() => {});
   process.exit(0);
