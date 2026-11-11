@@ -163,4 +163,14 @@ export function runGestaoMigrations(db: Database.Database) {
   // Ficha de cadastro: escolaridade, PIS/NIT, nome da mãe e filiação (colunas acrescentadas sem tocar nas existentes).
   const colunas = (db.prepare("PRAGMA table_info(gestao_pessoas)").all() as { name: string }[]).map((c) => c.name);
   for (const nome of ["escolaridade", "pis", "nome_mae", "filiacao", "nacionalidade", "sexo"]) if (!colunas.includes(nome)) db.exec(`ALTER TABLE gestao_pessoas ADD COLUMN ${nome} TEXT NOT NULL DEFAULT ''`);
+  // Aditamentos do financeiro: o saldo de um pagamento parcial aponta para o lançamento de origem; cada alteração fica no histórico.
+  const colsLanc = (db.prepare("PRAGMA table_info(gestao_lancamentos)").all() as { name: string }[]).map((c) => c.name);
+  if (!colsLanc.includes("origem_lancamento_id")) db.exec("ALTER TABLE gestao_lancamentos ADD COLUMN origem_lancamento_id INTEGER");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gestao_lancamentos_historico (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, lancamento_id INTEGER NOT NULL, acao TEXT NOT NULL, detalhe TEXT NOT NULL DEFAULT '',
+      user_id INTEGER, autor TEXT NOT NULL DEFAULT '', criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_gestao_lanc_hist ON gestao_lancamentos_historico(lancamento_id, id DESC);
+  `);
 }

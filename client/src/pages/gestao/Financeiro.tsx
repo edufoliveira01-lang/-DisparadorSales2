@@ -19,7 +19,7 @@ import type { Responsavel } from "./Processos";
 import { cobrarPeloAtendimento, mensagemDeCobranca } from "./cobranca";
 import { useAtendimentoLiberado } from "./AvatarPessoa";
 
-export interface Lanc { pessoa_telefone?: string | null; id: number; tipo: "receber" | "pagar"; categoria: string; descricao: string; valor_centavos: number; vencimento: string; pago_em: string | null; valor_pago_centavos: number | null; forma_pagamento: string; status: "aberto" | "atrasado" | "pago" | "cancelado"; pessoa_id: number | null; pessoa_nome: string | null; processo_id: number | null; processo_pasta: string | null; beneficiario: string | null; beneficiario_user_id: number | null; reembolsavel: boolean; observacoes: string; contrato_id: number | null }
+export interface Lanc { origem_lancamento_id?: number | null; pessoa_telefone?: string | null; id: number; tipo: "receber" | "pagar"; categoria: string; descricao: string; valor_centavos: number; vencimento: string; pago_em: string | null; valor_pago_centavos: number | null; forma_pagamento: string; status: "aberto" | "atrasado" | "pago" | "cancelado"; pessoa_id: number | null; pessoa_nome: string | null; processo_id: number | null; processo_pasta: string | null; beneficiario: string | null; beneficiario_user_id: number | null; reembolsavel: boolean; observacoes: string; contrato_id: number | null }
 export interface Contrato { id: number; descricao: string; tipo: string; status: string; pessoa_nome: string | null; processo_pasta: string | null; valor_total_centavos: number; percentual_exito: number | null; recebido_centavos: number; em_aberto_centavos: number; parcelas_atrasadas: number }
 interface Devedor { pessoa_id: number; nome: string; telefone: string; total_centavos: number; parcelas: number; mais_antigo: string }
 interface Resumo { maiores_devedores?: Devedor[]; mes: string; receber_previsto_centavos: number; recebido_centavos: number; pagar_previsto_centavos: number; pago_centavos: number; saldo_realizado_centavos: number; inadimplencia_centavos: number; inadimplentes: number; a_receber_30_dias_centavos: number; a_pagar_30_dias_centavos: number; custas_reembolsaveis_centavos: number; por_categoria: { tipo: string; categoria: string; realizado_centavos: number; previsto_centavos: number }[]; comissoes_e_repasses: { beneficiario: string; categoria: string; previsto_centavos: number; pago_centavos: number }[] }
@@ -135,6 +135,7 @@ function Lancamentos({ gerir, contrato, aoLimparContrato }: { gerir: boolean; co
   const [dados, setDados] = useState<(Lista<Lanc> & { soma_centavos: number }) | null>(null);
   const [editando, setEditando] = useState<Lanc | "novo" | null>(null);
   const [baixando, setBaixando] = useState<Lanc | null>(null);
+  const [reprog, setReprog] = useState<Lanc | null>(null);
   const [apagar, setApagar] = useState<Lanc | null>(null);
   const [resp, setResp] = useState<Responsavel[]>([]);
   const carregar = useCallback(async () => {
@@ -184,12 +185,12 @@ function Lancamentos({ gerir, contrato, aoLimparContrato }: { gerir: boolean; co
         <ul className="divide-y divide-zinc-100 overflow-hidden surface-panel dark:divide-zinc-800">
           {lista.map((l) => (
             <li key={l.id} className="grid gap-2 px-4 py-3 lg:grid-cols-[1.6fr_130px_120px_auto] lg:items-center lg:gap-4">
-              <div className="min-w-0"><p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{l.descricao}</p><p className="truncate text-xs text-zinc-500">{CAT[l.categoria]}{l.pessoa_nome ? ` · ${l.pessoa_nome}` : ""}{l.processo_pasta ? ` · Pasta ${l.processo_pasta}` : ""}{l.beneficiario ? ` · ${l.beneficiario}` : ""}{l.reembolsavel ? " · reembolsável" : ""}</p></div>
+              <div className="min-w-0"><p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{l.descricao}</p><p className="truncate text-xs text-zinc-500">{CAT[l.categoria]}{l.origem_lancamento_id ? " · saldo de pagamento parcial" : ""}{l.pessoa_nome ? ` · ${l.pessoa_nome}` : ""}{l.processo_pasta ? ` · Pasta ${l.processo_pasta}` : ""}{l.beneficiario ? ` · ${l.beneficiario}` : ""}{l.reembolsavel ? " · reembolsável" : ""}</p></div>
               <p className={`text-sm font-semibold ${l.tipo === "receber" ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}`}>{l.tipo === "pagar" ? "− " : ""}{dinheiro(l.valor_centavos)}</p>
               <p className="text-xs text-zinc-500">{l.pago_em ? `Pago em ${dataBr(l.pago_em)}` : `Vence ${dataBr(l.vencimento)}`}</p>
               <div className="flex flex-wrap items-center gap-1.5"><Badge tone={ST_TOM[l.status]}>{ST_ROT[l.status]}</Badge>
                 {atendimento && l.tipo === "receber" && l.status === "atrasado" && l.pessoa_telefone && <Button size="sm" variant="outline" onClick={() => void cobrar(l)}><MessageCircle className="h-4 w-4" /> Cobrar</Button>}
-                {gerir && (l.status === "aberto" || l.status === "atrasado") && <><Button size="sm" onClick={() => setBaixando(l)}>{l.tipo === "receber" ? "Receber" : "Pagar"}</Button><Button size="sm" variant="ghost" onClick={() => setEditando(l)}>Editar</Button><Button size="sm" variant="ghost" onClick={() => void acao(() => api.post(`/gestao/financeiro/lancamentos/${l.id}/cancelar`, {}), "Lançamento cancelado.")}>Cancelar</Button></>}
+                {gerir && (l.status === "aberto" || l.status === "atrasado") && <><Button size="sm" onClick={() => setBaixando(l)}>{l.tipo === "receber" ? "Receber" : "Pagar"}</Button><Button size="sm" variant="ghost" onClick={() => setReprog(l)}>Nova data</Button><Button size="sm" variant="ghost" onClick={() => setEditando(l)}>Editar</Button><Button size="sm" variant="ghost" onClick={() => void acao(() => api.post(`/gestao/financeiro/lancamentos/${l.id}/cancelar`, {}), "Lançamento cancelado.")}>Cancelar</Button></>}
                 {gerir && l.status === "pago" && <Button size="sm" variant="ghost" onClick={() => void acao(() => api.post(`/gestao/financeiro/lancamentos/${l.id}/estornar`, {}), "Baixa estornada.")}>Estornar</Button>}
                 {gerir && l.status === "cancelado" && <><Button size="sm" variant="ghost" onClick={() => void acao(() => api.post(`/gestao/financeiro/lancamentos/${l.id}/cancelar`, { cancelar: false }), "Lançamento reativado.")}>Reativar</Button><Button size="sm" variant="ghost" onClick={() => setApagar(l)}>Excluir</Button></>}
               </div>
@@ -199,6 +200,7 @@ function Lancamentos({ gerir, contrato, aoLimparContrato }: { gerir: boolean; co
       {dados && dados.total > 0 && <p className="text-right text-xs text-zinc-500">{dados.total} lançamento(s) · soma dos valores: <b>{dinheiro(dados.soma_centavos)}</b></p>}
       <Pagination page={pagina} totalItems={dados?.total ?? 0} pageSize={30} onPageChange={setPagina} />
       {editando && <LancamentoModal lanc={editando === "novo" ? null : editando} responsaveis={resp} aoFechar={() => setEditando(null)} aoSalvar={() => { setEditando(null); void carregar(); }} />}
+      {reprog && <ReprogramarModal lanc={reprog} aoFechar={() => setReprog(null)} aoSalvar={() => { setReprog(null); void carregar(); }} />}
       {baixando && <BaixaModal lanc={baixando} aoFechar={() => setBaixando(null)} aoSalvar={() => { setBaixando(null); void carregar(); }} />}
       <ConfirmDialog open={Boolean(apagar)} title="Excluir lançamento" message={`Excluir "${apagar?.descricao}"? Não pode ser desfeito.`} confirmLabel="Excluir" onConfirm={() => { const l = apagar!; setApagar(null); void acao(() => api.delete(`/gestao/financeiro/lancamentos/${l.id}`), "Lançamento excluído."); }} onCancel={() => setApagar(null)} />
     </div>
@@ -225,6 +227,7 @@ export function LancamentoModal({ lanc, responsaveis, aoFechar, aoSalvar, pessoa
   return (
     <Modal open onClose={aoFechar} title={lanc ? "Editar lançamento" : "Novo lançamento"} maxWidth="max-w-xl"
       footer={<div className="flex w-full justify-end gap-2"><Button type="button" variant="outline" onClick={aoFechar}>Cancelar</Button><Button type="submit" form="form-lanc" loading={salvando}>Salvar</Button></div>}>
+      {lanc && <div className="mb-4"><HistoricoDoLancamento id={lanc.id} /></div>}
       <form id="form-lanc" onSubmit={salvar} className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2">
           {!lanc && <Campo rotulo="Tipo"><Select value={f.tipo} onChange={(e) => set("tipo", e.target.value as "receber" | "pagar")} className="mt-1.5"><option value="receber">A receber</option><option value="pagar">A pagar</option></Select></Campo>}
@@ -246,13 +249,27 @@ export function LancamentoModal({ lanc, responsaveis, aoFechar, aoSalvar, pessoa
   );
 }
 
+const emCentavos = (v: string) => { const n = Number(String(v).replace(/[R$\s]/g, "").replace(/\./g, "").replace(",", ".")); return Number.isFinite(n) ? Math.round(n * 100) : 0; };
+const maisUmMes = (dia: string, apos: string) => {
+  const soma = (d: string) => { const [a, m, di] = d.split("-").map(Number); const t = a! * 12 + (m! - 1) + 1; const ano = Math.floor(t / 12), mes = (t % 12) + 1; const ult = new Date(Date.UTC(ano, mes, 0)).getUTCDate(); return `${ano}-${String(mes).padStart(2, "0")}-${String(Math.min(di!, ult)).padStart(2, "0")}`; };
+  let v = soma(dia); while (v <= apos) v = soma(v); return v;
+};
 export function BaixaModal({ lanc, aoFechar, aoSalvar }: { lanc: Lanc; aoFechar: () => void; aoSalvar: () => void }) {
   const { show } = useToast();
   const [f, setF] = useState({ pago_em: hoje(), valor_pago: (lanc.valor_centavos / 100).toFixed(2).replace(".", ","), forma_pagamento: "PIX" });
+  const [restante, setRestante] = useState<"novo" | "manter">("novo");
+  const [dataRestante, setDataRestante] = useState("");
   const [salvando, setSalvando] = useState(false);
+  const pago = emCentavos(f.valor_pago);
+  const falta = lanc.valor_centavos - pago;
+  const parcial = pago > 0 && falta > 0;
+  const sugerida = maisUmMes(lanc.vencimento, f.pago_em);
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault(); setSalvando(true);
-    try { await api.post(`/gestao/financeiro/lancamentos/${lanc.id}/baixar`, f); show(lanc.tipo === "receber" ? "Recebimento registrado." : "Pagamento registrado.", "success"); aoSalvar(); }
+    try {
+      const r = await api.post<{ saldo?: { valor_centavos: number; vencimento: string } }>(`/gestao/financeiro/lancamentos/${lanc.id}/baixar`, { ...f, ...(parcial ? { restante, vencimento_restante: restante === "novo" ? dataRestante || sugerida : undefined } : {}) });
+      show(r.saldo ? `Pagamento parcial registrado. Saldo de ${dinheiro(r.saldo.valor_centavos)} lançado para ${dataBr(r.saldo.vencimento)}.` : lanc.tipo === "receber" ? "Recebimento registrado." : "Pagamento registrado.", "success"); aoSalvar();
+    }
     catch (err) { show(err instanceof ApiError ? err.message : "Não foi possível registrar.", "error"); }
     finally { setSalvando(false); }
   };
@@ -262,9 +279,59 @@ export function BaixaModal({ lanc, aoFechar, aoSalvar }: { lanc: Lanc; aoFechar:
       <form id="form-baixa" onSubmit={salvar} className="space-y-4">
         <Campo rotulo="Data do pagamento"><Input type="date" required max={hoje()} value={f.pago_em} onChange={(e) => setF({ ...f, pago_em: e.target.value })} className="mt-1.5" /></Campo>
         <Campo rotulo="Valor efetivamente pago (R$)"><Input required inputMode="decimal" value={f.valor_pago} onChange={(e) => setF({ ...f, valor_pago: e.target.value })} className="mt-1.5" /></Campo>
+        {parcial && (
+          <fieldset className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-500/30 dark:bg-amber-500/10">
+            <legend className="px-1 text-xs font-semibold text-amber-900 dark:text-amber-200">Faltam {dinheiro(falta)}. O que fazer com o restante?</legend>
+            <label className="flex items-start gap-2"><input type="radio" className="mt-1" checked={restante === "novo"} onChange={() => setRestante("novo")} /><span><b>Lançar o restante em uma nova parcela</b><span className="block text-xs text-zinc-600 dark:text-zinc-300">Esta parcela fecha em {dinheiro(pago)} e nasce um saldo de {dinheiro(falta)}.</span></span></label>
+            {restante === "novo" && <div className="pl-6"><label className="text-xs text-zinc-600 dark:text-zinc-300">Vencimento do saldo <Input type="date" min={f.pago_em} value={dataRestante || sugerida} onChange={(e) => setDataRestante(e.target.value)} className="mt-1 h-9 w-44" /></label></div>}
+            <label className="flex items-start gap-2"><input type="radio" className="mt-1" checked={restante === "manter"} onChange={() => setRestante("manter")} /><span><b>Dar por quitado</b><span className="block text-xs text-zinc-600 dark:text-zinc-300">Só baixa o valor pago (desconto combinado com o cliente). Nada é lançado depois.</span></span></label>
+          </fieldset>)}
+        {pago > lanc.valor_centavos && <p className="text-xs text-zinc-500">O valor pago é maior que o previsto ({dinheiro(pago - lanc.valor_centavos)} a mais). Ele é registrado como recebido.</p>}
         <Campo rotulo="Forma de pagamento"><Select value={f.forma_pagamento} onChange={(e) => setF({ ...f, forma_pagamento: e.target.value })} className="mt-1.5">{["PIX", "Boleto", "Transferência", "Dinheiro", "Cartão", "Cheque", "Outro"].map((x) => <option key={x}>{x}</option>)}</Select></Campo>
       </form>
     </Modal>
+  );
+}
+
+/** Aditamento de data: nova data de vencimento, com o motivo, e (se for parcela de contrato) as seguintes andam junto. */
+export function ReprogramarModal({ lanc, aoFechar, aoSalvar }: { lanc: Lanc; aoFechar: () => void; aoSalvar: () => void }) {
+  const { show } = useToast();
+  const [data, setData] = useState(lanc.vencimento);
+  const [motivo, setMotivo] = useState("");
+  const [cascata, setCascata] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+  const salvar = async (e: React.FormEvent) => {
+    e.preventDefault(); setSalvando(true);
+    try {
+      const r = await api.post<{ parcelas_movidas: number }>(`/gestao/financeiro/lancamentos/${lanc.id}/reprogramar`, { vencimento: data, motivo, cascata });
+      show(r.parcelas_movidas > 0 ? `Nova data salva. ${r.parcelas_movidas} parcela(s) seguinte(s) também mudaram.` : "Nova data salva.", "success"); aoSalvar();
+    } catch (err) { show(err instanceof ApiError ? err.message : "Não foi possível mudar a data.", "error"); }
+    finally { setSalvando(false); }
+  };
+  return (
+    <Modal open onClose={aoFechar} title="Nova data de vencimento" description={`${lanc.descricao} — ${dinheiro(lanc.valor_centavos)} · vence em ${dataBr(lanc.vencimento)}`} maxWidth="max-w-md"
+      footer={<div className="flex w-full justify-end gap-2"><Button type="button" variant="outline" onClick={aoFechar}>Cancelar</Button><Button type="submit" form="form-reprog" loading={salvando} disabled={data === lanc.vencimento}>Salvar nova data</Button></div>}>
+      <form id="form-reprog" onSubmit={salvar} className="space-y-4">
+        <Campo rotulo="Novo vencimento"><Input type="date" required value={data} onChange={(e) => setData(e.target.value)} className="mt-1.5" /></Campo>
+        <Campo rotulo="Motivo (fica no histórico)"><Input value={motivo} maxLength={200} placeholder="Ex.: cliente pediu mais prazo" onChange={(e) => setMotivo(e.target.value)} className="mt-1.5" /></Campo>
+        {lanc.contrato_id && <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={cascata} onChange={(e) => setCascata(e.target.checked)} /><span>Mudar também as <b>próximas parcelas</b> deste contrato<span className="block text-xs text-zinc-500">Se a mudança for de mês (mesmo dia), cada parcela anda o mesmo número de meses.</span></span></label>}
+      </form>
+    </Modal>
+  );
+}
+
+/** O que já mudou neste lançamento (pagamento parcial, nova data, valor…). */
+function HistoricoDoLancamento({ id }: { id: number }) {
+  const [itens, setItens] = useState<{ id: number; acao: string; detalhe: string; autor: string; criado_em: string }[] | null>(null);
+  useEffect(() => { api.get<{ itens: typeof itens }>(`/gestao/financeiro/lancamentos/${id}/historico`, { fresh: true } as never).then((r) => setItens(r.itens)).catch(() => setItens([])); }, [id]);
+  if (!itens || itens.length === 0) return null;
+  return (
+    <section className="rounded-xl border border-zinc-200 p-3 dark:border-white/10">
+      <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">Histórico de alterações</h4>
+      <ul className="space-y-1.5 text-xs text-zinc-600 dark:text-zinc-300">
+        {itens.map((h) => <li key={h.id}><span className="text-zinc-400">{dataBr(h.criado_em.slice(0, 10))}{h.autor ? ` · ${h.autor}` : ""}</span> — {h.detalhe}</li>)}
+      </ul>
+    </section>
   );
 }
 

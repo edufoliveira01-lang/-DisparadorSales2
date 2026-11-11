@@ -40,3 +40,8 @@
 ## Tarefas (3.9.0)
 - Resumo clicável (atrasadas, hoje, próximos 7 dias, prazos fatais) que filtra a lista.
 - Lista agrupada por prazo (Atrasadas, Hoje, Próximos 7 dias, Mais adiante, Sem prazo) e menu ⋯ por tarefa: **Adiar 1 dia**, **Adiar 1 semana**, **Assumir**.
+
+## Financeiro — aditamentos (3.10.0)
+- **Pagamento parcial:** ao receber menos que o previsto, o diálogo pergunta o que fazer com o restante: lançar um saldo em nova parcela (data sugerida: mesmo dia do mês seguinte) ou dar por quitado (desconto).
+- **Nova data de vencimento:** com motivo e, para parcelas de contrato, opção de mover as seguintes junto (por mês quando o dia é o mesmo).
+- **Histórico de alterações** em cada lançamento (baixa parcial, nova data, valor, saldo criado), com quem fez.

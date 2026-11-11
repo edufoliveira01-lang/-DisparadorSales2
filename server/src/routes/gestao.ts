@@ -10,7 +10,7 @@ import { auditAccess } from "../services/accessService";
 import { TAMANHO_MAXIMO, excluirArquivo, extensao, listarArquivos, obterArquivo, podeExibir, salvarArquivo, usoDeArmazenamento } from "../services/gestao/arquivos";
 import { VARIAVEIS, excluirModelo, gerarDocumento, listarModelos, salvarModelo } from "../services/gestao/modelos";
 import { atualizarTarefa, concluirTarefa, criarTarefa, excluirTarefa, listarTarefas, meuPainel, obterTarefa, sincronizarPrazosDjen } from "../services/gestao/tarefas";
-import { atualizarLancamento, baixarLancamento, cancelarContrato, cancelarLancamento, criarContrato, criarLancamentos, estornarLancamento, excluirLancamento, fluxoDeCaixa, listarContratos, listarLancamentos, obterContrato, obterLancamento, resumoFinanceiro } from "../services/gestao/financeiro";
+import { atualizarLancamento, baixarLancamento, historicoDoLancamento, reprogramarVencimento, cancelarContrato, cancelarLancamento, criarContrato, criarLancamentos, estornarLancamento, excluirLancamento, fluxoDeCaixa, listarContratos, listarLancamentos, obterContrato, obterLancamento, resumoFinanceiro } from "../services/gestao/financeiro";
 import { indicadores } from "../services/gestao/indicadores";
 import { dashboardDoInicio } from "../services/gestao/dashboard";
 import { captacao } from "../services/gestao/captacao";
@@ -64,6 +64,7 @@ const id = (req: Request, nome = "id") => {
 };
 const usuario = (req: Request) => req.accessUser!;
 const nomeDe = (u: { display_name: string | null; username: string }) => u.display_name || u.username;
+const quem = (req: Parameters<typeof usuario>[0]) => { const u = usuario(req); return { id: u.id, nome: nomeDe(u) }; };
 
 gestaoRouter.get("/resumo", rota(() => resumoGestao()));
 gestaoRouter.get("/responsaveis", rota(() => db.prepare("SELECT id, COALESCE(NULLIF(display_name,''), username) AS nome FROM users WHERE active=1 ORDER BY nome COLLATE NOCASE").all()));
@@ -167,8 +168,10 @@ gestaoRouter.get("/financeiro/fluxo", rota((req) => fluxoDeCaixa(Number(req.quer
 gestaoRouter.get("/financeiro/lancamentos", rota((req) => listarLancamentos(q(req))));
 gestaoRouter.post("/financeiro/lancamentos", rota((req, res) => { const r = criarLancamentos(req.body || {}, usuario(req).id); res.status(201); auditAccess("financeiro_lancamento_criado", usuario(req).id, null, { quantidade: r.length }); return r; }));
 gestaoRouter.get("/financeiro/lancamentos/:id", rota((req) => obterLancamento(id(req))));
-gestaoRouter.put("/financeiro/lancamentos/:id", rota((req) => atualizarLancamento(id(req), req.body || {})));
-gestaoRouter.post("/financeiro/lancamentos/:id/baixar", rota((req) => { const r = baixarLancamento(id(req), req.body || {}); auditAccess("financeiro_baixa", usuario(req).id, null, { lancamento: r.id }); return r; }));
+gestaoRouter.put("/financeiro/lancamentos/:id", rota((req) => atualizarLancamento(id(req), req.body || {}, quem(req))));
+gestaoRouter.get("/financeiro/lancamentos/:id/historico", rota((req) => ({ itens: historicoDoLancamento(id(req)) })));
+gestaoRouter.post("/financeiro/lancamentos/:id/reprogramar", rota((req) => { const r = reprogramarVencimento(id(req), req.body || {}, quem(req)); auditAccess("financeiro_reprogramado", usuario(req).id, null, { lancamento: id(req), parcelas: r.parcelas_movidas }); return r; }));
+gestaoRouter.post("/financeiro/lancamentos/:id/baixar", rota((req) => { const r = baixarLancamento(id(req), req.body || {}, quem(req)); auditAccess("financeiro_baixa", usuario(req).id, null, { lancamento: r.id }); return r; }));
 gestaoRouter.post("/financeiro/lancamentos/:id/estornar", rota((req) => { const r = estornarLancamento(id(req)); auditAccess("financeiro_estorno", usuario(req).id, null, { lancamento: r.id }); return r; }));
 gestaoRouter.post("/financeiro/lancamentos/:id/cancelar", rota((req) => cancelarLancamento(id(req), req.body?.cancelar !== false)));
 gestaoRouter.delete("/financeiro/lancamentos/:id", rota((req) => { const r = excluirLancamento(id(req)); auditAccess("financeiro_lancamento_excluido", usuario(req).id, null, { lancamento: id(req) }); return r; }));

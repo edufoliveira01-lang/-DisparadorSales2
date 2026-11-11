@@ -99,7 +99,7 @@ function criarParcelas(p: { tipo: string; categoria: string; descricao: string; 
   return ids.map(obterLancamento);
 }
 
-export function atualizarLancamento(id: number, d: Record<string, unknown>) {
+export function atualizarLancamento(id: number, d: Record<string, unknown>, quem?: Quem) {
   const atual = obterLancamento(id);
   if (atual.pago_em) throw new ErroGestao("Lançamento já baixado: estorne a baixa antes de alterar.", 409);
   const descricao = txt(d.descricao ?? atual.descricao, 200);
@@ -110,6 +110,8 @@ export function atualizarLancamento(id: number, d: Record<string, unknown>) {
   const venc = d.vencimento === undefined ? atual.vencimento : data(d.vencimento, "Vencimento");
   const vinc = { pessoa: d.pessoa_id === undefined ? atual.pessoa_id : idOuNulo(d.pessoa_id), processo: d.processo_id === undefined ? atual.processo_id : idOuNulo(d.processo_id), benef: d.beneficiario_user_id === undefined ? atual.beneficiario_user_id : idOuNulo(d.beneficiario_user_id) };
   conferirVinculos(vinc);
+  const mudancas = [venc !== atual.vencimento ? `vencimento ${dia(atual.vencimento)} → ${dia(venc)}` : "", valor !== atual.valor_centavos ? `valor ${reais(atual.valor_centavos)} → ${reais(valor)}` : ""].filter(Boolean);
+  if (mudancas.length) registrar(id, "alterado", `Alterado: ${mudancas.join("; ")}.`, quem);
   db.prepare("UPDATE gestao_lancamentos SET descricao=?,categoria=?,valor_centavos=?,vencimento=?,pessoa_id=?,processo_id=?,beneficiario_user_id=?,reembolsavel=?,observacoes=?,atualizado_em=CURRENT_TIMESTAMP WHERE id=?")
     .run(descricao, categoria, valor, venc, vinc.pessoa, vinc.processo, vinc.benef, (d.reembolsavel === undefined ? (atual.reembolsavel ? 1 : 0) : d.reembolsavel ? 1 : 0), txt(d.observacoes ?? atual.observacoes, 2000), id);
   return obterLancamento(id);
@@ -123,17 +125,81 @@ function atualizarContratoQuitado(contratoId: number | null) {
   db.prepare("UPDATE gestao_contratos SET status=?,atualizado_em=CURRENT_TIMESTAMP WHERE id=?").run(abertos === 0 ? "quitado" : "ativo", contratoId);
 }
 
-export function baixarLancamento(id: number, d: Record<string, unknown>) {
+const reais = (c: number) => (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const dia = (d: string) => d.split("-").reverse().join("/");
+type Quem = { id: number | null; nome: string } | undefined;
+function registrar(lancamentoId: number, acao: string, detalhe: string, quem?: Quem) {
+  db.prepare("INSERT INTO gestao_lancamentos_historico(lancamento_id,acao,detalhe,user_id,autor) VALUES (?,?,?,?,?)").run(lancamentoId, acao, detalhe.slice(0, 500), quem?.id ?? null, quem?.nome ?? "");
+}
+/** O que mudou neste lançamento (baixa parcial, nova data, valor…), do mais recente ao mais antigo. */
+export function historicoDoLancamento(id: number) {
+  obterLancamento(id);
+  return db.prepare("SELECT id,acao,detalhe,autor,criado_em FROM gestao_lancamentos_historico WHERE lancamento_id=? ORDER BY id DESC LIMIT 100").all(id);
+}
+
+export function baixarLancamento(id: number, d: Record<string, unknown>, quem?: Quem) {
   const l = obterLancamento(id);
   if (l.cancelado) throw new ErroGestao("Lançamento cancelado.", 409);
   if (l.pago_em) throw new ErroGestao("Este lançamento já foi baixado.", 409);
   const pagoEm = data(d.pago_em || hojeSaoPaulo(), "Data do pagamento");
   if (pagoEm > somarDias(hojeSaoPaulo(), 1)) throw new ErroGestao("A data do pagamento não pode ser futura.");
   const valor = d.valor_pago === undefined || d.valor_pago === "" ? l.valor_centavos : centavos(d.valor_pago, "Valor pago");
+  // Pagamento PARCIAL: o que foi pago fecha esta parcela e o que falta vira um lançamento novo (na data escolhida, por padrão um mês depois).
+  // Sem `restante: "novo"`, só baixa o valor menor, sem criar o saldo (desconto combinado com o cliente; é o comportamento antigo da API).
+  if (valor < l.valor_centavos && d.restante === "novo") {
+    const falta = l.valor_centavos - valor;
+    // padrão: o mesmo dia da parcela, no primeiro mês depois do pagamento
+    let venc = d.vencimento_restante ? data(d.vencimento_restante, "Vencimento do restante") : somarMeses(l.vencimento, 1);
+    if (!d.vencimento_restante) while (venc <= pagoEm) venc = somarMeses(venc, 1);
+    db.transaction(() => {
+      db.prepare("UPDATE gestao_lancamentos SET valor_centavos=?,pago_em=?,valor_pago_centavos=?,forma_pagamento=?,atualizado_em=CURRENT_TIMESTAMP WHERE id=?").run(valor, pagoEm, valor, txt(d.forma_pagamento, 40), id);
+      const novo = db.prepare(`INSERT INTO gestao_lancamentos(tipo,categoria,descricao,valor_centavos,vencimento,pessoa_id,processo_id,contrato_id,beneficiario_user_id,reembolsavel,parcela_numero,parcela_total,observacoes,criado_por,origem_lancamento_id)
+        SELECT tipo,categoria,descricao,?,?,pessoa_id,processo_id,contrato_id,beneficiario_user_id,reembolsavel,parcela_numero,parcela_total,?,criado_por,id FROM gestao_lancamentos WHERE id=?`)
+        .run(falta, venc, `Saldo do pagamento parcial de ${dia(pagoEm)} (pago ${reais(valor)} de ${reais(l.valor_centavos)}).`, id);
+      registrar(id, "baixa_parcial", `Pago ${reais(valor)} de ${reais(l.valor_centavos)} em ${dia(pagoEm)}. Saldo de ${reais(falta)} lançado para ${dia(venc)}.`, quem);
+      registrar(Number(novo.lastInsertRowid), "saldo_criado", `Saldo de ${reais(falta)} do lançamento nº ${id}, vencimento ${dia(venc)}.`, quem);
+    })();
+    atualizarContratoQuitado(l.contrato_id);
+    return { ...obterLancamento(id), saldo: { valor_centavos: falta, vencimento: venc } };
+  }
   db.prepare("UPDATE gestao_lancamentos SET pago_em=?,valor_pago_centavos=?,forma_pagamento=?,atualizado_em=CURRENT_TIMESTAMP WHERE id=?").run(pagoEm, valor, txt(d.forma_pagamento, 40), id);
+  if (valor !== l.valor_centavos) registrar(id, "baixa", `Baixado por ${reais(valor)} (previsto ${reais(l.valor_centavos)}) em ${dia(pagoEm)}.`, quem);
   atualizarContratoQuitado(l.contrato_id);
   return obterLancamento(id);
 }
+/**
+ * Nova data de vencimento (aditamento). Com `cascata`, as parcelas seguintes ainda abertas do MESMO contrato andam junto:
+ * se a mudança foi de mês (mesmo dia), cada uma anda o mesmo número de meses; senão, o mesmo número de dias.
+ */
+export function reprogramarVencimento(id: number, d: Record<string, unknown>, quem?: Quem) {
+  const l = obterLancamento(id);
+  if (l.cancelado || l.pago_em) throw new ErroGestao("Só dá para mudar a data de um lançamento em aberto.", 409);
+  const novo = data(d.vencimento, "Nova data");
+  if (novo === l.vencimento) throw new ErroGestao("A nova data é igual à atual.");
+  const motivo = txt(d.motivo, 200);
+  const cascata = Boolean(d.cascata) && Boolean(l.contrato_id);
+  const [a1, m1, d1] = l.vencimento.split("-").map(Number), [a2, m2, d2] = novo.split("-").map(Number);
+  const meses = (a2 * 12 + m2) - (a1 * 12 + m1);
+  const porMes = d1 === d2 && meses !== 0;
+  const dias = Math.round((Date.parse(`${novo}T12:00:00Z`) - Date.parse(`${l.vencimento}T12:00:00Z`)) / 86400000);
+  const mover = (v: string) => (porMes ? somarMeses(v, meses) : somarDias(v, dias));
+  let movidas = 0;
+  db.transaction(() => {
+    db.prepare("UPDATE gestao_lancamentos SET vencimento=?,atualizado_em=CURRENT_TIMESTAMP WHERE id=?").run(novo, id);
+    registrar(id, "reprogramado", `Vencimento ${dia(l.vencimento)} → ${dia(novo)}${motivo ? `. Motivo: ${motivo}` : ""}.`, quem);
+    if (cascata) {
+      const seguintes = db.prepare("SELECT id,vencimento FROM gestao_lancamentos WHERE contrato_id=? AND id<>? AND cancelado=0 AND pago_em IS NULL AND vencimento>? ORDER BY vencimento").all(l.contrato_id, id, l.vencimento) as { id: number; vencimento: string }[];
+      for (const s of seguintes) {
+        const v = mover(s.vencimento);
+        db.prepare("UPDATE gestao_lancamentos SET vencimento=?,atualizado_em=CURRENT_TIMESTAMP WHERE id=?").run(v, s.id);
+        registrar(s.id, "reprogramado", `Vencimento ${dia(s.vencimento)} → ${dia(v)} (acompanhou a parcela nº ${id}).`, quem);
+        movidas++;
+      }
+    }
+  })();
+  return { ...obterLancamento(id), parcelas_movidas: movidas };
+}
+
 export function estornarLancamento(id: number) {
   const l = obterLancamento(id);
   if (!l.pago_em) throw new ErroGestao("Este lançamento não está baixado.", 409);
