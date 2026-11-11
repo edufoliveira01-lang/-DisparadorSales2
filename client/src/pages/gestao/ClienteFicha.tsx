@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Camera, CalendarClock, Download, FileText, FolderOpen, Loader2, Plus, Printer, Save, ShieldAlert, Trash2, User } from "lucide-react";
+import { ArrowLeft, MessageCircle, Camera, CalendarClock, Download, FileText, FolderOpen, Loader2, Plus, Printer, Save, ShieldAlert, Trash2, User } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -17,6 +17,7 @@ import { FinanceiroPessoa } from "./FinanceiroPessoa";
 import { GerarDocumentos } from "./GerarDocumentos";
 import { AnotacoesPessoa } from "./AnotacoesPessoa";
 import { NegocioDaPessoa } from "./NegocioDaPessoa";
+import { AvatarPessoa, linkWhatsApp } from "./AvatarPessoa";
 import { NovoProcesso, type Responsavel } from "./Processos";
 import { Campo, ESCOLARIDADES, ESTADOS_CIVIS, STATUS, STATUS_TOM, TIPOS, UFS, dataBr, mascaraCep, mascaraCpfCnpj, mascaraPis, type EnderecoCep } from "./comum";
 
@@ -115,22 +116,34 @@ export function ClienteFicha() {
   return (
     <div className="space-y-5">
       <Link to="/gestao/clientes" className="inline-flex items-center gap-1 text-sm text-accent-700 hover:underline dark:text-accent-300"><ArrowLeft className="h-4 w-4" /> Clientes e processos</Link>
-      <PageHeader title={novo ? "Novo cadastro" : pessoa.nome || "Cadastro"}
-        description={novo ? "Preencha o que souber; só o nome é obrigatório. O endereço completa sozinho pelo CEP." : <span className="flex flex-wrap items-center gap-2"><Badge tone={pessoa.tipo === "cliente" ? "accent" : "neutral"}>{TIPOS[pessoa.tipo]}</Badge>{!pessoa.ativo && <Badge tone="warning">Inativo</Badge>}{pessoa.documento_formatado && <span>{pessoa.documento_formatado}</span>}{pessoa.telefone && <span>{pessoa.telefone}</span>}</span>}
-        actions={<div className="flex flex-wrap gap-2">
-          {!novo && <Button variant="outline" onClick={() => (sujo ? show("Salve as alterações antes de imprimir a ficha.", "info") : setImprimir(true))}><Printer className="h-4 w-4" /> Imprimir ficha</Button>}
+      <div className="surface-panel flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+        <div className="flex min-w-0 items-center gap-4">
+          {novo ? <span aria-hidden className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-accent-100 text-accent-700 dark:bg-white/10"><User className="h-6 w-6" /></span> : <AvatarPessoa key={fotoVersao} id={id} nome={pessoa.nome} temFoto={pessoa.tem_foto} tamanho={56} />}
+          <div className="min-w-0">
+            <h1 className="truncate text-xl font-semibold text-zinc-900 dark:text-zinc-50">{novo ? "Novo cadastro" : pessoa.nome || "Cadastro"}</h1>
+            {novo ? <p className="text-sm text-zinc-500">Preencha o que souber; só o nome é obrigatório. O endereço completa sozinho pelo CEP.</p> : (
+              <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500">
+                <Badge tone={pessoa.tipo === "cliente" ? "accent" : "neutral"}>{TIPOS[pessoa.tipo]}</Badge>{!pessoa.ativo && <Badge tone="warning">Inativo</Badge>}
+                {pessoa.documento_formatado && <span>{pessoa.documento_formatado}</span>}
+                {pessoa.telefone && (linkWhatsApp(pessoa.telefone) ? <a href={linkWhatsApp(pessoa.telefone)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-emerald-700 hover:underline dark:text-emerald-400"><MessageCircle className="h-3.5 w-3.5" /> {pessoa.telefone}</a> : <span>{pessoa.telefone}</span>)}
+                {pessoa.email && <span className="truncate">{pessoa.email}</span>}
+              </p>)}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">          {!novo && <Button variant="outline" onClick={() => (sujo ? show("Salve as alterações antes de imprimir a ficha.", "info") : setImprimir(true))}><Printer className="h-4 w-4" /> Imprimir ficha</Button>}
           {!novo && gerir && <Button variant="outline" onClick={() => (sujo ? show("Salve as alterações antes de gerar os documentos.", "info") : setDocs(true))}><FileText className="h-4 w-4" /> Gerar documentos</Button>}
           {!novo && gerir && <Button variant="outline" onClick={() => setNovoProcesso(true)}><Plus className="h-4 w-4" /> Novo processo</Button>}
           {gerir && <Button loading={salvando} onClick={() => void salvar()} disabled={!sujo && !novo}><Save className="h-4 w-4" /> Salvar</Button>}
-        </div>} />
+        </div>
+      </div>
       {!novo && (
-        <div role="tablist" className="flex gap-1 overflow-x-auto border-b border-zinc-200 dark:border-zinc-800">
-          {ABAS.filter(([k]) => k !== "financeiro" || can("financeiro.view")).map(([k, r]) => <button key={k} role="tab" aria-selected={aba === k} onClick={() => setAba(k)} className={`whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition ${aba === k ? "border-accent-600 text-accent-700 dark:text-accent-300" : "border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"}`}>{r}{k === "processos" && pessoa.processos?.length ? ` (${pessoa.processos.length})` : ""}</button>)}
+        <div role="tablist" className="page-tabs">
+          {ABAS.filter(([k]) => k !== "financeiro" || can("financeiro.view")).map(([k, r]) => <button key={k} role="tab" aria-selected={aba === k} onClick={() => setAba(k)} className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium transition ${aba === k ? "bg-accent-50 text-accent-700 dark:bg-accent-500/15 dark:text-accent-200" : "text-zinc-500 hover:bg-zinc-50 dark:hover:bg-white/5"}`}>{r}{k === "processos" && pessoa.processos?.length ? ` (${pessoa.processos.length})` : ""}</button>)}
         </div>
       )}
 
       {aba === "dados" && (
-        <form onSubmit={salvar} className="space-y-6 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+        <form onSubmit={salvar} className="surface-panel space-y-6 p-5">
           <fieldset disabled={leitura} className="space-y-6">
             <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="flex flex-wrap items-center gap-4 sm:col-span-2 lg:col-span-4">

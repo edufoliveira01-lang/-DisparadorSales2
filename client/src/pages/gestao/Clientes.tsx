@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Search, Users, FolderOpen } from "lucide-react";
+import { Search, Users, FolderOpen, MessageCircle } from "lucide-react";
+import { AvatarPessoa, linkWhatsApp } from "./AvatarPessoa";
 import { api } from "@/lib/api";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -45,24 +46,31 @@ export function Clientes() {
       {dados && lista.length === 0 ? (
         <EmptyState icon={Users} title="Nenhum cadastro encontrado" description={termo ? "Tente outro nome, CPF ou número de processo." : "Cadastre o primeiro cliente ou importe os contatos na tela inicial da Gestão."} action={can("gestao.manage") ? <Button onClick={() => navegar("/gestao/clientes/novo")}><Plus className="h-4 w-4" /> Novo cadastro</Button> : undefined} />
       ) : (
-        <ul className="space-y-2">
-          {lista.map((p) => (
-            <li key={p.id} className="rounded-2xl border border-zinc-200 bg-white transition hover:border-accent-300 hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-              <Link to={`/gestao/clientes/${p.id}`} className="grid gap-1 px-4 py-3 sm:grid-cols-[1.4fr_1fr_1fr_auto] sm:items-center sm:gap-4">
-                <span className="min-w-0"><span className="block truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{p.nome}</span><span className="block truncate text-xs text-zinc-500">{p.documento_formatado || "Sem documento"}</span></span>
-                <span className="truncate text-sm text-zinc-600 dark:text-zinc-300">{p.telefone || "—"}</span>
-                <span className="truncate text-sm text-zinc-600 dark:text-zinc-300">{p.email || "—"}</span>
-                <span className="flex items-center gap-2"><Badge tone={p.tipo === "cliente" ? "accent" : "neutral"}>{TIPOS[p.tipo] || p.tipo}</Badge>{!p.ativo && <Badge tone="warning">Inativo</Badge>}</span>
-              </Link>
-              {p.processos_lista.length > 0 && (
-                <div className="flex flex-wrap gap-2 border-t border-zinc-100 px-4 py-2.5 dark:border-zinc-800">
-                  {p.processos_lista.map((x) => (
-                    <Link key={`${x.id}-${x.papel}`} to={`/gestao/processos/${x.id}`} className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-zinc-200 px-2.5 py-1 text-xs text-zinc-700 hover:border-accent-400 hover:bg-accent-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-accent-950/30">
-                      <FolderOpen className="h-3 w-3 shrink-0 text-zinc-400" /><span className="truncate"><b>{x.pasta}</b> {x.titulo || x.numero}</span><span className="shrink-0 text-zinc-400">· {STATUS[x.status] || x.status}</span>
-                    </Link>))}
-                  {(p.processos ?? 0) > p.processos_lista.length && <Link to={`/gestao/clientes/${p.id}?aba=processos`} className="text-xs text-accent-700 underline">+{(p.processos ?? 0) - p.processos_lista.length} mais</Link>}
-                </div>)}
-            </li>))}
+        <ul className="space-y-2.5">
+          {lista.map((p) => {
+            const zap = linkWhatsApp(p.telefone);
+            return (
+              <li key={p.id} className="surface-panel overflow-hidden transition hover:border-accent-300 hover:shadow-card dark:hover:border-accent-500/40">
+                <div className="flex items-center gap-3 px-4 py-3">
+                  <AvatarPessoa id={p.id} nome={p.nome} />
+                  <Link to={`/gestao/clientes/${p.id}`} className="grid min-w-0 flex-1 gap-0.5 sm:grid-cols-[1.4fr_1fr_1fr] sm:items-center sm:gap-4">
+                    <span className="min-w-0"><span className="block truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{p.nome}</span><span className="block truncate text-xs text-zinc-500">{p.documento_formatado || "Sem documento"}</span></span>
+                    <span className="truncate text-sm text-zinc-600 dark:text-zinc-300">{p.telefone || "—"}</span>
+                    <span className="hidden truncate text-sm text-zinc-500 sm:block">{p.email || "—"}</span>
+                  </Link>
+                  <span className="hidden items-center gap-1.5 md:flex"><Badge tone={p.tipo === "cliente" ? "accent" : "neutral"}>{TIPOS[p.tipo] || p.tipo}</Badge>{!p.ativo && <Badge tone="warning">Inativo</Badge>}</span>
+                  {zap && <a href={zap} target="_blank" rel="noopener noreferrer" aria-label={`Abrir o WhatsApp de ${p.nome}`} title="Abrir no WhatsApp" className="topbar-icon !h-9 !w-9 shrink-0 text-emerald-600"><MessageCircle className="h-4 w-4" /></a>}
+                </div>
+                {p.processos_lista.length > 0 && (
+                  <div className="flex flex-wrap gap-2 border-t border-zinc-100 bg-zinc-50/60 px-4 py-2.5 dark:border-white/10 dark:bg-white/[0.03]">
+                    {p.processos_lista.map((x) => (
+                      <Link key={`${x.id}-${x.papel}`} to={`/gestao/processos/${x.id}`} className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-xs text-zinc-700 hover:border-accent-400 hover:bg-accent-50 dark:border-white/10 dark:bg-transparent dark:text-zinc-200 dark:hover:bg-white/5">
+                        <FolderOpen className="h-3 w-3 shrink-0 text-zinc-400" /><span className="truncate"><b>{x.pasta}</b> {x.titulo || x.numero}</span><span className="shrink-0 text-zinc-400">· {STATUS[x.status] || x.status}</span>
+                      </Link>))}
+                    {(p.processos ?? 0) > p.processos_lista.length && <Link to={`/gestao/clientes/${p.id}?aba=processos`} className="self-center text-xs text-accent-700 underline dark:text-accent-300">+{(p.processos ?? 0) - p.processos_lista.length} mais</Link>}
+                  </div>)}
+              </li>);
+          })}
         </ul>)}
       <Pagination page={pagina} totalItems={dados?.total ?? 0} pageSize={TAM} onPageChange={setPagina} />
     </div>

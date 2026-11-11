@@ -18,3 +18,7 @@
 - Tela **Captação** (`/gestao/captacao`): total anual, mês a mês, por fonte, presencial × online, por responsável, motivos, funil; aba "Preencher cadastros" (clientes antigos) e "Fontes" (fontes próprias); exportar CSV.
 - Início: "Clientes qualificados" e "Desqualificados" usam a qualificação registrada pela equipe.
 - Qualquer funcionário pode marcar a qualificação. Sem controle de investimento.
+
+## Fase 4 — Clientes (3.3.0)
+- Lista: avatar com iniciais (ou foto), atalho para o WhatsApp, processos em faixa e cartões no padrão novo.
+- Ficha: cabeçalho com foto/avatar, tipo, documento, WhatsApp e ações; abas em pílulas; formulário em cartão.
