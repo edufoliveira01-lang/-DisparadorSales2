@@ -17,6 +17,8 @@ export interface MesDoAtendimento {
   sem_interesse: number;
   /** Ainda em novo contato ou triagem. */
   em_andamento: number;
+  /** Quantos leads do mês vieram de cada fonte (o texto de fonte como o atendimento guarda). */
+  fontes?: Record<string, number>;
 }
 export interface EtapaAgora { nome: string; total: number; posicao: number }
 export interface RetratoDoAtendimento { gerado_em: string; meses: MesDoAtendimento[]; por_etapa: EtapaAgora[]; abertos: number }
@@ -24,14 +26,16 @@ export interface RetratoDoAtendimento { gerado_em: string; meses: MesDoAtendimen
 const inteiro = (v: unknown) => (Number.isFinite(Number(v)) && Number(v) >= 0 ? Math.floor(Number(v)) : 0);
 const texto = (v: unknown, max = 80) => String(v ?? "").slice(0, max);
 
+const fontesDe = (v: unknown): Record<string, number> => Object.fromEntries(Object.entries((v && typeof v === "object" ? v : {}) as Record<string, unknown>).slice(0, 30).map(([k, n]) => [texto(k, 60), inteiro(n)]));
+
 /** Valida e normaliza o que veio do atendimento (nunca confia no formato). Devolve `null` se não tem o mínimo. */
 export function normalizarRetrato(bruto: unknown): RetratoDoAtendimento | null {
   const b = (bruto ?? {}) as Record<string, unknown>;
   if (!Array.isArray(b.meses)) return null;
-  const meses = b.meses.slice(0, 24).flatMap((m): MesDoAtendimento[] => {
+  const meses = b.meses.slice(0, 36).flatMap((m): MesDoAtendimento[] => {
     const x = (m ?? {}) as Record<string, unknown>;
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(x.mes))) return [];
-    return [{ mes: String(x.mes), novos: inteiro(x.novos), qualificados: inteiro(x.qualificados), desqualificados: inteiro(x.desqualificados), sem_interesse: inteiro(x.sem_interesse), em_andamento: inteiro(x.em_andamento) }];
+    return [{ mes: String(x.mes), novos: inteiro(x.novos), qualificados: inteiro(x.qualificados), desqualificados: inteiro(x.desqualificados), sem_interesse: inteiro(x.sem_interesse), em_andamento: inteiro(x.em_andamento), fontes: fontesDe(x.fontes) }];
   });
   const por_etapa = (Array.isArray(b.por_etapa) ? b.por_etapa : []).slice(0, 30).map((e) => {
     const x = (e ?? {}) as Record<string, unknown>;

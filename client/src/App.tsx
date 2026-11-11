@@ -65,6 +65,7 @@ const GestaoProcessoFicha = lazy(() => import("@/pages/gestao/ProcessoFicha").th
 const GestaoTarefas = lazy(() => import("@/pages/gestao/Tarefas").then((m) => ({ default: m.Tarefas })));
 const GestaoFinanceiro = lazy(() => import("@/pages/gestao/Financeiro").then((m) => ({ default: m.Financeiro })));
 const GestaoIndicadores = lazy(() => import("@/pages/gestao/Indicadores").then((m) => ({ default: m.Indicadores })));
+const GestaoCaptacao = lazy(() => import("@/pages/gestao/Captacao").then((m) => ({ default: m.Captacao })));
 const GestaoEscritorio = lazy(() => import("@/pages/gestao/Escritorio").then((m) => ({ default: m.EscritorioConfig })));
 const AtendimentoIa = lazy(() => import("@/pages/gestao/AtendimentoIa").then((m) => ({ default: m.AtendimentoIa })));
 const GestaoDocumentos = lazy(() => import("@/pages/gestao/DocumentosConfig").then((m) => ({ default: m.DocumentosConfig })));
@@ -149,6 +150,7 @@ function AuthenticatedApp() {
                 <Route path="/configuracoes/documentos" element={<AccessRoute permission="gestao.view"><Cfg><GestaoDocumentos /></Cfg></AccessRoute>} />
                 <Route path="/configuracoes/atendimento-ia" element={<AccessRoute permission="gestao.view"><Cfg><AtendimentoIa /></Cfg></AccessRoute>} />
                 <Route path="/gestao/modelos" element={<Navigate to="/configuracoes/documentos" replace />} />
+                <Route path="/gestao/captacao" element={<AccessRoute permission="gestao.view"><GestaoCaptacao /></AccessRoute>} />
                 <Route path="/gestao/financeiro" element={<AccessRoute permission="financeiro.view"><GestaoFinanceiro /></AccessRoute>} />
                 <Route path="/gestao/indicadores" element={<AccessRoute permission="gestao.view"><GestaoIndicadores /></AccessRoute>} />
                 <Route path="/gestao/clientes" element={<AccessRoute permission="gestao.view"><GestaoClientes aba="clientes" /></AccessRoute>} />

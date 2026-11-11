@@ -13,6 +13,8 @@ import { atualizarTarefa, concluirTarefa, criarTarefa, excluirTarefa, listarTare
 import { atualizarLancamento, baixarLancamento, cancelarContrato, cancelarLancamento, criarContrato, criarLancamentos, estornarLancamento, excluirLancamento, fluxoDeCaixa, listarContratos, listarLancamentos, obterContrato, obterLancamento, resumoFinanceiro } from "../services/gestao/financeiro";
 import { indicadores } from "../services/gestao/indicadores";
 import { dashboardDoInicio } from "../services/gestao/dashboard";
+import { captacao } from "../services/gestao/captacao";
+import { AREAS, FONTES_PADRAO, lerFontes, MOTIVOS, obterNegocio, pendentesDePreenchimento, QUALIFICACOES, salvarFontesExtras, salvarNegocio } from "../services/gestao/negocios";
 import { hasPermission } from "../services/accessService";
 import { consultarCep } from "../services/gestao/cep";
 import { adicionarCamposPrevidenciarios, atualizarCampo, criarCampo, excluirCampo, listarCampos, revelarSenha, TIPOS_CAMPO } from "../services/gestao/campos";
@@ -164,6 +166,19 @@ gestaoRouter.get("/financeiro/contratos", rota((req) => listarContratos(q(req)))
 gestaoRouter.post("/financeiro/contratos", rota((req, res) => { const r = criarContrato(req.body || {}, usuario(req).id); res.status(201); auditAccess("financeiro_contrato_criado", usuario(req).id, null, { contrato: r.id }); return r; }));
 gestaoRouter.get("/financeiro/contratos/:id", rota((req) => obterContrato(id(req))));
 gestaoRouter.post("/financeiro/contratos/:id/cancelar", rota((req) => { const r = cancelarContrato(id(req)); auditAccess("financeiro_contrato_cancelado", usuario(req).id, null, { contrato: id(req) }); return r; }));
+
+// ---------- negócio do cliente e captação ----------
+const opcoesDoNegocio = () => ({ fontes: lerFontes(), motivos: MOTIVOS, areas: AREAS, qualificacoes: QUALIFICACOES, fontes_padrao: FONTES_PADRAO.map((f) => f.chave) });
+gestaoRouter.get("/pessoas/:id/negocio", rota((req) => ({ negocio: obterNegocio(id(req)), ...opcoesDoNegocio() })));
+gestaoRouter.put("/pessoas/:id/negocio", rota((req) => {
+  const n = salvarNegocio(id(req), req.body || {}, usuario(req).id);
+  auditAccess("negocio_do_cliente_salvo", usuario(req).id, null, { pessoa: id(req), qualificacao: n.qualificacao });
+  return { negocio: n, ...opcoesDoNegocio() };
+}));
+gestaoRouter.get("/fontes", rota(() => opcoesDoNegocio()));
+gestaoRouter.put("/fontes", rota((req) => { const r = salvarFontesExtras(Array.isArray(req.body?.extras) ? req.body.extras : []); auditAccess("fontes_de_captacao_salvas", usuario(req).id, null, { total: r.length }); return { ...opcoesDoNegocio(), fontes: r }; }));
+gestaoRouter.get("/captacao", rota((req) => captacao(req.query.ano, req.query.mes)));
+gestaoRouter.get("/captacao/pendentes", rota(() => ({ itens: pendentesDePreenchimento(), ...opcoesDoNegocio() })));
 
 // ---------- indicadores ----------
 gestaoRouter.get("/dashboard", rota((req) => dashboardDoInicio(req.query.mes, hasPermission(usuario(req), "financeiro.view") && recursoLiberadoNaLicenca("modulo_financeiro"))));

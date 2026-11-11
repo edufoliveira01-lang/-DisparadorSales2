@@ -21,6 +21,7 @@ interface Dash {
   hoje: string; mes: string; meses: string[];
   contratos: { assinados_mes: number; enviados_mes: number; aguardando_assinatura: number; aguardando_mais_de_3_dias: number; serie: { mes: string; total: number }[]; serie_enviados: { mes: string; total: number }[] } | null;
   processos: { protocolados_mes: number; cadastrados_mes: number; ativos: number; sem_responsavel: number; serie: { mes: string; total: number }[] };
+  negocios: { fecharam_mes: number; qualificados_mes: number; nao_qualificados_mes: number; aguardando_mes: number; nao_informada_mes: number; serie_qualificados: { mes: string; total: number }[]; aguardando_analise_total: number } | null;
   clientes: { novos_mes: number; total: number };
   periciasEAudiencias: {
     hoje: Compromisso[]; proximos: Compromisso[]; hoje_total: number; semana_total: number; pericias_mes: number; audiencias_mes: number;
@@ -80,7 +81,9 @@ export function GestaoInicio() {
   const pa = d?.periciasEAudiencias;
   const at = d?.atendimento;
   const am = at?.mes;
-  const taxaQualificacao = am && am.novos > 0 ? Math.round((am.qualificados / am.novos) * 100) : null;
+  const ng = d?.negocios ?? null;
+  const taxaQualificacao = ng && ng.fecharam_mes > 0 ? Math.round((ng.qualificados_mes / ng.fecharam_mes) * 100) : null;
+  const desqualificadosMes = (am?.desqualificados ?? 0) + (ng?.nao_qualificados_mes ?? 0);
 
   // faixa de alertas: o que precisa de atenção agora, em uma olhada
   const alertas: { tom: "vermelho" | "amarelo"; texto: string; para?: string }[] = [];
@@ -132,8 +135,8 @@ export function GestaoInicio() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
         <Indicador icone={<FileSignature />} rotulo="Contratos assinados" valor={d?.contratos ? d.contratos.assinados_mes : "—"} tom="verde" detalhe={d?.contratos ? `${d.contratos.enviados_mes} enviados · ${d.contratos.aguardando_assinatura} aguardando` : "Sem ZapSign neste escritório"} />
         <Indicador icone={<Gavel />} rotulo="Processos protocolados" valor={d?.processos.protocolados_mes ?? "…"} tom="azul" detalhe={d ? `${d.processos.ativos} ativos no total` : undefined} para="/gestao/processos" />
-        <Indicador icone={<UserCheck />} rotulo="Leads qualificados" valor={am ? am.qualificados : "—"} tom="verde" detalhe={at ? (taxaQualificacao !== null ? `${taxaQualificacao}% dos ${am!.novos} que chegaram` : "Nenhum lead novo neste mês") : "Aguardando o atendimento"} />
-        <Indicador icone={<UserX />} rotulo="Leads desqualificados" valor={am ? am.desqualificados : "—"} tom={am && am.desqualificados > 0 ? "vermelho" : "neutro"} detalhe={am ? `${am.sem_interesse} sem interesse` : undefined} />
+        <Indicador icone={<UserCheck />} rotulo="Clientes qualificados" valor={ng ? ng.qualificados_mes : "—"} tom="verde" detalhe={ng ? (taxaQualificacao !== null ? `${taxaQualificacao}% dos ${ng.fecharam_mes} que fecharam` : "Nenhum contrato fechado neste mês") : undefined} para="/gestao/captacao" />
+        <Indicador icone={<UserX />} rotulo="Desqualificados" valor={am || ng ? desqualificadosMes : "—"} tom={desqualificadosMes > 0 ? "vermelho" : "neutro"} detalhe={`${am?.desqualificados ?? 0} na triagem · ${ng?.nao_qualificados_mes ?? 0} após análise${ng && ng.aguardando_analise_total > 0 ? ` · ${ng.aguardando_analise_total} a analisar` : ""}`} para="/gestao/captacao" />
         <Indicador icone={<CalendarClock />} rotulo="Perícias e audiências hoje" valor={pa?.hoje_total ?? "…"} tom={pa && pa.hoje_total > 0 ? "amarelo" : "neutro"} detalhe={pa ? `${pa.semana_total} nos próximos 7 dias` : undefined} para="/pericias" />
         <Indicador icone={<BellRing />} rotulo="Para avisar (7 dias)" valor={pa?.para_avisar ?? "…"} tom={pa && pa.para_avisar > 0 ? "amarelo" : "verde"} detalhe={pa ? `${pa.avisos_hoje} avisos enviados hoje` : undefined} para="/pericias" />
       </div>
@@ -146,10 +149,10 @@ export function GestaoInicio() {
           ) : (
             <div className="space-y-3">
               <LinhaDeFunil rotulo="Chegaram" valor={am.novos} total={am.novos} cor="bg-zinc-400" />
-              <LinhaDeFunil rotulo="Qualificados" valor={am.qualificados} total={am.novos} cor="bg-emerald-500" />
+              <LinhaDeFunil rotulo="Passaram da triagem" valor={am.qualificados} total={am.novos} cor="bg-emerald-500" />
               <LinhaDeFunil rotulo="Em atendimento" valor={am.em_andamento} total={am.novos} cor="bg-accent-500" />
               <LinhaDeFunil rotulo="Sem interesse" valor={am.sem_interesse} total={am.novos} cor="bg-amber-500" />
-              <LinhaDeFunil rotulo="Desqualificados" valor={am.desqualificados} total={am.novos} cor="bg-red-500" />
+              <LinhaDeFunil rotulo="Desqualificados na triagem" valor={am.desqualificados} total={am.novos} cor="bg-red-500" />
               {d?.contratos && <p className="border-t border-zinc-100 pt-3 text-xs text-zinc-500 dark:border-white/10">Contratos assinados no mês: <strong className="text-zinc-800 dark:text-zinc-100">{d.contratos.assinados_mes}</strong>{am.novos > 0 && <> · {Math.round((d.contratos.assinados_mes / am.novos) * 100)}% dos que chegaram</>}</p>}
             </div>
           )}

@@ -24,6 +24,7 @@ import {
   Printer,
   Building2,
   Headset,
+  TrendingUp,
 } from "lucide-react";
 import type { Permission } from "@/context/AuthContext";
 export const navigation = [
@@ -133,6 +134,13 @@ export const navigation = [
     label: "Clientes e processos",
     description: "Cadastro, processos, financeiro e documentos de cada cliente",
     icon: Contact,
+    group: "clientes",
+  },
+  {
+    to: "/gestao/captacao",
+    label: "Captação",
+    description: "De onde vêm os clientes, quantos fecham e quantos são qualificados",
+    icon: TrendingUp,
     group: "clientes",
   },
   {

@@ -7,6 +7,7 @@ import { hojeSaoPaulo } from "../djen/cache";
 import { lerRetrato } from "../../atendimento/indicadores";
 import { problemaDoArmazenamento } from "../../armazenamento/fila";
 import { somarMeses } from "./financeiro";
+import { garantirNegociosDosAssinados } from "./negocios";
 
 const somarDias = (dia: string, n: number) => new Date(Date.parse(`${dia}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 const mesValido = (m: unknown, padrao: string) => (/^\d{4}-(0[1-9]|1[0-2])$/.test(String(m)) ? String(m) : padrao);
@@ -36,6 +37,18 @@ export function dashboardDoInicio(mesBruto: unknown, podeVerReceita: boolean) {
     serie: serie((m) => num(`SELECT COUNT(*) v FROM zapsign_contratos WHERE status='assinado' AND ${noMes("assinado_em", m)}`)),
     serie_enviados: serie((m) => num(`SELECT COUNT(*) v FROM zapsign_contratos WHERE ${noMes("criado_em", m)}`)),
   }), null);
+
+  // ---- negócios fechados no mês e o que o escritório decidiu sobre cada um ----
+  tentar(() => garantirNegociosDosAssinados(), 0);
+  const negocios = tentar(() => {
+    const q = (qualificacao: string) => num(`SELECT COUNT(*) v FROM gestao_negocios WHERE qualificacao=? AND data_fechamento<>'' AND ${noMes("data_fechamento", mes)}`, qualificacao);
+    return {
+      fecharam_mes: num(`SELECT COUNT(*) v FROM gestao_negocios WHERE data_fechamento<>'' AND ${noMes("data_fechamento", mes)}`),
+      qualificados_mes: q("qualificado"), nao_qualificados_mes: q("nao_qualificado"), aguardando_mes: q("aguardando"), nao_informada_mes: q("nao_informada"),
+      serie_qualificados: serie((m) => num(`SELECT COUNT(*) v FROM gestao_negocios WHERE qualificacao='qualificado' AND data_fechamento<>'' AND ${noMes("data_fechamento", m)}`)),
+      aguardando_analise_total: num("SELECT COUNT(*) v FROM gestao_negocios WHERE qualificacao='aguardando'"),
+    };
+  }, null);
 
   // ---- processos ----
   const processos = {
@@ -119,5 +132,5 @@ export function dashboardDoInicio(mesBruto: unknown, podeVerReceita: boolean) {
     abertos: retrato.abertos,
   } : null;
 
-  return { hoje, mes, meses, contratos, processos, clientes, periciasEAudiencias, tarefas, publicacoes, financeiro, documentos, atendimento };
+  return { hoje, mes, meses, contratos, negocios, processos, clientes, periciasEAudiencias, tarefas, publicacoes, financeiro, documentos, atendimento };
 }

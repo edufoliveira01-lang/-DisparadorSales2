@@ -16,6 +16,7 @@ import { CamposPersonalizados, type CampoValor } from "./Campos";
 import { FinanceiroPessoa } from "./FinanceiroPessoa";
 import { GerarDocumentos } from "./GerarDocumentos";
 import { AnotacoesPessoa } from "./AnotacoesPessoa";
+import { NegocioDaPessoa } from "./NegocioDaPessoa";
 import { NovoProcesso, type Responsavel } from "./Processos";
 import { Campo, ESCOLARIDADES, ESTADOS_CIVIS, STATUS, STATUS_TOM, TIPOS, UFS, dataBr, mascaraCep, mascaraCpfCnpj, mascaraPis, type EnderecoCep } from "./comum";
 
@@ -29,7 +30,7 @@ const vazia = (): Pessoa => ({ id: 0, tipo: "cliente", pessoa_juridica: false, n
 interface Pericia { id: number; tipo: string; data: string; horario: string | null; local: string | null; profissional_perito: string | null; processo: string | null; passada: boolean }
 interface TarefaAberta { id: number; titulo: string; prazo: string | null; prazo_fatal: number; processo_pasta: string | null }
 
-const ABAS = [["dados", "Dados"], ["processos", "Processos"], ["anotacoes", "Anotações"], ["financeiro", "Financeiro"], ["documentos", "Documentos"], ["agenda", "Perícias e prazos"]] as const;
+const ABAS = [["dados", "Dados"], ["processos", "Processos"], ["anotacoes", "Anotações"], ["financeiro", "Financeiro"], ["documentos", "Documentos"], ["agenda", "Perícias e prazos"], ["negocio", "Negócio"]] as const;
 type Aba = typeof ABAS[number][0];
 
 /** O cadastro completo de uma pessoa: dados, processos, financeiro, documentos e agenda, tudo em um só lugar. */
@@ -207,6 +208,7 @@ export function ClienteFicha() {
       )}
       {!novo && aba === "anotacoes" && <AnotacoesPessoa id={id} nome={pessoa.nome} gerir={gerir} />}
       {!novo && aba === "agenda" && <AgendaPessoa id={id} />}
+      {!novo && aba === "negocio" && <NegocioDaPessoa pessoaId={id} />}
 
       {novoProcesso && <NovoProcesso responsaveis={resp} clientePadrao={{ id, nome: pessoa.nome }} aoFechar={() => setNovoProcesso(false)} aoCriar={(pid) => { setNovoProcesso(false); navegar(`/gestao/processos/${pid}`); }} />}
       {!novo && <GerarDocumentos aberto={docs} aoFechar={() => setDocs(false)} pessoa={{ id, nome: pessoa.nome }} />}

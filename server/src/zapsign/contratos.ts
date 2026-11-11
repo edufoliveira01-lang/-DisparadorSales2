@@ -9,6 +9,7 @@ import { lerConfigZapSign } from "./config";
 import { pdfDoKit, type PdfDoKit } from "./pdf";
 import { enfileirarCopia } from "../armazenamento/fila";
 import { liberarEsperaDaPessoa } from "../armazenamento/chat";
+import { registrarAssinatura, registrarContratoGerado } from "../services/gestao/negocios";
 
 db.exec(`CREATE TABLE IF NOT EXISTS zapsign_contratos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,6 +52,8 @@ export interface DadosContrato {
   representante?: Partial<Qualificacao>; a_rogo?: Partial<Qualificacao>; testemunhas_rogo?: { nome?: string; cpf?: string }[];
   /** Valores do escritório (entrada, mensalidade…) e a cláusula de honorários escolhida. */
   campos?: Record<string, string>; modelo_honorarios?: string;
+  /** De onde o lead veio e quando entrou (o atendimento sabe): alimenta o negócio do cliente. */
+  fonte?: string; data_entrada?: string;
 }
 
 export interface EnvelopeGerado { tipo: string; nome: string; sign_url: string }
@@ -135,6 +138,7 @@ export async function gerarContrato(d: DadosContrato, nomeUsuario: string, deps:
   const r = db.prepare("INSERT INTO zapsign_contratos(pessoa_id,doc_token,sign_url,status,conversa_ref,criado_por) VALUES (?,?,?,?,?,?)")
     .run(pessoaId, principal.token, principal.signUrl, "enviado", txt(d.conversa_ref, 80), txt(d.criado_por, 120));
   const contratoId = Number(r.lastInsertRowid);
+  registrarContratoGerado(pessoaId, { fonte: d.fonte, entrada: d.data_entrada });
   const ins = db.prepare("INSERT INTO zapsign_documentos(contrato_id,tipo,nome,doc_token,sign_url) VALUES (?,?,?,?,?)");
   envs.forEach((e, i) => ins.run(contratoId, i === 0 ? "principal" : "extra", e.nome, principal.token, i === 0 ? principal.signUrl : ""));
   return {
@@ -205,6 +209,7 @@ export async function estadoDoContrato(id: number, deps: { config?: ConfigZapSig
   }
   // Contrato assinado: os documentos que o cliente já tinha mandado pelo chat (e esperavam a assinatura) seguem para o drive.
   if (l.status === "assinado" && l.pessoa_id) {
+    registrarAssinatura(l.pessoa_id, l.assinado_em ?? new Date());
     try { liberarEsperaDaPessoa(l.pessoa_id); }
     catch (e) { console.error("[contratos] não foi possível liberar os documentos do chat:", e instanceof Error ? e.message : e); }
   }
