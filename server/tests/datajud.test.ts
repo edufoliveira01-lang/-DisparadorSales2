@@ -53,6 +53,12 @@ describe("DataJud", () => {
     expect((db.prepare("SELECT status FROM gestao_datajud").get() as { status: string }).status).toBe("falha");
     expect(datajudEmDia(CHAVE)).toBe(false);
   });
+  it("aceita a chave colada com o cabeçalho inteiro da documentação", async () => {
+    ficha();
+    salvarChaveDoDataJud('Authorization: APIKey abcdefghijklmnopqrstuvwxyz0123456789==');
+    expect((db.prepare("SELECT valor FROM settings WHERE chave='datajud_chave'").get() as { valor: string } | undefined)).toBeDefined();
+    expect(await atualizarDoDataJud(CHAVE, http(RESPOSTA))).toBe("ok");
+  });
   it("chave com formato estranho é recusada", () => {
     expect(() => salvarChaveDoDataJud("curta")).toThrow();
   });

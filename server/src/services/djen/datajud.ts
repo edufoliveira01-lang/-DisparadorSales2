@@ -24,7 +24,8 @@ export class ErroDataJud extends Error { constructor(m: string, public status = 
 
 export const chaveDoDataJud = (): string => (getSetting(CHAVE) || process.env.DATAJUD_API_KEY || "").trim();
 export function salvarChaveDoDataJud(valor: unknown): void {
-  const v = String(valor ?? "").trim().replace(/^APIKey\s+/i, "");
+  // Aceita a chave pura, "APIKey xxx" ou o cabeçalho inteiro copiado da documentação ("Authorization: APIKey xxx"), com ou sem aspas.
+  const v = String(valor ?? "").trim().replace(/^["'`]+|["'`]+$/g, "").replace(/^authorization\s*:\s*/i, "").replace(/^apikey\s+/i, "").trim();
   if (v && !/^[A-Za-z0-9+/=_-]{16,300}$/.test(v)) throw new ErroDataJud("A chave parece inválida. Cole só o texto da chave pública, sem aspas.", 400);
   setSetting(CHAVE, v);
 }
