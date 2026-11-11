@@ -36,3 +36,7 @@
 ## Financeiro (3.8.0)
 - Resumo: lista **Quem está em atraso** (maiores devedores, dias de atraso) com botão **Cobrar**: copia a mensagem de cobrança pronta e abre a conversa do cliente no atendimento.
 - Contas a pagar e receber: botão **Cobrar** nas parcelas atrasadas e **Exportar** (CSV com os filtros atuais).
+
+## Tarefas (3.9.0)
+- Resumo clicável (atrasadas, hoje, próximos 7 dias, prazos fatais) que filtra a lista.
+- Lista agrupada por prazo (Atrasadas, Hoje, Próximos 7 dias, Mais adiante, Sem prazo) e menu ⋯ por tarefa: **Adiar 1 dia**, **Adiar 1 semana**, **Assumir**.
