@@ -17,7 +17,7 @@ import { FinanceiroPessoa } from "./FinanceiroPessoa";
 import { GerarDocumentos } from "./GerarDocumentos";
 import { AnotacoesPessoa } from "./AnotacoesPessoa";
 import { NegocioDaPessoa } from "./NegocioDaPessoa";
-import { AvatarPessoa, linkWhatsApp } from "./AvatarPessoa";
+import { AvatarPessoa, linkWhatsApp, useAtendimentoLiberado } from "./AvatarPessoa";
 import { NovoProcesso, type Responsavel } from "./Processos";
 import { Campo, ESCOLARIDADES, ESTADOS_CIVIS, STATUS, STATUS_TOM, TIPOS, UFS, dataBr, mascaraCep, mascaraCpfCnpj, mascaraPis, type EnderecoCep } from "./comum";
 
@@ -44,6 +44,7 @@ export function ClienteFicha() {
   const navegar = useNavigate();
   const [busca] = useSearchParams();
   const gerir = can("gestao.manage");
+  const atendimento = useAtendimentoLiberado();
   const [pessoa, setPessoa] = useState<Pessoa | null>(novo ? vazia() : null);
   const [erro, setErro] = useState("");
   const [aba, setAba] = useState<Aba>((ABAS.find(([k]) => k === busca.get("aba"))?.[0]) ?? "dados");
@@ -125,7 +126,7 @@ export function ClienteFicha() {
               <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500">
                 <Badge tone={pessoa.tipo === "cliente" ? "accent" : "neutral"}>{TIPOS[pessoa.tipo]}</Badge>{!pessoa.ativo && <Badge tone="warning">Inativo</Badge>}
                 {pessoa.documento_formatado && <span>{pessoa.documento_formatado}</span>}
-                {pessoa.telefone && (linkWhatsApp(pessoa.telefone) ? <a href={linkWhatsApp(pessoa.telefone)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-emerald-700 hover:underline dark:text-emerald-400"><MessageCircle className="h-3.5 w-3.5" /> {pessoa.telefone}</a> : <span>{pessoa.telefone}</span>)}
+                {pessoa.telefone && (atendimento && linkWhatsApp(pessoa.telefone) ? <a href={linkWhatsApp(pessoa.telefone)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-emerald-700 hover:underline dark:text-emerald-400"><MessageCircle className="h-3.5 w-3.5" /> {pessoa.telefone} · abrir conversa</a> : <span>{pessoa.telefone}</span>)}
                 {pessoa.email && <span className="truncate">{pessoa.email}</span>}
               </p>)}
           </div>

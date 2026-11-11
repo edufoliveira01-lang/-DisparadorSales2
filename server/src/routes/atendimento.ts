@@ -20,7 +20,7 @@ atendimentoRouter.get("/entrar", (req, res) => {
   if (!email) return void res.status(400).type("text").send("Cadastre o seu e-mail em Minha conta para entrar no atendimento.");
   auditAccess("atendimento_entrada", req.accessUser!.id, null, { slug: a.slug });
   res.setHeader("Cache-Control", "no-store");
-  res.redirect(302, enderecoDeEntrada(a, email));
+  res.redirect(302, enderecoDeEntrada(a, email, String(req.query.telefone ?? "")));
 });
 
 /** Envia ao atendimento as pessoas da equipe que têm e-mail (papel traduzido). Só quem gerencia a equipe. */

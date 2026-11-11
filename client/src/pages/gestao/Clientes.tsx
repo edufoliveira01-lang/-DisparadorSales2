@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Search, Users, FolderOpen, MessageCircle } from "lucide-react";
-import { AvatarPessoa, linkWhatsApp } from "./AvatarPessoa";
+import { AvatarPessoa, linkWhatsApp, useAtendimentoLiberado } from "./AvatarPessoa";
 import { api } from "@/lib/api";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -22,6 +22,7 @@ const TAM = 20;
 export function Clientes() {
   const { can } = useAuth();
   const { show } = useToast();
+  const atendimento = useAtendimentoLiberado();
   const navegar = useNavigate();
   const [busca, setBusca] = useState("");
   const termo = useAtraso(busca);
@@ -48,7 +49,7 @@ export function Clientes() {
       ) : (
         <ul className="space-y-2.5">
           {lista.map((p) => {
-            const zap = linkWhatsApp(p.telefone);
+            const zap = atendimento ? linkWhatsApp(p.telefone) : null;
             return (
               <li key={p.id} className="surface-panel overflow-hidden transition hover:border-accent-300 hover:shadow-card dark:hover:border-accent-500/40">
                 <div className="flex items-center gap-3 px-4 py-3">
@@ -59,7 +60,7 @@ export function Clientes() {
                     <span className="hidden truncate text-sm text-zinc-500 sm:block">{p.email || "—"}</span>
                   </Link>
                   <span className="hidden items-center gap-1.5 md:flex"><Badge tone={p.tipo === "cliente" ? "accent" : "neutral"}>{TIPOS[p.tipo] || p.tipo}</Badge>{!p.ativo && <Badge tone="warning">Inativo</Badge>}</span>
-                  {zap && <a href={zap} target="_blank" rel="noopener noreferrer" aria-label={`Abrir o WhatsApp de ${p.nome}`} title="Abrir no WhatsApp" className="topbar-icon !h-9 !w-9 shrink-0 text-emerald-600"><MessageCircle className="h-4 w-4" /></a>}
+                  {zap && <a href={zap} target="_blank" rel="noopener noreferrer" aria-label={`Abrir a conversa de ${p.nome} no atendimento`} title="Abrir a conversa no atendimento" className="topbar-icon !h-9 !w-9 shrink-0 text-emerald-600"><MessageCircle className="h-4 w-4" /></a>}
                 </div>
                 {p.processos_lista.length > 0 && (
                   <div className="flex flex-wrap gap-2 border-t border-zinc-100 bg-zinc-50/60 px-4 py-2.5 dark:border-white/10 dark:bg-white/[0.03]">
