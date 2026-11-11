@@ -28,7 +28,7 @@ const data = (v: unknown, campo: string, obrigatoria = true) => {
   return s;
 };
 
-const SELECT = `SELECT l.*, pe.nome AS pessoa_nome, pr.numero AS processo_numero, pr.pasta AS processo_pasta, COALESCE(NULLIF(u.display_name,''),u.username) AS beneficiario
+const SELECT = `SELECT l.*, pe.nome AS pessoa_nome, pe.telefone AS pessoa_telefone, pr.numero AS processo_numero, pr.pasta AS processo_pasta, COALESCE(NULLIF(u.display_name,''),u.username) AS beneficiario
   FROM gestao_lancamentos l LEFT JOIN gestao_pessoas pe ON pe.id=l.pessoa_id LEFT JOIN gestao_processos pr ON pr.id=l.processo_id LEFT JOIN users u ON u.id=l.beneficiario_user_id`;
 type L = { id: number; tipo: string; cancelado: number; pago_em: string | null; vencimento: string; reembolsavel: number };
 export const situacao = (l: L, hoje = hojeSaoPaulo()) => (l.cancelado ? "cancelado" : l.pago_em ? "pago" : l.vencimento < hoje ? "atrasado" : "aberto");
@@ -225,6 +225,10 @@ export function resumoFinanceiro(mesBruto?: unknown) {
     a_receber_30_dias_centavos: soma(`SELECT COALESCE(SUM(valor_centavos),0) v FROM gestao_lancamentos WHERE tipo='receber' AND ${ativo} AND pago_em IS NULL AND vencimento>=? AND vencimento<=?`, hoje, somarDias(hoje, 30)),
     a_pagar_30_dias_centavos: soma(`SELECT COALESCE(SUM(valor_centavos),0) v FROM gestao_lancamentos WHERE tipo='pagar' AND ${ativo} AND pago_em IS NULL AND vencimento<=?`, somarDias(hoje, 30)),
     custas_reembolsaveis_centavos: soma(`SELECT COALESCE(SUM(valor_centavos),0) v FROM gestao_lancamentos WHERE tipo='pagar' AND categoria='custas' AND reembolsavel=1 AND ${ativo} AND pago_em IS NOT NULL`),
+    /** Quem mais deve (parcelas a receber vencidas e não pagas), do maior valor para o menor: a lista de quem cobrar primeiro. */
+    maiores_devedores: db.prepare(`SELECT l.pessoa_id, pe.nome, pe.telefone, SUM(l.valor_centavos) AS total_centavos, COUNT(*) AS parcelas, MIN(l.vencimento) AS mais_antigo
+      FROM gestao_lancamentos l JOIN gestao_pessoas pe ON pe.id=l.pessoa_id WHERE l.tipo='receber' AND l.cancelado=0 AND l.pago_em IS NULL AND l.vencimento<?
+      GROUP BY l.pessoa_id ORDER BY total_centavos DESC LIMIT 10`).all(hoje),
     por_categoria: db.prepare(`SELECT tipo, categoria, COALESCE(SUM(CASE WHEN pago_em IS NOT NULL THEN COALESCE(valor_pago_centavos,valor_centavos) ELSE 0 END),0) AS realizado_centavos, COALESCE(SUM(valor_centavos),0) AS previsto_centavos
       FROM gestao_lancamentos WHERE ${ativo} AND vencimento>=? AND vencimento<? GROUP BY tipo, categoria ORDER BY tipo, categoria`).all(ini, fim),
     comissoes_e_repasses: db.prepare(`SELECT COALESCE(NULLIF(u.display_name,''),u.username,'Sem beneficiário') AS beneficiario, l.categoria,

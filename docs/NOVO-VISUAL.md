@@ -32,3 +32,7 @@
 - Estado vazio (Calendário, listas) legível no tema escuro; cartões restantes no padrão `surface-panel`.
 - Visão geral de Perícias: título direto («Avisos do dia para conferir e enviar»).
 - DataJud: nova seção em Configurações → DJEN e prazos (chave pública do CNJ).
+
+## Financeiro (3.8.0)
+- Resumo: lista **Quem está em atraso** (maiores devedores, dias de atraso) com botão **Cobrar**: copia a mensagem de cobrança pronta e abre a conversa do cliente no atendimento.
+- Contas a pagar e receber: botão **Cobrar** nas parcelas atrasadas e **Exportar** (CSV com os filtros atuais).

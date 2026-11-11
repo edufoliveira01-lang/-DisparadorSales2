@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Search, Wallet } from "lucide-react";
+import { AlertTriangle, Download, MessageCircle, Plus, Search, Wallet } from "lucide-react";
+import { Link } from "react-router-dom";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -15,10 +16,13 @@ import { Pagination } from "@/components/ui/Pagination";
 import { useToast } from "@/components/ui/Toast";
 import { Campo, SeletorPessoa, SeletorProcesso, dataBr, dinheiro, mesAtual, mesRotulo, useAtraso, type Lista } from "./comum";
 import type { Responsavel } from "./Processos";
+import { cobrarPeloAtendimento, mensagemDeCobranca } from "./cobranca";
+import { useAtendimentoLiberado } from "./AvatarPessoa";
 
-export interface Lanc { id: number; tipo: "receber" | "pagar"; categoria: string; descricao: string; valor_centavos: number; vencimento: string; pago_em: string | null; valor_pago_centavos: number | null; forma_pagamento: string; status: "aberto" | "atrasado" | "pago" | "cancelado"; pessoa_id: number | null; pessoa_nome: string | null; processo_id: number | null; processo_pasta: string | null; beneficiario: string | null; beneficiario_user_id: number | null; reembolsavel: boolean; observacoes: string; contrato_id: number | null }
+export interface Lanc { pessoa_telefone?: string | null; id: number; tipo: "receber" | "pagar"; categoria: string; descricao: string; valor_centavos: number; vencimento: string; pago_em: string | null; valor_pago_centavos: number | null; forma_pagamento: string; status: "aberto" | "atrasado" | "pago" | "cancelado"; pessoa_id: number | null; pessoa_nome: string | null; processo_id: number | null; processo_pasta: string | null; beneficiario: string | null; beneficiario_user_id: number | null; reembolsavel: boolean; observacoes: string; contrato_id: number | null }
 export interface Contrato { id: number; descricao: string; tipo: string; status: string; pessoa_nome: string | null; processo_pasta: string | null; valor_total_centavos: number; percentual_exito: number | null; recebido_centavos: number; em_aberto_centavos: number; parcelas_atrasadas: number }
-interface Resumo { mes: string; receber_previsto_centavos: number; recebido_centavos: number; pagar_previsto_centavos: number; pago_centavos: number; saldo_realizado_centavos: number; inadimplencia_centavos: number; inadimplentes: number; a_receber_30_dias_centavos: number; a_pagar_30_dias_centavos: number; custas_reembolsaveis_centavos: number; por_categoria: { tipo: string; categoria: string; realizado_centavos: number; previsto_centavos: number }[]; comissoes_e_repasses: { beneficiario: string; categoria: string; previsto_centavos: number; pago_centavos: number }[] }
+interface Devedor { pessoa_id: number; nome: string; telefone: string; total_centavos: number; parcelas: number; mais_antigo: string }
+interface Resumo { maiores_devedores?: Devedor[]; mes: string; receber_previsto_centavos: number; recebido_centavos: number; pagar_previsto_centavos: number; pago_centavos: number; saldo_realizado_centavos: number; inadimplencia_centavos: number; inadimplentes: number; a_receber_30_dias_centavos: number; a_pagar_30_dias_centavos: number; custas_reembolsaveis_centavos: number; por_categoria: { tipo: string; categoria: string; realizado_centavos: number; previsto_centavos: number }[]; comissoes_e_repasses: { beneficiario: string; categoria: string; previsto_centavos: number; pago_centavos: number }[] }
 interface Mes { mes: string; receber_previsto_centavos: number; recebido_centavos: number; pagar_previsto_centavos: number; pago_centavos: number; saldo_centavos: number }
 export const CAT: Record<string, string> = { honorarios: "Honorários", custas: "Custas", despesa: "Despesa", comissao: "Comissão", repasse: "Repasse", outro: "Outro" };
 export const ST_TOM: Record<string, "success" | "danger" | "neutral" | "info"> = { pago: "success", atrasado: "danger", cancelado: "neutral", aberto: "info" };
@@ -63,6 +67,7 @@ function ResumoFin() {
         <StatCard icon={<Wallet className="h-5 w-5" />} label="A receber (30 dias)" value={dinheiro(r?.a_receber_30_dias_centavos)} tone="info" />
         <StatCard icon={<Wallet className="h-5 w-5" />} label="A pagar (30 dias)" value={dinheiro(r?.a_pagar_30_dias_centavos)} tone="warning" helper={r && r.custas_reembolsaveis_centavos > 0 ? `Custas a reembolsar: ${dinheiro(r.custas_reembolsaveis_centavos)}` : undefined} />
       </div>
+      <Devedores lista={r?.maiores_devedores ?? []} />
       <section className="surface-panel p-5">
         <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Fluxo de caixa (5 meses atrás até 6 à frente)</h2>
         <div className="mt-4 flex h-44 items-end gap-2 overflow-x-auto" role="img" aria-label="Gráfico de receitas e despesas por mês">
@@ -84,6 +89,36 @@ function ResumoFin() {
           {(r?.comissoes_e_repasses.length ?? 0) === 0 ? <p className="mt-3 text-sm text-zinc-500">Nenhuma comissão ou repasse neste mês.</p> : <table className="mt-3 w-full text-sm"><thead><tr className="text-left text-xs text-zinc-500"><th className="py-1">Beneficiário</th><th className="text-right">Previsto</th><th className="text-right">Pago</th></tr></thead><tbody>{r!.comissoes_e_repasses.map((c) => <tr key={c.beneficiario + c.categoria} className="border-t border-zinc-100 dark:border-zinc-800"><td className="py-1.5">{c.beneficiario} · {CAT[c.categoria]}</td><td className="text-right">{dinheiro(c.previsto_centavos)}</td><td className="text-right font-medium">{dinheiro(c.pago_centavos)}</td></tr>)}</tbody></table>}</section>
       </div>
     </div>
+  );
+}
+
+/** Quem está devendo (parcelas a receber vencidas): a lista de quem cobrar primeiro, com o texto da cobrança pronto. */
+function Devedores({ lista }: { lista: Devedor[] }) {
+  const { show } = useToast();
+  const atendimento = useAtendimentoLiberado();
+  if (lista.length === 0) return null;
+  const hojeIso = hoje();
+  const dias = (v: string) => Math.max(0, Math.round((Date.parse(`${hojeIso}T12:00:00Z`) - Date.parse(`${v}T12:00:00Z`)) / 86_400_000));
+  const cobrar = async (d: Devedor) => {
+    try {
+      const r = await api.get<{ itens: Lanc[] }>(`/gestao/financeiro/lancamentos?pessoa=${d.pessoa_id}&tipo=receber&status=atrasado&limite=20`);
+      const ok = await cobrarPeloAtendimento(d.telefone, mensagemDeCobranca(d.nome, r.itens));
+      show(ok ? "Mensagem de cobrança copiada. Cole na conversa que abriu." : "Conversa aberta (não consegui copiar o texto).", ok ? "success" : "info");
+    } catch { show("Não foi possível preparar a cobrança.", "error"); }
+  };
+  return (
+    <section className="surface-panel p-5">
+      <h2 className="flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100"><AlertTriangle className="h-4 w-4 text-red-500" /> Quem está em atraso</h2>
+      <ul className="mt-3 divide-y divide-zinc-100 dark:divide-white/10">
+        {lista.map((d) => (
+          <li key={d.pessoa_id} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-2.5 text-sm">
+            <Link to={`/gestao/clientes/${d.pessoa_id}?aba=financeiro`} className="min-w-0 flex-1 truncate font-medium text-accent-700 hover:underline dark:text-accent-300">{d.nome}</Link>
+            <span className="text-xs text-zinc-500">{d.parcelas} parcela(s) · a mais antiga há {dias(d.mais_antigo)} dia(s)</span>
+            <b className="text-red-600 dark:text-red-400">{dinheiro(d.total_centavos)}</b>
+            {atendimento && d.telefone && <Button size="sm" variant="outline" onClick={() => void cobrar(d)}><MessageCircle className="h-4 w-4" /> Cobrar</Button>}
+          </li>))}
+      </ul>
+    </section>
   );
 }
 
@@ -110,6 +145,27 @@ function Lancamentos({ gerir, contrato, aoLimparContrato }: { gerir: boolean; co
   useEffect(() => { setPagina(0); }, [tipo, status, de, ate, termo, contrato]);
   useEffect(() => { api.get<Responsavel[]>("/gestao/responsaveis").then(setResp).catch(() => undefined); }, []);
   const acao = async (fn: () => Promise<unknown>, ok: string) => { try { await fn(); show(ok, "success"); await carregar(); } catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível concluir.", "error"); } };
+  const atendimento = useAtendimentoLiberado();
+  const cobrar = async (l: Lanc) => {
+    const ok = await cobrarPeloAtendimento(l.pessoa_telefone ?? "", mensagemDeCobranca(l.pessoa_nome ?? "", [l]));
+    show(ok ? "Mensagem de cobrança copiada. Cole na conversa que abriu." : "Conversa aberta (não consegui copiar o texto).", ok ? "success" : "info");
+  };
+  const exportar = async () => {
+    try {
+      const linhas: Lanc[] = [];
+      for (let p = 1; p <= 20; p++) {
+        const r = await api.get<Lista<Lanc>>(`/gestao/financeiro/lancamentos?limite=100&pagina=${p}&tipo=${tipo}&status=${status}&de=${de}&ate=${ate}&busca=${encodeURIComponent(termo)}${contrato ? `&contrato=${contrato}` : ""}`);
+        linhas.push(...r.itens); if (r.itens.length < 100) break;
+      }
+      const cab = ["Vencimento", "Tipo", "Categoria", "Descrição", "Cliente", "Processo", "Valor", "Situação", "Pago em"];
+      const csv = [cab, ...linhas.map((l) => [l.vencimento, l.tipo === "receber" ? "A receber" : "A pagar", CAT[l.categoria] ?? l.categoria, l.descricao, l.pessoa_nome ?? "", l.processo_pasta ?? "", (l.valor_centavos / 100).toFixed(2).replace(".", ","), ST_ROT[l.status] ?? l.status, l.pago_em ?? ""])]
+        .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\n");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" }));
+      a.download = `lancamentos-${hoje()}.csv`; a.click();
+      show(`${linhas.length} lançamento(s) exportado(s).`, "success");
+    } catch { show("Não foi possível exportar.", "error"); }
+  };
   const lista = dados?.itens ?? [];
   return (
     <div className="space-y-4">
@@ -121,7 +177,7 @@ function Lancamentos({ gerir, contrato, aoLimparContrato }: { gerir: boolean; co
           <Input type="date" value={de} onChange={(e) => setDe(e.target.value)} aria-label="Vencimento de" title="Vencimento a partir de" />
           <Input type="date" value={ate} onChange={(e) => setAte(e.target.value)} aria-label="Vencimento até" title="Vencimento até" />
         </div>
-        {gerir && <Button onClick={() => setEditando("novo")}><Plus className="h-4 w-4" /> Novo lançamento</Button>}
+        <div className="flex gap-2"><Button variant="outline" onClick={() => void exportar()}><Download className="h-4 w-4" /> Exportar</Button>{gerir && <Button onClick={() => setEditando("novo")}><Plus className="h-4 w-4" /> Novo lançamento</Button>}</div>
       </div>
       {contrato && <p className="text-sm text-zinc-600 dark:text-zinc-300">Mostrando as parcelas de um contrato. <button className="text-accent-700 underline" onClick={aoLimparContrato}>Ver todos</button></p>}
       {dados && lista.length === 0 ? <EmptyState icon={Wallet} title="Nenhum lançamento" description="Ajuste os filtros ou crie um lançamento." action={gerir ? <Button onClick={() => setEditando("novo")}><Plus className="h-4 w-4" /> Novo lançamento</Button> : undefined} /> : (
@@ -132,6 +188,7 @@ function Lancamentos({ gerir, contrato, aoLimparContrato }: { gerir: boolean; co
               <p className={`text-sm font-semibold ${l.tipo === "receber" ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}`}>{l.tipo === "pagar" ? "− " : ""}{dinheiro(l.valor_centavos)}</p>
               <p className="text-xs text-zinc-500">{l.pago_em ? `Pago em ${dataBr(l.pago_em)}` : `Vence ${dataBr(l.vencimento)}`}</p>
               <div className="flex flex-wrap items-center gap-1.5"><Badge tone={ST_TOM[l.status]}>{ST_ROT[l.status]}</Badge>
+                {atendimento && l.tipo === "receber" && l.status === "atrasado" && l.pessoa_telefone && <Button size="sm" variant="outline" onClick={() => void cobrar(l)}><MessageCircle className="h-4 w-4" /> Cobrar</Button>}
                 {gerir && (l.status === "aberto" || l.status === "atrasado") && <><Button size="sm" onClick={() => setBaixando(l)}>{l.tipo === "receber" ? "Receber" : "Pagar"}</Button><Button size="sm" variant="ghost" onClick={() => setEditando(l)}>Editar</Button><Button size="sm" variant="ghost" onClick={() => void acao(() => api.post(`/gestao/financeiro/lancamentos/${l.id}/cancelar`, {}), "Lançamento cancelado.")}>Cancelar</Button></>}
                 {gerir && l.status === "pago" && <Button size="sm" variant="ghost" onClick={() => void acao(() => api.post(`/gestao/financeiro/lancamentos/${l.id}/estornar`, {}), "Baixa estornada.")}>Estornar</Button>}
                 {gerir && l.status === "cancelado" && <><Button size="sm" variant="ghost" onClick={() => void acao(() => api.post(`/gestao/financeiro/lancamentos/${l.id}/cancelar`, { cancelar: false }), "Lançamento reativado.")}>Reativar</Button><Button size="sm" variant="ghost" onClick={() => setApagar(l)}>Excluir</Button></>}
