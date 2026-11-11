@@ -1,10 +1,10 @@
 .google-agenda {
-  --ga-ink:#22263b; --ga-muted:#7a8299; --ga-line:#e9e8f2; --ga-soft:#f8f8fc;
-  --ga-paper:#fff; --ga-purple:#7843d5; --ga-tint:#f5f0ff;
+  --ga-ink:#22263b; --ga-muted:#7a8299; --ga-line:#e8edf2; --ga-soft:#f8fafc;
+  --ga-paper:#fff; --ga-purple:#4381d5; --ga-tint:#f0f7ff;
   container-type:inline-size; min-width:0; overflow:clip; border:1px solid var(--ga-line);
-  border-radius:26px; background:var(--ga-paper); color:var(--ga-ink); box-shadow:0 8px 30px #28214104;
+  border-radius:26px; background:var(--ga-paper); color:var(--ga-ink); box-shadow:0 8px 30px #21304104;
 }
-.dark .google-agenda { --ga-ink:#e9e7f3; --ga-muted:#a7a5bb; --ga-line:#383245; --ga-soft:#221e2d; --ga-paper:#1b1825; --ga-purple:#b28af7; --ga-tint:#30233f; }
+.dark .google-agenda { --ga-ink:#e7edf3; --ga-muted:#a7a5bb; --ga-line:#323a45; --ga-soft:#1e252d; --ga-paper:#181e25; --ga-purple:#8ab8f7; --ga-tint:#232e3f; }
 .google-agenda button:focus-visible { outline:2px solid var(--ga-purple); outline-offset:3px; }
 .google-agenda .ga-header { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:26px 26px 21px; }
 .google-agenda .ga-heading { display:flex; align-items:center; gap:14px; min-width:0; }
@@ -43,8 +43,8 @@
 .google-agenda .ga-destinations-heading > button { flex-shrink:0; padding-inline:7px; color:var(--ga-purple); font-size:11px; }
 .google-agenda .ga-destination-picker { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,235px),1fr)); gap:12px; max-height:330px; overflow-y:auto; padding:3px; margin:-3px -3px 23px; scrollbar-width:thin; }
 .google-agenda .ga-destination { min-width:0; padding:16px 17px 0; border:1px solid var(--ga-line); border-radius:17px; text-align:left; background:var(--ga-paper); transition:background .18s,border-color .18s,box-shadow .18s; }
-.google-agenda .ga-destination:hover { border-color:#c5addf; background:var(--ga-soft); }
-.google-agenda .ga-destination.is-selected { border-color:var(--ga-purple); background:var(--ga-tint); box-shadow:0 3px 10px #7843d50c; }
+.google-agenda .ga-destination:hover { border-color:#adc0df; background:var(--ga-soft); }
+.google-agenda .ga-destination.is-selected { border-color:var(--ga-purple); background:var(--ga-tint); box-shadow:0 3px 10px #4381d50c; }
 .google-agenda .ga-destination-top { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
 .google-agenda .ga-destination-top > span { font-size:9px; color:var(--ga-muted); font-weight:600; letter-spacing:.1em; }
 .google-agenda .ga-destination-top > small { display:flex; align-items:center; gap:4px; color:var(--ga-muted); font-size:9px; }
@@ -80,7 +80,7 @@
 .google-agenda > .ga-note { margin:16px 26px; }
 .google-agenda .ga-period { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:17px 14px; border:1px solid var(--ga-line); border-radius:12px; background:var(--ga-soft); font-size:10px; color:var(--ga-muted); text-align:center; }
 .google-agenda .ga-period strong { padding:7px 10px; border-radius:8px; font-weight:550; color:var(--ga-purple); background:var(--ga-tint); }
-.google-agenda .ga-period > i { flex:1; height:1px; min-width:6px; background:#d4c3ed; }
+.google-agenda .ga-period > i { flex:1; height:1px; min-width:6px; background:#c3d4ed; }
 .google-agenda .ga-tokens { display:flex; align-items:center; flex-wrap:wrap; gap:5px; margin:10px 0 13px; font-size:10px; }
 .google-agenda .ga-tokens > span { margin-right:3px; color:var(--ga-muted); }
 .google-agenda .ga-tokens > button { padding:4px 7px; border-radius:6px; border:1px solid var(--ga-line); color:var(--ga-muted); transition:color .15s,background .15s; }
