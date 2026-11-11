@@ -5,7 +5,7 @@
 import { db } from "../../db";
 import { getSetting, setSetting } from "../settingsService";
 import { hojeSaoPaulo } from "../djen/cache";
-import { normalizePhone } from "../../utils/phone";
+import { enviarPeloDeskcomm, envioPeloDeskcommLigado, ErroDeskcomm } from "./deskcomm";
 import { telefoneValidoParaLembrete } from "../lembreteUtils";
 import { ErroGestao } from "./pessoas";
 import { cobrancaDoLancamento, chaveDoAsaas, gerarCobranca, type TipoCobranca } from "./asaas";
@@ -75,8 +75,7 @@ export function mensagemDoAviso(p: { nome: string; descricao: string; valor_cent
   return `${oi} Aqui é do escritório. ${corpo}${extra}\n\nSe já pagou, é só nos avisar e desconsidere esta mensagem. 🙏`;
 }
 
-// Carregado só quando precisa enviar (o módulo do WhatsApp é pesado e não deve entrar nas rotas de leitura).
-const whatsapp = async () => (await import("../whatsappService")).whatsappManager;
+const SEM_CANAL = "O envio pelo Deskcomm ainda não foi ligado. Cadastre o token em Configurações → Atendimento (envio de mensagens).";
 const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
 function intervalo(): number {
   const num = (k: string, d: number) => { const v = getSetting(k); const n = v === "" || v == null ? NaN : Number(v); return Number.isFinite(n) && n >= 0 ? n : d; };
@@ -92,7 +91,7 @@ export function pausarAvisos(pessoaId: number, pausar: boolean) {
 
 export interface ResultadoEnvio { lancamento_id: number; status: "enviado" | "falhou" | "ignorado"; motivo?: string }
 
-/** Envia o aviso de UMA parcela pelo WhatsApp conectado e registra. `regra` define a chave de não-duplicidade ("manual" pode repetir). */
+/** Envia o aviso de UMA parcela pelo Deskcomm e registra. `regra` define a chave de não-duplicidade ("manual" pode repetir). */
 export async function enviarAviso(lancamentoId: number, opts: { regra?: string; origem: "manual" | "lote" | "automatico"; gerar?: TipoCobranca | false; quem?: Quem; http?: typeof fetch } ): Promise<ResultadoEnvio> {
   const hoje = hojeSaoPaulo();
   const [p] = parcelasEmAberto([lancamentoId]);
@@ -111,11 +110,8 @@ export async function enviarAviso(lancamentoId: number, opts: { regra?: string; 
   }
   const texto = mensagemDoAviso(p, hoje, link ? { url: link.invoice_url || link.bank_slip_url, pix: link.pix_payload, linha: link.linha_digitavel } : null);
   try {
-    const wpp = await whatsapp();
-    if (!wpp.isReady()) throw new Error("O WhatsApp do sistema não está conectado. Conecte em Conexão do WhatsApp.");
-    const chatId = await wpp.resolveChatId(normalizePhone(p.telefone));
-    if (!chatId) throw new Error("Este telefone não foi encontrado no WhatsApp.");
-    await wpp.sendMessage(chatId, texto);
+    if (!envioPeloDeskcommLigado()) throw new ErroDeskcomm(SEM_CANAL, 409);
+    await enviarPeloDeskcomm(p.telefone, p.nome, texto, opts.http);
     registro("enviado", texto, null);
     registrar(lancamentoId, "aviso_cobranca", `Aviso de cobrança enviado pelo WhatsApp (${opts.origem === "automatico" ? "automático" : opts.origem === "lote" ? "em lote" : "manual"}).`, opts.quem);
     return { lancamento_id: lancamentoId, status: "enviado" };
@@ -132,7 +128,7 @@ export async function enviarEmLote(ids: number[], opts: { gerar?: TipoCobranca |
   const unicos = [...new Set(ids.filter((n) => Number.isInteger(n)))].slice(0, 200);
   if (!unicos.length) throw new ErroGestao("Selecione ao menos uma parcela.", 400);
   if (emLote) throw new ErroGestao("Já existe um envio em andamento. Aguarde terminar.", 409);
-  if (!(await whatsapp()).isReady()) throw new ErroGestao("O WhatsApp do sistema não está conectado. Conecte em Conexão do WhatsApp.", 409);
+  if (!envioPeloDeskcommLigado()) throw new ErroGestao(SEM_CANAL, 409);
   emLote = true;
   const resultados: ResultadoEnvio[] = [];
   try {
@@ -172,7 +168,7 @@ export async function executarRegua(agora = new Date(), http?: typeof fetch): Pr
   if (!c.ativa || rodando || emLote) return null;
   const hh = new Intl.DateTimeFormat("en-GB", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false }).format(agora);
   if (hh < c.horario) return null;
-  if (!(await whatsapp()).isReady()) return null;
+  if (!envioPeloDeskcommLigado()) return null;
   rodando = true;
   try {
     let enviados = 0, falhas = 0;
@@ -183,7 +179,6 @@ export async function executarRegua(agora = new Date(), http?: typeof fetch): Pr
     for (const it of itens) {
       const t = (tentativas.get(it.lancamento_id, it.regra) as { tentativas: number } | undefined)?.tentativas ?? 0;
       if (t >= 3) continue;
-      if (!(await whatsapp()).isReady()) break;
       const r = await enviarAviso(it.lancamento_id, { regra: it.regra, origem: "automatico", gerar: c.gerar_cobranca ? c.tipo : false, http });
       if (r.status === "enviado") { enviados++; await dormir(intervalo()); } else falhas++;
     }

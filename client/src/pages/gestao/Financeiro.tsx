@@ -351,7 +351,7 @@ export function CobrancaModal({ lanc, aoFechar, aoMudar }: { lanc: Lanc; aoFecha
   const link: LinkDePagamento | undefined = ativa && c.invoice_url ? { url: c.invoice_url, pix: c.pix_payload || undefined, linha: c.linha_digitavel || undefined } : undefined;
   const enviar = async () => {
     setOcupado("enviar");
-    try { await api.post(`/gestao/financeiro/lancamentos/${lanc.id}/cobranca/enviar`, {}); show("Mensagem com o link de pagamento enviada pelo WhatsApp.", "success"); aoMudar(); }
+    try { await api.post(`/gestao/financeiro/lancamentos/${lanc.id}/cobranca/enviar`, {}); show("Mensagem com o link de pagamento enviada pelo Deskcomm.", "success"); aoMudar(); }
     catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível enviar.", "error"); }
     finally { setOcupado(""); }
   };

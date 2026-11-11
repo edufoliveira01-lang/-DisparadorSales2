@@ -2,18 +2,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 process.env.ENCRYPTION_KEY = "chave-somente-para-testes-0123456789abcdef";
 
-const enviadas: { chat: string; texto: string }[] = [];
-const estado = { pronto: true };
-vi.mock("../src/services/whatsappService", () => ({
-  whatsappManager: {
-    isReady: () => estado.pronto,
-    resolveChatId: async (d: string) => `${d}@c.us`,
-    sendMessage: async (chat: string, texto: string) => { enviadas.push({ chat, texto }); return "id1"; },
-  },
-}));
+const enviadas: { fone: string; texto: string }[] = [];
+const estado = { pronto: true, falhaEnvio: "" };
+Object.assign(process.env, { ATENDIMENTO_PONTE_URL: "https://painel.exemplo/ponte", ATENDIMENTO_URL: "https://desk.exemplo", ATENDIMENTO_SLUG: "teste", ATENDIMENTO_SEGREDO: "x".repeat(40) });
+const http = (async (url: string, init: RequestInit) => {
+  const corpo = JSON.parse(String(init.body ?? "{}"));
+  expect((init.headers as Record<string, string>).Authorization).toBe("Bearer dsk_token_de_teste_123456");
+  if (String(url).endsWith("/open-with-contact")) return new Response(JSON.stringify({ data: { conversation_id: `c-${corpo.phone_number}` } }), { status: 201 });
+  if (estado.falhaEnvio) return new Response(JSON.stringify({ error: { message: estado.falhaEnvio } }), { status: 502 });
+  enviadas.push({ fone: String(corpo.conversation_id).slice(2), texto: corpo.body });
+  return new Response(JSON.stringify({ data: { id: "m1" } }), { status: 201 });
+}) as unknown as typeof fetch;
 
 import { db } from "../src/db";
 import { enviarAviso, enviarEmLote, executarRegua, lerRegua, mensagemDoAviso, pausarAvisos, pendentesDaRegua, regraDe, salvarRegua } from "../src/services/gestao/regua";
+import { salvarTokenDoDeskcomm } from "../src/services/gestao/deskcomm";
 import { hojeSaoPaulo } from "../src/services/djen/cache";
 
 const somar = (iso: string, n: number) => new Date(Date.parse(`${iso}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
@@ -26,7 +29,7 @@ beforeEach(() => {
   db.exec("DELETE FROM gestao_avisos_cobranca; DELETE FROM gestao_cobranca_pausa; DELETE FROM gestao_asaas_cobrancas; DELETE FROM gestao_lancamentos_historico; DELETE FROM gestao_lancamentos; DELETE FROM gestao_pessoas;");
   db.prepare("DELETE FROM settings WHERE chave IN ('cobranca_regua','asaas_api_key')").run();
   db.prepare("INSERT OR REPLACE INTO settings(chave,valor) VALUES ('send_interval_min','0'),('send_interval_max','0')").run();
-  enviadas.length = 0; estado.pronto = true;
+  enviadas.length = 0; estado.pronto = true; estado.falhaEnvio = ""; salvarTokenDoDeskcomm("dsk_token_de_teste_123456");
 });
 
 describe("Cobrança pelo WhatsApp", () => {
@@ -42,26 +45,28 @@ describe("Cobrança pelo WhatsApp", () => {
     const atraso = mensagemDoAviso({ ...p, vencimento: somar(hoje, -2) }, hoje, { url: "https://x/i" });
     expect(atraso).toContain("ainda consta em aberto"); expect(atraso).toContain("https://x/i"); expect(atraso).not.toMatch(/juros|multa/i);
   });
-  it("envio manual manda o texto pelo WhatsApp e registra; sem WhatsApp conectado registra a falha", async () => {
+  it("envio manual envia pelo Deskcomm e registra; falha do canal ou sem token fica registrada", async () => {
     const id = lanc(pessoa(), somar(hoje, -2));
-    expect((await enviarAviso(id, { origem: "manual" })).status).toBe("enviado");
-    expect(enviadas).toHaveLength(1); expect(enviadas[0]!.chat).toBe("5513999991111@c.us"); expect(enviadas[0]!.texto).toContain("Olá, Maria!");
-    estado.pronto = false;
-    const r = await enviarAviso(id, { origem: "manual" });
-    expect(r.status).toBe("falhou"); expect(r.motivo).toContain("não está conectado");
+    expect((await enviarAviso(id, { origem: "manual", http })).status).toBe("enviado");
+    expect(enviadas).toHaveLength(1); expect(enviadas[0]!.fone).toBe("+5513999991111"); expect(enviadas[0]!.texto).toContain("Olá, Maria!");
+    estado.falhaEnvio = "canal fora do ar";
+    const r = await enviarAviso(id, { origem: "manual", http });
+    expect(r.status).toBe("falhou"); expect(r.motivo).toContain("canal fora do ar");
+    salvarTokenDoDeskcomm("");
+    expect((await enviarAviso(id, { origem: "manual", http })).motivo).toContain("não foi ligado");
   });
   it("cliente sem telefone válido falha sem enviar", async () => {
-    const r = await enviarAviso(lanc(pessoa("123"), hoje), { origem: "manual" });
+    const r = await enviarAviso(lanc(pessoa("123"), hoje), { origem: "manual", http });
     expect(r).toMatchObject({ status: "falhou", motivo: "Cliente sem telefone válido." }); expect(enviadas).toHaveLength(0);
   });
-  it("lote envia uma por parcela, ignora pausados e recusa sem WhatsApp", async () => {
+  it("lote envia uma por parcela, ignora pausados e recusa sem o token do Deskcomm", async () => {
     const a = pessoa(), b = pessoa("(13) 98888-2222"); pausarAvisos(b, true);
     const ids = [lanc(a, hoje), lanc(a, somar(hoje, 5)), lanc(b, hoje)];
-    const r = await enviarEmLote(ids, { semPausa: true });
+    const r = await enviarEmLote(ids, { semPausa: true, http });
     expect(r).toMatchObject({ enviados: 2, ignorados: 1, falhas: 0 }); expect(enviadas).toHaveLength(2);
-    estado.pronto = false;
-    await expect(enviarEmLote(ids, { semPausa: true })).rejects.toThrow(/não está conectado/);
-    await expect(enviarEmLote([], {})).rejects.toThrow(/ao menos uma/);
+    salvarTokenDoDeskcomm("");
+    await expect(enviarEmLote(ids, { semPausa: true, http })).rejects.toThrow(/não foi ligado/);
+    await expect(enviarEmLote([], { http })).rejects.toThrow(/ao menos uma/);
   });
 });
 
@@ -71,21 +76,21 @@ describe("Régua automática", () => {
     const ant = lanc(p, somar(hoje, 3)), dia = lanc(p, hoje), dep = lanc(p, somar(hoje, -3)); lanc(p, somar(hoje, 10)); lanc(p, somar(hoje, -1));
     salvarRegua({ ativa: true, antes_dias: [3], no_dia: true, depois_dias: [3], horario: "09:00", gerar_cobranca: false });
     expect(pendentesDaRegua().map((i) => i.lancamento_id).sort()).toEqual([ant, dia, dep].sort());
-    expect(await executarRegua(new Date(`${hoje}T08:00:00-03:00`))).toBeNull(); expect(enviadas).toHaveLength(0);
-    expect(await executarRegua(tardeDemais)).toEqual({ enviados: 3, falhas: 0 });
-    expect(await executarRegua(tardeDemais)).toEqual({ enviados: 0, falhas: 0 }); expect(enviadas).toHaveLength(3);
+    expect(await executarRegua(new Date(`${hoje}T08:00:00-03:00`), http)).toBeNull(); expect(enviadas).toHaveLength(0);
+    expect(await executarRegua(tardeDemais, http)).toEqual({ enviados: 3, falhas: 0 });
+    expect(await executarRegua(tardeDemais, http)).toEqual({ enviados: 0, falhas: 0 }); expect(enviadas).toHaveLength(3);
   });
-  it("desligada, pausada, sem WhatsApp: não envia; falha tenta no máximo 3 vezes", async () => {
+  it("desligada, pausada, sem token: não envia; falha tenta no máximo 3 vezes", async () => {
     const p = pessoa(); lanc(p, hoje);
-    expect(await executarRegua(tardeDemais)).toBeNull();
+    expect(await executarRegua(tardeDemais, http)).toBeNull();
     salvarRegua({ ativa: true, antes_dias: [], no_dia: true, depois_dias: [], horario: "00:00", gerar_cobranca: false });
-    estado.pronto = false; expect(await executarRegua(tardeDemais)).toBeNull();
-    estado.pronto = true; pausarAvisos(p, true); expect(pendentesDaRegua()).toHaveLength(0); pausarAvisos(p, false);
+    salvarTokenDoDeskcomm(""); expect(await executarRegua(tardeDemais, http)).toBeNull();
+    salvarTokenDoDeskcomm("dsk_token_de_teste_123456"); pausarAvisos(p, true); expect(pendentesDaRegua()).toHaveLength(0); pausarAvisos(p, false);
     const id = (db.prepare("SELECT id FROM gestao_lancamentos").get() as { id: number }).id;
     db.prepare("INSERT INTO gestao_avisos_cobranca(lancamento_id,regra,status,tentativas) VALUES (?, 'hoje','falhou',3)").run(id);
-    expect(await executarRegua(tardeDemais)).toEqual({ enviados: 0, falhas: 0 }); expect(enviadas).toHaveLength(0);
+    expect(await executarRegua(tardeDemais, http)).toEqual({ enviados: 0, falhas: 0 }); expect(enviadas).toHaveLength(0);
     db.prepare("UPDATE gestao_avisos_cobranca SET tentativas=1").run();
-    expect(await executarRegua(tardeDemais)).toEqual({ enviados: 1, falhas: 0 });
+    expect(await executarRegua(tardeDemais, http)).toEqual({ enviados: 1, falhas: 0 });
   });
   it("configuração é normalizada (dias inválidos, horário ruim)", () => {
     const c = salvarRegua({ antes_dias: [3, 3, 0, 200, "2" as unknown as number], horario: "25:99", depois_dias: [] });

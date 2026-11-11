@@ -31,6 +31,7 @@ import { agendaDaPessoa, andamentoDoProcesso } from "../services/gestao/integrac
 import { atendimentoDaInstancia } from "../atendimento/instancia";
 import { hojeSaoPaulo } from "../services/djen/cache";
 import { completarComDataJud, forcarConsulta, iniciarAcompanhamento, situacaoDoAcompanhamento } from "../services/djen/vigia";
+import { ErroDeskcomm, envioPeloDeskcommLigado, mascaraDeskcomm, salvarTokenDoDeskcomm, testarDeskcomm, tokenDoDeskcomm, urlDoDeskcomm } from "../services/gestao/deskcomm";
 import { avisosDaParcela, enviarAviso, enviarEmLote, historicoDeAvisos, lerRegua, pausarAvisos, pendentesDaRegua, pessoaPausada, salvarRegua } from "../services/gestao/regua";
 import { ambienteDoAsaas, cancelarCobranca, chaveDoAsaas, cobrancaDoLancamento, consultarCobranca, ErroAsaas, gerarCobranca, mascara as mascaraAsaas, salvarConfigAsaas, sincronizarCobrancasAlteradas, sincronizarExtrato, taxasDoAsaas, testarAsaas, tokenDoWebhook } from "../services/gestao/asaas";
 import { atualizarDoDataJud, chaveDoDataJud, ErroDataJud, mascararChave, salvarChaveDoDataJud } from "../services/djen/datajud";
@@ -188,10 +189,15 @@ gestaoRouter.post("/financeiro/lancamentos/:id/cobranca", rota(async (req, res) 
 gestaoRouter.post("/financeiro/lancamentos/:id/cobranca/enviar", rota(async (req) => { gerirFinanceiro(req); const tipo = req.body?.gerar === false ? false : (["pix", "boleto", "boleto_pix"].includes(req.body?.gerar) ? req.body.gerar : false); const r = await enviarAviso(id(req), { origem: "manual", gerar: tipo, quem: quem(req) }); if (r.status === "falhou") throw new ErroGestao(r.motivo || "Não foi possível enviar.", 409); return { resultado: r }; }));
 gestaoRouter.get("/financeiro/lancamentos/:id/avisos", rota((req) => ({ avisos: avisosDaParcela(id(req)) })));
 gestaoRouter.post("/financeiro/avisos/lote", rota(async (req) => { gerirFinanceiro(req); const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number) : []; const gerar = ["pix", "boleto", "boleto_pix"].includes(req.body?.gerar) ? req.body.gerar : false; return enviarEmLote(ids, { gerar, quem: quem(req) }); }));
-gestaoRouter.get("/financeiro/regua", rota(() => ({ config: lerRegua(), asaas: Boolean(chaveDoAsaas()), pendentes: pendentesDaRegua(), historico: historicoDeAvisos(60) })));
+gestaoRouter.get("/financeiro/regua", rota(() => ({ canal_ligado: envioPeloDeskcommLigado(), config: lerRegua(), asaas: Boolean(chaveDoAsaas()), pendentes: pendentesDaRegua(), historico: historicoDeAvisos(60) })));
 gestaoRouter.put("/financeiro/regua", rota((req) => { gerirFinanceiro(req); return { config: salvarRegua(req.body ?? {}) }; }));
 gestaoRouter.get("/pessoas/:id/cobranca-pausa", rota((req) => ({ pausado: pessoaPausada(id(req)) })));
 gestaoRouter.put("/pessoas/:id/cobranca-pausa", rota((req) => { gerirFinanceiro(req); pausarAvisos(id(req), Boolean(req.body?.pausado)); return { pausado: pessoaPausada(id(req)) }; }));
+const erroDesk = (e: unknown): never => { if (e instanceof ErroDeskcomm) throw new ErroGestao(e.message, e.status); throw e; };
+const configDesk = () => ({ configurado: Boolean(tokenDoDeskcomm()), final: mascaraDeskcomm(tokenDoDeskcomm()), atendimento_ligado: Boolean(urlDoDeskcomm()), pronto: envioPeloDeskcommLigado() });
+gestaoRouter.get("/deskcomm/config", rota((req) => { gerirIntegracoes(req); return configDesk(); }));
+gestaoRouter.put("/deskcomm/config", rota((req) => { gerirIntegracoes(req); try { salvarTokenDoDeskcomm(req.body?.token); } catch (e) { erroDesk(e); } auditAccess("deskcomm_token_salvo", usuario(req).id, null, {}); return configDesk(); }));
+gestaoRouter.post("/deskcomm/testar", rota(async (req) => { gerirIntegracoes(req); try { return await testarDeskcomm(); } catch (e) { return erroDesk(e); } }));
 gestaoRouter.post("/financeiro/lancamentos/:id/cobranca/consultar", rota(async (req) => { gerirFinanceiro(req); try { return { cobranca: await consultarCobranca(id(req)) }; } catch (e) { return erroAsaas(e); } }));
 gestaoRouter.post("/financeiro/lancamentos/:id/cobranca/cancelar", rota(async (req) => { gerirFinanceiro(req); try { await cancelarCobranca(id(req), quem(req)); return { cobranca: cobrancaDoLancamento(id(req)) }; } catch (e) { return erroAsaas(e); } }));
 gestaoRouter.get("/financeiro/asaas/taxas", rota((req) => {

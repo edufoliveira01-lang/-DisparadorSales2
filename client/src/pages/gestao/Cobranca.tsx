@@ -30,7 +30,7 @@ export function AvisoLoteModal({ itens, aoFechar, aoConcluir }: { itens: ItemAvi
   };
   const nome = (id: number) => itens.find((i) => i.id === id)?.rotulo ?? `Parcela ${id}`;
   return (
-    <Modal open onClose={aoFechar} title={itens.length === 1 ? "Enviar aviso de cobrança" : `Enviar ${itens.length} avisos de cobrança`} description="A mensagem sai pelo WhatsApp conectado ao sistema, com um intervalo entre uma e outra." maxWidth="max-w-lg"
+    <Modal open onClose={aoFechar} title={itens.length === 1 ? "Enviar aviso de cobrança" : `Enviar ${itens.length} avisos de cobrança`} description="A mensagem sai pelo Deskcomm, na conversa do cliente, com um intervalo entre uma e outra." maxWidth="max-w-lg"
       footer={<div className="flex w-full justify-end gap-2"><Button variant="outline" onClick={aoFechar}>{r ? "Fechar" : "Cancelar"}</Button>{!r && <Button loading={enviando} onClick={() => void enviar()}><Send className="h-4 w-4" /> Enviar agora</Button>}</div>}>
       {!r ? (
         <div className="space-y-4 text-sm">
@@ -64,6 +64,7 @@ export function ReguaAutomatica() {
   const gerir = can("financeiro.manage");
   const [c, setC] = useState<Config | null>(null);
   const [asaas, setAsaas] = useState(false);
+  const [canal, setCanal] = useState(true);
   const [pend, setPend] = useState<Pendente[]>([]);
   const [hist, setHist] = useState<Hist[]>([]);
   const [antes, setAntes] = useState("");
@@ -71,7 +72,7 @@ export function ReguaAutomatica() {
   const [salvando, setSalvando] = useState(false);
   const [enviar, setEnviar] = useState(false);
   const ler = useCallback(async () => {
-    try { const r = await api.get<{ config: Config; asaas: boolean; pendentes: Pendente[]; historico: Hist[] }>("/gestao/financeiro/regua", { fresh: true } as never); setC(r.config); setAsaas(r.asaas); setPend(r.pendentes); setHist(r.historico); setAntes(r.config.antes_dias.join(", ")); setDepois(r.config.depois_dias.join(", ")); }
+    try { const r = await api.get<{ canal_ligado: boolean; config: Config; asaas: boolean; pendentes: Pendente[]; historico: Hist[] }>("/gestao/financeiro/regua", { fresh: true } as never); setC(r.config); setAsaas(r.asaas); setCanal(r.canal_ligado); setPend(r.pendentes); setHist(r.historico); setAntes(r.config.antes_dias.join(", ")); setDepois(r.config.depois_dias.join(", ")); }
     catch { show("Não foi possível carregar a cobrança automática.", "error"); }
   }, [show]);
   useEffect(() => { void ler(); }, [ler]);
@@ -84,9 +85,10 @@ export function ReguaAutomatica() {
   };
   return (
     <div className="space-y-5">
+      {!canal && <p className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">O envio pelo Deskcomm ainda não está ligado: nenhum aviso sai enquanto não houver o token. <a className="underline" href="/configuracoes?secao=deskcomm-envio">Ligar agora</a></p>}
       <section className="surface-panel space-y-4 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div><h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Avisos automáticos de vencimento</h2><p className="text-xs text-zinc-500">O sistema avisa o cliente pelo WhatsApp conectado, no horário abaixo. Cada parcela recebe cada aviso uma única vez.</p></div>
+          <div><h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Avisos automáticos de vencimento</h2><p className="text-xs text-zinc-500">O sistema avisa o cliente pelo Deskcomm (WhatsApp do atendimento), no horário abaixo. Cada parcela recebe cada aviso uma única vez.</p></div>
           <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={c.ativa} disabled={!gerir} onChange={(e) => void salvar({ ativa: e.target.checked })} /> {c.ativa ? "Ligada" : "Desligada"}</label>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -100,7 +102,7 @@ export function ReguaAutomatica() {
           {!asaas && <p className="text-xs text-zinc-500">Ligue o Asaas em Configurações para usar esta opção. Sem ele, o aviso vai só com o lembrete.</p>}
           {c.gerar_cobranca && asaas && <select className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm dark:border-white/10 dark:bg-zinc-900" value={c.tipo} disabled={!gerir} onChange={(e) => setC({ ...c, tipo: e.target.value as Config["tipo"] })}><option value="boleto_pix">Boleto e PIX</option><option value="pix">Só PIX</option><option value="boleto">Só boleto</option></select>}
         </div>
-        <p className="text-xs text-zinc-500">Clientes com avisos pausados (botão na ficha do cliente) e parcelas sem telefone válido são ignorados. O sistema não envia quando o WhatsApp está desconectado e tenta de novo depois.</p>
+        <p className="text-xs text-zinc-500">Clientes com avisos pausados (botão na ficha do cliente) e parcelas sem telefone válido são ignorados. Sem o token do Deskcomm (Configurações → Envio pelo Deskcomm), nada é enviado.</p>
         {gerir && <div className="flex justify-end"><Button loading={salvando} onClick={() => void salvar()}>Salvar</Button></div>}
       </section>
       <section className="surface-panel p-5">

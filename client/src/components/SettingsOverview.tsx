@@ -43,6 +43,12 @@ const sections = [
     icon: Cloud,
   },
   {
+    key: "deskcomm-envio",
+    title: "Envio pelo Deskcomm",
+    description: "Token de API para as cobranças e avisos saírem pelas conversas do atendimento.",
+    icon: MessageCircle,
+  },
+  {
     key: "asaas",
     title: "Asaas (boleto e PIX)",
     description: "Chave de API, ambiente e aviso de pagamento para cobrar e dar baixa sozinho.",

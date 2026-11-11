@@ -34,6 +34,7 @@ export const GRUPOS_CONFIG: GrupoConfig[] = [
   { id: "djen", titulo: "DJEN e prazos", itens: [
     { to: "/processos/advogados", titulo: "Advogados acompanhados", descricao: "Profissionais monitorados no DJEN.", icon: BriefcaseBusiness },
     { to: "/processos/monitoramento", titulo: "Monitoramento DJEN", descricao: "Consulta e sincronização de publicações.", icon: Search },
+    { to: "/configuracoes?secao=deskcomm-envio", titulo: "Envio pelo Deskcomm", descricao: "Token de API para as cobranças e avisos saírem pelas conversas do atendimento.", icon: MessageCircle, permissao: "integrations.manage" },
     { to: "/configuracoes?secao=asaas", titulo: "Asaas (boleto e PIX)", descricao: "Chave de API, ambiente e aviso de pagamento para cobrar e dar baixa sozinho.", icon: Landmark, permissao: "integrations.manage" },
     { to: "/configuracoes?secao=datajud", titulo: "DataJud (CNJ)", descricao: "Chave pública para completar assunto, ajuizamento e órgão dos processos.", icon: KeyRound, permissao: "integrations.manage" },
     { to: "/processos/calendarios", titulo: "Calendários de prazos", descricao: "Feriados e suspensões dos tribunais.", icon: Scale },
