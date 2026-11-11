@@ -60,7 +60,7 @@ export function Processos({ semCabecalho = false, sinalNovo = 0 }: { semCabecalh
     <div className="space-y-5">
       {!semCabecalho && <PageHeader title="Processos e pastas" description="Cada processo com pasta, partes, responsável, histórico e anotações." actions={gerir ? <Button onClick={() => setNovo(true)}><Plus className="h-4 w-4" /> Novo processo</Button> : undefined} />}
       {gerir && pendentes > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-accent-200 bg-accent-50/60 p-4 dark:border-accent-900 dark:bg-accent-950/30">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-accent-200 bg-accent-50/70 p-4 dark:border-accent-500/30 dark:bg-accent-500/10">
           <p className="text-sm text-zinc-700 dark:text-zinc-200"><b>{pendentes}</b> processo(s) do DJEN ainda não têm ficha de gestão.</p>
           <Button size="sm" loading={importando} onClick={() => void importar()}><Download className="h-4 w-4" /> Criar fichas</Button>
         </div>
@@ -75,12 +75,12 @@ export function Processos({ semCabecalho = false, sinalNovo = 0 }: { semCabecalh
       {dados && lista.length === 0 ? (
         <EmptyState icon={FolderOpen} title="Nenhum processo encontrado" description={termo || responsavel || area || status !== "ativo" ? "Tente outra busca ou ajuste os filtros." : "Cadastre o primeiro processo ou crie as fichas dos processos do DJEN."} action={gerir ? <Button onClick={() => setNovo(true)}><Plus className="h-4 w-4" /> Novo processo</Button> : undefined} />
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="overflow-hidden surface-panel">
           <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
             {lista.map((p) => (
               <li key={p.id}>
-                <Link to={`/gestao/processos/${p.id}`} className="grid gap-1 px-4 py-3 transition hover:bg-zinc-50 dark:hover:bg-zinc-800/60 lg:grid-cols-[110px_1.3fr_1.2fr_1fr_auto] lg:items-center lg:gap-4">
-                  <span className="text-xs font-semibold text-accent-700 dark:text-accent-300">{p.pasta}</span>
+                <Link to={`/gestao/processos/${p.id}`} className="grid gap-1 px-4 py-3 transition hover:bg-accent-50/50 dark:hover:bg-white/5 lg:grid-cols-[110px_1.3fr_1.2fr_1fr_auto] lg:items-center lg:gap-4">
+                  <span className="inline-flex w-fit items-center gap-1.5 rounded-lg bg-accent-50 px-2 py-1 text-xs font-semibold text-accent-700 dark:bg-accent-500/15 dark:text-accent-200"><FolderOpen className="h-3.5 w-3.5" />{p.pasta}</span>
                   <span className="min-w-0"><span className="block truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{p.numero_formatado || p.numero}</span><span className="block truncate text-xs text-zinc-500">{p.titulo || p.classe || "Sem título"}{p.tribunal ? ` · ${p.tribunal}` : ""}</span></span>
                   <span className="truncate text-sm text-zinc-600 dark:text-zinc-300">{p.autores || "Sem cliente vinculado"}</span>
                   <span className="truncate text-sm text-zinc-600 dark:text-zinc-300">{p.responsavel || <span className="text-amber-600">Sem responsável</span>}</span>

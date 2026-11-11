@@ -63,7 +63,7 @@ export function Tarefas() {
       {dados && lista.length === 0 ? (
         <EmptyState icon={ListChecks} title="Nenhuma tarefa por aqui" description={status === "abertas" && responsavel === "eu" ? "Você está em dia. Crie uma tarefa ou veja as de toda a equipe." : "Ajuste os filtros ou crie uma tarefa."} action={gerir ? <Button onClick={() => setEditando("nova")}><Plus className="h-4 w-4" /> Nova tarefa</Button> : undefined} />
       ) : (
-        <ul className="divide-y divide-zinc-100 overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+        <ul className="divide-y divide-zinc-100 overflow-hidden surface-panel dark:divide-zinc-800">
           {lista.map((t) => (
             <li key={t.id} className="flex items-start gap-3 px-4 py-3">
               <input type="checkbox" className="mt-1 h-5 w-5 shrink-0 accent-violet-600" checked={!t.aberta} disabled={!gerir || t.status === "cancelada"} onChange={() => void concluir(t)} aria-label={t.aberta ? `Concluir ${t.titulo}` : `Reabrir ${t.titulo}`} />

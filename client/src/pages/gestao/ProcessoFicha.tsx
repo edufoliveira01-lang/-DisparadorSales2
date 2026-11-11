@@ -57,18 +57,26 @@ export function ProcessoFicha() {
   return (
     <div className="space-y-5">
       <Link to="/gestao/processos" className="inline-flex items-center gap-1 text-sm text-accent-700 hover:underline dark:text-accent-300"><ArrowLeft className="h-4 w-4" /> Clientes e processos</Link>
-      <PageHeader title={ficha.numero_formatado || ficha.numero} description={<span className="flex flex-wrap items-center gap-2"><Badge tone="accent"><FolderOpen className="mr-1 h-3 w-3" />Pasta {ficha.pasta}</Badge><Badge tone={STATUS_TOM[ficha.status] || "neutral"}>{STATUS[ficha.status] || ficha.status}</Badge>{ficha.tribunal && <Badge>{ficha.tribunal}</Badge>}<span>{ficha.titulo || ficha.classe}</span></span>}
-        actions={gerir ? <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setDocs(true)}>Gerar documentos</Button><Button variant="ghost" onClick={() => setApagar(true)}><Trash2 className="h-4 w-4" /> Excluir</Button></div> : undefined} />
+      <div className="surface-panel flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+        <div className="flex min-w-0 items-center gap-4">
+          <span aria-hidden className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-accent-50 text-accent-700 dark:bg-white/10 dark:text-accent-200"><FolderOpen className="h-6 w-6" /></span>
+          <div className="min-w-0">
+            <h1 className="truncate text-xl font-semibold text-zinc-900 dark:text-zinc-50">{ficha.numero_formatado || ficha.numero}</h1>
+            <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500"><Badge tone="accent">Pasta {ficha.pasta}</Badge><Badge tone={STATUS_TOM[ficha.status] || "neutral"}>{STATUS[ficha.status] || ficha.status}</Badge>{ficha.tribunal && <Badge>{ficha.tribunal}</Badge>}<span className="truncate">{ficha.titulo || ficha.classe}</span></p>
+          </div>
+        </div>
+        {gerir ? <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setDocs(true)}>Gerar documentos</Button><Button variant="ghost" onClick={() => setApagar(true)}><Trash2 className="h-4 w-4" /> Excluir</Button></div> : undefined}
+      </div>
       <GerarDocumentos aberto={docs} aoFechar={() => setDocs(false)} processo={{ id: ficha.id, rotulo: `${ficha.pasta} · ${ficha.numero_formatado || ficha.numero}` }} />
       {(() => { const c = ficha.partes.find((p) => p.papel === "autor") ?? ficha.partes[0]; return c ? (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 surface-panel px-4 py-3 text-sm">
           <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Cliente</span>
           <Link to={`/gestao/clientes/${c.pessoa_id}`} className="font-semibold text-accent-700 hover:underline dark:text-accent-300">{c.nome}</Link>
           {c.telefone && <span className="text-zinc-600 dark:text-zinc-300">{c.telefone}</span>}{c.email && <span className="text-zinc-600 dark:text-zinc-300">{c.email}</span>}
           <Link to={`/gestao/clientes/${c.pessoa_id}?aba=financeiro`} className="ml-auto text-xs text-accent-700 underline">Financeiro do cliente</Link>
         </div>) : null; })()}
-      <div role="tablist" className="flex gap-1 overflow-x-auto border-b border-zinc-200 dark:border-zinc-800">
-        {ABAS.map(([k, r]) => <button key={k} role="tab" aria-selected={aba === k} onClick={() => setAba(k)} className={`whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition ${aba === k ? "border-accent-600 text-accent-700 dark:text-accent-300" : "border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"}`}>{r}</button>)}
+      <div role="tablist" className="page-tabs">
+        {ABAS.map(([k, r]) => <button key={k} role="tab" aria-selected={aba === k} onClick={() => setAba(k)} className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium transition ${aba === k ? "bg-accent-50 text-accent-700 dark:bg-accent-500/15 dark:text-accent-200" : "text-zinc-500 hover:bg-zinc-50 dark:hover:bg-white/5"}`}>{r}</button>)}
       </div>
       {aba === "resumo" && <Resumo ficha={ficha} resp={resp} gerir={gerir} aoSalvar={carregar} />}
       {aba === "partes" && <Partes ficha={ficha} gerir={gerir} aoMudar={carregar} />}
@@ -98,7 +106,7 @@ function Resumo({ ficha, resp, gerir, aoSalvar }: { ficha: Ficha; resp: Responsa
     finally { setSalvando(false); }
   };
   return (
-    <form onSubmit={salvar} className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+    <form onSubmit={salvar} className="space-y-4 surface-panel p-5">
       <fieldset disabled={!gerir} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <Campo rotulo="Título / assunto interno" className="sm:col-span-2 lg:col-span-3"><Input value={f.titulo} onChange={(e) => set("titulo", e.target.value)} className="mt-1.5" /></Campo>
         <Campo rotulo="Situação"><Select value={f.status} onChange={(e) => set("status", e.target.value)} className="mt-1.5">{Object.entries(STATUS).map(([v, r]) => <option key={v} value={v}>{r}</option>)}</Select></Campo>
@@ -137,14 +145,14 @@ function Partes({ ficha, gerir, aoMudar }: { ficha: Ficha; gerir: boolean; aoMud
   return (
     <div className="space-y-4">
       {gerir && (
-        <div className="grid gap-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900 sm:grid-cols-[200px_1fr]">
+        <div className="grid gap-3 surface-panel p-4 sm:grid-cols-[200px_1fr]">
           <Campo rotulo="Papel no processo"><Select value={papel} onChange={(e) => setPapel(e.target.value)} className="mt-1.5">{Object.entries(PAPEIS).map(([v, r]) => <option key={v} value={v}>{r}</option>)}</Select></Campo>
           <SeletorPessoa rotulo="Adicionar pessoa cadastrada" aoEscolher={(p) => void adicionar(p.id)} />
           <p className="text-xs text-zinc-500 sm:col-span-2">Não encontrou? <Link className="text-accent-700 underline" to="/gestao/clientes/novo">Cadastre a pessoa</Link> e volte aqui.</p>
         </div>
       )}
       {ficha.partes.length === 0 ? <p className="rounded-2xl border border-dashed border-zinc-200 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">Nenhuma parte vinculada a este processo.</p> : (
-        <ul className="divide-y divide-zinc-100 overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+        <ul className="divide-y divide-zinc-100 overflow-hidden surface-panel dark:divide-zinc-800">
           {ficha.partes.map((p) => (
             <li key={`${p.pessoa_id}-${p.papel}`} className="flex items-center justify-between gap-3 px-4 py-3">
               <div className="min-w-0"><p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100"><Link className="hover:underline" to={`/gestao/clientes/${p.pessoa_id}`}>{p.nome}</Link>{p.principal ? <span className="ml-2 text-xs font-normal text-accent-600">principal</span> : null}</p><p className="truncate text-xs text-zinc-500">{PAPEIS[p.papel] || p.papel} · {TIPOS[p.tipo] || p.tipo}{p.telefone ? ` · ${p.telefone}` : ""}{p.email ? ` · ${p.email}` : ""}</p></div>
@@ -181,7 +189,7 @@ function Historico({ ficha, gerir }: { ficha: Ficha; gerir: boolean }) {
   return (
     <div className="space-y-4">
       {gerir && (
-        <form onSubmit={anotar} className="space-y-2 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+        <form onSubmit={anotar} className="space-y-2 surface-panel p-4">
           <Campo rotulo="Nova anotação"><Textarea rows={3} value={texto} onChange={(e) => setTexto(e.target.value)} className="mt-1.5" placeholder="Ligação com o cliente, combinado com o perito, lembrete interno…" /></Campo>
           <div className="flex justify-end"><Button type="submit" loading={salvando} disabled={texto.trim().length < 2}>Anotar</Button></div>
         </form>
@@ -192,7 +200,7 @@ function Historico({ ficha, gerir }: { ficha: Ficha; gerir: boolean }) {
       {eventos === null ? <p className="text-sm text-zinc-500">Carregando…</p> : lista.length === 0 ? <p className="text-sm text-zinc-500">Nada por aqui ainda.</p> : (
         <ol className="space-y-3">
           {lista.map((ev, i) => { const I = ICONE[ev.tipo]; return (
-            <li key={`${ev.tipo}-${ev.ref ?? i}`} className="flex gap-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <li key={`${ev.tipo}-${ev.ref ?? i}`} className="flex gap-3 surface-panel p-4">
               <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-50 text-accent-600 dark:bg-accent-900/30"><I className="h-4 w-4" /></span>
               <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{ev.titulo}</p><span className="text-xs text-zinc-400">{dataBr(ev.data)}{ev.autor ? ` · ${ev.autor}` : ""}</span></div>
                 {ev.detalhe && <p className="mt-1 whitespace-pre-wrap break-words text-sm text-zinc-600 dark:text-zinc-300">{ev.detalhe}</p>}
@@ -217,7 +225,7 @@ function TarefasDoProcesso({ ficha, gerir, resp }: { ficha: Ficha; gerir: boolea
     <div className="space-y-4">
       {gerir && <div className="flex justify-end"><Button onClick={() => setEdicao("nova")}>Nova tarefa neste processo</Button></div>}
       {itens === null ? <p className="text-sm text-zinc-500">Carregando…</p> : itens.length === 0 ? <p className="rounded-2xl border border-dashed border-zinc-200 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">Nenhuma tarefa neste processo.</p> : (
-        <ul className="divide-y divide-zinc-100 overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+        <ul className="divide-y divide-zinc-100 overflow-hidden surface-panel dark:divide-zinc-800">
           {itens.map((t) => (
             <li key={t.id} className="flex items-start gap-3 px-4 py-3">
               <input type="checkbox" className="mt-1 h-5 w-5 accent-violet-600" checked={!t.aberta} disabled={!gerir || t.status === "cancelada"} onChange={() => void concluir(t)} aria-label={t.aberta ? `Concluir ${t.titulo}` : `Reabrir ${t.titulo}`} />
@@ -244,7 +252,7 @@ function Andamento({ id }: { id: number }) {
   const [d, setD] = useState<Andam | null>(null);
   useEffect(() => { api.get<Andam>(`/gestao/processos/${id}/andamento`).then(setD).catch(() => show("Não foi possível carregar o andamento.", "error")); }, [id, show]);
   if (!d) return <p className="text-sm text-zinc-500" role="status">Carregando…</p>;
-  const Cartao = ({ titulo, children }: { titulo: string; children: React.ReactNode }) => <section className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"><h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{titulo}</h3>{children}</section>;
+  const Cartao = ({ titulo, children }: { titulo: string; children: React.ReactNode }) => <section className="surface-panel p-4"><h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{titulo}</h3>{children}</section>;
   return (
     <div className="space-y-4">
       {!d.monitorado && <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">Este processo ainda não é acompanhado pelo DJEN. Cadastre o advogado em <Link className="underline" to="/processos/advogados">Processos e DJEN</Link> para as publicações aparecerem aqui.</p>}

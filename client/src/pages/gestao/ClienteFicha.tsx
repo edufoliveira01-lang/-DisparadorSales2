@@ -212,7 +212,7 @@ export function ClienteFicha() {
         <section className="space-y-3">
           {gerir && <div className="flex justify-end"><Button onClick={() => setNovoProcesso(true)}><Plus className="h-4 w-4" /> Novo processo para {pessoa.nome.split(" ")[0]}</Button></div>}
           {(pessoa.processos?.length ?? 0) === 0 ? <p className="rounded-2xl border border-dashed border-zinc-200 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">Nenhum processo vinculado ainda.</p> : (
-            <ul className="divide-y divide-zinc-100 overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+            <ul className="divide-y divide-zinc-100 overflow-hidden surface-panel dark:divide-zinc-800">
               {pessoa.processos!.map((p) => (
                 <li key={`${p.id}-${p.papel}`}><Link to={`/gestao/processos/${p.id}`} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/60">
                   <span className="min-w-0"><span className="block truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100"><FolderOpen className="mr-1.5 inline h-4 w-4 text-zinc-400" />{p.pasta} · {p.numero}</span><span className="block truncate text-xs text-zinc-500">{p.titulo || "Sem título"}</span></span>
@@ -223,7 +223,7 @@ export function ClienteFicha() {
       {!novo && aba === "financeiro" && can("financeiro.view") && <FinanceiroPessoa pessoaId={id} nome={pessoa.nome} />}
       {!novo && aba === "documentos" && (
         <section className="space-y-4">
-          {gerir && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"><p className="text-sm text-zinc-600 dark:text-zinc-300">Procuração, contrato, declarações e os documentos próprios do escritório, com cabeçalho e rodapé.</p><Button onClick={() => (sujo ? show("Salve as alterações antes de gerar os documentos.", "info") : setDocs(true))}><FileText className="h-4 w-4" /> Gerar documentos</Button></div>}
+          {gerir && <div className="flex flex-wrap items-center justify-between gap-3 surface-panel p-4"><p className="text-sm text-zinc-600 dark:text-zinc-300">Procuração, contrato, declarações e os documentos próprios do escritório, com cabeçalho e rodapé.</p><Button onClick={() => (sujo ? show("Salve as alterações antes de gerar os documentos.", "info") : setDocs(true))}><FileText className="h-4 w-4" /> Gerar documentos</Button></div>}
           <Arquivos escopo="pessoas" id={id} />
         </section>
       )}
@@ -263,12 +263,12 @@ function AgendaPessoa({ id }: { id: number }) {
     <div className="space-y-5">
       <section><h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100"><CalendarClock className="h-4 w-4 text-zinc-400" /> Perícias e audiências</h3>
         {d.pericias.length === 0 ? <p className="rounded-xl border border-dashed border-zinc-200 p-4 text-sm text-zinc-500 dark:border-zinc-700">Nenhuma perícia ou audiência agendada para esta pessoa.</p> : (
-          <ul className="divide-y divide-zinc-100 overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">{proximas.map((p) => <Item key={p.id} p={p} />)}{passadas.map((p) => <Item key={p.id} p={p} />)}</ul>)}
+          <ul className="divide-y divide-zinc-100 overflow-hidden surface-panel dark:divide-zinc-800">{proximas.map((p) => <Item key={p.id} p={p} />)}{passadas.map((p) => <Item key={p.id} p={p} />)}</ul>)}
         <p className="mt-2 text-xs text-zinc-500">Os lembretes por WhatsApp continuam em <Link className="text-accent-700 underline" to="/calendario">Perícias e avisos → Calendário</Link>.</p>
       </section>
       <section><h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">Tarefas em aberto ({d.tarefas.length})</h3>
         {d.tarefas.length === 0 ? <p className="rounded-xl border border-dashed border-zinc-200 p-4 text-sm text-zinc-500 dark:border-zinc-700">Nenhuma tarefa em aberto para esta pessoa ou seus processos.</p> : (
-          <ul className="divide-y divide-zinc-100 overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">{d.tarefas.map((t) => <li key={t.id} className="px-4 py-2.5 text-sm"><span className="font-medium text-zinc-900 dark:text-zinc-100">{t.titulo}</span> <span className="text-xs text-zinc-500">{t.prazo ? `· prazo ${dataBr(t.prazo)}` : ""}{t.processo_pasta ? ` · Pasta ${t.processo_pasta}` : ""}{t.prazo_fatal ? " · FATAL" : ""}</span></li>)}</ul>)}
+          <ul className="divide-y divide-zinc-100 overflow-hidden surface-panel dark:divide-zinc-800">{d.tarefas.map((t) => <li key={t.id} className="px-4 py-2.5 text-sm"><span className="font-medium text-zinc-900 dark:text-zinc-100">{t.titulo}</span> <span className="text-xs text-zinc-500">{t.prazo ? `· prazo ${dataBr(t.prazo)}` : ""}{t.processo_pasta ? ` · Pasta ${t.processo_pasta}` : ""}{t.prazo_fatal ? " · FATAL" : ""}</span></li>)}</ul>)}
       </section>
     </div>
   );

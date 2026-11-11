@@ -34,8 +34,8 @@ export function Financeiro() {
   return (
     <div className="space-y-5">
       <PageHeader title="Financeiro" description="Controle interno de honorários, contas a pagar e receber, custas, comissões e repasses." />
-      <div role="tablist" className="flex gap-1 overflow-x-auto border-b border-zinc-200 dark:border-zinc-800">
-        {ABAS.map(([k, r]) => <button key={k} role="tab" aria-selected={aba === k} onClick={() => setAba(k)} className={`whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition ${aba === k ? "border-accent-600 text-accent-700 dark:text-accent-300" : "border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"}`}>{r}</button>)}
+      <div role="tablist" className="page-tabs">
+        {ABAS.map(([k, r]) => <button key={k} role="tab" aria-selected={aba === k} onClick={() => setAba(k)} className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium transition ${aba === k ? "bg-accent-50 text-accent-700 dark:bg-accent-500/15 dark:text-accent-200" : "text-zinc-500 hover:bg-zinc-50 dark:hover:bg-white/5"}`}>{r}</button>)}
       </div>
       {aba === "resumo" && <ResumoFin />}
       {aba === "lancamentos" && <Lancamentos gerir={gerir} contrato={filtroContrato} aoLimparContrato={() => setFiltroContrato(null)} />}
@@ -63,7 +63,7 @@ function ResumoFin() {
         <StatCard icon={<Wallet className="h-5 w-5" />} label="A receber (30 dias)" value={dinheiro(r?.a_receber_30_dias_centavos)} tone="info" />
         <StatCard icon={<Wallet className="h-5 w-5" />} label="A pagar (30 dias)" value={dinheiro(r?.a_pagar_30_dias_centavos)} tone="warning" helper={r && r.custas_reembolsaveis_centavos > 0 ? `Custas a reembolsar: ${dinheiro(r.custas_reembolsaveis_centavos)}` : undefined} />
       </div>
-      <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+      <section className="surface-panel p-5">
         <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Fluxo de caixa (5 meses atrás até 6 à frente)</h2>
         <div className="mt-4 flex h-44 items-end gap-2 overflow-x-auto" role="img" aria-label="Gráfico de receitas e despesas por mês">
           {fluxo.map((m) => (
@@ -78,9 +78,9 @@ function ResumoFin() {
         <p className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500"><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-emerald-200" />Receita prevista</span><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-emerald-500" />Recebido</span><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-rose-200" />Despesa prevista</span><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-rose-500" />Pago</span></p>
       </section>
       <div className="grid gap-4 lg:grid-cols-2">
-        <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900"><h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Por categoria no mês</h2>
+        <section className="surface-panel p-5"><h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Por categoria no mês</h2>
           {(r?.por_categoria.length ?? 0) === 0 ? <p className="mt-3 text-sm text-zinc-500">Sem lançamentos neste mês.</p> : <table className="mt-3 w-full text-sm"><thead><tr className="text-left text-xs text-zinc-500"><th className="py-1">Categoria</th><th className="text-right">Previsto</th><th className="text-right">Realizado</th></tr></thead><tbody>{r!.por_categoria.map((c) => <tr key={c.tipo + c.categoria} className="border-t border-zinc-100 dark:border-zinc-800"><td className="py-1.5">{c.tipo === "receber" ? "Receita" : "Despesa"} · {CAT[c.categoria] || c.categoria}</td><td className="text-right">{dinheiro(c.previsto_centavos)}</td><td className="text-right font-medium">{dinheiro(c.realizado_centavos)}</td></tr>)}</tbody></table>}</section>
-        <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900"><h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Comissões e repasses no mês</h2>
+        <section className="surface-panel p-5"><h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Comissões e repasses no mês</h2>
           {(r?.comissoes_e_repasses.length ?? 0) === 0 ? <p className="mt-3 text-sm text-zinc-500">Nenhuma comissão ou repasse neste mês.</p> : <table className="mt-3 w-full text-sm"><thead><tr className="text-left text-xs text-zinc-500"><th className="py-1">Beneficiário</th><th className="text-right">Previsto</th><th className="text-right">Pago</th></tr></thead><tbody>{r!.comissoes_e_repasses.map((c) => <tr key={c.beneficiario + c.categoria} className="border-t border-zinc-100 dark:border-zinc-800"><td className="py-1.5">{c.beneficiario} · {CAT[c.categoria]}</td><td className="text-right">{dinheiro(c.previsto_centavos)}</td><td className="text-right font-medium">{dinheiro(c.pago_centavos)}</td></tr>)}</tbody></table>}</section>
       </div>
     </div>
@@ -125,7 +125,7 @@ function Lancamentos({ gerir, contrato, aoLimparContrato }: { gerir: boolean; co
       </div>
       {contrato && <p className="text-sm text-zinc-600 dark:text-zinc-300">Mostrando as parcelas de um contrato. <button className="text-accent-700 underline" onClick={aoLimparContrato}>Ver todos</button></p>}
       {dados && lista.length === 0 ? <EmptyState icon={Wallet} title="Nenhum lançamento" description="Ajuste os filtros ou crie um lançamento." action={gerir ? <Button onClick={() => setEditando("novo")}><Plus className="h-4 w-4" /> Novo lançamento</Button> : undefined} /> : (
-        <ul className="divide-y divide-zinc-100 overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+        <ul className="divide-y divide-zinc-100 overflow-hidden surface-panel dark:divide-zinc-800">
           {lista.map((l) => (
             <li key={l.id} className="grid gap-2 px-4 py-3 lg:grid-cols-[1.6fr_130px_120px_auto] lg:items-center lg:gap-4">
               <div className="min-w-0"><p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{l.descricao}</p><p className="truncate text-xs text-zinc-500">{CAT[l.categoria]}{l.pessoa_nome ? ` · ${l.pessoa_nome}` : ""}{l.processo_pasta ? ` · Pasta ${l.processo_pasta}` : ""}{l.beneficiario ? ` · ${l.beneficiario}` : ""}{l.reembolsavel ? " · reembolsável" : ""}</p></div>
@@ -229,7 +229,7 @@ function Contratos({ gerir, aoVerParcelas }: { gerir: boolean; aoVerParcelas: (i
       {lista && lista.length === 0 ? <EmptyState icon={Wallet} title="Nenhum contrato" description="Cadastre o contrato de honorários: as parcelas viram contas a receber automaticamente." action={gerir ? <Button onClick={() => setNovo(true)}><Plus className="h-4 w-4" /> Novo contrato</Button> : undefined} /> : (
         <ul className="space-y-3">
           {(lista ?? []).map((c) => { const tot = c.recebido_centavos + c.em_aberto_centavos; const pct = tot ? Math.round((c.recebido_centavos / tot) * 100) : 0; return (
-            <li key={c.id} className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <li key={c.id} className="surface-panel p-4">
               <div className="flex flex-wrap items-start justify-between gap-2"><div className="min-w-0"><p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{c.descricao}</p><p className="text-xs text-zinc-500">{c.pessoa_nome || "—"}{c.processo_pasta ? ` · Pasta ${c.processo_pasta}` : ""} · {c.tipo}{c.percentual_exito ? ` · êxito ${(c.percentual_exito / 100).toLocaleString("pt-BR")}%` : ""}</p></div>
                 <div className="flex items-center gap-2">{c.parcelas_atrasadas > 0 && <Badge tone="danger">{c.parcelas_atrasadas} atrasada(s)</Badge>}<Badge tone={c.status === "ativo" ? "info" : c.status === "quitado" ? "success" : "neutral"}>{c.status}</Badge></div></div>
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800"><div className="h-full bg-emerald-500" style={{ width: `${pct}%` }} /></div>

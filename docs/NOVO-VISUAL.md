@@ -22,3 +22,8 @@
 ## Fase 4 — Clientes (3.3.0)
 - Lista: avatar com iniciais (ou foto), atalho para o WhatsApp, processos em faixa e cartões no padrão novo.
 - Ficha: cabeçalho com foto/avatar, tipo, documento, WhatsApp e ações; abas em pílulas; formulário em cartão.
+
+## Fase 5 — Processos (3.5.0)
+- Lista: pasta em etiqueta com ícone, linhas com realce azul ao passar o mouse, cartão único.
+- Ficha: cabeçalho em cartão (ícone da pasta, número, situação, tribunal, título e ações), faixa do cliente, abas em pílulas.
+- Cartões das fichas de Clientes, Processos, Financeiro e Tarefas passaram para o mesmo estilo (`surface-panel`).
