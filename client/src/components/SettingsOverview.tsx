@@ -42,6 +42,12 @@ const sections = [
     icon: Cloud,
   },
   {
+    key: "datajud",
+    title: "DataJud (CNJ)",
+    description: "Chave pública para completar assunto, ajuizamento e órgão dos processos.",
+    icon: KeyRound,
+  },
+  {
     key: "notificacoes",
     title: "Notificações",
     description:

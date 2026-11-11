@@ -28,7 +28,8 @@ import { kitDocx } from "../services/gestao/docx";
 import { lerEscritorio, salvarEscritorio } from "../services/gestao/escritorio";
 import crypto from "node:crypto";
 import { agendaDaPessoa, andamentoDoProcesso } from "../services/gestao/integracao";
-import { forcarConsulta, iniciarAcompanhamento, situacaoDoAcompanhamento } from "../services/djen/vigia";
+import { completarComDataJud, forcarConsulta, iniciarAcompanhamento, situacaoDoAcompanhamento } from "../services/djen/vigia";
+import { atualizarDoDataJud, chaveDoDataJud, ErroDataJud, mascararChave, salvarChaveDoDataJud } from "../services/djen/datajud";
 import { processarHistoricos } from "../services/djen/processHistory";
 import { licencaPermiteOperar } from "../licenca/cliente";
 import { financeiroDaPessoa } from "../services/gestao/financeiro";
@@ -361,8 +362,26 @@ gestaoRouter.post("/processos/:id/acompanhamento", rota((req) => {
   if (!r.acompanhavel) throw new ErroGestao(r.motivo, 422);
   const ficha = obterProcesso(id(req)) as { chave?: string; numero: string };
   const chave = /^\d{20}$/.test(String(ficha.chave)) ? String(ficha.chave) : String(ficha.numero).replace(/\D/g, "");
-  forcarConsulta(chave); kickDoHistorico();
+  forcarConsulta(chave); kickDoHistorico(); void completarComDataJud(chave, true);
   return situacaoDoAcompanhamento(id(req));
+}));
+/** Chave pública do DataJud (CNJ): quem gerencia integrações cola aqui; completa assunto, ajuizamento, órgão e classe dos processos. */
+gestaoRouter.get("/datajud", rota((req) => { if (!hasPermission(usuario(req), "integrations.manage")) throw new ErroGestao("Sem permissão.", 403); const c = chaveDoDataJud(); return { configurado: Boolean(c), final: mascararChave(c) }; }));
+gestaoRouter.put("/datajud", rota((req) => {
+  if (!hasPermission(usuario(req), "integrations.manage")) throw new ErroGestao("Sem permissão.", 403);
+  try { salvarChaveDoDataJud(req.body?.chave); } catch (e) { if (e instanceof ErroDataJud) throw new ErroGestao(e.message, e.status); throw e; }
+  auditAccess("datajud_chave_salva", usuario(req).id, null, {});
+  const c = chaveDoDataJud(); return { configurado: Boolean(c), final: mascararChave(c) };
+}));
+/** Testa a chave com um processo ativo já cadastrado (consulta de verdade). */
+gestaoRouter.post("/datajud/testar", rota(async (req) => {
+  if (!hasPermission(usuario(req), "integrations.manage")) throw new ErroGestao("Sem permissão.", 403);
+  if (!chaveDoDataJud()) throw new ErroGestao("Cole a chave do DataJud primeiro.", 422);
+  const p = db.prepare("SELECT chave FROM gestao_processos WHERE status='ativo' AND length(chave)=20 AND chave NOT GLOB '*[^0-9]*' ORDER BY id DESC LIMIT 1").get() as { chave: string } | undefined;
+  if (!p) throw new ErroGestao("Cadastre ao menos um processo com número CNJ para testar a chave.", 422);
+  const r = await atualizarDoDataJud(p.chave);
+  const linha = db.prepare("SELECT erro FROM gestao_datajud WHERE processo_chave=?").get(p.chave) as { erro: string | null } | undefined;
+  return { resultado: r, erro: r === "falha" ? linha?.erro ?? null : null };
 }));
 gestaoRouter.get("/processos/:id/andamento", rota((req) => andamentoDoProcesso(id(req))));
 gestaoRouter.get("/pessoas/:id/agenda", rota((req) => agendaDaPessoa(id(req))));

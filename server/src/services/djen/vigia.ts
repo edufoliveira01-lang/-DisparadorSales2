@@ -8,6 +8,7 @@
 import { db } from "../../db";
 import { tribunalDoCnj } from "../gestao/validacao";
 import { hojeDjen } from "./api";
+import { datajudEmDia, atualizarDoDataJud, situacaoDoDataJud } from "./datajud";
 import { invalidarHistorico, solicitarHistorico } from "./historyCoverage";
 
 const CNJ = /^\d{20}$/;
@@ -73,6 +74,12 @@ export function situacaoDoAcompanhamento(processoId: number) {
     acompanhavel: true as const, ativo: p.status === "ativo",
     situacao: (h?.status ?? "pendente") as "pendente" | "verificando" | "atualizado" | "falha",
     consultado_em: h?.consultado_em ?? null, desde: h?.inicio ?? inicioDoAcompanhamento(chave), erro: h?.status === "falha" ? h.erro : null,
-    publicacoes: n.n, ultima_publicacao: n.ultima,
+    publicacoes: n.n, ultima_publicacao: n.ultima, datajud: situacaoDoDataJud(chave),
   };
+}
+
+/** Depois do DJEN, completa a ficha com o DataJud (se houver chave e a última consulta não estiver em dia). Nunca lança. */
+export function completarComDataJud(chave: string, forcar = false): Promise<void> {
+  if (!forcar && datajudEmDia(chave)) return Promise.resolve();
+  return atualizarDoDataJud(chave).then(() => undefined).catch(() => undefined);
 }

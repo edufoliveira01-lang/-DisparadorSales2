@@ -280,6 +280,7 @@ function Andamento({ id }: { id: number }) {
 interface Acompanhamento {
   acompanhavel: boolean; motivo?: string; ativo?: boolean; situacao?: "pendente" | "verificando" | "atualizado" | "falha";
   consultado_em?: string | null; desde?: string | null; erro?: string | null; publicacoes?: number; ultima_publicacao?: string | null;
+  datajud?: { configurado: boolean; status: string; erro: string | null; ultimo_movimento: string; ultimo_movimento_em: string; movimentos: number };
 }
 /** O que o sistema faz sozinho por este processo: consulta o DJEN pelo número, traz as publicações e completa os dados em branco da ficha. */
 function AcompanhamentoDjen({ processoId, aoAtualizar }: { processoId: number; aoAtualizar: () => void }) {
@@ -316,6 +317,9 @@ function AcompanhamentoDjen({ processoId, aoAtualizar }: { processoId: number; a
         {typeof a.publicacoes === "number" ? ` · ${a.publicacoes} publicação(ões)${a.ultima_publicacao ? `, a última em ${dataBr(a.ultima_publicacao)}` : ""}` : ""}
         {a.ativo === false ? " · processo não ativo: não é consultado de novo sozinho" : ""}
       </span>
+      {a.datajud?.ultimo_movimento && <span className="text-xs text-zinc-500">· último movimento (DataJud): <b className="font-medium text-zinc-700 dark:text-zinc-200">{a.datajud.ultimo_movimento}</b>{a.datajud.ultimo_movimento_em ? ` em ${dataBr(a.datajud.ultimo_movimento_em)}` : ""}</span>}
+      {a.datajud && !a.datajud.configurado && <span className="text-xs text-zinc-400">· <Link to="/configuracoes?secao=datajud" className="underline">ligar o DataJud</Link> traz assunto e ajuizamento</span>}
+      {a.datajud?.status === "falha" && a.datajud.erro && <span className="text-xs text-amber-700 dark:text-amber-300">DataJud: {a.datajud.erro}</span>}
       {a.erro && <span className="text-xs text-red-600 dark:text-red-400">{a.erro}</span>}
       <Button className="ml-auto" size="sm" variant="outline" loading={pedindo || a.situacao === "verificando"} onClick={() => void consultar()}>Consultar agora</Button>
     </div>

@@ -5,7 +5,7 @@ import { consultarDjen, DjenApiError, hojeDjen, type AdvogadoDjen, type Contexto
 import { importarPublicacoes } from './store';
 import { coberturaHistorico, HISTORICO_VALIDADE_MS } from './historyCoverage';
 import { atualizarKanbanComNovasPublicacoes } from './kanban';
-import { emAcompanhamento, inicioDoAcompanhamento, preencherDoDjen } from './vigia';
+import { completarComDataJud, emAcompanhamento, inicioDoAcompanhamento, preencherDoDjen } from './vigia';
 
 const mudou = () => emitEvent('djen:changed', {});
 const ativo = `(EXISTS (SELECT 1 FROM djen_publicacoes p WHERE p.processo_chave=h.processo_chave AND p.cancelada=0 AND p.concluida=0)
@@ -58,6 +58,7 @@ export async function atualizarHistoricoProcesso(processo: string, ctx: Contexto
       status=CASE WHEN revisao=? THEN 'atualizado' ELSE 'pendente' END,
       inicio=?,fim=?,consultado_em=CURRENT_TIMESTAMP,revisao_conferida=?,erro=NULL,
       proxima_tentativa_em=NULL WHERE processo_chave=?`).run(estado.revisao,escopo.inicio,escopo.fim,estado.revisao,processo);
+    void completarComDataJud(processo);
     try { preencherDoDjen(processo); } catch { console.error('[DJEN] Histórico atualizado; ficha do processo sem preenchimento.'); }
     try { atualizarKanbanComNovasPublicacoes(); } catch { console.error("[DJEN] Histórico atualizado; quadro pendente de revisão."); }
   } catch (e) {
