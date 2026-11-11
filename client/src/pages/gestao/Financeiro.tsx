@@ -18,8 +18,9 @@ import { Campo, SeletorPessoa, SeletorProcesso, dataBr, dinheiro, mesAtual, mesR
 import type { Responsavel } from "./Processos";
 import { cobrarPeloAtendimento, mensagemDeCobranca, type LinkDePagamento } from "./cobranca";
 import { useAtendimentoLiberado } from "./AvatarPessoa";
+import { AvisoLoteModal, ReguaAutomatica, type ItemAviso } from "./Cobranca";
 
-export interface Lanc { origem_lancamento_id?: number | null; pessoa_telefone?: string | null; id: number; tipo: "receber" | "pagar"; categoria: string; descricao: string; valor_centavos: number; vencimento: string; pago_em: string | null; valor_pago_centavos: number | null; forma_pagamento: string; status: "aberto" | "atrasado" | "pago" | "cancelado"; pessoa_id: number | null; pessoa_nome: string | null; processo_id: number | null; processo_pasta: string | null; beneficiario: string | null; beneficiario_user_id: number | null; reembolsavel: boolean; observacoes: string; contrato_id: number | null }
+export interface Lanc { cobranca_status?: string | null; origem_lancamento_id?: number | null; pessoa_telefone?: string | null; id: number; tipo: "receber" | "pagar"; categoria: string; descricao: string; valor_centavos: number; vencimento: string; pago_em: string | null; valor_pago_centavos: number | null; forma_pagamento: string; status: "aberto" | "atrasado" | "pago" | "cancelado"; pessoa_id: number | null; pessoa_nome: string | null; processo_id: number | null; processo_pasta: string | null; beneficiario: string | null; beneficiario_user_id: number | null; reembolsavel: boolean; observacoes: string; contrato_id: number | null }
 export interface Contrato { id: number; descricao: string; tipo: string; status: string; pessoa_nome: string | null; processo_pasta: string | null; valor_total_centavos: number; percentual_exito: number | null; recebido_centavos: number; em_aberto_centavos: number; parcelas_atrasadas: number }
 interface Devedor { pessoa_id: number; nome: string; telefone: string; total_centavos: number; parcelas: number; mais_antigo: string }
 interface Resumo { maiores_devedores?: Devedor[]; mes: string; receber_previsto_centavos: number; recebido_centavos: number; pagar_previsto_centavos: number; pago_centavos: number; saldo_realizado_centavos: number; inadimplencia_centavos: number; inadimplentes: number; a_receber_30_dias_centavos: number; a_pagar_30_dias_centavos: number; custas_reembolsaveis_centavos: number; por_categoria: { tipo: string; categoria: string; realizado_centavos: number; previsto_centavos: number }[]; comissoes_e_repasses: { beneficiario: string; categoria: string; previsto_centavos: number; pago_centavos: number }[] }
@@ -27,7 +28,7 @@ interface Mes { mes: string; receber_previsto_centavos: number; recebido_centavo
 export const CAT: Record<string, string> = { honorarios: "Honorários", custas: "Custas", despesa: "Despesa", comissao: "Comissão", repasse: "Repasse", outro: "Outro" };
 export const ST_TOM: Record<string, "success" | "danger" | "neutral" | "info"> = { pago: "success", atrasado: "danger", cancelado: "neutral", aberto: "info" };
 export const ST_ROT: Record<string, string> = { pago: "Pago", atrasado: "Atrasado", cancelado: "Cancelado", aberto: "Em aberto" };
-const ABAS = [["resumo", "Resumo e fluxo de caixa"], ["lancamentos", "Contas a pagar e receber"], ["contratos", "Contratos de honorários"], ["taxas", "Taxas do Asaas"]] as const;
+const ABAS = [["resumo", "Resumo e fluxo de caixa"], ["lancamentos", "Contas a pagar e receber"], ["contratos", "Contratos de honorários"], ["regua", "Cobrança automática"], ["taxas", "Taxas do Asaas"]] as const;
 type Aba = typeof ABAS[number][0];
 
 export function Financeiro() {
@@ -43,6 +44,7 @@ export function Financeiro() {
       </div>
       {aba === "resumo" && <ResumoFin />}
       {aba === "lancamentos" && <Lancamentos gerir={gerir} contrato={filtroContrato} aoLimparContrato={() => setFiltroContrato(null)} />}
+      {aba === "regua" && <ReguaAutomatica />}
       {aba === "taxas" && <TaxasAsaas />}
       {aba === "contratos" && <Contratos gerir={gerir} aoVerParcelas={(id) => { setFiltroContrato(id); setAba("lancamentos"); }} />}
     </div>
@@ -96,15 +98,15 @@ function ResumoFin() {
 /** Quem está devendo (parcelas a receber vencidas): a lista de quem cobrar primeiro, com o texto da cobrança pronto. */
 function Devedores({ lista }: { lista: Devedor[] }) {
   const { show } = useToast();
-  const atendimento = useAtendimentoLiberado();
+  const { can } = useAuth();
+  const [avisando, setAvisando] = useState<ItemAviso[] | null>(null);
   if (lista.length === 0) return null;
   const hojeIso = hoje();
   const dias = (v: string) => Math.max(0, Math.round((Date.parse(`${hojeIso}T12:00:00Z`) - Date.parse(`${v}T12:00:00Z`)) / 86_400_000));
   const cobrar = async (d: Devedor) => {
     try {
       const r = await api.get<{ itens: Lanc[] }>(`/gestao/financeiro/lancamentos?pessoa=${d.pessoa_id}&tipo=receber&status=atrasado&limite=20`);
-      const ok = await cobrarPeloAtendimento(d.telefone, mensagemDeCobranca(d.nome, r.itens));
-      show(ok ? "Mensagem de cobrança copiada. Cole na conversa que abriu." : "Conversa aberta (não consegui copiar o texto).", ok ? "success" : "info");
+      setAvisando(r.itens.map((l) => ({ id: l.id, rotulo: `${d.nome} · ${l.descricao} · ${dinheiro(l.valor_centavos)}` })));
     } catch { show("Não foi possível preparar a cobrança.", "error"); }
   };
   return (
@@ -116,9 +118,10 @@ function Devedores({ lista }: { lista: Devedor[] }) {
             <Link to={`/gestao/clientes/${d.pessoa_id}?aba=financeiro`} className="min-w-0 flex-1 truncate font-medium text-accent-700 hover:underline dark:text-accent-300">{d.nome}</Link>
             <span className="text-xs text-zinc-500">{d.parcelas} parcela(s) · a mais antiga há {dias(d.mais_antigo)} dia(s)</span>
             <b className="text-red-600 dark:text-red-400">{dinheiro(d.total_centavos)}</b>
-            {atendimento && d.telefone && <Button size="sm" variant="outline" onClick={() => void cobrar(d)}><MessageCircle className="h-4 w-4" /> Cobrar</Button>}
+            {can("financeiro.manage") && d.telefone && <Button size="sm" variant="outline" onClick={() => void cobrar(d)}><MessageCircle className="h-4 w-4" /> Cobrar</Button>}
           </li>))}
       </ul>
+      {avisando && <AvisoLoteModal itens={avisando} aoFechar={() => setAvisando(null)} aoConcluir={() => undefined} />}
     </section>
   );
 }
@@ -138,6 +141,8 @@ function Lancamentos({ gerir, contrato, aoLimparContrato }: { gerir: boolean; co
   const [baixando, setBaixando] = useState<Lanc | null>(null);
   const [reprog, setReprog] = useState<Lanc | null>(null);
   const [cobrando, setCobrando] = useState<Lanc | null>(null);
+  const [sel, setSel] = useState<Map<number, string>>(new Map());
+  const [avisando, setAvisando] = useState<ItemAviso[] | null>(null);
   const [apagar, setApagar] = useState<Lanc | null>(null);
   const [resp, setResp] = useState<Responsavel[]>([]);
   const carregar = useCallback(async () => {
@@ -145,14 +150,12 @@ function Lancamentos({ gerir, contrato, aoLimparContrato }: { gerir: boolean; co
     catch { show("Não foi possível carregar os lançamentos.", "error"); }
   }, [pagina, tipo, status, de, ate, termo, contrato, show]);
   useEffect(() => { void carregar(); }, [carregar]);
-  useEffect(() => { setPagina(0); }, [tipo, status, de, ate, termo, contrato]);
+  useEffect(() => { setPagina(0); setSel(new Map()); }, [tipo, status, de, ate, termo, contrato]);
   useEffect(() => { api.get<Responsavel[]>("/gestao/responsaveis").then(setResp).catch(() => undefined); }, []);
   const acao = async (fn: () => Promise<unknown>, ok: string) => { try { await fn(); show(ok, "success"); await carregar(); } catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível concluir.", "error"); } };
-  const atendimento = useAtendimentoLiberado();
-  const cobrar = async (l: Lanc) => {
-    const ok = await cobrarPeloAtendimento(l.pessoa_telefone ?? "", mensagemDeCobranca(l.pessoa_nome ?? "", [l]));
-    show(ok ? "Mensagem de cobrança copiada. Cole na conversa que abriu." : "Conversa aberta (não consegui copiar o texto).", ok ? "success" : "info");
-  };
+  const rotulo = (l: Lanc) => `${l.pessoa_nome ?? "Sem cliente"} · ${l.descricao} · ${dinheiro(l.valor_centavos)}`;
+  const avisavel = (l: Lanc) => l.tipo === "receber" && (l.status === "aberto" || l.status === "atrasado") && Boolean(l.pessoa_id) && Boolean(l.pessoa_telefone);
+  const alternar = (l: Lanc) => setSel((m) => { const n = new Map(m); if (n.has(l.id)) n.delete(l.id); else n.set(l.id, rotulo(l)); return n; });
   const exportar = async () => {
     try {
       const linhas: Lanc[] = [];
@@ -183,16 +186,20 @@ function Lancamentos({ gerir, contrato, aoLimparContrato }: { gerir: boolean; co
         <div className="flex gap-2"><Button variant="outline" onClick={() => void exportar()}><Download className="h-4 w-4" /> Exportar</Button>{gerir && <Button onClick={() => setEditando("novo")}><Plus className="h-4 w-4" /> Novo lançamento</Button>}</div>
       </div>
       {contrato && <p className="text-sm text-zinc-600 dark:text-zinc-300">Mostrando as parcelas de um contrato. <button className="text-accent-700 underline" onClick={aoLimparContrato}>Ver todos</button></p>}
+      {gerir && sel.size > 0 && <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-accent-200 bg-accent-50 px-4 py-2 text-sm dark:border-accent-500/30 dark:bg-accent-500/10"><span><b>{sel.size}</b> parcela(s) selecionada(s)</span><span className="flex gap-2"><Button size="sm" variant="ghost" onClick={() => setSel(new Map())}>Limpar</Button><Button size="sm" onClick={() => setAvisando([...sel].map(([id, rotulo]) => ({ id, rotulo })))}><MessageCircle className="h-4 w-4" /> Enviar aviso pelo WhatsApp</Button></span></div>}
+      {gerir && lista.some(avisavel) && <p className="text-right text-xs"><button className="text-accent-700 underline dark:text-accent-300" onClick={() => setSel((m) => { const n = new Map(m); lista.filter(avisavel).forEach((l) => n.set(l.id, rotulo(l))); return n; })}>Selecionar todas desta página</button></p>}
       {dados && lista.length === 0 ? <EmptyState icon={Wallet} title="Nenhum lançamento" description="Ajuste os filtros ou crie um lançamento." action={gerir ? <Button onClick={() => setEditando("novo")}><Plus className="h-4 w-4" /> Novo lançamento</Button> : undefined} /> : (
         <ul className="divide-y divide-zinc-100 overflow-hidden surface-panel dark:divide-zinc-800">
           {lista.map((l) => (
-            <li key={l.id} className="grid gap-2 px-4 py-3 lg:grid-cols-[1.6fr_130px_120px_auto] lg:items-center lg:gap-4">
+            <li key={l.id} className="grid gap-2 px-4 py-3 lg:grid-cols-[auto_1.6fr_130px_120px_auto] lg:items-center lg:gap-4">
+              <span className="hidden lg:block">{gerir && avisavel(l) ? <input type="checkbox" aria-label={`Selecionar ${l.descricao}`} checked={sel.has(l.id)} onChange={() => alternar(l)} /> : <span className="inline-block w-[13px]" />}</span>
               <div className="min-w-0"><p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{l.descricao}</p><p className="truncate text-xs text-zinc-500">{CAT[l.categoria]}{l.origem_lancamento_id ? " · saldo de pagamento parcial" : ""}{l.pessoa_nome ? ` · ${l.pessoa_nome}` : ""}{l.processo_pasta ? ` · Pasta ${l.processo_pasta}` : ""}{l.beneficiario ? ` · ${l.beneficiario}` : ""}{l.reembolsavel ? " · reembolsável" : ""}</p></div>
               <p className={`text-sm font-semibold ${l.tipo === "receber" ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}`}>{l.tipo === "pagar" ? "− " : ""}{dinheiro(l.valor_centavos)}</p>
               <p className="text-xs text-zinc-500">{l.pago_em ? `Pago em ${dataBr(l.pago_em)}` : `Vence ${dataBr(l.vencimento)}`}</p>
               <div className="flex flex-wrap items-center gap-1.5"><Badge tone={ST_TOM[l.status]}>{ST_ROT[l.status]}</Badge>
                 {gerir && l.tipo === "receber" && (l.status === "aberto" || l.status === "atrasado") && l.pessoa_id && <Button size="sm" variant="outline" onClick={() => setCobrando(l)}><QrCode className="h-4 w-4" /> Boleto/PIX</Button>}
-                {atendimento && l.tipo === "receber" && l.status === "atrasado" && l.pessoa_telefone && <Button size="sm" variant="outline" onClick={() => void cobrar(l)}><MessageCircle className="h-4 w-4" /> Cobrar</Button>}
+                {gerir && avisavel(l) && <Button size="sm" variant="outline" onClick={() => setAvisando([{ id: l.id, rotulo: rotulo(l) }])}><MessageCircle className="h-4 w-4" /> {l.status === "atrasado" ? "Cobrar" : "Avisar"}</Button>}
+                {l.cobranca_status && l.status !== "pago" && <Badge tone="info">{l.cobranca_status === "PENDING" ? "Boleto/PIX gerado" : l.cobranca_status === "OVERDUE" ? "Boleto vencido" : l.cobranca_status}</Badge>}
                 {gerir && (l.status === "aberto" || l.status === "atrasado") && <><Button size="sm" onClick={() => setBaixando(l)}>{l.tipo === "receber" ? "Receber" : "Pagar"}</Button><Button size="sm" variant="ghost" onClick={() => setReprog(l)}>Nova data</Button><Button size="sm" variant="ghost" onClick={() => setEditando(l)}>Editar</Button><Button size="sm" variant="ghost" onClick={() => void acao(() => api.post(`/gestao/financeiro/lancamentos/${l.id}/cancelar`, {}), "Lançamento cancelado.")}>Cancelar</Button></>}
                 {gerir && l.status === "pago" && <Button size="sm" variant="ghost" onClick={() => void acao(() => api.post(`/gestao/financeiro/lancamentos/${l.id}/estornar`, {}), "Baixa estornada.")}>Estornar</Button>}
                 {gerir && l.status === "cancelado" && <><Button size="sm" variant="ghost" onClick={() => void acao(() => api.post(`/gestao/financeiro/lancamentos/${l.id}/cancelar`, { cancelar: false }), "Lançamento reativado.")}>Reativar</Button><Button size="sm" variant="ghost" onClick={() => setApagar(l)}>Excluir</Button></>}
@@ -203,6 +210,7 @@ function Lancamentos({ gerir, contrato, aoLimparContrato }: { gerir: boolean; co
       {dados && dados.total > 0 && <p className="text-right text-xs text-zinc-500">{dados.total} lançamento(s) · soma dos valores: <b>{dinheiro(dados.soma_centavos)}</b></p>}
       <Pagination page={pagina} totalItems={dados?.total ?? 0} pageSize={30} onPageChange={setPagina} />
       {editando && <LancamentoModal lanc={editando === "novo" ? null : editando} responsaveis={resp} aoFechar={() => setEditando(null)} aoSalvar={() => { setEditando(null); void carregar(); }} />}
+      {avisando && <AvisoLoteModal itens={avisando} aoFechar={() => setAvisando(null)} aoConcluir={() => { setSel(new Map()); void carregar(); }} />}
       {cobrando && <CobrancaModal lanc={cobrando} aoFechar={() => setCobrando(null)} aoMudar={() => void carregar()} />}
       {reprog && <ReprogramarModal lanc={reprog} aoFechar={() => setReprog(null)} aoSalvar={() => { setReprog(null); void carregar(); }} />}
       {baixando && <BaixaModal lanc={baixando} aoFechar={() => setBaixando(null)} aoSalvar={() => { setBaixando(null); void carregar(); }} />}
@@ -342,8 +350,14 @@ export function CobrancaModal({ lanc, aoFechar, aoMudar }: { lanc: Lanc; aoFecha
   const ativa = c && !["CANCELADA", "DELETED", "REFUNDED"].includes(c.status);
   const link: LinkDePagamento | undefined = ativa && c.invoice_url ? { url: c.invoice_url, pix: c.pix_payload || undefined, linha: c.linha_digitavel || undefined } : undefined;
   const enviar = async () => {
+    setOcupado("enviar");
+    try { await api.post(`/gestao/financeiro/lancamentos/${lanc.id}/cobranca/enviar`, {}); show("Mensagem com o link de pagamento enviada pelo WhatsApp.", "success"); aoMudar(); }
+    catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível enviar.", "error"); }
+    finally { setOcupado(""); }
+  };
+  const abrirConversa = async () => {
     const ok = await cobrarPeloAtendimento(lanc.pessoa_telefone ?? "", mensagemDeCobranca(lanc.pessoa_nome ?? "", [lanc], link));
-    show(ok ? "Mensagem com o link de pagamento copiada. Cole na conversa que abriu." : "Conversa aberta (não consegui copiar o texto).", ok ? "success" : "info");
+    show(ok ? "Texto copiado. Cole na conversa que abriu." : "Conversa aberta (não consegui copiar o texto).", ok ? "success" : "info");
   };
   const st = c ? STATUS_ASAAS[c.status] ?? { rotulo: c.status, tom: "neutral" as const } : null;
   return (
@@ -369,7 +383,8 @@ export function CobrancaModal({ lanc, aoFechar, aoMudar }: { lanc: Lanc; aoFecha
           {c.pix_payload && <div><p className="mb-1 text-xs font-medium text-zinc-600 dark:text-zinc-300">PIX copia e cola</p><div className="flex gap-2"><Input readOnly value={c.pix_payload} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} /><Button variant="outline" onClick={() => void copiar(c.pix_payload, "PIX")}><Copy className="h-4 w-4" /></Button></div></div>}
           {c.linha_digitavel && <div><p className="mb-1 text-xs font-medium text-zinc-600 dark:text-zinc-300">Linha digitável do boleto</p><div className="flex gap-2"><Input readOnly value={c.linha_digitavel} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} /><Button variant="outline" onClick={() => void copiar(c.linha_digitavel, "Linha digitável")}><Copy className="h-4 w-4" /></Button>{c.bank_slip_url && <a href={c.bank_slip_url} target="_blank" rel="noopener noreferrer" className="inline-flex"><Button variant="outline" type="button"><FileText className="h-4 w-4" /></Button></a>}</div></div>}
           <div className="flex flex-wrap gap-2 border-t border-zinc-100 pt-3 dark:border-white/10">
-            {atendimento && lanc.pessoa_telefone && link && !c.pago_em && <Button onClick={() => void enviar()}><MessageCircle className="h-4 w-4" /> Enviar pelo WhatsApp</Button>}
+            {lanc.pessoa_telefone && link && !c.pago_em && <Button loading={ocupado === "enviar"} onClick={() => void enviar()}><MessageCircle className="h-4 w-4" /> Enviar pelo WhatsApp</Button>}
+            {atendimento && lanc.pessoa_telefone && link && !c.pago_em && <Button variant="outline" onClick={() => void abrirConversa()}>Abrir conversa</Button>}
             <Button variant="outline" loading={ocupado === "consultar"} onClick={() => void rodar("consultar", () => api.post(`/gestao/financeiro/lancamentos/${lanc.id}/cobranca/consultar`, {}), "Situação atualizada.")}>Atualizar situação</Button>
             {!c.pago_em && <Button variant="ghost" loading={ocupado === "cancelar"} onClick={() => void rodar("cancelar", () => api.post(`/gestao/financeiro/lancamentos/${lanc.id}/cobranca/cancelar`, {}), "Cobrança cancelada.")}>Cancelar cobrança</Button>}
           </div>

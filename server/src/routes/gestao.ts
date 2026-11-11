@@ -31,6 +31,7 @@ import { agendaDaPessoa, andamentoDoProcesso } from "../services/gestao/integrac
 import { atendimentoDaInstancia } from "../atendimento/instancia";
 import { hojeSaoPaulo } from "../services/djen/cache";
 import { completarComDataJud, forcarConsulta, iniciarAcompanhamento, situacaoDoAcompanhamento } from "../services/djen/vigia";
+import { avisosDaParcela, enviarAviso, enviarEmLote, historicoDeAvisos, lerRegua, pausarAvisos, pendentesDaRegua, pessoaPausada, salvarRegua } from "../services/gestao/regua";
 import { ambienteDoAsaas, cancelarCobranca, chaveDoAsaas, cobrancaDoLancamento, consultarCobranca, ErroAsaas, gerarCobranca, mascara as mascaraAsaas, salvarConfigAsaas, sincronizarCobrancasAlteradas, sincronizarExtrato, taxasDoAsaas, testarAsaas, tokenDoWebhook } from "../services/gestao/asaas";
 import { atualizarDoDataJud, chaveDoDataJud, ErroDataJud, mascararChave, salvarChaveDoDataJud } from "../services/djen/datajud";
 import { processarHistoricos } from "../services/djen/processHistory";
@@ -184,6 +185,13 @@ gestaoRouter.put("/asaas/config", rota((req) => { gerirIntegracoes(req); try { s
 gestaoRouter.post("/asaas/testar", rota(async (req) => { gerirIntegracoes(req); try { return await testarAsaas(); } catch (e) { return erroAsaas(e); } }));
 gestaoRouter.get("/financeiro/lancamentos/:id/cobranca", rota((req) => ({ cobranca: cobrancaDoLancamento(id(req)), configurado: Boolean(chaveDoAsaas()) })));
 gestaoRouter.post("/financeiro/lancamentos/:id/cobranca", rota(async (req, res) => { gerirFinanceiro(req); try { const c = await gerarCobranca(id(req), req.body?.tipo, quem(req)); auditAccess("asaas_cobranca_gerada", usuario(req).id, null, { lancamento: id(req) }); res.status(201); return { cobranca: c }; } catch (e) { return erroAsaas(e); } }));
+gestaoRouter.post("/financeiro/lancamentos/:id/cobranca/enviar", rota(async (req) => { gerirFinanceiro(req); const tipo = req.body?.gerar === false ? false : (["pix", "boleto", "boleto_pix"].includes(req.body?.gerar) ? req.body.gerar : false); const r = await enviarAviso(id(req), { origem: "manual", gerar: tipo, quem: quem(req) }); if (r.status === "falhou") throw new ErroGestao(r.motivo || "Não foi possível enviar.", 409); return { resultado: r }; }));
+gestaoRouter.get("/financeiro/lancamentos/:id/avisos", rota((req) => ({ avisos: avisosDaParcela(id(req)) })));
+gestaoRouter.post("/financeiro/avisos/lote", rota(async (req) => { gerirFinanceiro(req); const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number) : []; const gerar = ["pix", "boleto", "boleto_pix"].includes(req.body?.gerar) ? req.body.gerar : false; return enviarEmLote(ids, { gerar, quem: quem(req) }); }));
+gestaoRouter.get("/financeiro/regua", rota(() => ({ config: lerRegua(), asaas: Boolean(chaveDoAsaas()), pendentes: pendentesDaRegua(), historico: historicoDeAvisos(60) })));
+gestaoRouter.put("/financeiro/regua", rota((req) => { gerirFinanceiro(req); return { config: salvarRegua(req.body ?? {}) }; }));
+gestaoRouter.get("/pessoas/:id/cobranca-pausa", rota((req) => ({ pausado: pessoaPausada(id(req)) })));
+gestaoRouter.put("/pessoas/:id/cobranca-pausa", rota((req) => { gerirFinanceiro(req); pausarAvisos(id(req), Boolean(req.body?.pausado)); return { pausado: pessoaPausada(id(req)) }; }));
 gestaoRouter.post("/financeiro/lancamentos/:id/cobranca/consultar", rota(async (req) => { gerirFinanceiro(req); try { return { cobranca: await consultarCobranca(id(req)) }; } catch (e) { return erroAsaas(e); } }));
 gestaoRouter.post("/financeiro/lancamentos/:id/cobranca/cancelar", rota(async (req) => { gerirFinanceiro(req); try { await cancelarCobranca(id(req), quem(req)); return { cobranca: cobrancaDoLancamento(id(req)) }; } catch (e) { return erroAsaas(e); } }));
 gestaoRouter.get("/financeiro/asaas/taxas", rota((req) => {

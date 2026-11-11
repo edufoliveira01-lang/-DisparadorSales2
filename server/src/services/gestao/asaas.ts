@@ -16,19 +16,7 @@ export type Ambiente = keyof typeof BASES;
 export type TipoCobranca = "boleto_pix" | "pix" | "boleto";
 const TIPO_ASAAS: Record<TipoCobranca, string> = { boleto_pix: "UNDEFINED", pix: "PIX", boleto: "BOLETO" };
 
-db.exec(`
-CREATE TABLE IF NOT EXISTS gestao_asaas_clientes (pessoa_id INTEGER PRIMARY KEY, customer_id TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS gestao_asaas_cobrancas (
-  lancamento_id INTEGER PRIMARY KEY, payment_id TEXT NOT NULL UNIQUE, billing_type TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'PENDING',
-  invoice_url TEXT NOT NULL DEFAULT '', bank_slip_url TEXT NOT NULL DEFAULT '', linha_digitavel TEXT NOT NULL DEFAULT '', pix_payload TEXT NOT NULL DEFAULT '',
-  valor_centavos INTEGER NOT NULL, vencimento TEXT NOT NULL, taxa_centavos INTEGER, liquido_centavos INTEGER, pago_em TEXT, forma_paga TEXT NOT NULL DEFAULT '',
-  erro TEXT, criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE TABLE IF NOT EXISTS gestao_asaas_extrato (
-  id TEXT PRIMARY KEY, data TEXT NOT NULL, tipo TEXT NOT NULL, descricao TEXT NOT NULL DEFAULT '', valor_centavos INTEGER NOT NULL, payment_id TEXT NOT NULL DEFAULT ''
-);
-CREATE INDEX IF NOT EXISTS idx_asaas_extrato_data ON gestao_asaas_extrato(data);
-`);
+
 
 export class ErroAsaas extends Error { constructor(m: string, public status = 502) { super(m); } }
 

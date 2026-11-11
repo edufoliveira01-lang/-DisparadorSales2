@@ -16,3 +16,11 @@
 
 ## Segurança
 A chave e o token do webhook ficam criptografados no banco. O painel só repassa o aviso à instância do escritório assinando com a chave dele; a instância confere o token do Asaas. As notificações do próprio Asaas ao cliente ficam desligadas (cada uma é cobrada).
+
+## Cobrança pelo WhatsApp, lote e régua automática (3.12.0)
+
+- **Enviar pelo WhatsApp envia de verdade.** A mensagem sai pelo WhatsApp conectado ao próprio sistema (Conexão do WhatsApp), com o link/PIX/linha digitável quando houver cobrança. «Abrir conversa» continua existindo como opção (copia o texto e abre o cliente no atendimento), porque o Deskcomm não recebe texto pré-preenchido. **Atenção:** as respostas do cliente chegam no número conectado ao Sales.
+- **Na ficha do cliente (aba Financeiro):** por parcela, *Gerar boleto/PIX*, *Cobrar/Avisar*, *Nova data* e *Receber*; faixa com *Cobrar atrasadas*, *Avisar todas em aberto* e *Pausar avisos* (o cliente deixa de receber avisos automáticos).
+- **Em lote:** em Financeiro → Contas a pagar e receber, marque as parcelas (ou «Selecionar todas desta página») e use *Enviar aviso pelo WhatsApp*. Também vale para «Quem está em atraso → Cobrar». Há intervalo entre as mensagens (mesmo ritmo dos demais envios: Configurações → intervalos de envio).
+- **Cobrança automática** (Financeiro → aba *Cobrança automática*): liga/desliga, dias antes/depois do vencimento, aviso no dia, horário, e se gera boleto/PIX antes de avisar (parcelas ainda não vencidas). Cada parcela recebe cada aviso uma vez; falhas são repetidas até 3 vezes; não envia com o WhatsApp desconectado nem para clientes pausados. O histórico mostra o que foi enviado e o motivo das falhas. O agendador confere a cada 5 minutos.
+- Tabelas: `gestao_avisos_cobranca`, `gestao_cobranca_pausa`.

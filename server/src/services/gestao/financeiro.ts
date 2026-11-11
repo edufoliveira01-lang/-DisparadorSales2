@@ -28,8 +28,8 @@ const data = (v: unknown, campo: string, obrigatoria = true) => {
   return s;
 };
 
-const SELECT = `SELECT l.*, pe.nome AS pessoa_nome, pe.telefone AS pessoa_telefone, pr.numero AS processo_numero, pr.pasta AS processo_pasta, COALESCE(NULLIF(u.display_name,''),u.username) AS beneficiario
-  FROM gestao_lancamentos l LEFT JOIN gestao_pessoas pe ON pe.id=l.pessoa_id LEFT JOIN gestao_processos pr ON pr.id=l.processo_id LEFT JOIN users u ON u.id=l.beneficiario_user_id`;
+const SELECT = `SELECT l.*, pe.nome AS pessoa_nome, pe.telefone AS pessoa_telefone, ac.status AS cobranca_status, ac.invoice_url AS cobranca_url, pr.numero AS processo_numero, pr.pasta AS processo_pasta, COALESCE(NULLIF(u.display_name,''),u.username) AS beneficiario
+  FROM gestao_lancamentos l LEFT JOIN gestao_pessoas pe ON pe.id=l.pessoa_id LEFT JOIN gestao_processos pr ON pr.id=l.processo_id LEFT JOIN users u ON u.id=l.beneficiario_user_id LEFT JOIN gestao_asaas_cobrancas ac ON ac.lancamento_id=l.id`;
 type L = { id: number; tipo: string; cancelado: number; pago_em: string | null; vencimento: string; reembolsavel: number };
 export const situacao = (l: L, hoje = hojeSaoPaulo()) => (l.cancelado ? "cancelado" : l.pago_em ? "pago" : l.vencimento < hoje ? "atrasado" : "aberto");
 const visao = (l: any, hoje: string) => ({ ...l, status: situacao(l, hoje), reembolsavel: Boolean(l.reembolsavel), cancelado: Boolean(l.cancelado) });
