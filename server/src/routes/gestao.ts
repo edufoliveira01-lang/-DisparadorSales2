@@ -12,6 +12,7 @@ import { VARIAVEIS, excluirModelo, gerarDocumento, listarModelos, salvarModelo }
 import { atualizarTarefa, concluirTarefa, criarTarefa, excluirTarefa, listarTarefas, meuPainel, obterTarefa, sincronizarPrazosDjen } from "../services/gestao/tarefas";
 import { atualizarLancamento, baixarLancamento, cancelarContrato, cancelarLancamento, criarContrato, criarLancamentos, estornarLancamento, excluirLancamento, fluxoDeCaixa, listarContratos, listarLancamentos, obterContrato, obterLancamento, resumoFinanceiro } from "../services/gestao/financeiro";
 import { indicadores } from "../services/gestao/indicadores";
+import { dashboardDoInicio } from "../services/gestao/dashboard";
 import { hasPermission } from "../services/accessService";
 import { consultarCep } from "../services/gestao/cep";
 import { adicionarCamposPrevidenciarios, atualizarCampo, criarCampo, excluirCampo, listarCampos, revelarSenha, TIPOS_CAMPO } from "../services/gestao/campos";
@@ -165,6 +166,7 @@ gestaoRouter.get("/financeiro/contratos/:id", rota((req) => obterContrato(id(req
 gestaoRouter.post("/financeiro/contratos/:id/cancelar", rota((req) => { const r = cancelarContrato(id(req)); auditAccess("financeiro_contrato_cancelado", usuario(req).id, null, { contrato: id(req) }); return r; }));
 
 // ---------- indicadores ----------
+gestaoRouter.get("/dashboard", rota((req) => dashboardDoInicio(req.query.mes, hasPermission(usuario(req), "financeiro.view") && recursoLiberadoNaLicenca("modulo_financeiro"))));
 gestaoRouter.get("/indicadores", rota((req) => indicadores(req.query.mes, hasPermission(usuario(req), "financeiro.view") && recursoLiberadoNaLicenca("modulo_financeiro"))));
 
 // ---------- CEP, campos personalizados e ficha de cadastro ----------

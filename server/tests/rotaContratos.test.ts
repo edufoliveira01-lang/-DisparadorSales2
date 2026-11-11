@@ -88,3 +88,14 @@ describe("painel — repasse da saúde do armazenamento", () => {
     await m.fechar();
   });
 });
+
+describe("painel — repasse dos indicadores do atendimento", () => {
+  it("repassa POST /indicadores para o escritório; GET é recusado", async () => {
+    const m = await montar(3409, { status: 201, corpo: { ok: true } });
+    const corpo = JSON.stringify({ meses: [{ mes: "2026-11", novos: 3 }] });
+    expect((await m.chamar("POST", "/v1/offices/alfa/indicadores", corpo)).status).toBe(201);
+    expect(m.vistos[0]!.url).toBe("http://127.0.0.1:3409/api/integracao/indicadores");
+    expect((await m.chamar("GET", "/v1/offices/alfa/indicadores")).status).toBe(405);
+    await m.fechar();
+  });
+});

@@ -10,6 +10,7 @@ import { ErroContrato, estadoDoContrato, gerarContrato, type DadosContrato } fro
 import { ErroArmazenamento } from "../armazenamento/pastas";
 import { receberDocumentoDoChat } from "../armazenamento/chat";
 import { saudeDoArmazenamento } from "../armazenamento/fila";
+import { guardarRetrato } from "../atendimento/indicadores";
 
 /**
  * Contratos pedidos pelo atendimento (Deskcomm). NÃO usa a sessão de ninguém: quem chama é o painel de assinaturas,
@@ -60,6 +61,13 @@ integracaoContratosRouter.post("/documentos", async (req, res) => {
     auditAccess("documento_do_chat_recebido", null, null, { situacao: r.situacao, tipo: String(d.tipo ?? "") });
     res.status(r.situacao === "ja_recebido" ? 200 : 201).json(r);
   } catch (e) { erro(res, e); }
+});
+
+/** O retrato dos indicadores do atendimento (leads qualificados, desqualificados…), calculado e empurrado pelo Deskcomm para a tela Início. */
+integracaoContratosRouter.post("/indicadores", (req, res) => {
+  const r = guardarRetrato(req.body);
+  if (!r) return void res.status(400).json({ error: "Retrato inválido." });
+  res.status(201).json({ ok: true, meses: r.meses.length });
 });
 
 /** A saúde do envio ao drive: o atendimento consulta de tempos em tempos e avisa a equipe por WhatsApp quando aparece um problema novo. */
