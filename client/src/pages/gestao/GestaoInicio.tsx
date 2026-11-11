@@ -19,7 +19,7 @@ interface Compromisso { id: number; tipo: string; nome: string; data: string; ho
 interface MesAtendimento { mes: string; novos: number; qualificados: number; desqualificados: number; sem_interesse: number; em_andamento: number }
 interface Dash {
   hoje: string; mes: string; meses: string[];
-  contratos: { assinados_mes: number; enviados_mes: number; aguardando_assinatura: number; aguardando_mais_de_3_dias: number; serie: { mes: string; total: number }[]; serie_enviados: { mes: string; total: number }[] } | null;
+  contratos: { assinados_mes: number; assinados_zapsign_mes: number; presenciais_mes: number; enviados_mes: number; aguardando_assinatura: number; aguardando_mais_de_3_dias: number; serie: { mes: string; total: number }[]; serie_enviados: { mes: string; total: number }[] } | null;
   processos: { protocolados_mes: number; cadastrados_mes: number; ativos: number; sem_responsavel: number; serie: { mes: string; total: number }[] };
   negocios: { fecharam_mes: number; qualificados_mes: number; nao_qualificados_mes: number; aguardando_mes: number; nao_informada_mes: number; serie_qualificados: { mes: string; total: number }[]; aguardando_analise_total: number } | null;
   clientes: { novos_mes: number; total: number };
@@ -133,7 +133,7 @@ export function GestaoInicio() {
 
       {/* Os seis números do mês */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
-        <Indicador icone={<FileSignature />} rotulo="Contratos assinados" valor={d?.contratos ? d.contratos.assinados_mes : "—"} tom="verde" detalhe={d?.contratos ? `${d.contratos.enviados_mes} enviados · ${d.contratos.aguardando_assinatura} aguardando` : "Sem ZapSign neste escritório"} />
+        <Indicador icone={<FileSignature />} rotulo="Contratos assinados" valor={d?.contratos ? d.contratos.assinados_mes : "—"} tom="verde" detalhe={d?.contratos ? `${d.contratos.assinados_zapsign_mes} ZapSign · ${d.contratos.presenciais_mes} presenciais · ${d.contratos.aguardando_assinatura} aguardando` : "Sem ZapSign neste escritório"} />
         <Indicador icone={<Gavel />} rotulo="Processos protocolados" valor={d?.processos.protocolados_mes ?? "…"} tom="azul" detalhe={d ? `${d.processos.ativos} ativos no total` : undefined} para="/gestao/processos" />
         <Indicador icone={<UserCheck />} rotulo="Clientes qualificados" valor={ng ? ng.qualificados_mes : "—"} tom="verde" detalhe={ng ? (taxaQualificacao !== null ? `${taxaQualificacao}% dos ${ng.fecharam_mes} que fecharam` : "Nenhum contrato fechado neste mês") : undefined} para="/gestao/captacao" />
         <Indicador icone={<UserX />} rotulo="Desqualificados" valor={am || ng ? desqualificadosMes : "—"} tom={desqualificadosMes > 0 ? "vermelho" : "neutro"} detalhe={`${am?.desqualificados ?? 0} na triagem · ${ng?.nao_qualificados_mes ?? 0} após análise${ng && ng.aguardando_analise_total > 0 ? ` · ${ng.aguardando_analise_total} a analisar` : ""}`} para="/gestao/captacao" />

@@ -28,7 +28,7 @@ interface Pendente { pessoa_id: number; nome: string; data_fechamento: string; f
 
 const pct = (a: number, b: number) => (b > 0 ? `${Math.round((a / b) * 100)}%` : "—");
 const NOMES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-const ABAS = [["resumo", "Resumo"], ["pendentes", "Preencher cadastros"], ["fontes", "Fontes"]] as const;
+const ABAS = [["resumo", "Resumo"], ["pendentes", "Preencher cadastros"], ["fontes", "Fontes"], ["contratos", "Contratos"]] as const;
 
 export function Captacao() {
   const { show } = useToast();
@@ -159,6 +159,7 @@ export function Captacao() {
 
       {aba === "pendentes" && <Pendentes aoMudar={carregar} />}
       {aba === "fontes" && <Fontes aoMudar={carregar} />}
+      {aba === "contratos" && <Contratos />}
     </div>
   );
 }
@@ -230,6 +231,41 @@ function Fontes({ aoMudar }: { aoMudar: () => void }) {
         </ul>
       </Secao>
     </div>
+  );
+}
+
+interface ContratoZap { id: number; status: string; criado_em: string; assinado_em: string | null; pessoa_id: number | null; nome: string | null }
+/** Os contratos que o quadro "Contratos assinados" do Início conta. Contrato de teste pode ser removido daqui. */
+function Contratos() {
+  const { show } = useToast();
+  const [itens, setItens] = useState<ContratoZap[] | null>(null);
+  const carregar = useCallback(async () => { try { setItens((await api.get<{ itens: ContratoZap[] }>("/gestao/contratos-zapsign")).itens); } catch { show("Não foi possível carregar os contratos.", "error"); } }, [show]);
+  useEffect(() => { void carregar(); }, [carregar]);
+  const remover = async (c: ContratoZap) => {
+    if (!window.confirm(`Remover este contrato (${c.nome ?? "sem cadastro"}) da contagem? O documento no ZapSign não é afetado.`)) return;
+    try { await api.delete(`/gestao/contratos-zapsign/${c.id}`); show("Contrato removido da contagem.", "success"); void carregar(); }
+    catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível remover.", "error"); }
+  };
+  if (!itens) return <p className="text-sm text-zinc-500">Carregando…</p>;
+  return (
+    <Secao titulo="Contratos enviados pelo ZapSign" subtitulo="Só estes entram na contagem de «Contratos assinados» (mais os fechamentos presenciais marcados na aba Negócio). Contratos sem cadastro não são contados.">
+      {itens.length === 0 ? <p className="text-sm text-zinc-500">Nenhum contrato registrado.</p> : (
+        <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-sm">
+          <thead><tr className="text-left text-xs text-zinc-500"><th className="py-2 pr-3 font-medium">Cliente</th><th className="px-2 font-medium">Situação</th><th className="px-2 font-medium">Enviado</th><th className="px-2 font-medium">Assinado</th><th /></tr></thead>
+          <tbody className="divide-y divide-zinc-100 dark:divide-white/10">
+            {itens.map((c) => (
+              <tr key={c.id}>
+                <td className="py-2 pr-3 font-medium">{c.nome ?? <span className="text-zinc-400">sem cadastro (não conta)</span>}</td>
+                <td className="px-2"><Badge tone={c.status === "assinado" ? "success" : "neutral"}>{c.status === "assinado" ? "Assinado" : "Aguardando"}</Badge></td>
+                <td className="px-2 text-zinc-500">{dataBr(c.criado_em.slice(0, 10))}</td>
+                <td className="px-2 text-zinc-500">{c.assinado_em ? dataBr(c.assinado_em.slice(0, 10)) : "—"}</td>
+                <td className="text-right"><Button variant="outline" onClick={() => void remover(c)}>Remover</Button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>
+      )}
+    </Secao>
   );
 }
 

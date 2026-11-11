@@ -8,8 +8,9 @@ import { guardarRetrato, normalizarRetrato } from "../src/atendimento/indicadore
 import { dashboardDoInicio, ultimosMeses } from "../src/services/gestao/dashboard";
 
 const MES = "2026-11";
-const contrato = (status: string, criado: string, assinado: string | null) =>
-  db.prepare("INSERT INTO zapsign_contratos(doc_token,sign_url,status,criado_em,assinado_em) VALUES ('t','u',?,?,?)").run(status, criado, assinado);
+const pessoa = () => Number(db.prepare("INSERT INTO gestao_pessoas(nome) VALUES ('Cliente teste')").run().lastInsertRowid);
+const contrato = (status: string, criado: string, assinado: string | null, pessoaId: number | null = pessoa()) =>
+  db.prepare("INSERT INTO zapsign_contratos(pessoa_id,doc_token,sign_url,status,criado_em,assinado_em) VALUES (?,'t','u',?,?,?)").run(pessoaId, status, criado, assinado);
 let seq = 0;
 const processo = (distribuicao: string, criado = "2026-11-02 10:00:00") => {
   seq++;
@@ -24,7 +25,7 @@ const compromisso = (tipo: string, data: string, lembrete: string | null = null,
 };
 
 beforeEach(() => {
-  db.exec("DELETE FROM zapsign_contratos; DELETE FROM gestao_processos; DELETE FROM pericias_agendadas; DELETE FROM gestao_tarefas;");
+  db.exec("DELETE FROM zapsign_contratos; DELETE FROM gestao_negocios; DELETE FROM gestao_pessoas; DELETE FROM gestao_processos; DELETE FROM pericias_agendadas; DELETE FROM gestao_tarefas;");
 });
 
 describe("meses do gráfico", () => {
@@ -45,6 +46,17 @@ describe("dashboard do Início", () => {
     expect(c.enviados_mes).toBe(2);
     expect(c.aguardando_assinatura).toBe(1);
     expect(c.serie.find((x) => x.mes === "2026-09")?.total).toBe(1);
+  });
+
+  it("contrato de pessoa apagada não conta; fechamento presencial sem ZapSign conta", () => {
+    contrato("assinado", "2026-11-01 09:00:00", "2026-11-03 10:00:00");
+    contrato("assinado", "2026-11-01 09:00:00", "2026-11-03 10:00:00", null);
+    const p = pessoa();
+    db.prepare("INSERT INTO gestao_negocios(pessoa_id,tipo_atendimento,data_fechamento) VALUES (?,?,?)").run(p, "presencial", "2026-11-04");
+    const c = dashboardDoInicio(MES, false).contratos!;
+    expect(c.assinados_zapsign_mes).toBe(1);
+    expect(c.presenciais_mes).toBe(1);
+    expect(c.assinados_mes).toBe(2);
   });
 
   it("conta processos protocolados (distribuição) no mês e separa os cadastrados", () => {

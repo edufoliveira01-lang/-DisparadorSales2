@@ -182,6 +182,16 @@ gestaoRouter.get("/captacao/pendentes", rota(() => ({ itens: pendentesDePreenchi
 
 // ---------- indicadores ----------
 gestaoRouter.get("/dashboard", rota((req) => dashboardDoInicio(req.query.mes, hasPermission(usuario(req), "financeiro.view") && recursoLiberadoNaLicenca("modulo_financeiro"))));
+/** Contratos do ZapSign registrados neste escritório (para conferir o quadro do Início e remover os de teste). */
+gestaoRouter.get("/contratos-zapsign", rota(() => ({
+  itens: (() => { try { return db.prepare(`SELECT c.id, c.status, c.criado_em, c.assinado_em, c.pessoa_id, p.nome FROM zapsign_contratos c LEFT JOIN gestao_pessoas p ON p.id=c.pessoa_id ORDER BY c.id DESC LIMIT 300`).all(); } catch { return []; } })(),
+})));
+gestaoRouter.delete("/contratos-zapsign/:id", rota((req) => {
+  if (!hasPermission(usuario(req), "gestao.manage")) throw new ErroGestao("Você não tem permissão para remover contratos.", 403);
+  const r = db.prepare("DELETE FROM zapsign_contratos WHERE id=?").run(Number(req.params.id));
+  if (!r.changes) throw new ErroGestao("Contrato não encontrado.", 404);
+  return { ok: true };
+}));
 gestaoRouter.get("/indicadores", rota((req) => indicadores(req.query.mes, hasPermission(usuario(req), "financeiro.view") && recursoLiberadoNaLicenca("modulo_financeiro"))));
 
 // ---------- CEP, campos personalizados e ficha de cadastro ----------

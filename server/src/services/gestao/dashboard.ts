@@ -29,13 +29,20 @@ export function dashboardDoInicio(mesBruto: unknown, podeVerReceita: boolean) {
   const noMes = (coluna: string, m: string) => `substr(${coluna},1,10) >= '${m}-01' AND substr(${coluna},1,10) < '${fimDoMes(m)}'`;
 
   // ---- contratos (ZapSign) ----
+  // Só contam contratos de uma pessoa que ainda existe no cadastro; e o fechamento PRESENCIAL (marcado na aba Negócio, sem assinatura pelo ZapSign) entra junto.
+  const viva = "pessoa_id IS NOT NULL";
+  const presenciais = (m: string) => num(`SELECT COUNT(*) v FROM gestao_negocios n WHERE n.tipo_atendimento='presencial' AND n.data_fechamento<>'' AND ${noMes("n.data_fechamento", m)}
+    AND NOT EXISTS (SELECT 1 FROM zapsign_contratos z WHERE z.pessoa_id=n.pessoa_id AND z.status='assinado')`);
+  const zapAssinados = (m: string) => num(`SELECT COUNT(*) v FROM zapsign_contratos WHERE ${viva} AND status='assinado' AND ${noMes("assinado_em", m)}`);
   const contratos = tentar(() => ({
-    assinados_mes: num(`SELECT COUNT(*) v FROM zapsign_contratos WHERE status='assinado' AND ${noMes("assinado_em", mes)}`),
-    enviados_mes: num(`SELECT COUNT(*) v FROM zapsign_contratos WHERE ${noMes("criado_em", mes)}`),
-    aguardando_assinatura: num("SELECT COUNT(*) v FROM zapsign_contratos WHERE status='enviado'"),
-    aguardando_mais_de_3_dias: num("SELECT COUNT(*) v FROM zapsign_contratos WHERE status='enviado' AND substr(criado_em,1,10) <= ?", somarDias(hoje, -3)),
-    serie: serie((m) => num(`SELECT COUNT(*) v FROM zapsign_contratos WHERE status='assinado' AND ${noMes("assinado_em", m)}`)),
-    serie_enviados: serie((m) => num(`SELECT COUNT(*) v FROM zapsign_contratos WHERE ${noMes("criado_em", m)}`)),
+    assinados_mes: zapAssinados(mes) + tentar(() => presenciais(mes), 0),
+    assinados_zapsign_mes: zapAssinados(mes),
+    presenciais_mes: tentar(() => presenciais(mes), 0),
+    enviados_mes: num(`SELECT COUNT(*) v FROM zapsign_contratos WHERE ${viva} AND ${noMes("criado_em", mes)}`),
+    aguardando_assinatura: num(`SELECT COUNT(*) v FROM zapsign_contratos WHERE ${viva} AND status='enviado'`),
+    aguardando_mais_de_3_dias: num(`SELECT COUNT(*) v FROM zapsign_contratos WHERE ${viva} AND status='enviado' AND substr(criado_em,1,10) <= ?`, somarDias(hoje, -3)),
+    serie: serie((m) => zapAssinados(m) + tentar(() => presenciais(m), 0)),
+    serie_enviados: serie((m) => num(`SELECT COUNT(*) v FROM zapsign_contratos WHERE ${viva} AND ${noMes("criado_em", m)}`)),
   }), null);
 
   // ---- negócios fechados no mês e o que o escritório decidiu sobre cada um ----
