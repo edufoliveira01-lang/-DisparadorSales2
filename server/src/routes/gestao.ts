@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import express, { Router, type Request, type Response, type NextFunction } from "express";
 import { db } from "../db";
-import { ErroGestao, atualizarPessoa, criarPessoa, excluirPessoa, importarContatos, listarPessoas, obterPessoa } from "../services/gestao/pessoas";
+import { ErroGestao, atualizarPessoa, criarPessoa, excluirPessoa, importarContatos, listarPessoas, obterPessoa, previaDaExclusao } from "../services/gestao/pessoas";
 import {
   adicionarAnotacao, adicionarParte, atualizarProcesso, criarProcesso, excluirProcesso, importarDoDjen, linhaDoTempo, listarProcessos,
   obterProcesso, pendentesDeImportacao, removerAnotacao, removerParte, resumoGestao,
@@ -66,7 +66,8 @@ gestaoRouter.post("/pessoas/importar-contatos", rota((req) => { const r = import
 gestaoRouter.post("/pessoas", rota((req, res) => { const p = criarPessoa(req.body || {}); res.status(201); auditAccess("gestao_pessoa_criada", usuario(req).id, null, { pessoa: p.id }); return p; }));
 gestaoRouter.get("/pessoas/:id", rota((req) => obterPessoa(id(req))));
 gestaoRouter.put("/pessoas/:id", rota((req) => atualizarPessoa(id(req), req.body || {})));
-gestaoRouter.delete("/pessoas/:id", rota((req) => { const r = excluirPessoa(id(req)); auditAccess("gestao_pessoa_excluida", usuario(req).id, null, { pessoa: id(req) }); return r; }));
+gestaoRouter.get("/pessoas/:id/exclusao", rota((req) => previaDaExclusao(id(req))));
+gestaoRouter.delete("/pessoas/:id", rota((req) => { const r = excluirPessoa(id(req), { cancelarPericias: req.query.cancelar_pericias === "1" }); auditAccess("gestao_pessoa_excluida", usuario(req).id, null, { pessoa: id(req), pericias_canceladas: r.pericias_canceladas }); return r; }));
 
 // ---------- processos ----------
 gestaoRouter.get("/processos", rota((req) => listarProcessos({

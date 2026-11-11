@@ -1,3 +1,5 @@
+import { normalizePhone } from "../../utils/phone";
+import { deletePericiaAgendada } from "../periciasAgendadasService";
 import { db } from "../../db";
 import { soDigitos, documentoValido, formatarDocumento, emailValido, dataValida, UFS, pisValido, formatarPis, formatarCep } from "./validacao";
 
@@ -112,12 +114,31 @@ export function atualizarPessoa(id: number, d: Record<string, unknown>) {
   return obterPessoa(id);
 }
 
-export function excluirPessoa(id: number) {
+/** Perícias e audiências ATIVAS ligadas ao telefone da pessoa. Elas não somem com o cadastro e reaparecem para quem usar o mesmo número depois. */
+export function periciasDoTelefoneDaPessoa(id: number): { id: number; tipo: string; nome: string; data: string; horario: string | null }[] {
+  const p = db.prepare("SELECT telefone,telefone2 FROM gestao_pessoas WHERE id=?").get(id) as { telefone: string; telefone2: string } | undefined;
+  if (!p) return [];
+  const fones = [...new Set([p.telefone, p.telefone2].map((t) => normalizePhone(t)).filter((t) => t.length >= 8))];
+  if (fones.length === 0) return [];
+  return db.prepare(`SELECT id,tipo,nome,data,horario FROM pericias_agendadas WHERE status='ativa' AND telefone_digits IN (${fones.map(() => "?").join(",")}) ORDER BY data_hora_ms LIMIT 50`).all(...fones) as never;
+}
+/** O que o diálogo de exclusão precisa mostrar antes do clique. */
+export function previaDaExclusao(id: number) {
+  obterPessoa(id);
+  const pericias = periciasDoTelefoneDaPessoa(id);
+  const processos = (db.prepare("SELECT COUNT(*) n FROM gestao_partes WHERE pessoa_id=?").get(id) as { n: number }).n;
+  return { processos, pericias };
+}
+export function excluirPessoa(id: number, opcoes: { cancelarPericias?: boolean } = {}) {
   obterPessoa(id);
   const n = (db.prepare("SELECT COUNT(*) n FROM gestao_partes WHERE pessoa_id=?").get(id) as { n: number }).n;
   if (n > 0) throw new ErroGestao(`Esta pessoa participa de ${n} processo(s). Inative o cadastro em vez de excluir.`, 409);
+  // Escolhido no diálogo: cancelar as perícias do telefone junto (senão voltam a aparecer para quem usar o número depois).
+  const pericias = opcoes.cancelarPericias ? periciasDoTelefoneDaPessoa(id) : [];
   db.prepare("DELETE FROM gestao_pessoas WHERE id=?").run(id);
-  return { ok: true };
+  let canceladas = 0;
+  for (const x of pericias) { try { if (deletePericiaAgendada(x.id)) canceladas++; } catch { /* segue com as demais */ } }
+  return { ok: true, pericias_canceladas: canceladas };
 }
 
 /** Cria o cadastro completo a partir de um contato antigo (idempotente: um contato gera uma única pessoa). */

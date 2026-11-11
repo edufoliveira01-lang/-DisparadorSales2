@@ -8,6 +8,7 @@ interface ConfirmDialogProps {
   confirmLabel?: string;
   confirmVariant?: "primary" | "danger";
   loading?: boolean;
+  children?: React.ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -19,6 +20,7 @@ export function ConfirmDialog({
   confirmLabel = "Apagar",
   confirmVariant = "danger",
   loading,
+  children,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -40,6 +42,7 @@ export function ConfirmDialog({
       }
     >
       <p className="text-sm text-zinc-600 dark:text-zinc-400">{message}</p>
+      {children}
     </Modal>
   );
 }

@@ -97,8 +97,15 @@ export function ClienteFicha() {
     } catch (err) { show(err instanceof ApiError ? err.message : "Não foi possível salvar.", "error"); }
     finally { setSalvando(false); }
   };
+  const [pericias, setPericias] = useState<{ id: number; tipo: string; data: string; horario: string | null }[]>([]);
+  const [cancelarPericias, setCancelarPericias] = useState(true);
+  useEffect(() => {
+    if (!apagar || novo) return;
+    setCancelarPericias(true);
+    api.get<{ pericias: typeof pericias }>(`/gestao/pessoas/${id}/exclusao`, { fresh: true } as never).then((r) => setPericias(r.pericias)).catch(() => setPericias([]));
+  }, [apagar, id, novo]);
   const excluir = async () => {
-    try { await api.delete(`/gestao/pessoas/${id}`); show("Cadastro excluído.", "success"); navegar("/gestao/clientes"); }
+    try { await api.delete(`/gestao/pessoas/${id}${pericias.length > 0 && cancelarPericias ? "?cancelar_pericias=1" : ""}`); show("Cadastro excluído.", "success"); navegar("/gestao/clientes"); }
     catch (err) { show(err instanceof ApiError ? err.message : "Não foi possível excluir.", "error"); setApagar(false); }
   };
   const enviarFoto = async (f: File | undefined) => {
@@ -234,7 +241,13 @@ export function ClienteFicha() {
         footer={<div className="flex w-full flex-wrap justify-end gap-2"><Button variant="outline" onClick={() => { const c = criado!; setCriado(null); navegar(`/gestao/clientes/${c}`); }}>Abrir o cadastro</Button><Button variant="outline" onClick={() => { const c = criado!; abrirFicha(false, c); setCriado(null); navegar(`/gestao/clientes/${c}`); }}><Printer className="h-4 w-4" /> Imprimir ficha</Button><Button onClick={() => { const c = criado!; setCriado(null); navegar(`/gestao/clientes/${c}?aba=processos`); }}><Plus className="h-4 w-4" /> Cadastrar processo</Button></div>}>
         <p className="text-sm text-zinc-600 dark:text-zinc-300">{pessoa.nome} foi cadastrado(a). Você pode imprimir a ficha de cadastro agora ou já registrar o processo.</p>
       </Modal>
-      <ConfirmDialog open={apagar} title="Excluir cadastro" message={`Excluir ${pessoa.nome}? Quem participa de processos não pode ser excluído; nesse caso, desmarque "Cadastro ativo".`} confirmLabel="Excluir" onConfirm={() => void excluir()} onCancel={() => setApagar(false)} />
+      <ConfirmDialog open={apagar} title="Excluir cadastro" message={`Excluir ${pessoa.nome}? Quem participa de processos não pode ser excluído; nesse caso, desmarque "Cadastro ativo".`} confirmLabel="Excluir" onConfirm={() => void excluir()} onCancel={() => setApagar(false)}>
+        {pericias.length > 0 && (
+          <label className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+            <input type="checkbox" className="mt-0.5" checked={cancelarPericias} onChange={(e) => setCancelarPericias(e.target.checked)} />
+            <span>Há <b>{pericias.length}</b> perícia(s)/audiência(s) agendada(s) para o telefone desta pessoa ({pericias.slice(0, 3).map((x) => `${x.tipo} ${dataBr(x.data)}`).join("; ")}{pericias.length > 3 ? "…" : ""}). Cancelar junto? Se desmarcar, elas continuam na agenda e podem aparecer para quem usar este número depois.</span>
+          </label>)}
+      </ConfirmDialog>
     </div>
   );
 }
