@@ -76,3 +76,15 @@ describe("painel — repasse de documentos do chat (fase 2 do Dropbox)", () => {
     await m.fechar();
   });
 });
+
+describe("painel — repasse da saúde do armazenamento", () => {
+  it("repassa GET /armazenamento/saude para o escritório e recusa POST e assinatura inválida", async () => {
+    const m = await montar(3409, { status: 200, corpo: { problema: null } });
+    const r = await m.chamar("GET", "/v1/offices/alfa/armazenamento/saude");
+    expect(r.status).toBe(200);
+    expect(m.vistos[0]!.url).toBe("http://127.0.0.1:3409/api/integracao/armazenamento/saude");
+    expect((await m.chamar("POST", "/v1/offices/alfa/armazenamento/saude", "{}")).status).toBe(405);
+    expect((await m.chamar("GET", "/v1/offices/alfa/armazenamento/saude", "", false)).status).toBe(401);
+    await m.fechar();
+  });
+});

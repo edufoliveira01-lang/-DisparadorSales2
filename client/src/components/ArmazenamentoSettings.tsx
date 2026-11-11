@@ -13,7 +13,7 @@ interface ItemRecente { id: number; status: "pendente" | "aguardando_pasta" | "e
 interface Estado {
   credenciais_salvas: boolean; app_key_final: string; conectado: boolean; conectado_em: string | null; redirect_uri: string; pasta_raiz: string; pastas: { raiz: string; tipos: Array<{ chave: string; nome: string }> };
   conta: { nome: string; email: string; tipo: string; equipe: boolean } | null;
-  fila: { pendente: number; aguardando_pasta: number; enviado: number; erro: number; esperando_assinatura?: number; recentes: ItemRecente[] };
+  fila: { pendente: number; aguardando_pasta: number; enviado: number; erro: number; esperando_assinatura?: number; esperando_mais_antigo_dias?: number; espera_expira_em_dias?: number; problema?: string | null; recentes: ItemRecente[] };
 }
 interface Pendencia { pessoa_id: number; nome: string; documentos: number; candidatas: Candidata[] }
 interface Sugestao { pessoa_id: number; nome: string; resultado: "exato" | "parecido" | "nenhum"; pasta?: { id: string; nome: string; caminho: string }; candidatas?: Candidata[] }
@@ -234,6 +234,14 @@ export function ArmazenamentoSettings() {
               <Badge tone="warning">{estado.fila.aguardando_pasta} aguardando pasta</Badge>
               <Badge tone="danger">{estado.fila.erro} com erro</Badge>
               {(estado.fila.esperando_assinatura ?? 0) > 0 && <Badge tone="info">{estado.fila.esperando_assinatura} do chat aguardando a assinatura do contrato</Badge>}
+              {estado.fila.problema && (
+                <p role="alert" style={{ flexBasis: "100%", margin: "8px 0 0", padding: "8px 12px", borderRadius: 8, background: "#fdecea", color: "#8a1f17", fontSize: 13 }}>⚠️ {estado.fila.problema}</p>
+              )}
+              {(estado.fila.esperando_assinatura ?? 0) > 0 && estado.fila.espera_expira_em_dias ? (
+                <p style={{ flexBasis: "100%", margin: "6px 0 0", fontSize: 12, opacity: 0.75 }}>
+                  O documento do chat que ficar mais de {estado.fila.espera_expira_em_dias} dias esperando a assinatura é descartado. O mais antigo espera há {estado.fila.esperando_mais_antigo_dias ?? 0} dia(s).
+                </p>
+              ) : null}
             </div>
             {estado.fila.recentes.length === 0
               ? <p className="text-sm text-zinc-500">Nenhum envio ainda. Os documentos assinados aparecem aqui.</p>

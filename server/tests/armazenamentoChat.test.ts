@@ -6,7 +6,8 @@ process.env.ENCRYPTION_KEY = "chave-somente-para-testes-0123456789abcdef";
 import { db } from "../src/db";
 import "../src/zapsign/contratos";
 import { salvarCredenciais, salvarConexao } from "../src/armazenamento/banco";
-import { processarFila, situacaoDaFila } from "../src/armazenamento/fila";
+import { problemaDoArmazenamento, processarFila, saudeDoArmazenamento, situacaoDaFila } from "../src/armazenamento/fila";
+import { diasDoMaisAntigoEsperando, limparEsperaVencida } from "../src/armazenamento/limpeza";
 import {
   clienteJaAssinou, documentosEsperandoAssinatura, liberarEsperaDaPessoa, pessoaDoDocumento, receberDocumentoDoChat, urlDeDownloadPermitida,
 } from "../src/armazenamento/chat";
@@ -122,5 +123,47 @@ describe("documento do chat", () => {
     expect(drive.arquivos).toHaveLength(0);
     expect(fila()[0]).toMatchObject({ status: "aguardando_pasta" });
     expect(fs.existsSync(String(fila()[0]!.caminho_temp))).toBe(true);
+  });
+});
+
+describe("limpeza dos documentos que esperam uma assinatura que não veio", () => {
+  const esperar = (ref: string, criadoEm: string, arquivo = "") =>
+    db.prepare("INSERT INTO armazenamento_espera(origem_ref,telefone,cpf,tipo_pasta,titulo,extensao,data_documento,caminho_temp,criado_em) VALUES (?,?,?,?,?,?,?,?,?)")
+      .run(ref, "13974045973", "", "PARTE MÉDICA", "Laudo", "pdf", "2026-11-01T00:00:00.000Z", arquivo, criadoEm);
+
+  it("apaga a linha e o arquivo temporário do que passou do prazo, e deixa o recente", () => {
+    const velho = `/tmp/espera-velho-${process.pid}.bin`;
+    fs.writeFileSync(velho, "x");
+    esperar("velho", "2026-08-01 10:00:00", velho);
+    esperar("novo", "2026-11-05 10:00:00");
+    const n = limparEsperaVencida(60, Date.parse("2026-11-11T12:00:00Z"));
+    expect(n).toBe(1);
+    expect(fs.existsSync(velho)).toBe(false);
+    expect((db.prepare("SELECT origem_ref FROM armazenamento_espera").all() as Array<{ origem_ref: string }>).map((r) => r.origem_ref)).toEqual(["novo"]);
+  });
+  it("diz há quantos dias o mais antigo espera", () => {
+    esperar("a", "2026-11-01 12:00:00");
+    expect(diasDoMaisAntigoEsperando(Date.parse("2026-11-11T12:00:00Z"))).toBe(10);
+    expect(situacaoDaFila().espera_expira_em_dias).toBeGreaterThanOrEqual(7);
+  });
+});
+
+describe("saúde do armazenamento (o que a equipe é avisada)", () => {
+  let pessoaSaude = 0;
+  const pessoaDaSaude = () => (pessoaSaude ||= novaPessoa("Cliente da saúde"));
+  beforeEach(() => { pessoaSaude = 0; });
+  const item = (status: string, erro: string) =>
+    db.prepare("INSERT INTO armazenamento_fila(pessoa_id,arquivo_id,tipo_pasta,titulo,extensao,data_documento,status,ultimo_erro) VALUES (?, ?, 'PARTE MÉDICA','Laudo','pdf','2026-11-01',?,?)")
+      .run(pessoaDaSaude(), -Math.floor(Math.random() * 1e6) - 1, status, erro);
+
+  it("tudo certo: sem problema", () => {
+    expect(saudeDoArmazenamento()).toMatchObject({ ligado: true, problema: null, chave: "ok" });
+  });
+  it("envio que falhou de vez vira problema, com a chave mudando a cada falha nova", () => {
+    item("erro", "expired_access_token");
+    const a = problemaDoArmazenamento();
+    expect(a.texto).toMatch(/1 envio\(s\).*falharam.*reconecte o Dropbox/i);
+    item("erro", "outra falha");
+    expect(problemaDoArmazenamento().chave).not.toBe(a.chave);
   });
 });

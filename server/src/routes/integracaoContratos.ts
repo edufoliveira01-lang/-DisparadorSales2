@@ -9,6 +9,7 @@ import { ErroZapSign } from "../zapsign/api";
 import { ErroContrato, estadoDoContrato, gerarContrato, type DadosContrato } from "../zapsign/contratos";
 import { ErroArmazenamento } from "../armazenamento/pastas";
 import { receberDocumentoDoChat } from "../armazenamento/chat";
+import { saudeDoArmazenamento } from "../armazenamento/fila";
 
 /**
  * Contratos pedidos pelo atendimento (Deskcomm). NÃO usa a sessão de ninguém: quem chama é o painel de assinaturas,
@@ -59,6 +60,11 @@ integracaoContratosRouter.post("/documentos", async (req, res) => {
     auditAccess("documento_do_chat_recebido", null, null, { situacao: r.situacao, tipo: String(d.tipo ?? "") });
     res.status(r.situacao === "ja_recebido" ? 200 : 201).json(r);
   } catch (e) { erro(res, e); }
+});
+
+/** A saúde do envio ao drive: o atendimento consulta de tempos em tempos e avisa a equipe por WhatsApp quando aparece um problema novo. */
+integracaoContratosRouter.get("/armazenamento/saude", (_req, res) => {
+  try { res.json(saudeDoArmazenamento()); } catch (e) { erro(res, e); }
 });
 
 /** O que o escritório configurou e o atendimento precisa mostrar no formulário: tipos de documento, valores e modelos de honorários. */

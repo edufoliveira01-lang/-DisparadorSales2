@@ -41,3 +41,9 @@ Em **Configurações › Dropbox › Onde salvar os documentos** cada escritóri
 - **O Sales não guarda cópia permanente:** o arquivo fica numa pasta temporária (`armazenamento-temp`) só até o envio ao drive; depois é apagado.
 - Idempotente pela referência da mensagem: o mesmo documento nunca entra duas vezes. Sem drive configurado, nada é baixado.
 - Na tela Envios aparece "N do chat aguardando a assinatura do contrato".
+
+## Limpeza e avisos (v2.99.0)
+
+- **Documento do chat que espera uma assinatura que nunca vem**: depois de 60 dias (`ARMAZENAMENTO_ESPERA_DIAS`, mínimo 7) a linha e o arquivo temporário são descartados. A limpeza roda a cada hora junto da fila. A tela do Dropbox mostra há quantos dias o mais antigo espera e o prazo.
+- **Problema no envio**: a tela mostra um aviso vermelho quando há envios com erro definitivo, quando o Dropbox recusa por conexão/permissão (reconectar) ou quando há documentos esperando e o Dropbox não está conectado.
+- **Saúde para o atendimento**: `GET /api/integracao/armazenamento/saude` (e, pelo painel, `GET /v1/offices/<slug>/armazenamento/saude`, assinado como os demais) devolve `{ ligado, problema, chave, aguardando_pasta, esperando_assinatura }`. O Deskcomm consulta e avisa a equipe por WhatsApp (Central de notificações) quando a `chave` do problema muda.

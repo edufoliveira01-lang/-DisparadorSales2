@@ -15,6 +15,7 @@ import {
   type PastaExistente, type TipoDePasta,
 } from "./pastas";
 import { enviarDocumento, type Drive } from "./servico";
+import { diasDeEspera, diasDoMaisAntigoEsperando, limparEsperaVencida } from "./limpeza";
 
 /** Depois de tantas tentativas o item vira `erro` e espera alguém reenviar pela tela. */
 export const MAXIMO_DE_TENTATIVAS = 6;
@@ -138,7 +139,12 @@ let timer: NodeJS.Timeout | null = null;
 /** Liga a fila em segundo plano (uma rodada por minuto). */
 export function iniciarFilaDoArmazenamento(intervaloMs = 60_000): void {
   if (timer) return;
-  timer = setInterval(() => { void processarFila().catch((e) => console.error("[armazenamento] rodada falhou:", e instanceof Error ? e.message : e)); }, intervaloMs);
+  let ultimaLimpeza = 0;
+  timer = setInterval(() => {
+    // uma vez por hora: descarta o que espera uma assinatura que nunca veio (o prazo é `ARMAZENAMENTO_ESPERA_DIAS`)
+    if (Date.now() - ultimaLimpeza >= 3_600_000) { ultimaLimpeza = Date.now(); limparEsperaVencida(); }
+    void processarFila().catch((e) => console.error("[armazenamento] rodada falhou:", e instanceof Error ? e.message : e));
+  }, intervaloMs);
   timer.unref?.();
 }
 export function pararFilaDoArmazenamento(): void { if (timer) clearInterval(timer); timer = null; }
@@ -153,7 +159,38 @@ export function situacaoDaFila() {
      FROM armazenamento_fila f LEFT JOIN gestao_pessoas p ON p.id=f.pessoa_id ORDER BY f.id DESC LIMIT 20`).all();
   // Documentos que o cliente mandou pelo chat e esperam o contrato ser assinado (ainda não entraram na fila).
   const esperando_assinatura = (db.prepare("SELECT COUNT(*) n FROM armazenamento_espera").get() as { n: number }).n;
-  return { ...por, esperando_assinatura, recentes };
+  return { ...por, esperando_assinatura, esperando_mais_antigo_dias: diasDoMaisAntigoEsperando(), espera_expira_em_dias: diasDeEspera(), problema: problemaDoArmazenamento(por).texto, recentes };
+}
+
+/**
+ * O que está errado AGORA no armazenamento, em frase de gente (ou `null` se está tudo bem), e uma `chave` estável do problema: o atendimento só
+ * avisa a equipe quando a chave muda, e não repete o mesmo aviso a cada verificação.
+ */
+export function problemaDoArmazenamento(por?: Record<string, number>): { texto: string | null; chave: string } {
+  const contagem = por ?? (() => {
+    const o: Record<string, number> = { pendente: 0, aguardando_pasta: 0, enviado: 0, erro: 0 };
+    for (const c of db.prepare("SELECT status, COUNT(*) n FROM armazenamento_fila GROUP BY status").all() as Array<{ status: string; n: number }>) o[c.status] = c.n;
+    return o;
+  })();
+  const ultimo = db.prepare("SELECT id, ultimo_erro FROM armazenamento_fila WHERE ultimo_erro<>'' AND status IN ('erro','pendente') ORDER BY id DESC LIMIT 1").get() as { id: number; ultimo_erro: string } | undefined;
+  const reconectar = ultimo && /expired|invalid_access_token|invalid_grant|missing_scope|permiss|autoriza|401|403/i.test(ultimo.ultimo_erro);
+  if ((contagem.erro ?? 0) > 0) {
+    return { texto: `${contagem.erro} envio(s) ao Dropbox falharam e precisam de reenvio.${reconectar ? " Parece problema de conexão ou permissão: reconecte o Dropbox." : ""}${ultimo ? ` Último erro: ${ultimo.ultimo_erro.slice(0, 160)}` : ""}`, chave: `erro:${contagem.erro}:${ultimo?.id ?? 0}` };
+  }
+  if ((contagem.pendente ?? 0) > 0 && !lerConexao() && lerCredenciais()) {
+    return { texto: `${contagem.pendente} documento(s) esperam para ir ao Dropbox, mas o Dropbox não está conectado.`, chave: `desconectado:${contagem.pendente > 0 ? 1 : 0}` };
+  }
+  if (ultimo && (contagem.pendente ?? 0) > 0 && reconectar) {
+    return { texto: `O Dropbox está recusando os envios (${ultimo.ultimo_erro.slice(0, 160)}). Reconecte o Dropbox.`, chave: `recusa:${ultimo.id}` };
+  }
+  return { texto: null, chave: "ok" };
+}
+
+/** O que o atendimento (Deskcomm) consulta para avisar a equipe. */
+export function saudeDoArmazenamento() {
+  const p = problemaDoArmazenamento();
+  const aguardando = (db.prepare("SELECT COUNT(*) n FROM armazenamento_fila WHERE status='aguardando_pasta'").get() as { n: number }).n;
+  return { ligado: Boolean(lerCredenciais()), problema: p.texto, chave: p.chave, aguardando_pasta: aguardando, esperando_assinatura: (db.prepare("SELECT COUNT(*) n FROM armazenamento_espera").get() as { n: number }).n };
 }
 
 /** Clientes com documento esperando a equipe escolher a pasta, com as candidatas. */
