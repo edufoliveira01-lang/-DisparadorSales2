@@ -1,0 +1,18 @@
+# Asaas — boleto, PIX e taxas
+
+## Ligar
+1. No Asaas (comece pelo **sandbox**): *Integrações → Chave de API* → copie a chave (`$aact_...`).
+2. No sistema: **Configurações → Asaas (boleto e PIX)** → escolha o ambiente, cole a chave, **Salvar** e **Testar**.
+3. Ainda na mesma tela, copie a **URL do webhook** e o **token**. No Asaas: *Integrações → Webhooks → Novo webhook*: cole a URL e o token, tipo de envio **sequencial**, eventos de **cobranças** ligados. Sem o webhook o sistema funciona, mas a baixa é manual (botão *Atualizar situação*).
+
+## Uso
+- **Financeiro → Contas a pagar e receber → Boleto/PIX** (parcelas em aberto, com cliente que tenha CPF/CNPJ): gera a cobrança, mostra link, PIX copia e cola e linha digitável, e **Enviar pelo WhatsApp** abre a conversa do cliente com o texto pronto.
+- O Asaas não aceita vencimento no passado: para parcela atrasada, use **Nova data** antes de gerar.
+- Mudou data/valor de uma parcela com cobrança aberta? O sistema atualiza no Asaas. Cancelou a parcela? A cobrança é cancelada.
+- Pagou? O aviso do Asaas dá **baixa automática** (forma PIX/Boleto, valor e data pagos) e guarda a tarifa.
+
+## Taxas
+**Financeiro → Taxas do Asaas**: total do mês, % do recebido, custo por cobrança, por tipo de tarifa (cobrança, notificações, transferência…), por forma de pagamento, mês a mês e linha a linha. *Atualizar do Asaas* traz o extrato; sem ele, a tela usa a diferença entre o valor cobrado e o líquido de cada cobrança paga.
+
+## Segurança
+A chave e o token do webhook ficam criptografados no banco. O painel só repassa o aviso à instância do escritório assinando com a chave dele; a instância confere o token do Asaas. As notificações do próprio Asaas ao cliente ficam desligadas (cada uma é cobrada).

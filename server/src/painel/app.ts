@@ -13,7 +13,7 @@ import { VerificadorDeVersao } from "./versaoAtendimento";
 const COOKIE = "painel_sessao";
 const IP = (req: Request) => (req.ip || req.socket.remoteAddress || "").replace(/^::ffff:/, "");
 
-export interface DepsPainel { db: Banco; cfg: ConfigPainel; servico: ServicoPainel; chavePublicaPem: string; versao: string; webDir?: string; provisionador?: Provisionador; ponte?: import("express").Router; contratos?: import("express").Router; mcp?: import("express").Router; versaoAtendimento?: VerificadorDeVersao }
+export interface DepsPainel { db: Banco; cfg: ConfigPainel; servico: ServicoPainel; chavePublicaPem: string; versao: string; webDir?: string; provisionador?: Provisionador; asaas?: import("express").Router; ponte?: import("express").Router; contratos?: import("express").Router; mcp?: import("express").Router; versaoAtendimento?: VerificadorDeVersao }
 
 export function criarAppPainel(deps: DepsPainel) {
   const { db, cfg, servico } = deps;
@@ -34,6 +34,8 @@ export function criarAppPainel(deps: DepsPainel) {
   if (deps.ponte) app.use("/ponte", deps.ponte);
   // Contratos pedidos pelo atendimento (também com corpo bruto, pela mesma razão).
   if (deps.contratos) app.use("/contratos", deps.contratos);
+  // Aviso de pagamento do Asaas (corpo bruto também).
+  if (deps.asaas) app.use("/asaas", deps.asaas);
   if (deps.mcp) app.use("/mcp", deps.mcp);
   app.use(express.json({ limit: "100kb" }));
 

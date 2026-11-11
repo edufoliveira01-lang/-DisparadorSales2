@@ -10,6 +10,7 @@ import {
   Timer,
   Trello,
   Cloud,
+  Landmark,
 } from "lucide-react";
 import { Badge } from "./ui/Badge";
 
@@ -40,6 +41,12 @@ const sections = [
     title: "Dropbox",
     description: "Cópia dos documentos dos clientes para as pastas do escritório.",
     icon: Cloud,
+  },
+  {
+    key: "asaas",
+    title: "Asaas (boleto e PIX)",
+    description: "Chave de API, ambiente e aviso de pagamento para cobrar e dar baixa sozinho.",
+    icon: Landmark,
   },
   {
     key: "datajud",

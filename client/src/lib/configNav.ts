@@ -1,6 +1,7 @@
 import {
   BrainCircuit, Bell, Building2, CalendarDays, Database, FileText, KeyRound, MessageCircle, MessageSquareText, Palette, Printer, ScrollText, Search, Timer,
   Trello, UserRound, UserRoundCog, BriefcaseBusiness, Scale, Plug, Cloud, type LucideIcon,
+  Landmark,
 } from "lucide-react";
 import type { Permission } from "@/context/AuthContext";
 import { navigationPermission } from "./navigation";
@@ -33,6 +34,7 @@ export const GRUPOS_CONFIG: GrupoConfig[] = [
   { id: "djen", titulo: "DJEN e prazos", itens: [
     { to: "/processos/advogados", titulo: "Advogados acompanhados", descricao: "Profissionais monitorados no DJEN.", icon: BriefcaseBusiness },
     { to: "/processos/monitoramento", titulo: "Monitoramento DJEN", descricao: "Consulta e sincronização de publicações.", icon: Search },
+    { to: "/configuracoes?secao=asaas", titulo: "Asaas (boleto e PIX)", descricao: "Chave de API, ambiente e aviso de pagamento para cobrar e dar baixa sozinho.", icon: Landmark, permissao: "integrations.manage" },
     { to: "/configuracoes?secao=datajud", titulo: "DataJud (CNJ)", descricao: "Chave pública para completar assunto, ajuizamento e órgão dos processos.", icon: KeyRound, permissao: "integrations.manage" },
     { to: "/processos/calendarios", titulo: "Calendários de prazos", descricao: "Feriados e suspensões dos tribunais.", icon: Scale },
     { to: "/configuracoes?secao=prazos", titulo: "Prazos e agenda processual", descricao: "Regras da agenda processual por tribunal.", icon: CalendarDays, permissao: "integrations.manage" },

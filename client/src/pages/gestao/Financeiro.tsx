@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Download, MessageCircle, Plus, Search, Wallet } from "lucide-react";
+import { AlertTriangle, Copy, Download, ExternalLink, FileText, MessageCircle, Plus, QrCode, Search, Wallet } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -16,7 +16,7 @@ import { Pagination } from "@/components/ui/Pagination";
 import { useToast } from "@/components/ui/Toast";
 import { Campo, SeletorPessoa, SeletorProcesso, dataBr, dinheiro, mesAtual, mesRotulo, useAtraso, type Lista } from "./comum";
 import type { Responsavel } from "./Processos";
-import { cobrarPeloAtendimento, mensagemDeCobranca } from "./cobranca";
+import { cobrarPeloAtendimento, mensagemDeCobranca, type LinkDePagamento } from "./cobranca";
 import { useAtendimentoLiberado } from "./AvatarPessoa";
 
 export interface Lanc { origem_lancamento_id?: number | null; pessoa_telefone?: string | null; id: number; tipo: "receber" | "pagar"; categoria: string; descricao: string; valor_centavos: number; vencimento: string; pago_em: string | null; valor_pago_centavos: number | null; forma_pagamento: string; status: "aberto" | "atrasado" | "pago" | "cancelado"; pessoa_id: number | null; pessoa_nome: string | null; processo_id: number | null; processo_pasta: string | null; beneficiario: string | null; beneficiario_user_id: number | null; reembolsavel: boolean; observacoes: string; contrato_id: number | null }
@@ -27,7 +27,7 @@ interface Mes { mes: string; receber_previsto_centavos: number; recebido_centavo
 export const CAT: Record<string, string> = { honorarios: "Honorários", custas: "Custas", despesa: "Despesa", comissao: "Comissão", repasse: "Repasse", outro: "Outro" };
 export const ST_TOM: Record<string, "success" | "danger" | "neutral" | "info"> = { pago: "success", atrasado: "danger", cancelado: "neutral", aberto: "info" };
 export const ST_ROT: Record<string, string> = { pago: "Pago", atrasado: "Atrasado", cancelado: "Cancelado", aberto: "Em aberto" };
-const ABAS = [["resumo", "Resumo e fluxo de caixa"], ["lancamentos", "Contas a pagar e receber"], ["contratos", "Contratos de honorários"]] as const;
+const ABAS = [["resumo", "Resumo e fluxo de caixa"], ["lancamentos", "Contas a pagar e receber"], ["contratos", "Contratos de honorários"], ["taxas", "Taxas do Asaas"]] as const;
 type Aba = typeof ABAS[number][0];
 
 export function Financeiro() {
@@ -43,6 +43,7 @@ export function Financeiro() {
       </div>
       {aba === "resumo" && <ResumoFin />}
       {aba === "lancamentos" && <Lancamentos gerir={gerir} contrato={filtroContrato} aoLimparContrato={() => setFiltroContrato(null)} />}
+      {aba === "taxas" && <TaxasAsaas />}
       {aba === "contratos" && <Contratos gerir={gerir} aoVerParcelas={(id) => { setFiltroContrato(id); setAba("lancamentos"); }} />}
     </div>
   );
@@ -136,6 +137,7 @@ function Lancamentos({ gerir, contrato, aoLimparContrato }: { gerir: boolean; co
   const [editando, setEditando] = useState<Lanc | "novo" | null>(null);
   const [baixando, setBaixando] = useState<Lanc | null>(null);
   const [reprog, setReprog] = useState<Lanc | null>(null);
+  const [cobrando, setCobrando] = useState<Lanc | null>(null);
   const [apagar, setApagar] = useState<Lanc | null>(null);
   const [resp, setResp] = useState<Responsavel[]>([]);
   const carregar = useCallback(async () => {
@@ -189,6 +191,7 @@ function Lancamentos({ gerir, contrato, aoLimparContrato }: { gerir: boolean; co
               <p className={`text-sm font-semibold ${l.tipo === "receber" ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}`}>{l.tipo === "pagar" ? "− " : ""}{dinheiro(l.valor_centavos)}</p>
               <p className="text-xs text-zinc-500">{l.pago_em ? `Pago em ${dataBr(l.pago_em)}` : `Vence ${dataBr(l.vencimento)}`}</p>
               <div className="flex flex-wrap items-center gap-1.5"><Badge tone={ST_TOM[l.status]}>{ST_ROT[l.status]}</Badge>
+                {gerir && l.tipo === "receber" && (l.status === "aberto" || l.status === "atrasado") && l.pessoa_id && <Button size="sm" variant="outline" onClick={() => setCobrando(l)}><QrCode className="h-4 w-4" /> Boleto/PIX</Button>}
                 {atendimento && l.tipo === "receber" && l.status === "atrasado" && l.pessoa_telefone && <Button size="sm" variant="outline" onClick={() => void cobrar(l)}><MessageCircle className="h-4 w-4" /> Cobrar</Button>}
                 {gerir && (l.status === "aberto" || l.status === "atrasado") && <><Button size="sm" onClick={() => setBaixando(l)}>{l.tipo === "receber" ? "Receber" : "Pagar"}</Button><Button size="sm" variant="ghost" onClick={() => setReprog(l)}>Nova data</Button><Button size="sm" variant="ghost" onClick={() => setEditando(l)}>Editar</Button><Button size="sm" variant="ghost" onClick={() => void acao(() => api.post(`/gestao/financeiro/lancamentos/${l.id}/cancelar`, {}), "Lançamento cancelado.")}>Cancelar</Button></>}
                 {gerir && l.status === "pago" && <Button size="sm" variant="ghost" onClick={() => void acao(() => api.post(`/gestao/financeiro/lancamentos/${l.id}/estornar`, {}), "Baixa estornada.")}>Estornar</Button>}
@@ -200,6 +203,7 @@ function Lancamentos({ gerir, contrato, aoLimparContrato }: { gerir: boolean; co
       {dados && dados.total > 0 && <p className="text-right text-xs text-zinc-500">{dados.total} lançamento(s) · soma dos valores: <b>{dinheiro(dados.soma_centavos)}</b></p>}
       <Pagination page={pagina} totalItems={dados?.total ?? 0} pageSize={30} onPageChange={setPagina} />
       {editando && <LancamentoModal lanc={editando === "novo" ? null : editando} responsaveis={resp} aoFechar={() => setEditando(null)} aoSalvar={() => { setEditando(null); void carregar(); }} />}
+      {cobrando && <CobrancaModal lanc={cobrando} aoFechar={() => setCobrando(null)} aoMudar={() => void carregar()} />}
       {reprog && <ReprogramarModal lanc={reprog} aoFechar={() => setReprog(null)} aoSalvar={() => { setReprog(null); void carregar(); }} />}
       {baixando && <BaixaModal lanc={baixando} aoFechar={() => setBaixando(null)} aoSalvar={() => { setBaixando(null); void carregar(); }} />}
       <ConfirmDialog open={Boolean(apagar)} title="Excluir lançamento" message={`Excluir "${apagar?.descricao}"? Não pode ser desfeito.`} confirmLabel="Excluir" onConfirm={() => { const l = apagar!; setApagar(null); void acao(() => api.delete(`/gestao/financeiro/lancamentos/${l.id}`), "Lançamento excluído."); }} onCancel={() => setApagar(null)} />
@@ -309,6 +313,132 @@ export function BaixaModal({ lanc, aoFechar, aoSalvar }: { lanc: Lanc; aoFechar:
         <Campo rotulo="Forma de pagamento"><Select value={f.forma_pagamento} onChange={(e) => setF({ ...f, forma_pagamento: e.target.value })} className="mt-1.5">{["PIX", "Boleto", "Transferência", "Dinheiro", "Cartão", "Cheque", "Outro"].map((x) => <option key={x}>{x}</option>)}</Select></Campo>
       </form>
     </Modal>
+  );
+}
+
+interface CobrancaAsaas { status: string; billing_type: string; invoice_url: string; bank_slip_url: string; linha_digitavel: string; pix_payload: string; valor_centavos: number; vencimento: string; taxa_centavos: number | null; pago_em: string | null; erro: string | null }
+const STATUS_ASAAS: Record<string, { rotulo: string; tom: "success" | "danger" | "neutral" | "info" | "warning" }> = {
+  PENDING: { rotulo: "Aguardando pagamento", tom: "info" }, OVERDUE: { rotulo: "Vencida", tom: "danger" }, RECEIVED: { rotulo: "Paga", tom: "success" }, CONFIRMED: { rotulo: "Paga", tom: "success" },
+  RECEIVED_IN_CASH: { rotulo: "Paga", tom: "success" }, CANCELADA: { rotulo: "Cancelada", tom: "neutral" }, DELETED: { rotulo: "Cancelada", tom: "neutral" }, REFUNDED: { rotulo: "Estornada", tom: "warning" },
+};
+
+/** Boleto/PIX da parcela pelo Asaas: gerar, copiar, mandar pelo WhatsApp, conferir se foi paga e cancelar. */
+export function CobrancaModal({ lanc, aoFechar, aoMudar }: { lanc: Lanc; aoFechar: () => void; aoMudar: () => void }) {
+  const { show } = useToast();
+  const atendimento = useAtendimentoLiberado();
+  const [c, setC] = useState<CobrancaAsaas | null | undefined>(undefined);
+  const [configurado, setConfigurado] = useState(true);
+  const [tipo, setTipo] = useState<"boleto_pix" | "pix" | "boleto">("boleto_pix");
+  const [ocupado, setOcupado] = useState("");
+  const ler = useCallback(async () => { try { const r = await api.get<{ cobranca: CobrancaAsaas | null; configurado: boolean }>(`/gestao/financeiro/lancamentos/${lanc.id}/cobranca`, { fresh: true } as never); setC(r.cobranca); setConfigurado(r.configurado); } catch { setC(null); } }, [lanc.id]);
+  useEffect(() => { void ler(); }, [ler]);
+  const rodar = async (qual: string, fn: () => Promise<{ cobranca: CobrancaAsaas | null }>, ok: string) => {
+    setOcupado(qual);
+    try { const r = await fn(); setC(r.cobranca); show(ok, "success"); aoMudar(); }
+    catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível concluir.", "error"); }
+    finally { setOcupado(""); }
+  };
+  const copiar = async (t: string, rot: string) => { try { await navigator.clipboard.writeText(t); show(`${rot} copiado.`, "success"); } catch { show("Não consegui copiar. Selecione e copie à mão.", "info"); } };
+  const ativa = c && !["CANCELADA", "DELETED", "REFUNDED"].includes(c.status);
+  const link: LinkDePagamento | undefined = ativa && c.invoice_url ? { url: c.invoice_url, pix: c.pix_payload || undefined, linha: c.linha_digitavel || undefined } : undefined;
+  const enviar = async () => {
+    const ok = await cobrarPeloAtendimento(lanc.pessoa_telefone ?? "", mensagemDeCobranca(lanc.pessoa_nome ?? "", [lanc], link));
+    show(ok ? "Mensagem com o link de pagamento copiada. Cole na conversa que abriu." : "Conversa aberta (não consegui copiar o texto).", ok ? "success" : "info");
+  };
+  const st = c ? STATUS_ASAAS[c.status] ?? { rotulo: c.status, tom: "neutral" as const } : null;
+  return (
+    <Modal open onClose={aoFechar} title="Boleto e PIX" description={`${lanc.descricao} — ${dinheiro(lanc.valor_centavos)} · vence em ${dataBr(lanc.vencimento)}`} maxWidth="max-w-lg"
+      footer={<div className="flex w-full justify-end"><Button variant="outline" onClick={aoFechar}>Fechar</Button></div>}>
+      {!configurado ? (
+        <p className="text-sm text-zinc-600 dark:text-zinc-300">O Asaas ainda não foi ligado neste escritório. Cole a chave de API em <a className="text-accent-700 underline" href="/configuracoes?secao=asaas">Configurações → Asaas (boleto e PIX)</a>.</p>
+      ) : c === undefined ? <p className="text-sm text-zinc-500">Carregando…</p> : !c || !ativa ? (
+        <div className="space-y-4 text-sm">
+          {c && st && <p className="text-xs text-zinc-500">Última cobrança: {st.rotulo}. Você pode gerar uma nova.</p>}
+          <fieldset className="space-y-2">
+            <legend className="mb-1 text-xs font-medium text-zinc-600 dark:text-zinc-300">Como o cliente poderá pagar</legend>
+            {([["boleto_pix", "Boleto e PIX", "O cliente escolhe na página de pagamento."], ["pix", "Só PIX", "Cai na hora; a tarifa costuma ser menor."], ["boleto", "Só boleto", "Compensa em até 1 dia útil."]] as const).map(([k, r, d]) => (
+              <label key={k} className="flex items-start gap-2 rounded-lg border border-zinc-200 px-3 py-2 dark:border-white/10"><input type="radio" className="mt-1" checked={tipo === k} onChange={() => setTipo(k)} /><span><b>{r}</b><span className="block text-xs text-zinc-500">{d}</span></span></label>))}
+          </fieldset>
+          <Button loading={ocupado === "gerar"} onClick={() => void rodar("gerar", () => api.post(`/gestao/financeiro/lancamentos/${lanc.id}/cobranca`, { tipo }), "Cobrança gerada.")}><QrCode className="h-4 w-4" /> Gerar cobrança</Button>
+        </div>
+      ) : (
+        <div className="space-y-4 text-sm">
+          <div className="flex flex-wrap items-center gap-2">{st && <Badge tone={st.tom}>{st.rotulo}</Badge>}{c.pago_em && <span className="text-xs text-zinc-500">paga em {dataBr(c.pago_em)}{c.taxa_centavos ? ` · tarifa ${dinheiro(c.taxa_centavos)}` : ""}</span>}</div>
+          {c.erro && <p className="text-xs text-amber-700 dark:text-amber-300">Aviso: {c.erro}</p>}
+          {c.invoice_url && <div className="flex gap-2"><Input readOnly value={c.invoice_url} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} /><Button variant="outline" onClick={() => void copiar(c.invoice_url, "Link")}><Copy className="h-4 w-4" /></Button><a href={c.invoice_url} target="_blank" rel="noopener noreferrer" className="inline-flex"><Button variant="outline" type="button"><ExternalLink className="h-4 w-4" /></Button></a></div>}
+          {c.pix_payload && <div><p className="mb-1 text-xs font-medium text-zinc-600 dark:text-zinc-300">PIX copia e cola</p><div className="flex gap-2"><Input readOnly value={c.pix_payload} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} /><Button variant="outline" onClick={() => void copiar(c.pix_payload, "PIX")}><Copy className="h-4 w-4" /></Button></div></div>}
+          {c.linha_digitavel && <div><p className="mb-1 text-xs font-medium text-zinc-600 dark:text-zinc-300">Linha digitável do boleto</p><div className="flex gap-2"><Input readOnly value={c.linha_digitavel} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} /><Button variant="outline" onClick={() => void copiar(c.linha_digitavel, "Linha digitável")}><Copy className="h-4 w-4" /></Button>{c.bank_slip_url && <a href={c.bank_slip_url} target="_blank" rel="noopener noreferrer" className="inline-flex"><Button variant="outline" type="button"><FileText className="h-4 w-4" /></Button></a>}</div></div>}
+          <div className="flex flex-wrap gap-2 border-t border-zinc-100 pt-3 dark:border-white/10">
+            {atendimento && lanc.pessoa_telefone && link && !c.pago_em && <Button onClick={() => void enviar()}><MessageCircle className="h-4 w-4" /> Enviar pelo WhatsApp</Button>}
+            <Button variant="outline" loading={ocupado === "consultar"} onClick={() => void rodar("consultar", () => api.post(`/gestao/financeiro/lancamentos/${lanc.id}/cobranca/consultar`, {}), "Situação atualizada.")}>Atualizar situação</Button>
+            {!c.pago_em && <Button variant="ghost" loading={ocupado === "cancelar"} onClick={() => void rodar("cancelar", () => api.post(`/gestao/financeiro/lancamentos/${lanc.id}/cobranca/cancelar`, {}), "Cobrança cancelada.")}>Cancelar cobrança</Button>}
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+interface Taxas {
+  de: string; ate: string; total_centavos: number; origem: "extrato" | "cobrancas"; extrato_sincronizado_ate: string | null; recebido_centavos: number; cobrancas_pagas: number; taxa_por_cobranca_centavos: number; percentual_do_recebido: number;
+  por_forma: { forma: string; pagas: number; recebido_centavos: number; taxa_centavos: number }[]; por_tipo: { tipo: string; rotulo: string; linhas: number; total_centavos: number }[];
+  meses: { mes: string; taxa_centavos: number }[]; linhas: { data: string; tipo: string; rotulo: string; descricao: string; valor_centavos: number }[];
+}
+/** O que o escritório gasta com o Asaas: total, por tipo de tarifa, por forma de pagamento, mês a mês e linha a linha. */
+function TaxasAsaas() {
+  const { show } = useToast();
+  const { can } = useAuth();
+  const [mes, setMes] = useState(mesAtual());
+  const [t, setT] = useState<Taxas | null>(null);
+  const [sinc, setSinc] = useState(false);
+  const carregar = useCallback(async () => { try { setT(await api.get<Taxas>(`/gestao/financeiro/asaas/taxas?mes=${mes}`, { fresh: true } as never)); } catch { show("Não foi possível carregar as taxas.", "error"); } }, [mes, show]);
+  useEffect(() => { void carregar(); }, [carregar]);
+  const sincronizar = async () => {
+    setSinc(true);
+    try { const r = await api.post<{ lidos: number }>("/gestao/financeiro/asaas/taxas/sincronizar", {}); show(`${r.lidos} lançamento(s) do extrato do Asaas atualizado(s).`, "success"); await carregar(); }
+    catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível buscar o extrato.", "error"); }
+    finally { setSinc(false); }
+  };
+  const maxMes = Math.max(1, ...(t?.meses ?? []).map((m) => m.taxa_centavos));
+  const maxTipo = Math.max(1, ...(t?.por_tipo ?? []).map((x) => x.total_centavos));
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <label className="text-sm text-zinc-600 dark:text-zinc-300">Mês <Input type="month" value={mes} onChange={(e) => e.target.value && setMes(e.target.value)} className="ml-2 inline-block h-10 w-44" /></label>
+        {can("financeiro.manage") && <Button variant="outline" loading={sinc} onClick={() => void sincronizar()}><Download className="h-4 w-4" /> Atualizar do Asaas</Button>}
+      </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard icon={<Wallet className="h-5 w-5" />} label="Gasto com taxas no mês" value={dinheiro(t?.total_centavos)} tone={t && t.total_centavos > 0 ? "warning" : "neutral"} helper={t?.origem === "cobrancas" ? "Pela diferença de cada cobrança paga" : t ? "Pelo extrato do Asaas" : undefined} />
+        <StatCard icon={<Wallet className="h-5 w-5" />} label="% do recebido" value={`${(t?.percentual_do_recebido ?? 0).toLocaleString("pt-BR")}%`} tone="info" helper={`Recebido pelo Asaas: ${dinheiro(t?.recebido_centavos)}`} />
+        <StatCard icon={<Wallet className="h-5 w-5" />} label="Custo por cobrança" value={dinheiro(t?.taxa_por_cobranca_centavos)} tone="neutral" helper={`${t?.cobrancas_pagas ?? 0} cobrança(s) paga(s)`} />
+        <StatCard icon={<Wallet className="h-5 w-5" />} label="Extrato do Asaas" value={t?.extrato_sincronizado_ate ? dataBr(t.extrato_sincronizado_ate) : "—"} tone="neutral" helper="Última data trazida" />
+      </div>
+      {t && t.origem === "cobrancas" && t.total_centavos === 0 && <p className="text-sm text-zinc-500">Ainda não há cobranças pagas neste mês. Clique em <b>Atualizar do Asaas</b> para trazer o extrato com todas as tarifas, inclusive notificações e transferências.</p>}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <section className="surface-panel p-5">
+          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Com o que gastamos</h2>
+          {(t?.por_tipo.length ?? 0) === 0 ? <p className="mt-3 text-sm text-zinc-500">Sem tarifas no extrato deste mês. Traga o extrato com o botão acima.</p> : (
+            <ul className="mt-3 space-y-3">{t!.por_tipo.map((x) => <li key={x.tipo}><div className="flex justify-between gap-2 text-sm"><span className="min-w-0 truncate">{x.rotulo}</span><b className="shrink-0">{dinheiro(x.total_centavos)}</b></div><div className="mt-1 h-2 rounded-full bg-zinc-100 dark:bg-white/10"><div className="h-2 rounded-full bg-amber-500" style={{ width: `${Math.max(3, (x.total_centavos / maxTipo) * 100)}%` }} /></div><p className="mt-0.5 text-[11px] text-zinc-400">{x.linhas} lançamento(s)</p></li>)}</ul>)}
+        </section>
+        <section className="surface-panel p-5">
+          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Por forma de pagamento</h2>
+          {(t?.por_forma.length ?? 0) === 0 ? <p className="mt-3 text-sm text-zinc-500">Nenhuma cobrança paga neste mês.</p> : (
+            <table className="mt-3 w-full text-sm"><thead><tr className="text-left text-xs text-zinc-500"><th className="py-1 font-medium">Forma</th><th className="text-right font-medium">Pagas</th><th className="text-right font-medium">Recebido</th><th className="text-right font-medium">Tarifa</th></tr></thead>
+              <tbody className="divide-y divide-zinc-100 dark:divide-white/10">{t!.por_forma.map((f) => <tr key={f.forma}><td className="py-1.5">{f.forma}</td><td className="text-right tabular-nums">{f.pagas}</td><td className="text-right tabular-nums">{dinheiro(f.recebido_centavos)}</td><td className="text-right tabular-nums">{dinheiro(f.taxa_centavos)}</td></tr>)}</tbody></table>)}
+        </section>
+      </div>
+      <section className="surface-panel p-5">
+        <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Mês a mês</h2>
+        {(t?.meses.length ?? 0) === 0 ? <p className="mt-3 text-sm text-zinc-500">Sem histórico ainda.</p> : (
+          <div className="mt-4 flex h-36 items-end gap-2 overflow-x-auto" role="img" aria-label="Gasto com taxas do Asaas por mês">{t!.meses.map((m) => <div key={m.mes} className="flex min-w-[52px] flex-1 flex-col items-center gap-1" title={dinheiro(m.taxa_centavos)}><div className="flex h-24 items-end"><div className="w-6 rounded-t bg-amber-500" style={{ height: `${Math.max(3, (m.taxa_centavos / maxMes) * 100)}%` }} /></div><span className={`text-[11px] ${m.mes === mes ? "font-bold text-accent-700" : "text-zinc-400"}`}>{mesRotulo(m.mes)}</span><span className="text-[10px] text-zinc-500">{dinheiro(m.taxa_centavos)}</span></div>)}</div>)}
+      </section>
+      {(t?.linhas.length ?? 0) > 0 && (
+        <section className="surface-panel p-5">
+          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Tarifas lançadas no mês</h2>
+          <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[480px] text-sm"><thead><tr className="text-left text-xs text-zinc-500"><th className="py-1 font-medium">Data</th><th className="font-medium">Tipo</th><th className="font-medium">Descrição</th><th className="text-right font-medium">Valor</th></tr></thead>
+            <tbody className="divide-y divide-zinc-100 dark:divide-white/10">{t!.linhas.map((l, i) => <tr key={i}><td className="py-1.5 text-zinc-500">{dataBr(l.data)}</td><td>{l.rotulo}</td><td className="max-w-[280px] truncate text-zinc-500">{l.descricao}</td><td className="text-right tabular-nums">{dinheiro(l.valor_centavos)}</td></tr>)}</tbody></table></div>
+        </section>)}
+    </div>
   );
 }
 

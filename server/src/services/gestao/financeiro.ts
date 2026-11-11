@@ -127,8 +127,8 @@ function atualizarContratoQuitado(contratoId: number | null) {
 
 const reais = (c: number) => (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const dia = (d: string) => d.split("-").reverse().join("/");
-type Quem = { id: number | null; nome: string } | undefined;
-function registrar(lancamentoId: number, acao: string, detalhe: string, quem?: Quem) {
+export type Quem = { id: number | null; nome: string } | undefined;
+export function registrar(lancamentoId: number, acao: string, detalhe: string, quem?: Quem) {
   db.prepare("INSERT INTO gestao_lancamentos_historico(lancamento_id,acao,detalhe,user_id,autor) VALUES (?,?,?,?,?)").run(lancamentoId, acao, detalhe.slice(0, 500), quem?.id ?? null, quem?.nome ?? "");
 }
 /** Parcelas em aberto (do mesmo contrato, ou do mesmo cliente se não houver contrato) que podem receber um abatimento. */

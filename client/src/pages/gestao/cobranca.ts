@@ -3,7 +3,13 @@ import { dataBr } from "./comum";
 const moeda = (c: number) => (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 /** O texto de cobrança amigável, pronto para colar na conversa (o atendente confere antes de enviar). */
-export function mensagemDeCobranca(nome: string, parcelas: { descricao: string; valor_centavos: number; vencimento: string }[]): string {
+export interface LinkDePagamento { url: string; pix?: string; linha?: string }
+export function mensagemDeCobranca(nome: string, parcelas: { descricao: string; valor_centavos: number; vencimento: string }[], link?: LinkDePagamento): string {
+  const base = textoBase(nome, parcelas);
+  if (!link?.url) return base;
+  return `${base}\n\nPara pagar por boleto ou PIX, use este link: ${link.url}${link.pix ? `\n\nPIX copia e cola:\n${link.pix}` : ""}${link.linha ? `\n\nLinha digitável do boleto:\n${link.linha}` : ""}`;
+}
+function textoBase(nome: string, parcelas: { descricao: string; valor_centavos: number; vencimento: string }[]): string {
   const primeiro = nome.trim().split(/\s+/)[0] || "";
   const saudacao = primeiro ? `Olá, ${primeiro}! Tudo bem?` : "Olá! Tudo bem?";
   if (parcelas.length === 1) {

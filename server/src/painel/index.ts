@@ -11,6 +11,7 @@ import { gerarParDeChaves } from "../licenca/token";
 import { Provisionador } from "./provisionador";
 import { ClientePonte } from "../atendimento/ponte";
 import { criarRotaContratos } from "../atendimento/rotaContratos";
+import { criarRotaAsaas } from "../atendimento/rotaAsaas";
 import { criarRotaMcp } from "../atendimento/rotaMcp";
 import { bancoSupabase } from "../atendimento/banco";
 import { criarRotaPonte, lerConfigPonteInterna } from "../atendimento/rotaPonte";
@@ -50,11 +51,14 @@ async function main() {
     : undefined;
   if (rotaContratos) console.log("[painel] Contratos do atendimento ligados em /contratos");
   else if (cfg.atendimento) console.log("[painel] Contratos do atendimento DESLIGADOS (defina CONTRATOS_SEGREDO com 32+ caracteres para ligar).");
+  const rotaAsaas = cfg.atendimento
+    ? criarRotaAsaas({ segredoAtendimento: cfg.atendimento.segredo, porta: (slug) => servico.portaDoSlug(slug) ?? provisionador.portaExistente(slug) })
+    : undefined;
   const rotaMcp = cfg.atendimento && segredoContratos.length >= 32
     ? criarRotaMcp({ segredoDeskcomm: segredoContratos, segredoAtendimento: cfg.atendimento.segredo, porta: (slug) => servico.portaDoSlug(slug) ?? provisionador.portaExistente(slug) })
     : undefined;
   if (rotaMcp) console.log("[painel] Servidor de ferramentas do agente ligado em /mcp");
-  const app = criarAppPainel({ db, cfg, servico: servico, chavePublicaPem: publica, versao, provisionador, ponte: rotaPonte, contratos: rotaContratos, mcp: rotaMcp });
+  const app = criarAppPainel({ db, cfg, servico: servico, chavePublicaPem: publica, versao, provisionador, ponte: rotaPonte, contratos: rotaContratos, asaas: rotaAsaas, mcp: rotaMcp });
   if (ponte) {
     console.log("[painel] Atendimento (DeskcommCRM) ligado pela ponte", cfg.atendimento!.url);
     // Vencimentos mudam com o tempo sem nenhum evento: confere de tempos em tempos e repete o que tiver falhado.

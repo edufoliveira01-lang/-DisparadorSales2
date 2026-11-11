@@ -11,6 +11,7 @@ import { ErroArmazenamento } from "../armazenamento/pastas";
 import { receberDocumentoDoChat } from "../armazenamento/chat";
 import { saudeDoArmazenamento } from "../armazenamento/fila";
 import { guardarRetrato } from "../atendimento/indicadores";
+import { ErroAsaas, processarWebhook } from "../services/gestao/asaas";
 import { anotarPeloAtendimento, clienteParaAnotar } from "../services/gestao/anotacoes";
 import { ErroGestao } from "../services/gestao/erro";
 
@@ -84,6 +85,15 @@ integracaoContratosRouter.post("/anotacoes", (req, res) => {
   } catch (e) {
     if (e instanceof ErroGestao) return void res.status(e.status).json({ error: e.message });
     erro(res, e);
+  }
+});
+
+/** Aviso de pagamento do Asaas (repassado pelo painel). O token do aviso é conferido aqui; o corpo é o evento do Asaas. */
+integracaoContratosRouter.post("/asaas", (req, res) => {
+  try { res.json(processarWebhook(String(req.headers["x-asaas-token"] ?? cabecalho(req, "asaas-access-token") ?? ""), req.body)); }
+  catch (e) {
+    if (e instanceof ErroAsaas) return void res.status(e.status).json({ error: e.message });
+    console.error("[asaas] aviso de pagamento:", e instanceof Error ? e.message : e); res.status(500).json({ error: "Erro interno." });
   }
 });
 

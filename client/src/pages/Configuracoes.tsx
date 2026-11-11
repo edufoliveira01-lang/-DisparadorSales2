@@ -50,6 +50,7 @@ import { cn } from "@/lib/utils";
 import { GoogleCalendarSettings } from "@/components/GoogleCalendarSettings";
 import { ArmazenamentoSettings } from "@/components/ArmazenamentoSettings";
 import { DataJudSettings } from "@/components/DataJudSettings";
+import { AsaasSettings } from "@/components/AsaasSettings";
 import { LoginBrandingSettings } from "@/components/LoginBrandingSettings";
 import { useAuth } from "@/context/AuthContext";
 
@@ -948,6 +949,7 @@ export function Configuracoes({ secao }: { secao?: string | null } = {}) {
       <section hidden={configSection !== "google"}><GoogleCalendarSettings alwaysOpen /></section>
       {configSection === "dropbox" && <ArmazenamentoSettings />}
       {configSection === "datajud" && <DataJudSettings />}
+      {configSection === "asaas" && <AsaasSettings />}
 
       <section hidden={configSection !== "notificacoes"}><CollapsibleCard alwaysOpen
         icon={<MessageCircle className="h-4 w-4 text-emerald-500" />}

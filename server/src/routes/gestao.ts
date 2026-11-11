@@ -28,7 +28,10 @@ import { kitDocx } from "../services/gestao/docx";
 import { lerEscritorio, salvarEscritorio } from "../services/gestao/escritorio";
 import crypto from "node:crypto";
 import { agendaDaPessoa, andamentoDoProcesso } from "../services/gestao/integracao";
+import { atendimentoDaInstancia } from "../atendimento/instancia";
+import { hojeSaoPaulo } from "../services/djen/cache";
 import { completarComDataJud, forcarConsulta, iniciarAcompanhamento, situacaoDoAcompanhamento } from "../services/djen/vigia";
+import { ambienteDoAsaas, cancelarCobranca, chaveDoAsaas, cobrancaDoLancamento, consultarCobranca, ErroAsaas, gerarCobranca, mascara as mascaraAsaas, salvarConfigAsaas, sincronizarCobrancasAlteradas, sincronizarExtrato, taxasDoAsaas, testarAsaas, tokenDoWebhook } from "../services/gestao/asaas";
 import { atualizarDoDataJud, chaveDoDataJud, ErroDataJud, mascararChave, salvarChaveDoDataJud } from "../services/djen/datajud";
 import { processarHistoricos } from "../services/djen/processHistory";
 import { licencaPermiteOperar } from "../licenca/cliente";
@@ -168,13 +171,36 @@ gestaoRouter.get("/financeiro/fluxo", rota((req) => fluxoDeCaixa(Number(req.quer
 gestaoRouter.get("/financeiro/lancamentos", rota((req) => listarLancamentos(q(req))));
 gestaoRouter.post("/financeiro/lancamentos", rota((req, res) => { const r = criarLancamentos(req.body || {}, usuario(req).id); res.status(201); auditAccess("financeiro_lancamento_criado", usuario(req).id, null, { quantidade: r.length }); return r; }));
 gestaoRouter.get("/financeiro/lancamentos/:id", rota((req) => obterLancamento(id(req))));
-gestaoRouter.put("/financeiro/lancamentos/:id", rota((req) => atualizarLancamento(id(req), req.body || {}, quem(req))));
+gestaoRouter.put("/financeiro/lancamentos/:id", rota((req) => { const r = atualizarLancamento(id(req), req.body || {}, quem(req)); depoisDeMudar(); return r; }));
+// ---------- Asaas: configuração, cobrança (boleto/PIX) e taxas ----------
+const erroAsaas = (e: unknown): never => { if (e instanceof ErroAsaas) throw new ErroGestao(e.message, e.status); throw e; };
+const gerirIntegracoes = (req: Parameters<typeof usuario>[0]) => { if (!hasPermission(usuario(req), "integrations.manage")) throw new ErroGestao("Sem permissão.", 403); };
+const gerirFinanceiro = (req: Parameters<typeof usuario>[0]) => { if (!hasPermission(usuario(req), "financeiro.manage")) throw new ErroGestao("Sem permissão.", 403); };
+const urlDoAviso = () => { const a = atendimentoDaInstancia(); return a ? `${a.ponteUrl.replace(/\/ponte\/?$/, "")}/asaas/${a.slug}` : ""; };
+const configAsaas = () => ({ configurado: Boolean(chaveDoAsaas()), final: mascaraAsaas(chaveDoAsaas()), ambiente: ambienteDoAsaas(), url_do_aviso: urlDoAviso(), token_do_aviso: chaveDoAsaas() ? tokenDoWebhook() : "" });
+const depoisDeMudar = () => { void sincronizarCobrancasAlteradas().catch(() => undefined); };
+gestaoRouter.get("/asaas/config", rota((req) => { gerirIntegracoes(req); return configAsaas(); }));
+gestaoRouter.put("/asaas/config", rota((req) => { gerirIntegracoes(req); try { salvarConfigAsaas(req.body || {}); } catch (e) { erroAsaas(e); } auditAccess("asaas_config_salva", usuario(req).id, null, {}); return configAsaas(); }));
+gestaoRouter.post("/asaas/testar", rota(async (req) => { gerirIntegracoes(req); try { return await testarAsaas(); } catch (e) { return erroAsaas(e); } }));
+gestaoRouter.get("/financeiro/lancamentos/:id/cobranca", rota((req) => ({ cobranca: cobrancaDoLancamento(id(req)), configurado: Boolean(chaveDoAsaas()) })));
+gestaoRouter.post("/financeiro/lancamentos/:id/cobranca", rota(async (req, res) => { gerirFinanceiro(req); try { const c = await gerarCobranca(id(req), req.body?.tipo, quem(req)); auditAccess("asaas_cobranca_gerada", usuario(req).id, null, { lancamento: id(req) }); res.status(201); return { cobranca: c }; } catch (e) { return erroAsaas(e); } }));
+gestaoRouter.post("/financeiro/lancamentos/:id/cobranca/consultar", rota(async (req) => { gerirFinanceiro(req); try { return { cobranca: await consultarCobranca(id(req)) }; } catch (e) { return erroAsaas(e); } }));
+gestaoRouter.post("/financeiro/lancamentos/:id/cobranca/cancelar", rota(async (req) => { gerirFinanceiro(req); try { await cancelarCobranca(id(req), quem(req)); return { cobranca: cobrancaDoLancamento(id(req)) }; } catch (e) { return erroAsaas(e); } }));
+gestaoRouter.get("/financeiro/asaas/taxas", rota((req) => {
+  const hoje = hojeSaoPaulo(); const mes = /^\d{4}-\d{2}$/.test(String(req.query.mes ?? "")) ? String(req.query.mes) : hoje.slice(0, 7);
+  return taxasDoAsaas(`${mes}-01`, `${mes}-31`);
+}));
+gestaoRouter.post("/financeiro/asaas/taxas/sincronizar", rota(async (req) => {
+  gerirFinanceiro(req); const hoje = hojeSaoPaulo();
+  const de = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.de ?? "")) ? String(req.body.de) : `${hoje.slice(0, 4)}-01-01`;
+  try { return await sincronizarExtrato(de, hoje); } catch (e) { return erroAsaas(e); }
+}));
 gestaoRouter.get("/financeiro/lancamentos/:id/parcelas-para-abater", rota((req) => parcelasParaAbater(id(req))));
 gestaoRouter.get("/financeiro/lancamentos/:id/historico", rota((req) => ({ itens: historicoDoLancamento(id(req)) })));
-gestaoRouter.post("/financeiro/lancamentos/:id/reprogramar", rota((req) => { const r = reprogramarVencimento(id(req), req.body || {}, quem(req)); auditAccess("financeiro_reprogramado", usuario(req).id, null, { lancamento: id(req), parcelas: r.parcelas_movidas }); return r; }));
+gestaoRouter.post("/financeiro/lancamentos/:id/reprogramar", rota((req) => { const r = reprogramarVencimento(id(req), req.body || {}, quem(req)); auditAccess("financeiro_reprogramado", usuario(req).id, null, { lancamento: id(req), parcelas: r.parcelas_movidas }); depoisDeMudar(); return r; }));
 gestaoRouter.post("/financeiro/lancamentos/:id/baixar", rota((req) => { const r = baixarLancamento(id(req), req.body || {}, quem(req)); auditAccess("financeiro_baixa", usuario(req).id, null, { lancamento: r.id }); return r; }));
 gestaoRouter.post("/financeiro/lancamentos/:id/estornar", rota((req) => { const r = estornarLancamento(id(req)); auditAccess("financeiro_estorno", usuario(req).id, null, { lancamento: r.id }); return r; }));
-gestaoRouter.post("/financeiro/lancamentos/:id/cancelar", rota((req) => cancelarLancamento(id(req), req.body?.cancelar !== false)));
+gestaoRouter.post("/financeiro/lancamentos/:id/cancelar", rota((req) => { const r = cancelarLancamento(id(req), req.body?.cancelar !== false); depoisDeMudar(); return r; }));
 gestaoRouter.delete("/financeiro/lancamentos/:id", rota((req) => { const r = excluirLancamento(id(req)); auditAccess("financeiro_lancamento_excluido", usuario(req).id, null, { lancamento: id(req) }); return r; }));
 gestaoRouter.get("/financeiro/contratos", rota((req) => listarContratos(q(req))));
 gestaoRouter.post("/financeiro/contratos", rota((req, res) => { const r = criarContrato(req.body || {}, usuario(req).id); res.status(201); auditAccess("financeiro_contrato_criado", usuario(req).id, null, { contrato: r.id }); return r; }));
