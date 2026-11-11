@@ -131,6 +131,14 @@ type Quem = { id: number | null; nome: string } | undefined;
 function registrar(lancamentoId: number, acao: string, detalhe: string, quem?: Quem) {
   db.prepare("INSERT INTO gestao_lancamentos_historico(lancamento_id,acao,detalhe,user_id,autor) VALUES (?,?,?,?,?)").run(lancamentoId, acao, detalhe.slice(0, 500), quem?.id ?? null, quem?.nome ?? "");
 }
+/** Parcelas em aberto (do mesmo contrato, ou do mesmo cliente se não houver contrato) que podem receber um abatimento. */
+export function parcelasParaAbater(id: number) {
+  const l = obterLancamento(id);
+  const filtro = l.contrato_id ? "contrato_id=?" : l.pessoa_id ? "pessoa_id=? AND contrato_id IS NULL" : null;
+  if (!filtro) return { itens: [] };
+  const itens = db.prepare(`SELECT id,descricao,valor_centavos,vencimento,parcela_numero,parcela_total FROM gestao_lancamentos WHERE ${filtro} AND tipo=? AND id<>? AND cancelado=0 AND pago_em IS NULL ORDER BY vencimento,id LIMIT 12`).all(l.contrato_id ?? l.pessoa_id, l.tipo, id);
+  return { itens };
+}
 /** O que mudou neste lançamento (baixa parcial, nova data, valor…), do mais recente ao mais antigo. */
 export function historicoDoLancamento(id: number) {
   obterLancamento(id);
@@ -162,8 +170,26 @@ export function baixarLancamento(id: number, d: Record<string, unknown>, quem?: 
     atualizarContratoQuitado(l.contrato_id);
     return { ...obterLancamento(id), saldo: { valor_centavos: falta, vencimento: venc } };
   }
-  db.prepare("UPDATE gestao_lancamentos SET pago_em=?,valor_pago_centavos=?,forma_pagamento=?,atualizado_em=CURRENT_TIMESTAMP WHERE id=?").run(pagoEm, valor, txt(d.forma_pagamento, 40), id);
-  if (valor !== l.valor_centavos) registrar(id, "baixa", `Baixado por ${reais(valor)} (previsto ${reais(l.valor_centavos)}) em ${dia(pagoEm)}.`, quem);
+  // Pagamento A MAIOR: quem baixa decide quanto do excedente abate em qual parcela seguinte (nunca automático).
+  const abater = d.abater as { lancamento_id?: unknown; valor?: unknown } | undefined;
+  const aplicar = valor > l.valor_centavos && abater && abater.lancamento_id ? (() => {
+    const alvo = obterLancamento(Number(abater.lancamento_id));
+    const quanto = centavos(abater.valor, "Valor a abater");
+    if (alvo.id === id || alvo.tipo !== l.tipo || alvo.cancelado || alvo.pago_em) throw new ErroGestao("A parcela escolhida para o abatimento não está em aberto.", 409);
+    if ((l.contrato_id && alvo.contrato_id !== l.contrato_id) || (!l.contrato_id && (!l.pessoa_id || alvo.pessoa_id !== l.pessoa_id))) throw new ErroGestao("A parcela escolhida não é do mesmo contrato/cliente.", 409);
+    if (quanto > valor - l.valor_centavos) throw new ErroGestao(`O abatimento não pode passar do excedente (${reais(valor - l.valor_centavos)}).`);
+    if (quanto >= alvo.valor_centavos) throw new ErroGestao(`O abatimento precisa ser menor que a parcela (${reais(alvo.valor_centavos)}). Para quitá-la, receba a própria parcela.`);
+    return { alvo, quanto };
+  })() : null;
+  db.transaction(() => {
+    db.prepare("UPDATE gestao_lancamentos SET pago_em=?,valor_pago_centavos=?,forma_pagamento=?,atualizado_em=CURRENT_TIMESTAMP WHERE id=?").run(pagoEm, valor, txt(d.forma_pagamento, 40), id);
+    if (aplicar) {
+      db.prepare("UPDATE gestao_lancamentos SET valor_centavos=valor_centavos-?,atualizado_em=CURRENT_TIMESTAMP WHERE id=?").run(aplicar.quanto, aplicar.alvo.id);
+      registrar(id, "excedente_abatido", `Pago ${reais(valor)} (previsto ${reais(l.valor_centavos)}). Excedente de ${reais(aplicar.quanto)} abatido na parcela nº ${aplicar.alvo.id} (vence ${dia(aplicar.alvo.vencimento)}).`, quem);
+      registrar(aplicar.alvo.id, "abatimento", `Abatido ${reais(aplicar.quanto)}: era ${reais(aplicar.alvo.valor_centavos)}, passou a ${reais(aplicar.alvo.valor_centavos - aplicar.quanto)} (excedente do lançamento nº ${id}).`, quem);
+    }
+  })();
+  if (!aplicar && valor !== l.valor_centavos) registrar(id, "baixa", `Baixado por ${reais(valor)} (previsto ${reais(l.valor_centavos)}) em ${dia(pagoEm)}.`, quem);
   atualizarContratoQuitado(l.contrato_id);
   return obterLancamento(id);
 }

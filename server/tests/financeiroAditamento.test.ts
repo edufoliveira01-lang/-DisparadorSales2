@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 process.env.ENCRYPTION_KEY = "chave-somente-para-testes-0123456789abcdef";
 
 import { db } from "../src/db";
-import { atualizarLancamento, baixarLancamento, historicoDoLancamento, listarLancamentos, reprogramarVencimento } from "../src/services/gestao/financeiro";
+import { atualizarLancamento, baixarLancamento, parcelasParaAbater, historicoDoLancamento, listarLancamentos, reprogramarVencimento } from "../src/services/gestao/financeiro";
 
 const pessoa = () => Number(db.prepare("INSERT INTO gestao_pessoas(nome,tipo) VALUES ('Cliente','cliente')").run().lastInsertRowid);
 const contrato = (p: number) => Number(db.prepare("INSERT INTO gestao_contratos(pessoa_id,descricao,tipo,valor_total_centavos) VALUES (?,?,?,?)").run(p, "Honorários", "fixo", 150000).lastInsertRowid);
@@ -59,5 +59,28 @@ describe("nova data de vencimento", () => {
     expect(venc(b)).toBe("2026-12-10");
     atualizarLancamento(b, { valor: "600,00", vencimento: "2026-12-15" });
     expect(historicoDoLancamento(b)[0]).toMatchObject({ acao: "alterado", detalhe: expect.stringContaining("valor") });
+  });
+});
+
+describe("excedente: abatimento escolhido pelo usuário", () => {
+  it("paga 1.200 de 1.000 e abate 150 da próxima parcela (nunca automático)", () => {
+    const p = pessoa(); const c = contrato(p);
+    const a = lanc(p, 100000, "2026-11-10", c, 1), b = lanc(p, 100000, "2026-12-10", c, 2);
+    expect(parcelasParaAbater(a).itens.map((i: any) => i.id)).toEqual([b]);
+    baixarLancamento(a, { pago_em: "2026-11-11", valor_pago: "1200" });          // sem abater: só registra a mais
+    expect(venc(b)).toBe("2026-12-10");
+    expect((db.prepare("SELECT valor_centavos v FROM gestao_lancamentos WHERE id=?").get(b) as { v: number }).v).toBe(100000);
+    const a2 = lanc(p, 100000, "2026-11-10", c, 1);
+    baixarLancamento(a2, { pago_em: "2026-11-11", valor_pago: "1200", abater: { lancamento_id: b, valor: "150,00" } });
+    expect((db.prepare("SELECT valor_centavos v FROM gestao_lancamentos WHERE id=?").get(b) as { v: number }).v).toBe(85000);
+    expect(historicoDoLancamento(b)[0]).toMatchObject({ acao: "abatimento" });
+    expect(historicoDoLancamento(a2)[0]).toMatchObject({ acao: "excedente_abatido" });
+  });
+  it("recusa abatimento maior que o excedente, igual/maior que a parcela, ou em parcela de outro cliente", () => {
+    const p = pessoa(); const q = pessoa(); const c = contrato(p);
+    const a = lanc(p, 100000, "2026-11-10", c, 1), b = lanc(p, 100000, "2026-12-10", c, 2), outro = lanc(q, 100000, "2026-12-10", null, 1);
+    expect(() => baixarLancamento(a, { valor_pago: "1100", abater: { lancamento_id: b, valor: "150" } })).toThrow(/excedente/);
+    expect(() => baixarLancamento(a, { valor_pago: "2500", abater: { lancamento_id: b, valor: "1000" } })).toThrow(/menor que a parcela/);
+    expect(() => baixarLancamento(a, { valor_pago: "1100", abater: { lancamento_id: outro, valor: "50" } })).toThrow(/mesmo contrato/);
   });
 });

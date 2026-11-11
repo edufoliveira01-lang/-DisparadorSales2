@@ -10,7 +10,7 @@ import { auditAccess } from "../services/accessService";
 import { TAMANHO_MAXIMO, excluirArquivo, extensao, listarArquivos, obterArquivo, podeExibir, salvarArquivo, usoDeArmazenamento } from "../services/gestao/arquivos";
 import { VARIAVEIS, excluirModelo, gerarDocumento, listarModelos, salvarModelo } from "../services/gestao/modelos";
 import { atualizarTarefa, concluirTarefa, criarTarefa, excluirTarefa, listarTarefas, meuPainel, obterTarefa, sincronizarPrazosDjen } from "../services/gestao/tarefas";
-import { atualizarLancamento, baixarLancamento, historicoDoLancamento, reprogramarVencimento, cancelarContrato, cancelarLancamento, criarContrato, criarLancamentos, estornarLancamento, excluirLancamento, fluxoDeCaixa, listarContratos, listarLancamentos, obterContrato, obterLancamento, resumoFinanceiro } from "../services/gestao/financeiro";
+import { atualizarLancamento, baixarLancamento, parcelasParaAbater, historicoDoLancamento, reprogramarVencimento, cancelarContrato, cancelarLancamento, criarContrato, criarLancamentos, estornarLancamento, excluirLancamento, fluxoDeCaixa, listarContratos, listarLancamentos, obterContrato, obterLancamento, resumoFinanceiro } from "../services/gestao/financeiro";
 import { indicadores } from "../services/gestao/indicadores";
 import { dashboardDoInicio } from "../services/gestao/dashboard";
 import { captacao } from "../services/gestao/captacao";
@@ -169,6 +169,7 @@ gestaoRouter.get("/financeiro/lancamentos", rota((req) => listarLancamentos(q(re
 gestaoRouter.post("/financeiro/lancamentos", rota((req, res) => { const r = criarLancamentos(req.body || {}, usuario(req).id); res.status(201); auditAccess("financeiro_lancamento_criado", usuario(req).id, null, { quantidade: r.length }); return r; }));
 gestaoRouter.get("/financeiro/lancamentos/:id", rota((req) => obterLancamento(id(req))));
 gestaoRouter.put("/financeiro/lancamentos/:id", rota((req) => atualizarLancamento(id(req), req.body || {}, quem(req))));
+gestaoRouter.get("/financeiro/lancamentos/:id/parcelas-para-abater", rota((req) => parcelasParaAbater(id(req))));
 gestaoRouter.get("/financeiro/lancamentos/:id/historico", rota((req) => ({ itens: historicoDoLancamento(id(req)) })));
 gestaoRouter.post("/financeiro/lancamentos/:id/reprogramar", rota((req) => { const r = reprogramarVencimento(id(req), req.body || {}, quem(req)); auditAccess("financeiro_reprogramado", usuario(req).id, null, { lancamento: id(req), parcelas: r.parcelas_movidas }); return r; }));
 gestaoRouter.post("/financeiro/lancamentos/:id/baixar", rota((req) => { const r = baixarLancamento(id(req), req.body || {}, quem(req)); auditAccess("financeiro_baixa", usuario(req).id, null, { lancamento: r.id }); return r; }));

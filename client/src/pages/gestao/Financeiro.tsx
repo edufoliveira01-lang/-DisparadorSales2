@@ -260,14 +260,21 @@ export function BaixaModal({ lanc, aoFechar, aoSalvar }: { lanc: Lanc; aoFechar:
   const [restante, setRestante] = useState<"novo" | "manter">("novo");
   const [dataRestante, setDataRestante] = useState("");
   const [salvando, setSalvando] = useState(false);
+  const [abatendo, setAbatendo] = useState(false);
+  const [alvo, setAlvo] = useState(0);
+  const [valorAbater, setValorAbater] = useState("");
+  const [parcelas, setParcelas] = useState<{ id: number; descricao: string; valor_centavos: number; vencimento: string }[]>([]);
+  useEffect(() => { api.get<{ itens: typeof parcelas }>(`/gestao/financeiro/lancamentos/${lanc.id}/parcelas-para-abater`, { fresh: true } as never).then((r) => setParcelas(r.itens)).catch(() => setParcelas([])); }, [lanc.id]);
   const pago = emCentavos(f.valor_pago);
   const falta = lanc.valor_centavos - pago;
   const parcial = pago > 0 && falta > 0;
+  const excedente = pago - lanc.valor_centavos;
+  const alvoAtual = parcelas.find((p) => p.id === (alvo || parcelas[0]?.id));
   const sugerida = maisUmMes(lanc.vencimento, f.pago_em);
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault(); setSalvando(true);
     try {
-      const r = await api.post<{ saldo?: { valor_centavos: number; vencimento: string } }>(`/gestao/financeiro/lancamentos/${lanc.id}/baixar`, { ...f, ...(parcial ? { restante, vencimento_restante: restante === "novo" ? dataRestante || sugerida : undefined } : {}) });
+      const r = await api.post<{ saldo?: { valor_centavos: number; vencimento: string } }>(`/gestao/financeiro/lancamentos/${lanc.id}/baixar`, { ...f, ...(parcial ? { restante, vencimento_restante: restante === "novo" ? dataRestante || sugerida : undefined } : {}), ...(excedente > 0 && abatendo && alvoAtual ? { abater: { lancamento_id: alvoAtual.id, valor: valorAbater || (excedente / 100).toFixed(2).replace(".", ",") } } : {}) });
       show(r.saldo ? `Pagamento parcial registrado. Saldo de ${dinheiro(r.saldo.valor_centavos)} lançado para ${dataBr(r.saldo.vencimento)}.` : lanc.tipo === "receber" ? "Recebimento registrado." : "Pagamento registrado.", "success"); aoSalvar();
     }
     catch (err) { show(err instanceof ApiError ? err.message : "Não foi possível registrar.", "error"); }
@@ -286,7 +293,19 @@ export function BaixaModal({ lanc, aoFechar, aoSalvar }: { lanc: Lanc; aoFechar:
             {restante === "novo" && <div className="pl-6"><label className="text-xs text-zinc-600 dark:text-zinc-300">Vencimento do saldo <Input type="date" min={f.pago_em} value={dataRestante || sugerida} onChange={(e) => setDataRestante(e.target.value)} className="mt-1 h-9 w-44" /></label></div>}
             <label className="flex items-start gap-2"><input type="radio" className="mt-1" checked={restante === "manter"} onChange={() => setRestante("manter")} /><span><b>Dar por quitado</b><span className="block text-xs text-zinc-600 dark:text-zinc-300">Só baixa o valor pago (desconto combinado com o cliente). Nada é lançado depois.</span></span></label>
           </fieldset>)}
-        {pago > lanc.valor_centavos && <p className="text-xs text-zinc-500">O valor pago é maior que o previsto ({dinheiro(pago - lanc.valor_centavos)} a mais). Ele é registrado como recebido.</p>}
+        {excedente > 0 && (
+          <fieldset className="space-y-2 rounded-xl border border-accent-200 bg-accent-50/60 p-3 text-sm dark:border-accent-500/30 dark:bg-accent-500/10">
+            <legend className="px-1 text-xs font-semibold text-accent-800 dark:text-accent-200">Pagou {dinheiro(excedente)} a mais. Quer abater em outra parcela?</legend>
+            <label className="flex items-start gap-2"><input type="radio" className="mt-1" checked={!abatendo} onChange={() => setAbatendo(false)} /><span><b>Só registrar como recebido a mais</b><span className="block text-xs text-zinc-600 dark:text-zinc-300">As outras parcelas continuam como estão.</span></span></label>
+            {parcelas.length > 0 && <>
+              <label className="flex items-start gap-2"><input type="radio" className="mt-1" checked={abatendo} onChange={() => { setAbatendo(true); setValorAbater((excedente / 100).toFixed(2).replace(".", ",")); }} /><span><b>Abater em uma parcela</b><span className="block text-xs text-zinc-600 dark:text-zinc-300">Você escolhe a parcela e quanto abater.</span></span></label>
+              {abatendo && <div className="grid gap-2 pl-6 sm:grid-cols-[1fr_8rem]">
+                <Select value={alvoAtual?.id ?? ""} onChange={(e) => setAlvo(Number(e.target.value))} aria-label="Parcela a abater">{parcelas.map((p) => <option key={p.id} value={p.id}>{dataBr(p.vencimento)} · {dinheiro(p.valor_centavos)}</option>)}</Select>
+                <Input inputMode="decimal" value={valorAbater} onChange={(e) => setValorAbater(e.target.value)} aria-label="Valor a abater (R$)" />
+                {alvoAtual && <p className="text-xs text-zinc-500 sm:col-span-2">A parcela de {dinheiro(alvoAtual.valor_centavos)} passa a {dinheiro(Math.max(0, alvoAtual.valor_centavos - emCentavos(valorAbater)))}.</p>}
+              </div>}
+            </>}
+          </fieldset>)}
         <Campo rotulo="Forma de pagamento"><Select value={f.forma_pagamento} onChange={(e) => setF({ ...f, forma_pagamento: e.target.value })} className="mt-1.5">{["PIX", "Boleto", "Transferência", "Dinheiro", "Cartão", "Cheque", "Outro"].map((x) => <option key={x}>{x}</option>)}</Select></Campo>
       </form>
     </Modal>

@@ -45,3 +45,5 @@
 - **Pagamento parcial:** ao receber menos que o previsto, o diálogo pergunta o que fazer com o restante: lançar um saldo em nova parcela (data sugerida: mesmo dia do mês seguinte) ou dar por quitado (desconto).
 - **Nova data de vencimento:** com motivo e, para parcelas de contrato, opção de mover as seguintes junto (por mês quando o dia é o mesmo).
 - **Histórico de alterações** em cada lançamento (baixa parcial, nova data, valor, saldo criado), com quem fez.
+- **Excedente (3.10.1):** ao receber a mais, o usuário escolhe em qual parcela abater e quanto (nunca automático); as duas parcelas ganham o registro no histórico.
+- **Planejado:** integração com Asaas (boletos, PIX, cobrança e envio automáticos). O histórico por lançamento e o saldo/abatimento já guardam o que será conciliado.
