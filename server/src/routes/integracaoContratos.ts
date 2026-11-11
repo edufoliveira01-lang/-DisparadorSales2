@@ -11,6 +11,8 @@ import { ErroArmazenamento } from "../armazenamento/pastas";
 import { receberDocumentoDoChat } from "../armazenamento/chat";
 import { saudeDoArmazenamento } from "../armazenamento/fila";
 import { guardarRetrato } from "../atendimento/indicadores";
+import { anotarPeloAtendimento, clienteParaAnotar } from "../services/gestao/anotacoes";
+import { ErroGestao } from "../services/gestao/erro";
 
 /**
  * Contratos pedidos pelo atendimento (Deskcomm). NÃO usa a sessão de ninguém: quem chama é o painel de assinaturas,
@@ -68,6 +70,21 @@ integracaoContratosRouter.post("/indicadores", (req, res) => {
   const r = guardarRetrato(req.body);
   if (!r) return void res.status(400).json({ error: "Retrato inválido." });
   res.status(201).json({ ok: true, meses: r.meses.length });
+});
+
+/** Anotação rápida feita no atendimento: o atendente aperta Alt+N na conversa; aqui achamos o cliente pelo telefone e gravamos no cadastro ou no processo. */
+integracaoContratosRouter.post("/anotacoes/buscar", (req, res) => {
+  try { res.json(clienteParaAnotar((req.body ?? {}).telefone)); } catch (e) { erro(res, e); }
+});
+integracaoContratosRouter.post("/anotacoes", (req, res) => {
+  try {
+    const r = anotarPeloAtendimento(req.body ?? {});
+    auditAccess("anotacao_pelo_atendimento", null, null, { destino: r.destino });
+    res.status(201).json(r);
+  } catch (e) {
+    if (e instanceof ErroGestao) return void res.status(e.status).json({ error: e.message });
+    erro(res, e);
+  }
 });
 
 /** A saúde do envio ao drive: o atendimento consulta de tempos em tempos e avisa a equipe por WhatsApp quando aparece um problema novo. */

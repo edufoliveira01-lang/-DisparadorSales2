@@ -3,7 +3,7 @@ import { ErroGestao } from "./erro";
 import { adicionarAnotacao } from "./processos";
 
 const limpar = (v: unknown) => String(v ?? "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").trim().slice(0, 4000);
-type Quem = { id: number; nome: string };
+type Quem = { id: number | null; nome: string };
 export interface AnotacaoItem { id: number; origem: "cadastro" | "processo"; processo_id: number | null; processo_rotulo: string | null; autor: string; texto: string; criado_em: string }
 
 function pessoaExiste(id: number) {
@@ -49,4 +49,41 @@ export function anotacoesDaPessoa(pessoaId: number): AnotacaoItem[] {
     ...cad.map((r): AnotacaoItem => ({ id: r.id, origem: "cadastro", processo_id: null, processo_rotulo: null, autor: r.autor, texto: r.texto, criado_em: r.criado_em })),
     ...proc.map((r): AnotacaoItem => ({ id: r.id, origem: "processo", processo_id: r.processo_id, processo_rotulo: `${r.pasta} · ${r.numero}`, autor: r.autor, texto: r.texto, criado_em: r.criado_em })),
   ].sort((a, b) => (a.criado_em < b.criado_em ? 1 : a.criado_em > b.criado_em ? -1 : 0)).slice(0, 300);
+}
+
+// ---- Anotação feita pelo ATENDIMENTO (Deskcomm): o atendente anota sem sair da conversa ----
+const soNumeros = (v: unknown) => String(v ?? "").replace(/\D/g, "");
+/** As grafias do mesmo celular BR (com e sem o 9º dígito), só dígitos, sem o 55: a busca compara os dois. */
+function variantesDoTelefone(tel: string): string[] {
+  let d = soNumeros(tel);
+  if (d.startsWith("55") && d.length >= 12) d = d.slice(2);
+  if (d.length === 11 && d[2] === "9") return [d, d.slice(0, 2) + d.slice(3)];
+  if (d.length === 10 && /^[6-9]/.test(d.slice(2))) return [d, d.slice(0, 2) + "9" + d.slice(2)];
+  return d.length >= 8 ? [d] : [];
+}
+export interface ClienteParaAnotar {
+  encontrado: boolean;
+  pessoa?: { id: number; nome: string };
+  processos?: { id: number; pasta: string; numero: string; titulo: string; status: string }[];
+  recentes?: { autor: string; texto: string; criado_em: string; onde: string }[];
+}
+/** Acha o cliente pelo telefone da conversa (cadastro ou segundo telefone) e devolve o que o atendente precisa para anotar. */
+export function clienteParaAnotar(telefone: unknown): ClienteParaAnotar {
+  const vars = variantesDoTelefone(String(telefone ?? ""));
+  if (vars.length === 0) return { encontrado: false };
+  const limpa = (c: string) => `REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(${c},' ',''),'-',''),'(',''),')',''),'+','')`;
+  const onde = vars.map(() => `(${limpa("telefone")} LIKE ? OR ${limpa("telefone2")} LIKE ?)`).join(" OR ");
+  const args = vars.flatMap((v) => [`%${v}`, `%${v}`]);
+  const p = db.prepare(`SELECT id, nome FROM gestao_pessoas WHERE ativo=1 AND (${onde}) ORDER BY (tipo='cliente') DESC, id DESC LIMIT 1`).get(...args) as { id: number; nome: string } | undefined;
+  if (!p) return { encontrado: false };
+  const processos = db.prepare(`SELECT p.id, p.pasta, p.numero, p.titulo, p.status FROM gestao_processos p JOIN gestao_partes x ON x.processo_id=p.id WHERE x.pessoa_id=? ORDER BY (p.status='ativo') DESC, p.id DESC LIMIT 30`).all(p.id) as NonNullable<ClienteParaAnotar["processos"]>;
+  const recentes = anotacoesDaPessoa(p.id).slice(0, 3).map((a) => ({ autor: a.autor, texto: a.texto.slice(0, 300), criado_em: a.criado_em, onde: a.processo_rotulo ?? "Cadastro" }));
+  return { encontrado: true, pessoa: p, processos, recentes };
+}
+/** Grava a anotação do atendente. Quando o e-mail dele é de um usuário do Sales, a anotação fica no nome dele e ele pode apagá-la lá. */
+export function anotarPeloAtendimento(d: { pessoa_id?: unknown; processo_id?: unknown; texto?: unknown; autor_nome?: unknown; autor_email?: unknown }) {
+  const email = String(d.autor_email ?? "").trim().toLowerCase();
+  const u = email ? db.prepare("SELECT id, COALESCE(NULLIF(display_name,''), username) AS nome FROM users WHERE lower(email)=? AND active=1").get(email) as { id: number; nome: string } | undefined : undefined;
+  const nome = (u?.nome || String(d.autor_nome ?? "").trim() || "Atendimento").slice(0, 80);
+  return anotacaoRapida({ pessoa_id: d.pessoa_id, processo_id: d.processo_id, texto: d.texto }, { id: u?.id ?? null, nome: u ? nome : `${nome} (atendimento)` });
 }

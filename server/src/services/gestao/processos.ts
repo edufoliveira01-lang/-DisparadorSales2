@@ -144,7 +144,7 @@ export function removerParte(processoId: number, pessoaId: number, papel: string
   return obterProcesso(processoId);
 }
 
-export function adicionarAnotacao(processoId: number, texto: unknown, user: { id: number; nome: string }) {
+export function adicionarAnotacao(processoId: number, texto: unknown, user: { id: number | null; nome: string }) {
   obterProcesso(processoId);
   const t = txt(texto, 4000);
   if (t.length < 2) throw new ErroGestao("Escreva a anotação.");
