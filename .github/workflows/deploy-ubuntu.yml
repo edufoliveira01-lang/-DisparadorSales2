@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-disparazap
+  group: deploy-disparazap-b
   cancel-in-progress: false
 
 jobs:
