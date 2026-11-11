@@ -602,7 +602,10 @@ describe("refinos do cadastro: CEP, campos personalizados, ficha, unificação",
     expect(and.prazos_abertos[0]).toMatchObject({ descricao: "Comparecer à perícia", termino: "2026-12-01" });
     expect(and.proxima_pericia).toMatchObject({ tipo: "Perícia médica", horario: "09:30", local: "Fórum Central", passada: false });
     if (lista) expect(and.quadro.lista).toBeTruthy();
-    const naoMonit = (await req("/processos", "POST", { numero: cnj(9400002) }, admin.cookie)).json;
+    // processo novo com número CNJ entra sozinho no acompanhamento do DJEN (ainda sem perícia); número fora do padrão CNJ não dá para acompanhar
+    const novoCnj = (await req("/processos", "POST", { numero: cnj(9400002) }, admin.cookie)).json;
+    expect((await req(`/processos/${novoCnj.id}/andamento`, "GET", undefined, admin.cookie)).json).toMatchObject({ monitorado: true, pericias: [], proxima_pericia: null });
+    const naoMonit = (await req("/processos", "POST", { numero: "1234567" }, admin.cookie)).json;
     expect((await req(`/processos/${naoMonit.id}/andamento`, "GET", undefined, admin.cookie)).json).toMatchObject({ monitorado: false, pericias: [], proxima_pericia: null });
 
     // a agenda do cliente reúne a perícia (pelo processo ou pelo telefone) e as tarefas do processo
