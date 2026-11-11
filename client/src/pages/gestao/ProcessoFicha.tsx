@@ -75,6 +75,7 @@ export function ProcessoFicha() {
           {c.telefone && <span className="text-zinc-600 dark:text-zinc-300">{c.telefone}</span>}{c.email && <span className="text-zinc-600 dark:text-zinc-300">{c.email}</span>}
           <Link to={`/gestao/clientes/${c.pessoa_id}?aba=financeiro`} className="ml-auto text-xs text-accent-700 underline">Financeiro do cliente</Link>
         </div>) : null; })()}
+      <AcompanhamentoDjen processoId={ficha.id} aoAtualizar={carregar} />
       <div role="tablist" className="page-tabs">
         {ABAS.map(([k, r]) => <button key={k} role="tab" aria-selected={aba === k} onClick={() => setAba(k)} className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium transition ${aba === k ? "bg-accent-50 text-accent-700 dark:bg-accent-500/15 dark:text-accent-200" : "text-zinc-500 hover:bg-zinc-50 dark:hover:bg-white/5"}`}>{r}</button>)}
       </div>
@@ -272,6 +273,51 @@ function Andamento({ id }: { id: number }) {
           <Link to="/processos" className="mt-2 inline-block text-xs text-accent-700 underline">Tratar publicações no DJEN</Link>
         </Cartao>
       </div>
+    </div>
+  );
+}
+
+interface Acompanhamento {
+  acompanhavel: boolean; motivo?: string; ativo?: boolean; situacao?: "pendente" | "verificando" | "atualizado" | "falha";
+  consultado_em?: string | null; desde?: string | null; erro?: string | null; publicacoes?: number; ultima_publicacao?: string | null;
+}
+/** O que o sistema faz sozinho por este processo: consulta o DJEN pelo número, traz as publicações e completa os dados em branco da ficha. */
+function AcompanhamentoDjen({ processoId, aoAtualizar }: { processoId: number; aoAtualizar: () => void }) {
+  const { show } = useToast();
+  const [a, setA] = useState<Acompanhamento | null>(null);
+  const [pedindo, setPedindo] = useState(false);
+  const ler = useCallback(async () => { try { const r = await api.get<Acompanhamento>(`/gestao/processos/${processoId}/acompanhamento`, { fresh: true } as never); setA(r); return r; } catch { return null; } }, [processoId]);
+  useEffect(() => { void ler(); }, [ler]);
+  // enquanto consulta, confere a cada 5 s (no máximo 2 min) e recarrega a ficha quando terminar
+  useEffect(() => {
+    if (!pedindo && a?.situacao !== "verificando") return;
+    let n = 0;
+    const t = setInterval(async () => {
+      const r = await ler();
+      if (++n >= 24 || (r && r.situacao !== "verificando" && r.situacao !== "pendente")) { clearInterval(t); setPedindo(false); if (r?.situacao === "atualizado") aoAtualizar(); }
+    }, 5000);
+    return () => clearInterval(t);
+  }, [pedindo, a?.situacao, ler, aoAtualizar]);
+  const consultar = async () => {
+    setPedindo(true);
+    try { setA(await api.post<Acompanhamento>(`/gestao/processos/${processoId}/acompanhamento`, {})); show("Consulta ao DJEN pedida. Pode levar alguns minutos.", "success"); }
+    catch (e) { setPedindo(false); show(e instanceof ApiError ? e.message : "Não foi possível pedir a consulta.", "error"); }
+  };
+  if (!a) return null;
+  if (!a.acompanhavel) return <div className="surface-panel flex items-center gap-3 px-4 py-3 text-sm text-zinc-600 dark:text-zinc-300"><span className="h-2.5 w-2.5 rounded-full bg-amber-500" /> {a.motivo}</div>;
+  const rotulo = a.situacao === "atualizado" ? "Em dia" : a.situacao === "verificando" ? "Consultando o DJEN…" : a.situacao === "falha" ? "Não consegui consultar agora (tento de novo sozinho)" : "Na fila para consulta";
+  const cor = a.situacao === "atualizado" ? "bg-emerald-500" : a.situacao === "falha" ? "bg-red-500" : "bg-accent-500";
+  return (
+    <div className="surface-panel flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 text-sm">
+      <span className="flex items-center gap-2 font-medium text-zinc-900 dark:text-zinc-100"><span className={`h-2.5 w-2.5 rounded-full ${cor} ${a.situacao === "verificando" ? "animate-pulse" : ""}`} /> Acompanhamento automático no DJEN</span>
+      <span className="text-zinc-600 dark:text-zinc-300">{rotulo}</span>
+      <span className="text-xs text-zinc-500">
+        {a.consultado_em ? `última consulta ${dataBr(a.consultado_em.slice(0, 10))} ${a.consultado_em.slice(11, 16)} (UTC)` : "ainda não consultado"}
+        {typeof a.publicacoes === "number" ? ` · ${a.publicacoes} publicação(ões)${a.ultima_publicacao ? `, a última em ${dataBr(a.ultima_publicacao)}` : ""}` : ""}
+        {a.ativo === false ? " · processo não ativo: não é consultado de novo sozinho" : ""}
+      </span>
+      {a.erro && <span className="text-xs text-red-600 dark:text-red-400">{a.erro}</span>}
+      <Button className="ml-auto" size="sm" variant="outline" loading={pedindo || a.situacao === "verificando"} onClick={() => void consultar()}>Consultar agora</Button>
     </div>
   );
 }

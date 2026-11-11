@@ -28,10 +28,17 @@ import { kitDocx } from "../services/gestao/docx";
 import { lerEscritorio, salvarEscritorio } from "../services/gestao/escritorio";
 import crypto from "node:crypto";
 import { agendaDaPessoa, andamentoDoProcesso } from "../services/gestao/integracao";
+import { forcarConsulta, iniciarAcompanhamento, situacaoDoAcompanhamento } from "../services/djen/vigia";
+import { processarHistoricos } from "../services/djen/processHistory";
+import { licencaPermiteOperar } from "../licenca/cliente";
 import { financeiroDaPessoa } from "../services/gestao/financeiro";
 import { recursoLiberadoNaLicenca } from "../licenca/cliente";
 
 /** Gestão do escritório: pessoas (clientes e outras partes), processos e pastas. Permissões: gestao.view / gestao.manage. */
+/** Dispara a fila do histórico sem esperar o relógio e sem prender a resposta. */
+const kickDoHistorico = () => { if (licencaPermiteOperar()) void processarHistoricos().catch(() => undefined); };
+/** Processo novo com número CNJ entra sozinho no acompanhamento do DJEN. */
+const acompanharAgora = (chave: string, numero: string) => { try { if (iniciarAcompanhamento(chave, numero)) kickDoHistorico(); } catch (e) { console.error("[gestao] acompanhamento automático:", e instanceof Error ? e.message : e); } };
 export const gestaoRouter = Router();
 
 // Módulos contratados no plano (SaaS): sem o módulo, a área inteira responde 403.
@@ -76,7 +83,7 @@ gestaoRouter.get("/processos", rota((req) => listarProcessos({
 })));
 gestaoRouter.get("/processos/pendentes-importacao", rota(() => ({ pendentes: pendentesDeImportacao() })));
 gestaoRouter.post("/processos/importar-djen", rota((req) => { const r = importarDoDjen(usuario(req).id); auditAccess("gestao_processos_importados", usuario(req).id, null, r); return r; }));
-gestaoRouter.post("/processos", rota((req, res) => { const p = criarProcesso(req.body || {}, usuario(req).id); res.status(201); auditAccess("gestao_processo_criado", usuario(req).id, null, { processo: p.id, pasta: p.pasta }); return p; }));
+gestaoRouter.post("/processos", rota((req, res) => { const p = criarProcesso(req.body || {}, usuario(req).id); res.status(201); acompanharAgora(String((p as { chave?: string }).chave ?? "") || String(p.numero).replace(/\D/g, ""), String(p.numero)); auditAccess("gestao_processo_criado", usuario(req).id, null, { processo: p.id, pasta: p.pasta }); return p; }));
 gestaoRouter.get("/processos/:id", rota((req) => obterProcesso(id(req))));
 gestaoRouter.put("/processos/:id", rota((req) => atualizarProcesso(id(req), req.body || {})));
 gestaoRouter.delete("/processos/:id", rota((req) => { const r = excluirProcesso(id(req)); auditAccess("gestao_processo_excluido", usuario(req).id, null, { processo: id(req) }); return r; }));
@@ -346,6 +353,17 @@ gestaoRouter.get("/documentos/previa", (req, res, next) => {
 });
 
 // ---------- integração com DJEN/perícias e financeiro do cadastro ----------
+/** Acompanhamento automático (DJEN por número): situação na ficha e "consultar agora". */
+gestaoRouter.get("/processos/:id/acompanhamento", rota((req) => { const r = situacaoDoAcompanhamento(id(req)); if (!r) throw new ErroGestao("Processo não encontrado.", 404); return r; }));
+gestaoRouter.post("/processos/:id/acompanhamento", rota((req) => {
+  const r = situacaoDoAcompanhamento(id(req));
+  if (!r) throw new ErroGestao("Processo não encontrado.", 404);
+  if (!r.acompanhavel) throw new ErroGestao(r.motivo, 422);
+  const ficha = obterProcesso(id(req)) as { chave?: string; numero: string };
+  const chave = /^\d{20}$/.test(String(ficha.chave)) ? String(ficha.chave) : String(ficha.numero).replace(/\D/g, "");
+  forcarConsulta(chave); kickDoHistorico();
+  return situacaoDoAcompanhamento(id(req));
+}));
 gestaoRouter.get("/processos/:id/andamento", rota((req) => andamentoDoProcesso(id(req))));
 gestaoRouter.get("/pessoas/:id/agenda", rota((req) => agendaDaPessoa(id(req))));
 gestaoRouter.get("/financeiro/pessoas/:id", rota((req) => financeiroDaPessoa(id(req))));

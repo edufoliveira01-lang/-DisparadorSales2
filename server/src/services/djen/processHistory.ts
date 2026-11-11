@@ -5,10 +5,12 @@ import { consultarDjen, DjenApiError, hojeDjen, type AdvogadoDjen, type Contexto
 import { importarPublicacoes } from './store';
 import { coberturaHistorico, HISTORICO_VALIDADE_MS } from './historyCoverage';
 import { atualizarKanbanComNovasPublicacoes } from './kanban';
+import { emAcompanhamento, inicioDoAcompanhamento, preencherDoDjen } from './vigia';
 
 const mudou = () => emitEvent('djen:changed', {});
 const ativo = `(EXISTS (SELECT 1 FROM djen_publicacoes p WHERE p.processo_chave=h.processo_chave AND p.cancelada=0 AND p.concluida=0)
- OR EXISTS (SELECT 1 FROM pericias_agendadas pa WHERE pa.processo_chave=h.processo_chave AND pa.status='ativa' AND pa.data_hora_ms<=strftime('%s','now')*1000))`;
+ OR EXISTS (SELECT 1 FROM pericias_agendadas pa WHERE pa.processo_chave=h.processo_chave AND pa.status='ativa' AND pa.data_hora_ms<=strftime('%s','now')*1000)
+ OR EXISTS (SELECT 1 FROM gestao_processos g WHERE (g.chave=h.processo_chave OR g.djen_chave=h.processo_chave) AND g.status='ativo'))`;
 
 let emCurso: Promise<void> | null = null;
 let controller: AbortController | null = null;
@@ -17,14 +19,18 @@ let primeiro: ReturnType<typeof setTimeout> | null = null;
 function incluirProcessos() {
   db.prepare(`INSERT OR IGNORE INTO djen_historico_consultas(processo_chave)
     SELECT processo_chave FROM djen_publicacoes WHERE cancelada=0 AND concluida=0 AND length(processo_chave)=20
-    UNION SELECT processo_chave FROM pericias_agendadas WHERE status='ativa' AND length(processo_chave)=20 AND data_hora_ms<=strftime('%s','now')*1000`).run();
+    UNION SELECT processo_chave FROM pericias_agendadas WHERE status='ativa' AND length(processo_chave)=20 AND data_hora_ms<=strftime('%s','now')*1000
+    UNION SELECT chave FROM gestao_processos WHERE status='ativo' AND length(chave)=20 AND chave NOT GLOB '*[^0-9]*'`).run();
 }
 export function escopoHistorico(processo: string): { inicio: string; fim: string } | null {
   const row = db.prepare(`SELECT MIN(data) AS inicio FROM (
     SELECT data_disponibilizacao AS data FROM djen_publicacoes WHERE processo_chave=? AND cancelada=0
     UNION ALL SELECT date(data_hora_ms/1000,'unixepoch','-3 hours') AS data FROM pericias_agendadas WHERE processo_chave=? AND status='ativa')`).get(processo,processo) as { inicio: string | null };
   const fim = hojeDjen();
-  return row.inicio && row.inicio <= fim ? { inicio: row.inicio, fim } : null;
+  // Processo da Gestão: a consulta histórica vai desde o ano em que foi distribuído, mesmo sem nenhuma publicação conhecida ainda.
+  const base = emAcompanhamento(processo) ? inicioDoAcompanhamento(processo, fim) : null;
+  const inicio = row.inicio && base ? (row.inicio < base ? row.inicio : base) : row.inicio || base;
+  return inicio && inicio <= fim ? { inicio, fim } : null;
 }
 /** Nenhuma cobertura é gravada em caso de erro, página ausente ou processo divergente. */
 export async function atualizarHistoricoProcesso(processo: string, ctx: ContextoConsulta) {
@@ -52,6 +58,7 @@ export async function atualizarHistoricoProcesso(processo: string, ctx: Contexto
       status=CASE WHEN revisao=? THEN 'atualizado' ELSE 'pendente' END,
       inicio=?,fim=?,consultado_em=CURRENT_TIMESTAMP,revisao_conferida=?,erro=NULL,
       proxima_tentativa_em=NULL WHERE processo_chave=?`).run(estado.revisao,escopo.inicio,escopo.fim,estado.revisao,processo);
+    try { preencherDoDjen(processo); } catch { console.error('[DJEN] Histórico atualizado; ficha do processo sem preenchimento.'); }
     try { atualizarKanbanComNovasPublicacoes(); } catch { console.error("[DJEN] Histórico atualizado; quadro pendente de revisão."); }
   } catch (e) {
     db.prepare("UPDATE djen_historico_consultas SET status='falha',erro=?,proxima_tentativa_em=datetime('now','+15 minutes') WHERE processo_chave=?")
