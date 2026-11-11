@@ -853,7 +853,7 @@ export function Dashboard() {
       <div className="overview-layout">
         <div className="overview-work">
           <section className="work-intro">
-            <div><span className="eyebrow">Seu espaço de ação</span><h2>Uma conversa de cada vez.<br /><span>Uma rotina mais leve.</span></h2><p>Revise os avisos abaixo e mantenha seus clientes por perto.</p></div>
+            <div><span className="eyebrow">Seu espaço de ação</span><h2>Avisos do dia<br /><span>para conferir e enviar.</span></h2><p>Revise os avisos abaixo e mantenha seus clientes por perto.</p></div>
             <div className="work-metrics" aria-label="Situação dos avisos">
               {[{label:"Para enviar",value:resumo.pendentes,icon:Clock3,filter:"pendentes"},{label:"Conferidos",value:resumo.prontos,icon:ShieldCheck,filter:"todos"},{label:"Enviados",value:resumo.enviados,icon:CheckCheck,filter:"enviados"}].map(({label,value,icon:Icon,filter}) => <button key={label} type="button" onClick={() => setFiltroStatus(filter as FiltroStatus)} className="metric-orbit"><Icon className="h-4 w-4" /><strong>{value}</strong><span>{label}</span></button>)}
             </div>

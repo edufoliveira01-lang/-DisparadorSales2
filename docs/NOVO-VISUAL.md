@@ -27,3 +27,8 @@
 - Lista: pasta em etiqueta com ícone, linhas com realce azul ao passar o mouse, cartão único.
 - Ficha: cabeçalho em cartão (ícone da pasta, número, situação, tribunal, título e ações), faixa do cliente, abas em pílulas.
 - Cartões das fichas de Clientes, Processos, Financeiro e Tarefas passaram para o mesmo estilo (`surface-panel`).
+
+## Fase 6 — Agenda (3.7.1)
+- Estado vazio (Calendário, listas) legível no tema escuro; cartões restantes no padrão `surface-panel`.
+- Visão geral de Perícias: título direto («Avisos do dia para conferir e enviar»).
+- DataJud: nova seção em Configurações → DJEN e prazos (chave pública do CNJ).

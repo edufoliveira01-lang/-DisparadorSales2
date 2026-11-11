@@ -658,7 +658,7 @@ export function Calendario() {
             }
           />
         ) : (
-          <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="overflow-hidden surface-panel">
             <div className="flex flex-col gap-2 border-b border-zinc-200 bg-zinc-50/70 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-800/30 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">Resultados para</p>
@@ -794,7 +794,7 @@ export function Calendario() {
                 const ehHoje = key === hoje;
                 const expandido = diasExpandidos.has(key);
                 return (
-                  <div key={key} className="overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50/60 dark:border-zinc-800 dark:bg-zinc-900/30">
+                  <div key={key} className="overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50/60 dark:border-white/10 dark:bg-white/[0.03]">
                     <button
                       type="button"
                       onClick={() => alternarDiaExpandido(key)}
