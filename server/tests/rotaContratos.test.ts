@@ -60,3 +60,19 @@ describe("painel — repasse de contratos do atendimento para o escritório", ()
     await m.fechar();
   });
 });
+
+describe("painel — repasse de documentos do chat (fase 2 do Dropbox)", () => {
+  it("repassa POST /documentos para o escritório, assinando com a chave dele; GET é recusado", async () => {
+    const m = await montar(3409, { status: 201, corpo: { situacao: "aguardando_assinatura" } });
+    const corpo = JSON.stringify({ origem_ref: "msg-1", tipo: "PARTE MÉDICA", titulo: "Laudo", url: "https://x.example/a" });
+    const r = await m.chamar("POST", "/v1/offices/alfa/documentos", corpo);
+    expect(r.status).toBe(201);
+    expect(r.json.situacao).toBe("aguardando_assinatura");
+    expect(m.vistos[0]!.url).toBe("http://127.0.0.1:3409/api/integracao/documentos");
+    const h = m.vistos[0]!.init.headers as Record<string, string>;
+    expect(verificarRequisicao(chaveSso(PONTE, "alfa"), { metodo: "POST", caminho: "/api/integracao/documentos", corpo }, h["x-sales-timestamp"], h["x-sales-signature"])).toBe(true);
+    expect((await m.chamar("GET", "/v1/offices/alfa/documentos")).status).toBe(405);
+    expect((await m.chamar("POST", "/v1/offices/alfa/documentos", corpo, false)).status).toBe(401);
+    await m.fechar();
+  });
+});

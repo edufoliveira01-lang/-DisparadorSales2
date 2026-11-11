@@ -13,7 +13,7 @@ interface ItemRecente { id: number; status: "pendente" | "aguardando_pasta" | "e
 interface Estado {
   credenciais_salvas: boolean; app_key_final: string; conectado: boolean; conectado_em: string | null; redirect_uri: string; pasta_raiz: string; pastas: { raiz: string; tipos: Array<{ chave: string; nome: string }> };
   conta: { nome: string; email: string; tipo: string; equipe: boolean } | null;
-  fila: { pendente: number; aguardando_pasta: number; enviado: number; erro: number; recentes: ItemRecente[] };
+  fila: { pendente: number; aguardando_pasta: number; enviado: number; erro: number; esperando_assinatura?: number; recentes: ItemRecente[] };
 }
 interface Pendencia { pessoa_id: number; nome: string; documentos: number; candidatas: Candidata[] }
 interface Sugestao { pessoa_id: number; nome: string; resultado: "exato" | "parecido" | "nenhum"; pasta?: { id: string; nome: string; caminho: string }; candidatas?: Candidata[] }
@@ -233,6 +233,7 @@ export function ArmazenamentoSettings() {
               <Badge tone="info">{estado.fila.pendente} na fila</Badge>
               <Badge tone="warning">{estado.fila.aguardando_pasta} aguardando pasta</Badge>
               <Badge tone="danger">{estado.fila.erro} com erro</Badge>
+              {(estado.fila.esperando_assinatura ?? 0) > 0 && <Badge tone="info">{estado.fila.esperando_assinatura} do chat aguardando a assinatura do contrato</Badge>}
             </div>
             {estado.fila.recentes.length === 0
               ? <p className="text-sm text-zinc-500">Nenhum envio ainda. Os documentos assinados aparecem aqui.</p>

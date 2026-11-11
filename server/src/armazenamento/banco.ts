@@ -59,6 +59,26 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_armazenamento_fila_arquivo ON armazenamento
 CREATE INDEX IF NOT EXISTS idx_armazenamento_fila_status ON armazenamento_fila(status, proxima_tentativa_em);
 `);
 
+// Documentos que o cliente mandou pelo chat (fase 2): esperam aqui até o contrato do cliente estar ASSINADO; depois passam para a fila de envio.
+db.exec(`
+CREATE TABLE IF NOT EXISTS armazenamento_espera (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  origem_ref TEXT NOT NULL UNIQUE,
+  telefone TEXT NOT NULL DEFAULT '',
+  cpf TEXT NOT NULL DEFAULT '',
+  tipo_pasta TEXT NOT NULL,
+  titulo TEXT NOT NULL,
+  extensao TEXT NOT NULL DEFAULT 'pdf',
+  data_documento TEXT NOT NULL,
+  caminho_temp TEXT NOT NULL,
+  criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+`);
+for (const col of ["caminho_temp TEXT NOT NULL DEFAULT ''", "origem_ref TEXT NOT NULL DEFAULT ''"]) {
+  try { db.exec(`ALTER TABLE armazenamento_fila ADD COLUMN ${col}`); } catch { /* já existe */ }
+}
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS uq_armazenamento_fila_origem ON armazenamento_fila(origem_ref) WHERE origem_ref <> ''");
+
 // Colunas novas (pasta-raiz e nomes das pastas de tipo, por escritório) em bancos que já tinham a tabela.
 for (const col of ["pasta_raiz TEXT NOT NULL DEFAULT ''", "nomes_dos_tipos TEXT NOT NULL DEFAULT '{}'"]) {
   try { db.exec(`ALTER TABLE armazenamento_config ADD COLUMN ${col}`); } catch { /* já existe */ }

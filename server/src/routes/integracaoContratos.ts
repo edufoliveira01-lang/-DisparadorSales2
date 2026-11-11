@@ -7,6 +7,8 @@ import { lerAtendimentoIa, montarPromptDoAgente, pendenciasDoAtendimentoIa } fro
 import { lerConfigDocumentos, ROTULO_VARIANTE, VARIANTES } from "../services/gestao/documentos";
 import { ErroZapSign } from "../zapsign/api";
 import { ErroContrato, estadoDoContrato, gerarContrato, type DadosContrato } from "../zapsign/contratos";
+import { ErroArmazenamento } from "../armazenamento/pastas";
+import { receberDocumentoDoChat } from "../armazenamento/chat";
 
 /**
  * Contratos pedidos pelo atendimento (Deskcomm). NÃO usa a sessão de ninguém: quem chama é o painel de assinaturas,
@@ -29,7 +31,7 @@ integracaoContratosRouter.use((req, res, next) => {
 });
 
 function erro(res: import("express").Response, e: unknown) {
-  if (e instanceof ErroContrato || e instanceof ErroZapSign) return void res.status(e.status).json({ error: e.message });
+  if (e instanceof ErroContrato || e instanceof ErroZapSign || e instanceof ErroArmazenamento) return void res.status(e.status).json({ error: e.message });
   console.error("[contratos] erro inesperado:", e instanceof Error ? e.message : e);
   res.status(500).json({ error: "Erro interno ao gerar o contrato." });
 }
@@ -40,6 +42,22 @@ integracaoContratosRouter.post("/contratos", async (req, res) => {
     const r = await gerarContrato(d, String(d.criado_por || "Atendimento"));
     auditAccess("contrato_gerado_atendimento", null, null, { contrato: r.id, pessoa: r.pessoa_id });
     res.status(201).json(r);
+  } catch (e) { erro(res, e); }
+});
+
+/**
+ * Documento que o CLIENTE mandou pelo chat (fase 2 do Dropbox). O atendimento classifica e manda só o tipo, o título e um LINK TEMPORÁRIO do arquivo:
+ * o Sales baixa, guarda numa pasta temporária e envia ao drive depois da assinatura do contrato. Corpo pequeno (sem arquivo dentro).
+ */
+integracaoContratosRouter.post("/documentos", async (req, res) => {
+  try {
+    const d = (req.body ?? {}) as Record<string, unknown>;
+    const r = await receberDocumentoDoChat({
+      origemRef: String(d.origem_ref ?? ""), telefone: String(d.telefone ?? ""), cpf: String(d.cpf ?? ""), tipoPasta: String(d.tipo ?? ""),
+      titulo: String(d.titulo ?? ""), extensao: String(d.extensao ?? "pdf"), dataDocumento: typeof d.data === "string" ? d.data : undefined, url: String(d.url ?? ""),
+    });
+    auditAccess("documento_do_chat_recebido", null, null, { situacao: r.situacao, tipo: String(d.tipo ?? "") });
+    res.status(r.situacao === "ja_recebido" ? 200 : 201).json(r);
   } catch (e) { erro(res, e); }
 });
 

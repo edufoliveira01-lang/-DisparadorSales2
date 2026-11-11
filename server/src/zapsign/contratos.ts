@@ -8,6 +8,7 @@ import { adicionarDocumentoExtra, consultarDocumento, criarDocumento, ErroZapSig
 import { lerConfigZapSign } from "./config";
 import { pdfDoKit, type PdfDoKit } from "./pdf";
 import { enfileirarCopia } from "../armazenamento/fila";
+import { liberarEsperaDaPessoa } from "../armazenamento/chat";
 
 db.exec(`CREATE TABLE IF NOT EXISTS zapsign_contratos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -201,6 +202,11 @@ export async function estadoDoContrato(id: number, deps: { config?: ConfigZapSig
     const linha = linhasExtras[i]!;
     const doZap = extrasDoZap.find((e) => e.nome.startsWith(linha.nome)) ?? extrasDoZap[i];
     await salvar(linha, doZap?.arquivoAssinado ?? null);
+  }
+  // Contrato assinado: os documentos que o cliente já tinha mandado pelo chat (e esperavam a assinatura) seguem para o drive.
+  if (l.status === "assinado" && l.pessoa_id) {
+    try { liberarEsperaDaPessoa(l.pessoa_id); }
+    catch (e) { console.error("[contratos] não foi possível liberar os documentos do chat:", e instanceof Error ? e.message : e); }
   }
   return resumo(l, docs);
 }

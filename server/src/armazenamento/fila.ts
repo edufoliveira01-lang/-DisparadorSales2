@@ -24,6 +24,8 @@ export interface ItemDaFila {
   id: number; pessoa_id: number; arquivo_id: number; tipo_pasta: string; titulo: string; extensao: string; data_documento: string;
   status: "pendente" | "aguardando_pasta" | "enviado" | "erro"; tentativas: number; proxima_tentativa_em: number; ultimo_erro: string;
   candidatas: string; caminho_final: string; criado_em: string; enviado_em: string | null;
+  /** Documento vindo do chat: o arquivo está numa pasta temporária (e `arquivo_id` é um número negativo, sem arquivo no Gestão). */
+  caminho_temp?: string; origem_ref?: string;
 }
 
 /** Espera antes da próxima tentativa: 2, 4, 8, 16, 32 minutos… até 2 horas. */
@@ -78,9 +80,15 @@ async function processarItem(item: ItemDaFila, drive: Drive, agora: number): Pro
     const pessoa = pessoaDe(item.pessoa_id);
     if (!pessoa) throw new ErroArmazenamento("O cadastro do cliente não existe mais.");
     if (!ehTipoDePasta(item.tipo_pasta)) throw new ErroArmazenamento("Tipo de pasta inválido.");
-    let arquivo;
-    try { arquivo = obterArquivo(item.arquivo_id); } catch { throw new ErroArmazenamento("O arquivo não existe mais no sistema."); }
-    const conteudo = fs.readFileSync(arquivo.caminho);
+    let conteudo: Buffer;
+    if (item.caminho_temp) {
+      // Documento do chat: não existe no Gestão, só na pasta temporária (apagada depois do envio).
+      try { conteudo = fs.readFileSync(item.caminho_temp); } catch { throw new ErroArmazenamento("O arquivo recebido pelo chat não existe mais neste servidor."); }
+    } else {
+      let arquivo;
+      try { arquivo = obterArquivo(item.arquivo_id); } catch { throw new ErroArmazenamento("O arquivo não existe mais no sistema."); }
+      conteudo = fs.readFileSync(arquivo.caminho);
+    }
     const r = await enviarDocumento({
       pessoaId: item.pessoa_id, nomeDoCliente: pessoa.nome, tipo: item.tipo_pasta, conteudo, drive, repo: repositorioDeVinculos,
       nomeDoArquivo: nomeDoArquivo(item.data_documento, item.titulo, item.extensao),
@@ -90,7 +98,9 @@ async function processarItem(item: ItemDaFila, drive: Drive, agora: number): Pro
         .run(JSON.stringify(r.candidatas.map((c) => ({ id: c.pasta.id, nome: c.pasta.nome, caminho: c.pasta.caminho, nota: Math.round(c.nota * 100) / 100 }))), item.id);
       return "aguardando";
     }
-    db.prepare("UPDATE armazenamento_fila SET status='enviado', caminho_final=?, ultimo_erro='', enviado_em=CURRENT_TIMESTAMP WHERE id=?").run(r.caminho, item.id);
+    db.prepare("UPDATE armazenamento_fila SET status='enviado', caminho_final=?, ultimo_erro='', enviado_em=CURRENT_TIMESTAMP, caminho_temp='' WHERE id=?").run(r.caminho, item.id);
+    // O Sales não guarda cópia do que veio do chat: sumiu da fila, some do disco.
+    if (item.caminho_temp) { try { fs.unlinkSync(item.caminho_temp); } catch { /* já não existe */ } }
     return "enviado";
   } catch (e) {
     marcarErro(item, e, agora);
@@ -141,7 +151,9 @@ export function situacaoDaFila() {
   const recentes = db.prepare(
     `SELECT f.id, f.status, f.titulo, f.tipo_pasta, f.caminho_final, f.ultimo_erro, f.tentativas, f.criado_em, f.enviado_em, p.nome AS cliente
      FROM armazenamento_fila f LEFT JOIN gestao_pessoas p ON p.id=f.pessoa_id ORDER BY f.id DESC LIMIT 20`).all();
-  return { ...por, recentes };
+  // Documentos que o cliente mandou pelo chat e esperam o contrato ser assinado (ainda não entraram na fila).
+  const esperando_assinatura = (db.prepare("SELECT COUNT(*) n FROM armazenamento_espera").get() as { n: number }).n;
+  return { ...por, esperando_assinatura, recentes };
 }
 
 /** Clientes com documento esperando a equipe escolher a pasta, com as candidatas. */
