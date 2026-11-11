@@ -122,6 +122,12 @@ describe("ponte embutida no painel", () => {
     expect(html).toContain(`action="${URL_DESK}/auth/confirm"`);
     expect(html).toContain('name="token_hash" value="hash-de-teste"');
     expect(html).toContain('name="type" value="magiclink"');
+    expect(html).toContain('name="next" value="/app"');
+    // abrir a conversa de um telefone: só esse destino fixo é aceito
+    const abrir = await (await fetch(`${base}/sso?t=${token()}&next=${encodeURIComponent("/app/abrir-conversa?telefone=5513999991111")}`)).text();
+    expect(abrir).toContain('name="next" value="/app/abrir-conversa?telefone=5513999991111"');
+    const externo = await (await fetch(`${base}/sso?t=${token()}&next=${encodeURIComponent("https://evil.example")}`)).text();
+    expect(externo).toContain('name="next" value="/app"');
     expect(ok.headers.get("content-security-policy")).toContain("form-action *"); // sobrescreve a política do painel
     const t = token(); expect((await fetch(`${base}/sso?t=${t}`)).status).toBe(200); expect((await fetch(`${base}/sso?t=${t}`)).status).toBe(400); // uso único
     expect((await fetch(`${base}/sso?t=${emitirTokenSso(chaveSso(SEGREDO, "beta"), { slug: "alfa", email: "x@y.com" }, agora)}`)).status).toBe(400); // forjado
