@@ -42,6 +42,22 @@ export function iniciarAcompanhamento(chave: string, numero = chave): boolean {
   return true;
 }
 
+/** Excluiu a ficha: o que o acompanhamento automático criou e ficou sem uso (nenhuma publicação, perícia, quadro ou outra ficha) vai embora junto. */
+export function limparAcompanhamentoSemUso(chaves: (string | null | undefined)[]): void {
+  for (const chave of new Set(chaves.filter((c): c is string => Boolean(c) && CNJ.test(String(c))))) {
+    const emUso = (sql: string, n = 1) => Boolean(db.prepare(sql).get(...Array<string>(n).fill(chave)));
+    if (emUso("SELECT 1 FROM gestao_processos WHERE chave=? OR djen_chave=? LIMIT 1", 2)) continue;
+    if (emUso("SELECT 1 FROM djen_publicacoes WHERE processo_chave=? LIMIT 1")) continue;
+    if (emUso("SELECT 1 FROM pericias_agendadas WHERE processo_chave=? LIMIT 1")) continue;
+    try { if (emUso("SELECT 1 FROM djen_kanban_cartoes WHERE processo_chave=? LIMIT 1")) continue; } catch { /* quadro ainda não existe */ }
+    db.transaction(() => {
+      db.prepare("DELETE FROM djen_historico_consultas WHERE processo_chave=?").run(chave);
+      db.prepare("DELETE FROM gestao_datajud WHERE processo_chave=?").run(chave);
+      db.prepare("DELETE FROM djen_processos WHERE chave=?").run(chave);
+    })();
+  }
+}
+
 /** Pede uma consulta nova agora, mesmo que a última ainda esteja dentro da validade. */
 export function forcarConsulta(chave: string): boolean {
   if (!iniciarAcompanhamento(chave)) return false;

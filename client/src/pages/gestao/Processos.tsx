@@ -54,6 +54,10 @@ export function Processos({ semCabecalho = false, sinalNovo = 0 }: { semCabecalh
     catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível importar.", "error"); }
     finally { setImportando(false); }
   };
+  const ignorar = async () => {
+    try { await api.post("/gestao/processos/ignorar-djen", {}); setPendentes(0); show("Pronto: esses processos não aparecem mais neste aviso.", "success"); }
+    catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível ignorar.", "error"); }
+  };
   const lista = dados?.itens ?? [];
 
   return (
@@ -62,7 +66,7 @@ export function Processos({ semCabecalho = false, sinalNovo = 0 }: { semCabecalh
       {gerir && pendentes > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-accent-200 bg-accent-50/70 p-4 dark:border-accent-500/30 dark:bg-accent-500/10">
           <p className="text-sm text-zinc-700 dark:text-zinc-200"><b>{pendentes}</b> processo(s) do DJEN ainda não têm ficha de gestão.</p>
-          <Button size="sm" loading={importando} onClick={() => void importar()}><Download className="h-4 w-4" /> Criar fichas</Button>
+          <div className="flex gap-2"><Button size="sm" variant="ghost" onClick={() => void ignorar()} title="Some com este aviso para os processos de agora (os novos que o DJEN trouxer voltam a avisar)">Ignorar</Button><Button size="sm" loading={importando} onClick={() => void importar()}><Download className="h-4 w-4" /> Criar fichas</Button></div>
         </div>
       )}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_150px_190px_170px]">

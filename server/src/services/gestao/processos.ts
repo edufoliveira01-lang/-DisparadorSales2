@@ -4,6 +4,8 @@ import { mensagemSeExcederLimite } from "../../licenca/cliente";
 import { ErroGestao, pessoaDoContato } from "./pessoas";
 import { salvarValores, valoresDe } from "./campos";
 import { cnjValido, dataValida, formatarCnj, tribunalDoCnj } from "./validacao";
+import { getSetting, setSetting } from "../settingsService";
+import { limparAcompanhamentoSemUso } from "../djen/vigia";
 
 export const STATUS = ["ativo", "suspenso", "arquivado", "encerrado"] as const;
 export const PAPEIS = ["autor", "reu", "terceiro", "testemunha", "perito", "advogado_contrario"] as const;
@@ -124,8 +126,20 @@ export function atualizarProcesso(id: number, d: Record<string, unknown>) {
 
 export function excluirProcesso(id: number) {
   obterProcesso(id);
+  const antes = db.prepare("SELECT chave,djen_chave FROM gestao_processos WHERE id=?").get(id) as { chave: string; djen_chave: string | null } | undefined;
   db.prepare("DELETE FROM gestao_processos WHERE id=?").run(id);
+  if (antes) { try { limparAcompanhamentoSemUso([antes.chave, antes.djen_chave]); } catch (e) { console.error("[gestao] limpeza do acompanhamento:", e instanceof Error ? e.message : e); } }
   return { ok: true };
+}
+
+/** Chaves de processos do DJEN que o escritório mandou ignorar (não aparecem mais no aviso «sem ficha de gestão»). */
+const lerIgnorados = (): string[] => { try { const v = JSON.parse(getSetting("gestao_djen_ignorados") || "[]"); return Array.isArray(v) ? v.map(String) : []; } catch { return []; } };
+export function ignorarPendentesDoDjen(): { ignorados: number } {
+  const marcas = lerIgnorados();
+  const novos = (db.prepare(`SELECT d.chave FROM djen_processos d WHERE length(d.chave)>=7 AND d.chave NOT LIKE 'comunicacao:%'
+    AND NOT EXISTS (SELECT 1 FROM gestao_processos g WHERE g.chave=d.chave OR g.djen_chave=d.chave)`).all() as { chave: string }[]).map((r) => r.chave).filter((c) => !marcas.includes(c));
+  setSetting("gestao_djen_ignorados", JSON.stringify([...marcas, ...novos].slice(-2000)));
+  return { ignorados: novos.length };
 }
 
 export function adicionarParte(processoId: number, d: Record<string, unknown>) {
@@ -178,8 +192,9 @@ export function linhaDoTempo(id: number): EventoLinhaDoTempo[] {
 
 /** Processos monitorados pelo DJEN que ainda não têm ficha de gestão. */
 export function pendentesDeImportacao(): number {
+  const ign = lerIgnorados();
   return (db.prepare(`SELECT COUNT(*) n FROM djen_processos d WHERE length(d.chave)>=7 AND d.chave NOT LIKE 'comunicacao:%'
-    AND NOT EXISTS (SELECT 1 FROM gestao_processos g WHERE g.chave=d.chave OR g.djen_chave=d.chave)`).get() as { n: number }).n;
+    AND NOT EXISTS (SELECT 1 FROM gestao_processos g WHERE g.chave=d.chave OR g.djen_chave=d.chave)${ign.length ? ` AND d.chave NOT IN (${ign.map(() => "?").join(",")})` : ""}`).get(...ign) as { n: number }).n;
 }
 export function importarDoDjen(userId: number | null) {
   const linhas = db.prepare(`SELECT d.chave,d.numero,d.cliente_id,d.area,
@@ -187,7 +202,7 @@ export function importarDoDjen(userId: number | null) {
       (SELECT orgao FROM djen_publicacoes p WHERE p.processo_chave=d.chave AND p.cancelada=0 ORDER BY data_disponibilizacao DESC,id DESC LIMIT 1) AS orgao,
       (SELECT tribunal FROM djen_publicacoes p WHERE p.processo_chave=d.chave AND p.cancelada=0 ORDER BY data_disponibilizacao DESC,id DESC LIMIT 1) AS tribunal
     FROM djen_processos d WHERE length(d.chave)>=7 AND d.chave NOT LIKE 'comunicacao:%'
-      AND NOT EXISTS (SELECT 1 FROM gestao_processos g WHERE g.chave=d.chave OR g.djen_chave=d.chave)`).all() as { chave: string; numero: string; cliente_id: number | null; area: string | null; classe: string | null; orgao: string | null; tribunal: string | null }[];
+      AND NOT EXISTS (SELECT 1 FROM gestao_processos g WHERE g.chave=d.chave OR g.djen_chave=d.chave)`).all().filter((l) => !lerIgnorados().includes((l as { chave: string }).chave)) as { chave: string; numero: string; cliente_id: number | null; area: string | null; classe: string | null; orgao: string | null; tribunal: string | null }[];
   let criados = 0; let ignorados = 0;
   const total = (db.prepare("SELECT COUNT(*) n FROM gestao_processos").get() as { n: number }).n;
   db.transaction(() => {

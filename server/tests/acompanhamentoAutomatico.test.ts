@@ -17,7 +17,7 @@ const publicacao = (chave: string, data: string, tribunal = "TRF3", orgao = "1ª
     .run(`c${++seq}`, `h${seq}`, chave, data, tribunal, orgao, classe, "Intimação", "I", "texto");
 };
 
-beforeEach(() => { db.exec("DELETE FROM djen_publicacoes; DELETE FROM djen_historico_consultas; DELETE FROM djen_processos; DELETE FROM gestao_processos;"); });
+beforeEach(() => { db.prepare("DELETE FROM settings WHERE chave=?").run("gestao_djen_ignorados"); db.exec("DELETE FROM djen_publicacoes; DELETE FROM djen_historico_consultas; DELETE FROM djen_processos; DELETE FROM gestao_processos;"); });
 
 describe("acompanhamento automático do processo", () => {
   it("a consulta histórica começa no ano do número CNJ (nunca antes de 2021)", () => {
@@ -64,5 +64,26 @@ describe("acompanhamento automático do processo", () => {
   it("número sem padrão CNJ: informa que não dá para acompanhar", () => {
     const id = ficha("12345678", "ativo");
     expect(situacaoDoAcompanhamento(id)).toMatchObject({ acompanhavel: false });
+  });
+});
+
+import { excluirProcesso, ignorarPendentesDoDjen, pendentesDeImportacao } from "../src/services/gestao/processos";
+
+describe("excluir a ficha e o aviso «sem ficha de gestão»", () => {
+  it("excluir a ficha leva junto o acompanhamento criado sozinho (sem publicações): o aviso não volta", () => {
+    const id = ficha();
+    iniciarAcompanhamento(CHAVE);
+    expect(excluirProcesso(id)).toEqual({ ok: true });
+    expect(pendentesDeImportacao()).toBe(0);
+    expect(db.prepare("SELECT COUNT(*) n FROM djen_processos").get()).toEqual({ n: 0 });
+    expect(db.prepare("SELECT COUNT(*) n FROM djen_historico_consultas").get()).toEqual({ n: 0 });
+  });
+  it("com publicações reais do DJEN, o processo segue na lista de pendentes até ser ignorado", () => {
+    const id = ficha(); publicacao(CHAVE, "2025-03-01");
+    iniciarAcompanhamento(CHAVE);
+    excluirProcesso(id);
+    expect(pendentesDeImportacao()).toBe(1);
+    expect(ignorarPendentesDoDjen()).toEqual({ ignorados: 1 });
+    expect(pendentesDeImportacao()).toBe(0);
   });
 });

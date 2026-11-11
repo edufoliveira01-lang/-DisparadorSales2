@@ -3,7 +3,7 @@ import express, { Router, type Request, type Response, type NextFunction } from 
 import { db } from "../db";
 import { ErroGestao, atualizarPessoa, criarPessoa, excluirPessoa, importarContatos, listarPessoas, obterPessoa, previaDaExclusao } from "../services/gestao/pessoas";
 import {
-  adicionarAnotacao, adicionarParte, atualizarProcesso, criarProcesso, excluirProcesso, importarDoDjen, linhaDoTempo, listarProcessos,
+  adicionarAnotacao, adicionarParte, atualizarProcesso, criarProcesso, excluirProcesso, importarDoDjen, ignorarPendentesDoDjen, linhaDoTempo, listarProcessos,
   obterProcesso, pendentesDeImportacao, removerAnotacao, removerParte, resumoGestao,
 } from "../services/gestao/processos";
 import { auditAccess } from "../services/accessService";
@@ -83,6 +83,7 @@ gestaoRouter.get("/processos", rota((req) => listarProcessos({
   pessoa: String(req.query.pessoa ?? ""), pagina: Number(req.query.pagina), limite: Number(req.query.limite),
 })));
 gestaoRouter.get("/processos/pendentes-importacao", rota(() => ({ pendentes: pendentesDeImportacao() })));
+gestaoRouter.post("/processos/ignorar-djen", rota((req) => { const r = ignorarPendentesDoDjen(); auditAccess("gestao_djen_ignorados", usuario(req).id, null, r); return r; }));
 gestaoRouter.post("/processos/importar-djen", rota((req) => { const r = importarDoDjen(usuario(req).id); auditAccess("gestao_processos_importados", usuario(req).id, null, r); return r; }));
 gestaoRouter.post("/processos", rota((req, res) => { const p = criarProcesso(req.body || {}, usuario(req).id); res.status(201); acompanharAgora(String((p as { chave?: string }).chave ?? "") || String(p.numero).replace(/\D/g, ""), String(p.numero)); auditAccess("gestao_processo_criado", usuario(req).id, null, { processo: p.id, pasta: p.pasta }); return p; }));
 gestaoRouter.get("/processos/:id", rota((req) => obterProcesso(id(req))));
