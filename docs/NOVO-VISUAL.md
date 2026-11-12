@@ -124,3 +124,11 @@
 - **Painéis clicáveis** (Próximos compromissos, Perícias médicas, Perícias sociais, Audiências) filtram a lista; saiu o resumo escondido em «Ver resumo por tipo».
 - **Barra única** com visão, navegação (semana/mês), busca em todos os meses, tipo e «Mostrar substituídas».
 - Enviar lembrete, editar e apagar continuam em cada linha; nenhuma regra do servidor mudou.
+
+## Configurações (3.24.0) — nova organização
+- **Menu lateral fixo** com todos os assuntos, em vez das abas e botões no topo; no celular vira um seletor «Ir para».
+- **Grupos reorganizados:** Escritório e acesso · Documentos e fichas · Comunicação com clientes (WhatsApp, Envio pelo Deskcomm, Modelos de mensagens, Notificações, Intervalo, Atendimento com IA) · Cobrança (Cobranças e avisos, Asaas) · Processos e prazos (Advogados, DJEN, DataJud, Calendários, Prazos) · Integrações (Trello, Google, Dropbox, IA) · Sistema (Backup, Atividade). Antes, Deskcomm/Asaas/cobrança estavam em «DJEN e prazos».
+- **Visão geral** com busca («boleto», «WhatsApp», «prazos»…) e descrição de cada grupo.
+- **Título certo em cada página** (antes todas as integrações mostravam «Conexões e sistema»); «Sair do sistema» fica em Dados de acesso e Minha conta.
+- **Minha conta** e **Equipe e acessos** saíram do visual roxo antigo para o padrão atual.
+- Nenhuma configuração mudou de lugar no servidor; os endereços antigos continuam funcionando.

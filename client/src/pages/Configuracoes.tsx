@@ -3,6 +3,7 @@ import { Settings as SettingsIcon } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { beginRequestActivity } from "@/lib/requestActivity";
 import { DeadlineSettings } from "@/components/djen/DeadlineSettings";
+import { itemDaSecao } from "@/lib/configNav";
 import type { SettingsSectionKey } from "@/components/SettingsOverview";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -493,11 +494,11 @@ export function Configuracoes({ secao }: { secao?: string | null } = {}) {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Conexões e sistema"
-        description="Ajuste conexões, avisos, acesso e aparência."
-        actions={<Button variant="outline" onClick={handleLogout} className="danger-action">
+        title={itemDaSecao(secao)?.item.titulo ?? "Conexões e sistema"}
+        description={itemDaSecao(secao)?.item.descricao ?? "Ajuste conexões, avisos, acesso e aparência."}
+        actions={configSection === "acesso" ? <Button variant="outline" onClick={handleLogout} className="danger-action">
           <LogOut className="h-4 w-4" /> Sair do sistema
-        </Button>}
+        </Button> : undefined}
       />
 
       <div className="settings-layout"><div className="settings-detail">
