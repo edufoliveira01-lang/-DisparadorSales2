@@ -1,5 +1,6 @@
 import { HistoryCoverage, RegisterFulfillment, instanteBR, type CoberturaHistorico } from "@/components/djen/HistoryCoverage";
 import { ActivityBadge, RegisterAction, type AtividadeProcesso } from "@/components/djen/ActivityBadge";
+import { AcompanhamentosLista } from "@/components/djen/Acompanhamentos";
 import { ContactPicker } from "@/components/djen/ContactPicker";
 import { MultiSelect } from "@/components/ui/MultiSelect";
 import {
@@ -270,7 +271,7 @@ interface PericiaSuperada {
   andamento: string | null;
   data_andamento: string | null;
 }
-interface AguardandoRetorno {
+export interface AguardandoRetorno {
   captured_at?: string;
   historico_djen?: CoberturaHistorico;
   publicacao_id: number;
@@ -515,8 +516,6 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
   const [carregandoAlerta, setCarregandoAlerta] = useState(false);
   const [diasParado, setDiasParado] = useState(60);
   const [aguardando, setAguardando] = useState<AguardandoRetorno[]>([]);
-  const [tipoAguardando, setTipoAguardando] = useState("");
-  const [buscaAguardando, setBuscaAguardando] = useState("");
   const [selecionados, setSelecionados] = useState<number[]>([]);
   const [confirmarLote, setConfirmarLote] = useState(false);
   const [selecionandoTodos, setSelecionandoTodos] = useState(false);
@@ -711,10 +710,6 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     perito_esclarecimentos: "Esclarecimentos do perito", perito_calculos: "Cálculos periciais",
     inss_implantacao: "Implantação pelo INSS", parte_contraria: "Manifestação da outra parte", terceiro_oficio: "Resposta de terceiro (ofício)",
   };
-  const aguardandoVisiveis = aguardando.filter((item) =>
-    (!tipoAguardando || item.tipo === tipoAguardando) &&
-    (!buscaAguardando.trim() || `${item.processo} ${item.cliente_nome || ""} ${item.motivo}`.toLocaleLowerCase("pt-BR").includes(buscaAguardando.trim().toLocaleLowerCase("pt-BR"))),
-  );
   const paginaSelecionada = items.length > 0 && items.every((item) => selecionados.includes(item.id));
   async function selecionarTodosFiltrados() {
     setSelecionandoTodos(true);
@@ -902,62 +897,12 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
   }
   function fecharDetalhe() { if (!salvando) { detailSeq.current++; if (detalhe) prefetchRef.current.delete(detalhe.id); setDetalheAberto(false); setCarregandoDetalhe(false); setDetalhe(null); setPreviaDetalhe(null); onCloseDetail?.(); } }
   const conteudoAguardando = (
-        <div className="space-y-4">
-          <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-5 dark:border-amber-900 dark:bg-amber-950/20">
-            <p className="flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-200">
-              <Clock3 className="h-4 w-4" /> {aguardando.length} acompanhamento(s) para conferir
-            </p>
-            <p className="mt-2 text-xs font-medium text-amber-800">Publicação antiga não é pendência atual confirmada. O sistema consulta automaticamente as publicações posteriores por processo; falta de resposta ou captura incompleta mantém o histórico pendente.</p>
-            <p className="mt-2 max-w-3xl text-xs leading-relaxed text-amber-800 dark:text-amber-300">
-              O prazo expresso tem prioridade e não é ampliado para 30 dias. A previsão usa a unidade indicada e o calendário conferido; se depender de outro marco, ciência pessoal ou calendário pendente, o card pede conferência. Sem período expresso, o lembrete operacional aparece após {status?.config.aguardo_dias ?? 30} dias. Atos posteriores de cumprimento ou encerramento da instrução podem tornar uma ordem anterior superada. Confira os autos antes de cobrar. “Marcar cobrança realizada” só registra uma ação já feita; não envia mensagens nem peticiona.
-            </p>
-          </div>
-          {diagnostico && <p className="rounded-xl border border-zinc-200 p-3 text-xs text-zinc-500">Cobertura: {diagnostico.publicacoes} publicações consultadas · {diagnostico.ordens_externas} ordens externas identificadas. A lista inclui históricos pendentes para conferência. Somente consultas atualizadas entram nos contadores de avisos; ordens resolvidas não aparecem.</p>}
-          <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900 sm:flex-row">
-            <Input aria-label="Buscar acompanhamento" placeholder="Buscar cliente, processo ou ordem…" value={buscaAguardando} onChange={(e) => setBuscaAguardando(e.target.value)} />
-            <Select aria-label="Filtrar tipo de acompanhamento" className="sm:max-w-[260px]" value={tipoAguardando} onChange={(e) => setTipoAguardando(e.target.value)}>
-              <option value="">Todos os tipos</option>
-              {Object.entries(tiposAguardando).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-            </Select>
-          </div>
-          {!aguardandoVisiveis.length ? (
-            <EmptyState icon={Clock3} title="Nenhum acompanhamento neste filtro" description="Ajuste a busca ou o tipo. Os alertas aparecem após o período indicado para conferência." />
-          ) : aguardandoVisiveis.map((item) => (
-            <article key={`${item.publicacao_id}:${item.tipo}`} className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="flex flex-col gap-4">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone="warning">{tiposAguardando[item.tipo]}</Badge>
-                    <Badge>{item.dias_decorridos} dias desde a publicação</Badge>
-                    {item.acompanhamento_status === "cobrado" && <Badge tone="info">Cobrança registrada</Badge>}
-                  </div>
-                  <h2 className="mt-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{item.cliente_nome || "Cliente não vinculado"}</h2>
-                  <p className="mt-1 text-xs text-zinc-500">Processo {item.processo} · {item.responsavel} · Disponibilizada no DJEN em {dia(item.data_disponibilizacao)}</p>
-                  {item.captured_at && <p className="mt-1 text-[11px] text-zinc-500">Capturada pelo sistema em {instanteBR(item.captured_at)}</p>}
-                  <HistoryCoverage historico={item.historico_djen} publicacaoId={item.publicacao_id} />
-                  <p className="mt-3 whitespace-pre-wrap text-xs font-medium">{item.motivo}</p>
-                  <p className="mt-1 line-clamp-3 max-w-3xl text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">{item.resumo}</p>
-                  <div className="mt-2 space-y-1 text-[11px] text-zinc-500">
-                    {item.prazo_texto && <p className="font-semibold text-amber-800 dark:text-amber-200">Prazo expresso: {item.prazo_texto}</p>}
-                    {item.prazo_termino && item.historico_djen?.status === "atualizado" && <p className="font-semibold text-red-700 dark:text-red-300">Data limite a conferir: {dia(item.prazo_termino)} · conferir cumprimento</p>}
-                    {item.prazo_pendente && <p className="font-semibold text-amber-700">Conferir prazo e termo inicial — não substituído por 30 dias</p>}
-                    <p>{item.prazo_observacao || `Conferir após ${item.dias_espera} dias desde a publicação.`}</p>
-                    <p>Cumprimento não confirmado. Confira os autos antes de cobrar; uma ordem antiga pode já ter sido cumprida sem publicação no DJEN.</p>
-                    {item.ultima_cobranca_em && <p>Cobrança marcada como realizada em {dia(item.ultima_cobranca_em)}</p>}
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
-                  <Button size="sm" onClick={() => void abrir(item.publicacao_id)}>Ver processo <ArrowRight className="h-3.5 w-3.5" /></Button>
-                  <Button size="sm" variant="outline" disabled={salvando || item.historico_djen?.status !== "atualizado"} onClick={() => void acao(async () => {
-                    await api.put(`/djen/aguardando/${item.publicacao_id}`, { tipo: item.tipo, status: "cobrado" });
-                    await carregarAguardando(); await carregarStatus(); show("Cobrança marcada como realizada. Nenhuma mensagem foi enviada.", "success");
-                  })} title="Apenas registra uma cobrança que você já realizou; não envia mensagens nem peticiona.">Marcar cobrança realizada</Button>
-                  <RegisterFulfillment endpoint={`/djen/aguardando/${item.publicacao_id}`} tipo={item.tipo} onSaved={async () => { await carregarAguardando(); await carregarStatus(); }} />
-                </div>
-              </div>
-            </article>
-          ))}
-        </div>
+    <AcompanhamentosLista itens={aguardando} tipos={tiposAguardando} diasPadrao={status?.config.aguardo_dias ?? 30} diagnostico={diagnostico ? { publicacoes: diagnostico.publicacoes, ordens_externas: diagnostico.ordens_externas } : null} ocupado={salvando}
+      onAbrir={(id) => void abrir(id)} onAtualizar={async () => { await carregarAguardando(); await carregarStatus(); }}
+      onCobrado={(item) => void acao(async () => {
+        await api.put(`/djen/aguardando/${item.publicacao_id}`, { tipo: item.tipo, status: "cobrado" });
+        await carregarAguardando(); await carregarStatus(); show("Cobrança marcada como realizada. Nenhuma mensagem foi enviada.", "success");
+      })} />
 );
   const titulo =
     secao === "advogados"
@@ -965,7 +910,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
       : secao === "monitoramento"
         ? "Monitoramento DJEN"
         : secao === "aguardando"
-          ? "Aguardando retorno"
+          ? "Acompanhamentos"
         : "Publicações processuais";
   return (
     <div className="space-y-5">
@@ -977,7 +922,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
           secao === "publicacoes"
             ? "Decisões, acordos, pagamentos, perícias e demais andamentos dos processos."
             : secao === "aguardando"
-              ? "Ordens do juízo, peritos, INSS e parte contrária com retorno ou cumprimento a conferir."
+              ? "O que estamos esperando de alguém: juízo, peritos, INSS e a outra parte. Comece pelo que precisa de atenção."
             : secao === "advogados"
               ? "Cadastre um ou mais advogados pelo nome completo, número da OAB e UF."
               : "Consulte o DJEN por período e acompanhe a execução de cada busca."

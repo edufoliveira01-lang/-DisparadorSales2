@@ -55,3 +55,12 @@
 ## Quadro de processos (3.14.1)
 - Cartões mais compactos: a caixa de seleção fica ao lado do nome (sem a linha «Selecionar»), e a etiqueta «Etapa automática · DJEN» só aparece quando a etapa é manual ou ainda não foi identificada.
 - Cada coluna ganha uma faixa colorida no topo: cinza (triagem), amarela (etapa com contagem de espera), azul (etapa movida automaticamente por categoria do DJEN).
+
+## Acompanhamentos (3.15.0) — refeita por inteiro
+- A tela virou **«Acompanhamentos»** (antes «Aguardando retorno»), com o mesmo nome do menu.
+- **Painéis por tipo** no topo (juízo, laudo do perito, esclarecimentos, cálculos, INSS, outra parte, ofício): mostram quantos há e filtram ao clicar.
+- **Duas seções:** «Precisa de atenção» (passou do tempo de espera ou o prazo precisa ser conferido) e «Dentro do tempo de espera». Antes era uma lista única e longa.
+- **Cartões enxutos:** cliente, tipo, «há N dias · espera de M», número do processo (com copiar), quem estamos esperando, o motivo em uma linha e os prazos. Resumo, cobertura do histórico e observações ficam em **«Ver detalhes»**.
+- Os avisos jurídicos (publicação antiga não é pendência confirmada, prazo expresso, conferir os autos antes de cobrar) saíram do topo para o botão **«Como funciona»**; os avisos continuam no texto de cada cartão em «Ver detalhes».
+- Ordenação (mais antigos, mais recentes, cliente A–Z) e busca. Os botões (Ver processo, Cobrança feita, Já foi cumprido) funcionam como antes.
+- Componente novo: `components/djen/Acompanhamentos.tsx`.
