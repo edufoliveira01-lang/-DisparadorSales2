@@ -47,7 +47,7 @@ export function getUserById(id: number): User | undefined {
   return db.prepare("SELECT * FROM users WHERE id = ?").get(id) as User | undefined;
 }
 
-export function updateUser(id: number, data: Partial<Pick<User, "username" | "email" | "display_name" | "password_hash" | "must_change_password">>) {
+export function updateUser(id: number, data: Partial<Pick<User, "username" | "email" | "display_name" | "password_hash" | "must_change_password" | "home_page">>) {
   const fields = Object.keys(data).map(f => `${f} = ?`).join(", ");
   if (!fields) return;
   const values = Object.values(data);

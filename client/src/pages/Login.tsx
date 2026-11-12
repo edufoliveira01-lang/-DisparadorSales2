@@ -61,7 +61,7 @@ export function Login() {
         const result = await api.post<{ user: TeamUser }>("/auth/login", { username, password });
         // Quem veio do site de atendimento ("Entrar com o sistema do escritório") volta para ele depois de entrar aqui.
         const voltar = new URLSearchParams(window.location.search).get("next") === "atendimento" && result.user.permissions.includes("atendimento.use");
-        window.location.replace(voltar ? "/atendimento" : (paginaInicialDe(result.user.id, result.user.permissions) ?? firstAllowedPage(result.user.permissions)));
+        window.location.replace(voltar ? "/atendimento" : (paginaInicialDe(result.user) ?? firstAllowedPage(result.user.permissions)));
         return;
       } else if (mode === "forgot") {
         const result = await api.post<{ message: string }>("/auth/forgot-password", { username });

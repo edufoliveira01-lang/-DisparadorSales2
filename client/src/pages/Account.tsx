@@ -6,7 +6,6 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { permittedNavigation, ROTULO_GRUPO } from "@/lib/navigation";
-import { escolherPaginaInicial, paginaEscolhida } from "@/lib/paginaInicial";
 
 export function Account() {
   const { user } = useAuth();
@@ -16,7 +15,7 @@ export function Account() {
   const [password, setPassword] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [saving, setSaving] = useState(false);
-  const [inicial, setInicial] = useState(() => paginaEscolhida(user.id));
+  const [inicial, setInicial] = useState(user.home_page || "");
   const opcoes = permittedNavigation(user.permissions);
 
   const save = async (event: React.FormEvent) => {
@@ -59,12 +58,12 @@ export function Account() {
     <section className="surface-panel space-y-3 p-5 sm:p-6">
       <div>
         <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Página inicial</h2>
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">A página que abre quando você entra no sistema. Vale para este navegador; o padrão é o Início.</p>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">A página que abre quando você entra no sistema. Fica salva na sua conta e vale em qualquer aparelho; o padrão é o Início.</p>
       </div>
       <div className="max-w-sm">
         <Label htmlFor="conta-inicial">Abrir ao entrar</Label>
         <select id="conta-inicial" className="mt-1 h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-900" value={inicial}
-          onChange={(e) => { setInicial(e.target.value); escolherPaginaInicial(user.id, e.target.value); show(e.target.value ? "Página inicial atualizada." : "Voltou ao Início (padrão).", "success"); }}>
+          onChange={async (e) => { const to = e.target.value; const antes = inicial; setInicial(to); try { await api.put("/auth/home-page", { to }); show(to ? "Página inicial atualizada." : "Voltou ao Início (padrão).", "success"); } catch (error) { setInicial(antes); show(error instanceof ApiError ? error.message : "Não foi possível salvar.", "error"); } }}>
           <option value="">Início (padrão)</option>
           {opcoes.map((i) => <option key={i.to} value={i.to}>{ROTULO_GRUPO[i.group] ?? "Sistema"} · {i.label}</option>)}
         </select>

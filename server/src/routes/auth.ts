@@ -84,6 +84,20 @@ authRouter.post("/logout", (req, res) => {
   res.json({ ok: true });
 });
 
+/** Página que abre ao entrar. Só caminhos internos simples; o cliente confere se a pessoa ainda tem acesso a ela. */
+authRouter.put("/home-page", (req, res) => {
+  const sessionId = req.cookies.session_id;
+  if (!sessionId) return res.status(401).json({ error: "Não autenticado." });
+  const session = getSession(sessionId);
+  if (!session) return res.status(401).json({ error: "Sessão expirada." });
+  const user = getUserById(session.user_id);
+  if (!user || !user.active) return res.status(404).json({ error: "Usuário não encontrado." });
+  const to = typeof req.body?.to === "string" ? req.body.to.trim() : "";
+  if (to && (to.length > 120 || !/^\/[a-z0-9/_-]*$/i.test(to) || to.includes("//"))) return res.status(400).json({ error: "Página inválida." });
+  updateUser(user.id, { home_page: to || null });
+  res.json({ user: publicUser(getUserById(user.id)!) });
+});
+
 authRouter.get("/me", (req, res) => {
   const sessionId = req.cookies.session_id;
   if (!sessionId) return res.status(401).json({ error: "Não autenticado." });

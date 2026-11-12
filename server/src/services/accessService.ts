@@ -31,6 +31,7 @@ export interface AccessUser {
   permissions_json: string | null;
   active: number;
   must_change_password?: number;
+  home_page?: string | null;
 }
 
 export function isRole(value: unknown): value is Role {
@@ -64,6 +65,7 @@ export function publicUser(user: AccessUser) {
       p === "atendimento.use" ? atendimentoDaInstancia() !== null :
       p.startsWith("gestao.") ? recursoLiberadoNaLicenca("modulo_gestao") : p.startsWith("financeiro.") ? recursoLiberadoNaLicenca("modulo_gestao") && recursoLiberadoNaLicenca("modulo_financeiro") : true),
     must_change_password: Boolean(user.must_change_password),
+    home_page: user.home_page || "",
   };
 }
 

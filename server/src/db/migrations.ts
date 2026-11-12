@@ -203,6 +203,8 @@ export function runMigrations(db: Database.Database): void {
     ["active", "INTEGER NOT NULL DEFAULT 1"],
     // 1 = a senha foi definida por outra pessoa (administrador/painel): exige criar uma própria no 1º acesso.
     ["must_change_password", "INTEGER NOT NULL DEFAULT 0"],
+    // Página que abre ao entrar (escolha da própria pessoa em Minha conta); vazio = Início.
+    ["home_page", "TEXT"],
   ]) {
     if (!userColumns.includes(name)) db.exec(`ALTER TABLE users ADD COLUMN ${name} ${definition}`);
   }

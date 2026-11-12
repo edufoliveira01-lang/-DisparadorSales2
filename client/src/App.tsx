@@ -165,7 +165,7 @@ function AuthenticatedApp() {
                   element={<AccessRoute permission="deadlines.view"><Cfg><CalendariosPrazos /></Cfg></AccessRoute>}
                 />
                 <Route path="/processos/*" element={<AccessRoute permission="processes.view"><Acompanhamento /></AccessRoute>} />
-                <Route path="/" element={<Navigate to={paginaInicialDe(user.id, user.permissions) ?? (can("gestao.view") ? "/gestao" : firstAllowedPage(user.permissions))} replace />} />
+                <Route path="/" element={<Navigate to={paginaInicialDe(user) ?? (can("gestao.view") ? "/gestao" : firstAllowedPage(user.permissions))} replace />} />
                 <Route path="/pericias" element={can("dashboard.view") ? <Dashboard /> : <Navigate to={firstAllowedPage(user.permissions)} replace />} />
                 <Route path="/agenda" element={<Navigate to="/gestao/clientes" replace />} />
                 <Route path="/calendario" element={<AccessRoute permission="calendar.view"><Calendario /></AccessRoute>} />
