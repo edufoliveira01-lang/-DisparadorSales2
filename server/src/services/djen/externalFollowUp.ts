@@ -7,7 +7,7 @@ import { marcarEtapaParaRevisao } from "./kanbanRevisao";
 import { db } from "../../db";
 import { DjenInputError } from "./store";
 import { andamentoDaPublicacao, primeiroAndamentoPosterior, type PublicacaoParaAndamento } from "./andamentos";
-import { cumprimentoIdentificado, identificarObrigacoesExternas, TIPOS_OBRIGACAO, type TipoObrigacao } from "./obligations";
+import { assuntoDaOrdem, cumprimentoIdentificado, identificarObrigacoesExternas, periciaAndou, TIPOS_OBRIGACAO, type AssuntoDaOrdem, type TipoObrigacao } from "./obligations";
 
 import { hojeSaoPaulo } from "./cache";
 const hoje = hojeSaoPaulo;
@@ -15,7 +15,7 @@ const diasDesde = (data: string) =>
   Math.floor((Date.parse(`${hoje()}T12:00:00Z`) - Date.parse(`${data.slice(0, 10)}T12:00:00Z`)) / 86400000);
 
 export interface ObrigacaoExternaAcompanhamento extends PrazoAcompanhamento {
-  historico_djen: CoberturaHistorico; captured_at: string;
+  historico_djen: CoberturaHistorico; captured_at: string; assunto: AssuntoDaOrdem | null;
   publicacao_id: number; tipo: TipoObrigacao; responsavel: string; processo: string;
   cliente_nome: string | null; data_disponibilizacao: string; dias_decorridos: number;
   dias_espera: number | null; prazo_citado_dias: number | null; motivo: string; resumo: string;
@@ -25,17 +25,24 @@ export interface ObrigacaoExternaAcompanhamento extends PrazoAcompanhamento {
 /** Ordem que o processo deixou para trás: o que veio depois mostra que a fase mudou (ou que o processo seguiu andando). */
 export interface ObrigacaoSuperada extends ObrigacaoExternaAcompanhamento { motivo_superada: string; ultimo_andamento_em: string | null }
 const FASES_POSTERIORES = ["rpv", "precatorio", "levantamento_valores", "cumprimento_sentenca", "extincao_execucao", "extincao_processo", "transito_julgado"];
-const DIAS_ORDEM_ANTIGA = 180, DIAS_ANDAMENTO_POSTERIOR = 90;
+const DIAS_ORDEM_ANTIGA = 120, DIAS_ANDAMENTO_POSTERIOR = 60;
+/** Ordens que já são sobre a perícia (laudo, esclarecimentos, cálculos) ou sobre recurso: a perícia concluída NÃO as supera. */
+const DA_FASE_DA_PERICIA = /\b(?:laudo|esclarec|perit|calcul|contadoria|recurso|apela|contrarraz|impugn|embargo)/;
 const dataBr = (iso: string) => iso.slice(0, 10).split("-").reverse().join("/");
 /**
  * A ordem ainda vale? Esta tela é dos processos PARADOS à espera de alguém. Se depois da ordem o processo entrou numa fase posterior
  * (RPV, precatório, cumprimento, trânsito em julgado…) ou seguiu andando por meses, a ordem é considerada superada e sai da lista principal.
  * `null` = continua valendo.
  */
-export function motivoDeSuperada(ordemDisponibilizadaEm: string, diasDecorridos: number, posteriores: PublicacaoParaAndamento[]): { motivo: string; ultimo: string | null } | null {
+export function motivoDeSuperada(ordemDisponibilizadaEm: string, diasDecorridos: number, posteriores: PublicacaoParaAndamento[], ordem?: { tipo: TipoObrigacao; trecho: string }): { motivo: string; ultimo: string | null } | null {
   if (!posteriores.length) return null;
   const datas = posteriores.map((p) => (p.data || "").slice(0, 10)).filter(Boolean).sort();
   const ultimo = datas.length ? datas[datas.length - 1]! : null;
+  // Perícia já concluída: ordens da fase anterior (contestação, réplica, honorários…) ficaram para trás.
+  if (ordem?.tipo === "parte_contraria" && !DA_FASE_DA_PERICIA.test(ordem.trecho.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase())) {
+    const perícia = posteriores.find((p) => periciaAndou(p.texto));
+    if (perícia) return { motivo: `A perícia já andou (laudo ou esclarecimentos do perito${perícia.data ? `, em ${dataBr(perícia.data)}` : ""}): a ordem era de fase anterior.`, ultimo };
+  }
   const fase = posteriores.find((p) => (p.categorias || []).some((c) => FASES_POSTERIORES.includes(c)) || andamentoDaPublicacao(p)?.tipo === "requisicao_pagamento");
   if (fase) return { motivo: `O processo já entrou em fase posterior (${(fase.categorias || []).find((c) => FASES_POSTERIORES.includes(c))?.replaceAll("_", " ") || "RPV / precatório"}${fase.data ? `, em ${dataBr(fase.data)}` : ""}).`, ultimo };
   if (diasDecorridos >= DIAS_ORDEM_ANTIGA && ultimo) {
@@ -116,7 +123,7 @@ function* calcularObrigacoesExternas(): Generator<void, { ativas: ObrigacaoExter
         if (typeof ia?.resumo === "string") resumo = ia.resumo;
       } catch { /* análise legada incompleta */ }
       const item: ObrigacaoExternaAcompanhamento = {
-        historico_djen: coberturas.get(row.processo_chave)!, captured_at: row.captured_at,
+        historico_djen: coberturas.get(row.processo_chave)!, captured_at: row.captured_at, assunto: assuntoDaOrdem(ordem.trecho),
         publicacao_id: row.id, tipo: ordem.tipo, responsavel: ordem.responsavel,
         processo: row.processo, cliente_nome: row.cliente_nome,
         data_disponibilizacao: row.data_disponibilizacao, dias_decorridos,
@@ -125,7 +132,7 @@ function* calcularObrigacoesExternas(): Generator<void, { ativas: ObrigacaoExter
         acompanhamento_status: estado?.status || "pendente",
         ultima_cobranca_em: estado?.ultima_cobranca_em || null,
       };
-      const sup = estado?.status === "pendente" || !estado ? motivoDeSuperada(row.data_disponibilizacao, dias_decorridos, detalhesPosteriores) : null;
+      const sup = estado?.status === "pendente" || !estado ? motivoDeSuperada(row.data_disponibilizacao, dias_decorridos, detalhesPosteriores, { tipo: ordem.tipo, trecho: ordem.trecho }) : null;
       if (sup) superadas.push({ ...item, motivo_superada: sup.motivo, ultimo_andamento_em: sup.ultimo }); else saida.push(item);
     }
     textosPosteriores.push(row.texto);

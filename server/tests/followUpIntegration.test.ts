@@ -96,7 +96,7 @@ describe('acompanhamentos cruzados por processo', () => {
   });
   it('sentença antiga, citação e outro processo não apagam pendência nova', () => {
     inserir(2,'Julgo improcedente o pedido.','2019-12-01');
-    inserir(3,'Conforme precedente: “Julgo extinto o processo”.','2020-04-01');
+    inserir(3,'Conforme precedente: “Julgo extinto o processo”.','2020-03-15');
     inserir(4,'Julgo extinto o processo.','2020-04-01','outro');
     expect(listarPericiasSemLaudo()).toHaveLength(1);
     expect(listarObrigacoesExternas()).toHaveLength(1);
@@ -150,5 +150,26 @@ describe('ordens que o processo deixou para trás (tela Acompanhamentos)', () =>
     expect(motivoDeSuperada('2026-09-01', 60, [{ texto: 'x', data: '2026-11-01' }])).toBeNull();
     expect(motivoDeSuperada('2026-01-01', 300, [{ texto: 'x', data: '2026-02-01' }])).toBeNull();
     expect(motivoDeSuperada('2026-01-01', 300, [{ texto: 'x', data: '2026-06-01' }])?.motivo).toMatch(/continuou andando/);
+  });
+
+  it('honorários periciais: aparece com o assunto certo e some quando o perito já prestou esclarecimentos', async () => {
+    inserir(20,'4) Intime-se o INSS a depositar a antecipação dos honorários periciais, nos termos da Lei nº 14.331/22, no valor de 15 UFESPs, no prazo de até 30 (trinta) dias.','2026-05-19');
+    const antes = listarObrigacoesExternas();
+    expect(antes).toHaveLength(1);
+    expect(antes[0]).toMatchObject({ tipo: 'parte_contraria', assunto: 'honorarios_periciais' });
+    inserir(21,'Vistos. Manifestem-se as partes, no prazo de 15 (quinze) dias, sobre os esclarecimentos prestados pelo(a) PERITO(A) JUDICIAL. Int.','2026-10-19');
+    expect(listarObrigacoesExternas()).toHaveLength(0);
+    expect(await listarObrigacoesSuperadasAsync()).toHaveLength(0);
+  });
+  it('ordem de manifestação de fase anterior à perícia é superada quando o laudo já foi juntado', async () => {
+    inserir(30,'Cite-se o INSS para contestar, no prazo de 30 dias, sob pena de revelia.','2026-01-10');
+    expect(listarObrigacoesExternas().some((o) => o.tipo === 'parte_contraria')).toBe(true);
+    inserir(31,'Laudo pericial juntado aos autos.','2026-03-20');
+    expect(listarObrigacoesExternas().some((o) => o.tipo === 'parte_contraria')).toBe(false);
+    const sup = await listarObrigacoesSuperadasAsync();
+    expect(sup[0]!.motivo_superada).toMatch(/perícia já andou/);
+  });
+  it('ordem que já é da fase do laudo (manifestação sobre o laudo) não é superada só porque o laudo existe', () => {
+    expect(motivoDeSuperada('2026-01-10', 100, [{ texto: 'Laudo pericial juntado aos autos.', data: '2026-02-01' }], { tipo: 'parte_contraria', trecho: 'Intime-se o INSS para manifestar-se sobre o laudo pericial em 15 dias.' })).toBeNull();
   });
 });

@@ -8,6 +8,8 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { HistoryCoverage, RegisterFulfillment, instanteBR } from "@/components/djen/HistoryCoverage";
 import type { AguardandoRetorno } from "@/pages/Acompanhamento";
 
+/** O que aparece na etiqueta e nos painéis: o assunto da ordem, quando ele diz mais que o tipo. */
+const tipoVisual = (i: AguardandoRetorno): string => i.assunto || i.tipo;
 const dia = (s: string) => s.slice(0, 10).split("-").reverse().join("/");
 /** Passou do tempo de espera (ou o prazo ainda precisa ser conferido): é o que a equipe deve olhar primeiro. */
 const precisaAtencao = (i: AguardandoRetorno) => (i.dias_espera != null && i.dias_decorridos >= i.dias_espera) || Boolean(i.prazo_pendente) || Boolean(i.prazo_termino && i.prazo_termino < new Date().toISOString().slice(0, 10));
@@ -35,10 +37,10 @@ export function AcompanhamentosLista({ itens, superados = [], tipos, diasPadrao,
   const [ajuda, setAjuda] = useState(false);
   const [mostrarSuperados, setMostrarSuperados] = useState(false);
   const chave = (i: AguardandoRetorno) => `${i.publicacao_id}:${i.tipo}`;
-  const contagem = useMemo(() => { const m: Record<string, number> = {}; for (const i of itens) m[i.tipo] = (m[i.tipo] ?? 0) + 1; return m; }, [itens]);
+  const contagem = useMemo(() => { const m: Record<string, number> = {}; for (const i of itens) m[tipoVisual(i)] = (m[tipoVisual(i)] ?? 0) + 1; return m; }, [itens]);
   const visiveis = useMemo(() => {
     const t = busca.trim().toLocaleLowerCase("pt-BR");
-    const f = itens.filter((i) => (!tipo || i.tipo === tipo) && (!t || `${i.processo} ${i.cliente_nome || ""} ${i.motivo}`.toLocaleLowerCase("pt-BR").includes(t)));
+    const f = itens.filter((i) => (!tipo || tipoVisual(i) === tipo) && (!t || `${i.processo} ${i.cliente_nome || ""} ${i.motivo}`.toLocaleLowerCase("pt-BR").includes(t)));
     return f.sort((a, b) => ordem === "cliente" ? (a.cliente_nome || "~").localeCompare(b.cliente_nome || "~", "pt-BR") : ordem === "recentes" ? a.dias_decorridos - b.dias_decorridos : b.dias_decorridos - a.dias_decorridos);
   }, [itens, tipo, busca, ordem]);
   const atencao = visiveis.filter(precisaAtencao), noPrazo = visiveis.filter((i) => !precisaAtencao(i));
@@ -53,7 +55,7 @@ export function AcompanhamentosLista({ itens, superados = [], tipos, diasPadrao,
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{i.cliente_nome || "Cliente não vinculado"}</h3>
-              <Badge tone={urgente ? "warning" : "neutral"}>{tipos[i.tipo] ?? i.tipo}</Badge>
+              <Badge tone={urgente ? "warning" : "neutral"}>{tipos[tipoVisual(i)] ?? i.tipo}</Badge>
               <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${urgente ? "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"}`}>há {i.dias_decorridos} dia(s){i.dias_espera != null ? ` · espera de ${i.dias_espera}` : ""}</span>
               {i.acompanhamento_status === "cobrado" && <Badge tone="info">Cobrança registrada</Badge>}
             </div>
@@ -138,7 +140,7 @@ export function AcompanhamentosLista({ itens, superados = [], tipos, diasPadrao,
           {superados.map((i) => (
             <li key={chave(i)} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
-                <p className="text-sm font-medium text-zinc-800 dark:text-zinc-100">{i.cliente_nome || "Cliente não vinculado"} <span className="ml-1 text-xs font-normal text-zinc-500">· {tipos[i.tipo] ?? i.tipo} · <span className="font-mono">{i.processo}</span></span></p>
+                <p className="text-sm font-medium text-zinc-800 dark:text-zinc-100">{i.cliente_nome || "Cliente não vinculado"} <span className="ml-1 text-xs font-normal text-zinc-500">· {tipos[tipoVisual(i)] ?? i.tipo} · <span className="font-mono">{i.processo}</span></span></p>
                 <p className="mt-0.5 line-clamp-1 text-xs text-zinc-500" title={i.motivo}>Ordem de {dia(i.data_disponibilizacao)}: {i.motivo}</p>
                 <p className="mt-0.5 text-xs text-emerald-700 dark:text-emerald-300">{i.motivo_superada}</p>
               </div>

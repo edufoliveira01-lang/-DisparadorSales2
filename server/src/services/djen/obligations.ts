@@ -73,6 +73,14 @@ function identificarObrigacoesExternasSemCache(texto: string): ObrigacaoDetectad
   return [...saida.values()];
 }
 
+/** Do que trata a ordem, quando isso muda o que ela significa para o escritório (hoje: antecipação de honorários periciais). */
+export type AssuntoDaOrdem = "honorarios_periciais";
+export function assuntoDaOrdem(trecho: string): AssuntoDaOrdem | null {
+  return /\b(?:honorarios\s+(?:periciais|do\s+perito|do\s+expert)|antecipa\w*\s+(?:dos\s+|de\s+)?honorarios|deposit\w*\s+(?:dos\s+|de\s+)?honorarios)\b/.test(normalizar(trecho)) ? "honorarios_periciais" : null;
+}
+/** A perícia andou (laudo ou esclarecimentos do perito já apresentados): os honorários dela necessariamente já foram tratados. */
+export const periciaAndou = (texto: string) => laudoEfetivamenteJuntado(texto) || cumprimentoIdentificado("perito_esclarecimentos", texto);
+
 /** Fato posterior explícito; não encerra o alerta por mera publicação nova. */
 export function cumprimentoIdentificado(tipo: TipoObrigacao, texto: string, ordem = ""): boolean {
   if (tipo === "perito_laudo") return laudoEfetivamenteJuntado(texto);
@@ -88,6 +96,7 @@ export function cumprimentoIdentificado(tipo: TipoObrigacao, texto: string, orde
       terceiro_oficio: /\bjuntad[oa]s?\b.{0,40}\b(?:resposta|informacoes|oficio)\b|\b(?:resposta|informacoes|oficio respondido|documentos?)\b.{0,60}\b(?:juntad[oa]s?|apresentad[oa]s?|prestad[oa]s?|recebid[oa]s?)\b|\b(?:oficiad[oa]|empresa|cartorio|hospital|empregador)\b.{0,60}\b(?:respondeu|juntou|apresentou|prestou|encaminhou)\b/,
     };
     if (tipo === "parte_contraria") {
+      if (assuntoDaOrdem(ordem) === "honorarios_periciais" && (/\bhonorarios\b.{0,70}\b(?:depositados|pagos|recolhidos|antecipados|quitados)\b|\b(?:deposito|comprovante\b.{0,30}(?:deposito|pagamento))\b.{0,50}\bhonorarios\b/.test(s) || provas.perito_laudo.test(s) || provas.perito_esclarecimentos.test(s))) return true;
       if (/contrarrazo/.test(pedido) && /\bcontrarrazoes\b.{0,45}\b(?:apresentadas|juntadas)\b/.test(s)) return true;
       if (/\bmanifest\w*/.test(pedido) && /\b(?:(?:inss|parte re|reu|requerid[oa])\b.{0,60}\bse manifestou|manifestacao\b.{0,50}\b(?:do inss|da parte re|do reu)\b.{0,50}\b(?:juntada|apresentada))\b/.test(s)) return true;
       if (/\b(?:document|junt)\w*/.test(pedido) && /\b(?:(?:inss|parte re|reu|requerid[oa])\b.{0,60}\bjuntou\b.{0,40}\bdocumentos|documentos\b.{0,40}\bjuntados\b.{0,40}\b(?:pelo inss|pela parte re|pelo reu))\b/.test(s)) return true;

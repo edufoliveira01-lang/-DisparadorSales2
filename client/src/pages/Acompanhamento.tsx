@@ -272,6 +272,7 @@ interface PericiaSuperada {
   data_andamento: string | null;
 }
 export interface AguardandoRetorno {
+  assunto?: "honorarios_periciais" | null;
   captured_at?: string;
   historico_djen?: CoberturaHistorico;
   publicacao_id: number;
@@ -707,7 +708,8 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
   const filtrar = (key: string, value: string) =>
     setFiltro((f) => ({ ...f, [key]: value, pagina: 1 }));
   useEffect(() => setSelecionados([]), [filtro.categoria, filtro.resultado, filtro.advogado_id, filtro.situacao, filtro.arquivo, filtro.busca]);
-  const tiposAguardando: Record<AguardandoRetorno["tipo"], string> = {
+  const tiposAguardando: Record<AguardandoRetorno["tipo"] | "honorarios_periciais", string> = {
+    honorarios_periciais: "Honorários periciais (antecipação)",
     aguardo_juizo: "Aguardando juízo", perito_laudo: "Laudo pelo perito",
     perito_esclarecimentos: "Esclarecimentos do perito", perito_calculos: "Cálculos periciais",
     inss_implantacao: "Implantação pelo INSS", parte_contraria: "Manifestação da outra parte", terceiro_oficio: "Resposta de terceiro (ofício)",

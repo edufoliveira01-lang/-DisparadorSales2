@@ -105,3 +105,9 @@
 - **Uma linha por envio:** avatar, nome, estado (enviado, entregue, lido, respondido, erro), tipo (Lembrete, Reenvio, Remarcação), telefone, data e **a mensagem em uma linha** (ou o motivo do erro, em vermelho). Envios com falha ganham uma barra vermelha à esquerda.
 - **Detalhes** abre os dados do agendamento e a comunicação com o cliente (como antes); **Apagar** ficou no menu «⋯».
 - Busca (nome, telefone, processo, mensagem), ordenação, período e ações em lote continuam; nenhuma regra do servidor mudou.
+
+## Acompanhamentos: honorários periciais e perícia que já andou (3.21.1)
+- **Rótulo certo:** ordens sobre antecipação de honorários periciais deixam de aparecer como «Manifestação da outra parte» e ganham o painel/etiqueta **«Honorários periciais (antecipação)»** (campo `assunto` da ordem; o tipo interno continua `parte_contraria`, sem mudar o banco).
+- **Cumprimento por consequência:** se depois da ordem o perito apresentou laudo ou esclarecimentos (ou há comprovante de depósito/pagamento dos honorários), a ordem de honorários sai da lista (a perícia só anda com os honorários tratados).
+- **Perícia concluída supera a fase anterior:** ordens de manifestação/contestação/réplica anteriores ao laudo vão para «Provavelmente superados» (motivo: «A perícia já andou…»). Ordens que já são sobre o laudo, esclarecimentos, cálculos ou recurso não são superadas por isso.
+- **Limites da regra de tempo** mais curtos: ordem com **120+ dias** e publicações posteriores até **60+ dias** depois dela passam para «Provavelmente superados» (antes 180 e 90).
