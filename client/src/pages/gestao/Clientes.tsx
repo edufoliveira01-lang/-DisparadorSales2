@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Search, Users, FolderOpen, MessageCircle } from "lucide-react";
 import { AvatarPessoa, linkWhatsApp, useAtendimentoLiberado } from "./AvatarPessoa";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import { Modal } from "@/components/ui/Modal";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Badge } from "@/components/ui/Badge";
@@ -30,18 +32,25 @@ export function Clientes({ recarregar = 0 }: { recarregar?: number } = {}) {
   const [ativo, setAtivo] = useState("1");
   const [pagina, setPagina] = useState(0);
   const [filtro, setFiltro] = useState("");
+  const [revisando, setRevisando] = useState(false);
+  const [recarga, setRecarga] = useState(0);
   const [dados, setDados] = useState<Lista<Pessoa> | null>(null);
   const carregar = useCallback(async () => {
     try { setDados(await api.get<Lista<Pessoa>>(`/gestao/pessoas?limite=${TAM}&pagina=${pagina + 1}&busca=${encodeURIComponent(termo)}&tipo=${tipo}&ativo=${ativo}&filtro=${filtro}`)); }
     catch { show("Não foi possível carregar os cadastros.", "error"); }
-  }, [pagina, termo, tipo, ativo, filtro, recarregar, show]);
+  }, [pagina, termo, tipo, ativo, filtro, recarregar, recarga, show]);
   useEffect(() => { void carregar(); }, [carregar]);
   useEffect(() => { setPagina(0); }, [termo, tipo, ativo, filtro]);
   const lista = dados?.itens ?? [];
   const resumo = dados?.resumo;
+  const semCadastro = resumo?.contatos_sem_cadastro ?? 0;
   const paineis: [string, string, number | undefined][] = [["", "Todos", resumo?.total], ["com_processo", "Com processo", resumo?.com_processo], ["sem_processo", "Sem processo", resumo?.sem_processo], ["telefone_conferir", "Telefone a conferir", resumo?.telefone_conferir]];
   return (
     <div className="space-y-4">
+      {can("gestao.manage") && semCadastro > 0 && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm dark:border-amber-700 dark:bg-amber-950/30">
+        <p className="text-amber-950 dark:text-amber-100"><b>{semCadastro} contato(s) antigo(s)</b> ainda não são clientes. Eles continuam recebendo avisos; revise e escolha quais viram cadastro.</p>
+        <Button size="sm" onClick={() => setRevisando(true)}>Revisar e importar</Button>
+      </div>}
       {resumo && <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {paineis.map(([k, rotulo, n]) => (
           <button key={k || "todos"} type="button" onClick={() => setFiltro(filtro === k ? "" : k)} aria-pressed={filtro === k}
@@ -84,7 +93,41 @@ export function Clientes({ recarregar = 0 }: { recarregar?: number } = {}) {
               </li>);
           })}
         </ul>)}
+      {revisando && <RevisarContatos aoFechar={() => setRevisando(false)} aoImportar={() => { setRevisando(false); setRecarga((n) => n + 1); }} />}
       <Pagination page={pagina} totalItems={dados?.total ?? 0} pageSize={TAM} onPageChange={setPagina} />
     </div>
+  );
+}
+
+interface ContatoAntigo { id: number; nome: string; telefone: string; processo: string | null }
+/** Lista dos contatos antigos sem cadastro: a pessoa escolhe quais viram cliente (nada é criado sozinho). */
+function RevisarContatos({ aoFechar, aoImportar }: { aoFechar: () => void; aoImportar: () => void }) {
+  const { show } = useToast();
+  const [itens, setItens] = useState<ContatoAntigo[] | null>(null);
+  const [marcados, setMarcados] = useState<Set<number>>(new Set());
+  const [busca, setBusca] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  useEffect(() => { api.get<{ itens: ContatoAntigo[] }>("/gestao/pessoas/contatos-sem-cadastro", { fresh: true } as never).then((r) => setItens(r.itens)).catch(() => show("Não foi possível carregar os contatos.", "error")); }, [show]);
+  const visiveis = (itens ?? []).filter((c) => !busca.trim() || `${c.nome} ${c.telefone} ${c.processo ?? ""}`.toLowerCase().includes(busca.trim().toLowerCase()));
+  const alternar = (id: number) => setMarcados((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const todos = visiveis.length > 0 && visiveis.every((c) => marcados.has(c.id));
+  const importar = async () => {
+    setSalvando(true);
+    try { const r = await api.post<{ criados: number; ligados: number }>("/gestao/pessoas/contatos-sem-cadastro/importar", { ids: [...marcados] }); show(`${r.criados} cliente(s) criado(s)${r.ligados ? ` · ${r.ligados} ligado(s) a cadastro existente` : ""}.`, "success"); aoImportar(); }
+    catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível importar.", "error"); }
+    finally { setSalvando(false); }
+  };
+  return (
+    <Modal open onClose={aoFechar} title="Contatos antigos sem cadastro" description="Marque os que são clientes de verdade. Os outros continuam como estão e seguem recebendo avisos." maxWidth="max-w-2xl"
+      footer={<div className="flex w-full items-center justify-between gap-2"><span className="text-xs text-zinc-500">{marcados.size} marcado(s)</span><span className="flex gap-2"><Button variant="outline" onClick={aoFechar}>Fechar</Button><Button loading={salvando} disabled={marcados.size === 0} onClick={() => void importar()}>Criar {marcados.size || ""} cliente(s)</Button></span></div>}>
+      {itens === null ? <p className="text-sm text-zinc-500">Carregando…</p> : (
+        <div className="space-y-3">
+          <div className="flex items-center gap-3"><Input placeholder="Buscar nome, telefone ou processo…" value={busca} onChange={(e) => setBusca(e.target.value)} /><label className="flex shrink-0 cursor-pointer items-center gap-2 text-xs"><Checkbox checked={todos} onChange={() => setMarcados((s) => { const n = new Set(s); for (const c of visiveis) { if (todos) n.delete(c.id); else n.add(c.id); } return n; })} /> Marcar todos{busca ? " do filtro" : ""}</label></div>
+          <ul className="max-h-[50vh] divide-y divide-zinc-100 overflow-auto rounded-xl border border-zinc-200 dark:divide-white/10 dark:border-white/10">
+            {visiveis.map((c) => <li key={c.id}><label className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-zinc-50 dark:hover:bg-white/5"><Checkbox checked={marcados.has(c.id)} onChange={() => alternar(c.id)} /><span className="min-w-0 flex-1 truncate font-medium">{c.nome}</span><span className="shrink-0 text-xs text-zinc-500">{c.telefone}{c.processo ? ` · ${c.processo}` : ""}</span></label></li>)}
+            {visiveis.length === 0 && <li className="px-3 py-6 text-center text-sm text-zinc-500">Nenhum contato neste filtro.</li>}
+          </ul>
+        </div>)}
+    </Modal>
   );
 }

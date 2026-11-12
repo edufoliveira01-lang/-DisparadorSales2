@@ -265,7 +265,7 @@ export function GestaoInicio() {
       {gerir && r && r.contatos_sem_cadastro > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-white/10 dark:bg-white/5">
           <div><p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{r.contatos_sem_cadastro} contato(s) da agenda podem virar cadastro completo</p><p className="text-sm text-zinc-600 dark:text-zinc-400">Importe para ter ficha, processos e financeiro de cada um.</p></div>
-          <Button variant="outline" loading={ocupado === "contatos"} onClick={() => executar("contatos", "/gestao/pessoas/importar-contatos", (x) => `${x.criadas} cadastro(s) criado(s).`)}>Importar contatos</Button>
+          <Link to="/gestao/clientes"><Button variant="outline">Revisar em Clientes</Button></Link>
         </div>
       )}
       {nova && <TarefaModal responsaveis={resp} meuId={user.id} aoFechar={() => setNova(false)} aoSalvar={() => { setNova(false); void carregar(); }} />}

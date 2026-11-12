@@ -20,7 +20,7 @@ const formatarCnj = (n: string) => { const d = n.replace(/\D/g, ""); return d.le
 
 export interface ResultadoEspelho { adotados: number; pessoas_criadas: number; contatos_criados: number; atualizados: number; removidos: number }
 
-export function reconciliarContatos(): ResultadoEspelho {
+export function reconciliarContatos(opcoes: { criarClientes?: boolean; somenteIds?: Set<number> } = {}): ResultadoEspelho {
   const r: ResultadoEspelho = { adotados: 0, pessoas_criadas: 0, contatos_criados: 0, atualizados: 0, removidos: 0 };
   db.transaction(() => {
     // Cliente apagado: seus contatos espelhados saem junto (e não voltam a virar cliente).
@@ -33,8 +33,11 @@ export function reconciliarContatos(): ResultadoEspelho {
     const porNomeFone = new Map<string, number>(); for (const p of clientes) for (const k of chaveP(p)) if (!porNomeFone.has(k)) porNomeFone.set(k, p.id);
     for (const c of db.prepare("SELECT * FROM contacts WHERE pessoa_id IS NULL").all() as Linha[]) {
       if (c.nome.trim().length < 2) continue;
+      if (opcoes.somenteIds && !opcoes.somenteIds.has(c.id)) continue;
       const k = `${normalizeName(c.nome)}|${normalizePhone(c.telefone)}`;
       let pid = porNomeFone.get(k);
+      // Contato antigo SEM cliente correspondente só vira cliente se a pessoa pedir (Clientes → «Revisar e importar»): nada é criado sozinho.
+      if (!pid && !opcoes.criarClientes) continue;
       if (!pid) {
         const livre = !db.prepare("SELECT 1 FROM gestao_pessoas WHERE contact_id=?").get(c.id);
         const info = db.prepare("INSERT INTO gestao_pessoas(tipo,nome,telefone,observacoes,origem,contact_id) VALUES ('cliente',?,?,?,'Contatos do sistema',?)").run(c.nome.trim().slice(0, 200), c.telefone, c.observacoes || "", livre ? c.id : null);
@@ -109,4 +112,18 @@ export function importarArquivoComoClientes(content: string): { total: number; c
   })();
   reconciliarContatos();
   return { total: lidos.length, criados, ignorados };
+}
+
+/** Contatos antigos que ainda não têm cliente (para a pessoa revisar antes de importar). */
+export function contatosSemCadastro() {
+  return db.prepare("SELECT id,nome,telefone,processo FROM contacts WHERE pessoa_id IS NULL ORDER BY nome COLLATE NOCASE").all() as { id: number; nome: string; telefone: string; processo: string | null }[];
+}
+/** Cria clientes só dos contatos escolhidos (ou liga ao cliente igual, se existir). */
+export function importarContatosEscolhidos(ids: number[]): { criados: number; ligados: number } {
+  const alvo = new Set(ids.filter((n) => Number.isInteger(n)));
+  if (!alvo.size) return { criados: 0, ligados: 0 };
+  const antes = (db.prepare("SELECT COUNT(*) n FROM gestao_pessoas").get() as { n: number }).n;
+  const r = reconciliarContatos({ criarClientes: true, somenteIds: alvo });
+  const criados = (db.prepare("SELECT COUNT(*) n FROM gestao_pessoas").get() as { n: number }).n - antes;
+  return { criados, ligados: Math.max(0, r.adotados - criados) };
 }

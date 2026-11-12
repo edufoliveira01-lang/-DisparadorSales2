@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 process.env.ENCRYPTION_KEY = "chave-somente-para-testes-0123456789abcdef";
 
 import { db } from "../src/db";
-import { importarArquivoComoClientes, reconciliarContatos } from "../src/services/gestao/contatosEspelho";
+import { contatosSemCadastro, importarArquivoComoClientes, importarContatosEscolhidos, reconciliarContatos } from "../src/services/gestao/contatosEspelho";
 import { listarPessoas } from "../src/services/gestao/pessoas";
 import { createContact } from "../src/services/contactsService";
 
@@ -37,17 +37,26 @@ describe("Contatos espelhados dos clientes", () => {
     db.prepare("DELETE FROM gestao_partes WHERE processo_id=?").run(p1); reconciliarContatos();
     expect(contatos().map((c) => c.processo)).toEqual(["1004325-38.2023.8.26.0505"]);
   });
-  it("contato antigo é adotado pelo cliente de mesmo nome e telefone (sem duplicar) ou vira cliente novo", () => {
+  it("contato antigo só é ligado ao cliente de mesmo nome e telefone; os demais ficam à espera de revisão (nada vira cliente sozinho)", () => {
     const a = pessoa("Maria Souza", "(13) 99999-1111");
-    const antigo = createContact("MARIA SOUZA", "13999991111", "obs", "5022676-88.2025.4.03.6100");
+    createContact("MARIA SOUZA", "13999991111", "obs", "5022676-88.2025.4.03.6100");
     const solto = createContact("Carlos Dias", "11988887777");
     const r = reconciliarContatos();
-    expect(r).toMatchObject({ adotados: 2, pessoas_criadas: 1 });
+    expect(r).toMatchObject({ adotados: 1, pessoas_criadas: 0 });
     expect(contatos().find((c) => c.processo === "5022676-88.2025.4.03.6100")!.pessoa_id).toBe(a);
-    expect((db.prepare("SELECT COUNT(*) n FROM gestao_pessoas").get() as { n: number }).n).toBe(2);
-    expect(db.prepare("SELECT COUNT(*) n FROM contacts WHERE id=?").get(antigo.id)).toEqual({ n: 1 });
+    expect((db.prepare("SELECT COUNT(*) n FROM gestao_pessoas").get() as { n: number }).n).toBe(1);
+    expect(contatosSemCadastro().map((c) => c.nome)).toEqual(["Carlos Dias"]);
+    expect(contatos().find((c) => c.nome === "Carlos Dias")).toBeTruthy(); // continua valendo para os avisos
+    // Revisão: importa só o escolhido.
+    expect(importarContatosEscolhidos([solto.id])).toEqual({ criados: 1, ligados: 0 });
+    expect(contatosSemCadastro()).toHaveLength(0);
     expect((db.prepare("SELECT tipo FROM gestao_pessoas WHERE nome='Carlos Dias'").get() as { tipo: string }).tipo).toBe("cliente");
-    void solto;
+    expect(importarContatosEscolhidos([])).toEqual({ criados: 0, ligados: 0 });
+  });
+  it("na revisão, os contatos não escolhidos continuam sem cadastro", () => {
+    const x = createContact("Ana Lima", "13999990001"), y = createContact("Bia Lima", "13999990002");
+    importarContatosEscolhidos([x.id]);
+    expect(contatosSemCadastro().map((c) => c.id)).toEqual([y.id]);
   });
   it("cliente apagado leva seus contatos e eles não ressuscitam como cliente", () => {
     const a = pessoa("Maria Souza"); processo("50226768820254036100", a); reconciliarContatos();
@@ -68,7 +77,7 @@ describe("Contatos espelhados dos clientes", () => {
   it("lista de clientes: filtros e painéis (sem processo, com processo, telefone a conferir)", () => {
     const a = pessoa("Com Processo"); processo("50226768820254036100", a); pessoa("Sem Processo"); pessoa("Fone Ruim", "99");
     const todos = listarPessoas({ tipo: "cliente", ativo: "", limite: 50 });
-    expect(todos.resumo).toEqual({ total: 3, sem_processo: 2, com_processo: 1, telefone_conferir: 1 });
+    expect(todos.resumo).toMatchObject({ total: 3, sem_processo: 2, com_processo: 1, telefone_conferir: 1 });
     expect(listarPessoas({ tipo: "cliente", filtro: "sem_processo" }).itens.map((p) => p.nome).sort()).toEqual(["Fone Ruim", "Sem Processo"]);
     expect(listarPessoas({ tipo: "cliente", filtro: "telefone_conferir" }).itens.map((p) => p.nome)).toEqual(["Fone Ruim"]);
     expect(listarPessoas({ tipo: "cliente", filtro: "com_processo", busca: "Com" }).total).toBe(1);

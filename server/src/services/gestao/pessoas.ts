@@ -73,7 +73,7 @@ export function listarPessoas(f: { busca?: string; tipo?: string; ativo?: string
   const base = onde.slice(0, (f.tipo && TIPOS_PESSOA.includes(f.tipo as TipoPessoa) ? 1 : 0) + (f.ativo === "0" || f.ativo === "1" ? 1 : 0)), basePar = par.slice(0, base.length);
   const wb = base.length ? `WHERE ${base.join(" AND ")}` : "";
   const conta = (extra: string) => (db.prepare(`SELECT COUNT(*) n FROM gestao_pessoas p ${wb}${extra ? `${wb ? " AND" : "WHERE"} ${extra}` : ""}`).get(...basePar) as { n: number }).n;
-  const resumo = { total: conta(""), sem_processo: conta(SQL_SEM_PROCESSO), com_processo: conta(`NOT ${SQL_SEM_PROCESSO}`), telefone_conferir: conta(SQL_FONE_CONFERIR) };
+  const resumo = { contatos_sem_cadastro: (db.prepare("SELECT COUNT(*) n FROM contacts WHERE pessoa_id IS NULL").get() as { n: number }).n, total: conta(""), sem_processo: conta(SQL_SEM_PROCESSO), com_processo: conta(`NOT ${SQL_SEM_PROCESSO}`), telefone_conferir: conta(SQL_FONE_CONFERIR) };
   if (f.filtro === "sem_processo") onde.push(SQL_SEM_PROCESSO);
   else if (f.filtro === "com_processo") onde.push(`NOT ${SQL_SEM_PROCESSO}`);
   else if (f.filtro === "telefone_conferir") onde.push(SQL_FONE_CONFERIR);

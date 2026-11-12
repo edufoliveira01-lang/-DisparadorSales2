@@ -11,7 +11,7 @@ export const AREAS: Record<string, string> = { previdenciario: "Previdenciário"
 export const UFS = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SE", "SP", "TO"];
 
 export interface PessoaResumo { id: number; nome: string; tipo: string; documento_formatado: string; telefone: string; email: string }
-export interface Lista<T> { total: number; pagina: number; limite: number; itens: T[]; resumo?: { total: number; sem_processo: number; com_processo: number; telefone_conferir: number } }
+export interface Lista<T> { total: number; pagina: number; limite: number; itens: T[]; resumo?: { contatos_sem_cadastro?: number; total: number; sem_processo: number; com_processo: number; telefone_conferir: number } }
 
 export const campoClasse = "mt-1.5 w-full rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-sm text-zinc-900 outline-none focus:border-accent-500 focus:ring-2 focus:ring-accent-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100";
 

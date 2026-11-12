@@ -32,7 +32,7 @@ import { atendimentoDaInstancia } from "../atendimento/instancia";
 import { hojeSaoPaulo } from "../services/djen/cache";
 import { completarComDataJud, forcarConsulta, iniciarAcompanhamento, situacaoDoAcompanhamento } from "../services/djen/vigia";
 import { ErroDeskcomm, envioPeloDeskcommLigado, mascaraDeskcomm, salvarTokenDoDeskcomm, testarDeskcomm, tokenDoDeskcomm, urlDoDeskcomm } from "../services/gestao/deskcomm";
-import { agendarReconciliacao, importarArquivoComoClientes } from "../services/gestao/contatosEspelho";
+import { agendarReconciliacao, contatosSemCadastro, importarArquivoComoClientes, importarContatosEscolhidos } from "../services/gestao/contatosEspelho";
 import { boletoEmPdf } from "../services/gestao/boleto";
 import { avisosDaParcela, enviarAviso, enviarEmLote, historicoDeAvisos, lerRegua, pausarAvisos, pendentesDaRegua, pessoaPausada, salvarRegua } from "../services/gestao/regua";
 import { getSetting, setSetting } from "../services/settingsService";
@@ -81,6 +81,13 @@ gestaoRouter.get("/responsaveis", rota(() => db.prepare("SELECT id, COALESCE(NUL
 
 // ---------- pessoas ----------
 gestaoRouter.get("/pessoas", rota((req) => listarPessoas({ busca: String(req.query.busca ?? ""), tipo: String(req.query.tipo ?? ""), ativo: String(req.query.ativo ?? ""), filtro: String(req.query.filtro ?? ""), pagina: Number(req.query.pagina), limite: Number(req.query.limite) })));
+gestaoRouter.get("/pessoas/contatos-sem-cadastro", rota(() => ({ itens: contatosSemCadastro() })));
+gestaoRouter.post("/pessoas/contatos-sem-cadastro/importar", rota((req) => {
+  if (!hasPermission(usuario(req), "gestao.manage")) throw new ErroGestao("Sem permissão.", 403);
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number) : [];
+  if (!ids.length) throw new ErroGestao("Escolha ao menos um contato.", 400);
+  const r = importarContatosEscolhidos(ids); auditAccess("gestao_contatos_escolhidos_importados", usuario(req).id, null, r); return r;
+}));
 gestaoRouter.post("/pessoas/importar-arquivo", rota((req) => {
   if (!hasPermission(usuario(req), "gestao.manage")) throw new ErroGestao("Sem permissão.", 403);
   const content = typeof req.body?.content === "string" ? req.body.content : "";
