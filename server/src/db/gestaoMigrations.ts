@@ -197,4 +197,9 @@ export function runGestaoMigrations(db: Database.Database) {
   const colsCob = (db.prepare("PRAGMA table_info(gestao_asaas_cobrancas)").all() as { name: string }[]).map((c) => c.name);
   if (!colsCob.includes("taxa_prevista_centavos")) db.exec("ALTER TABLE gestao_asaas_cobrancas ADD COLUMN taxa_prevista_centavos INTEGER");
   if (!colsCob.includes("boleto_arquivo_id")) db.exec("ALTER TABLE gestao_asaas_cobrancas ADD COLUMN boleto_arquivo_id INTEGER");
+  // Contatos espelhados dos clientes (os avisos continuam lendo a tabela contacts; quem cadastra é o Cliente).
+  const colsContatos = (db.prepare("PRAGMA table_info(contacts)").all() as { name: string }[]).map((c) => c.name);
+  if (!colsContatos.includes("pessoa_id")) db.exec("ALTER TABLE contacts ADD COLUMN pessoa_id INTEGER");
+  if (!colsContatos.includes("origem")) db.exec("ALTER TABLE contacts ADD COLUMN origem TEXT NOT NULL DEFAULT 'manual'");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_contacts_pessoa ON contacts(pessoa_id)");
 }

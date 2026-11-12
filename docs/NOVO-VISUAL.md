@@ -77,3 +77,10 @@
 - A fileira de letras A–Z saiu; a busca (nome, telefone ou processo) e a ordenação (A–Z ou mais recentes) resolvem.
 - Cada contato virou uma linha limpa: avatar com iniciais, nome, telefone, processo e a observação em uma linha (antes ficava atrás de um botão «Observações»). **Abrir conversa** no atendimento (ícone verde), **Editar**, e **Apagar** dentro do menu «⋯».
 - A barra de ações em lote só aparece quando há contatos marcados. No celular a linha se adapta (ícones sem texto).
+
+## Clientes e Contatos unificados (3.18.0)
+- A tela **Contatos do WhatsApp** saiu do menu (o endereço antigo `/agenda` leva para Clientes). **Clientes e processos** é a única lista de pessoas.
+- Em Clientes: painéis **Todos / Com processo / Sem processo / Telefone a conferir** (clicáveis; contam dentro do tipo e da situação escolhidos), selo «conferir» na linha quando o telefone não tem DDD + 8/9 dígitos, e o botão **⋯** com **Importar contatos (CSV ou vCard)** e **Exportar contatos (CSV)**.
+- **Importar contatos** agora cria CLIENTES (sem duplicar o mesmo nome e telefone). O processo que vier no arquivo fica guardado para os avisos.
+- **Como os avisos continuam funcionando:** a tabela `contacts` (que os avisos de perícia, os lembretes e o casamento com o DJEN leem) virou um **espelho dos clientes**: cada cliente com telefone válido tem um contato por processo (ou um sem processo). O espelho se recalcula sozinho ao salvar cliente/processo, ao iniciar e a cada 10 minutos. Contatos antigos foram **adotados**: ligados ao cliente de mesmo nome e telefone, ou viraram cliente novo. Apagar um cliente apaga os contatos dele (o histórico de envios é preservado). Ninguém edita mais `contacts` à mão.
+- Banco: colunas `contacts.pessoa_id` e `contacts.origem` (`manual` ou `espelho`). Código: `services/gestao/contatosEspelho.ts`.

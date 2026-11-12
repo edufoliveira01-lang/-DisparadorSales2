@@ -4,7 +4,7 @@ export type AreaDeTrabalho = "pericias" | "processos" | "gestao";
 const ActiveServiceContext = createContext<AreaDeTrabalho>("pericias");
 export function ActiveServiceProvider({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
-  const shared = pathname === "/agenda" || pathname === "/configuracoes";
+  const shared = pathname === "/configuracoes";
   const salva = localStorage.getItem("sales.activeService");
   const active: AreaDeTrabalho = pathname.startsWith("/gestao")
     ? "gestao"

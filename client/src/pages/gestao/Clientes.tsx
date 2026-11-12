@@ -19,7 +19,7 @@ interface Pessoa { id: number; nome: string; tipo: string; documento_formatado: 
 const TAM = 20;
 
 /** Lista de pessoas com os processos de cada uma logo abaixo: uma busca só acha o cliente, o CPF ou o número do processo. */
-export function Clientes() {
+export function Clientes({ recarregar = 0 }: { recarregar?: number } = {}) {
   const { can } = useAuth();
   const { show } = useToast();
   const atendimento = useAtendimentoLiberado();
@@ -29,23 +29,34 @@ export function Clientes() {
   const [tipo, setTipo] = useState("cliente");
   const [ativo, setAtivo] = useState("1");
   const [pagina, setPagina] = useState(0);
+  const [filtro, setFiltro] = useState("");
   const [dados, setDados] = useState<Lista<Pessoa> | null>(null);
   const carregar = useCallback(async () => {
-    try { setDados(await api.get<Lista<Pessoa>>(`/gestao/pessoas?limite=${TAM}&pagina=${pagina + 1}&busca=${encodeURIComponent(termo)}&tipo=${tipo}&ativo=${ativo}`)); }
+    try { setDados(await api.get<Lista<Pessoa>>(`/gestao/pessoas?limite=${TAM}&pagina=${pagina + 1}&busca=${encodeURIComponent(termo)}&tipo=${tipo}&ativo=${ativo}&filtro=${filtro}`)); }
     catch { show("Não foi possível carregar os cadastros.", "error"); }
-  }, [pagina, termo, tipo, ativo, show]);
+  }, [pagina, termo, tipo, ativo, filtro, recarregar, show]);
   useEffect(() => { void carregar(); }, [carregar]);
-  useEffect(() => { setPagina(0); }, [termo, tipo, ativo]);
+  useEffect(() => { setPagina(0); }, [termo, tipo, ativo, filtro]);
   const lista = dados?.itens ?? [];
+  const resumo = dados?.resumo;
+  const paineis: [string, string, number | undefined][] = [["", "Todos", resumo?.total], ["com_processo", "Com processo", resumo?.com_processo], ["sem_processo", "Sem processo", resumo?.sem_processo], ["telefone_conferir", "Telefone a conferir", resumo?.telefone_conferir]];
   return (
     <div className="space-y-4">
+      {resumo && <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        {paineis.map(([k, rotulo, n]) => (
+          <button key={k || "todos"} type="button" onClick={() => setFiltro(filtro === k ? "" : k)} aria-pressed={filtro === k}
+            className={`rounded-2xl border p-4 text-left transition ${filtro === k ? "border-accent-500 bg-accent-50 dark:bg-accent-500/10" : "border-zinc-200 bg-white hover:border-accent-400 dark:border-zinc-800 dark:bg-zinc-900"} ${k === "telefone_conferir" && (n ?? 0) > 0 && filtro !== k ? "border-amber-300 dark:border-amber-700" : ""}`}>
+            <span className={`block text-2xl font-semibold leading-none ${k === "telefone_conferir" && (n ?? 0) > 0 ? "text-amber-700 dark:text-amber-300" : ""}`}>{n ?? 0}</span>
+            <span className="mt-1.5 block text-xs text-zinc-500">{rotulo}</span>
+          </button>))}
+      </div>}
       <div className="grid gap-3 sm:grid-cols-[1fr_190px_140px]">
         <div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" /><Input className="pl-9" placeholder="Buscar por nome, CPF/CNPJ, telefone ou número do processo…" value={busca} onChange={(e) => setBusca(e.target.value)} aria-label="Buscar clientes e processos" /></div>
         <Select value={tipo} onChange={(e) => setTipo(e.target.value)} aria-label="Tipo"><option value="cliente">Só clientes</option><option value="">Todos os tipos</option>{Object.entries(TIPOS).filter(([v]) => v !== "cliente").map(([v, r]) => <option key={v} value={v}>{r}</option>)}</Select>
         <Select value={ativo} onChange={(e) => setAtivo(e.target.value)} aria-label="Situação"><option value="1">Ativos</option><option value="0">Inativos</option><option value="">Todos</option></Select>
       </div>
       {dados && lista.length === 0 ? (
-        <EmptyState icon={Users} title="Nenhum cadastro encontrado" description={termo ? "Tente outro nome, CPF ou número de processo." : "Cadastre o primeiro cliente ou importe os contatos na tela inicial da Gestão."} action={can("gestao.manage") ? <Button onClick={() => navegar("/gestao/clientes/novo")}><Plus className="h-4 w-4" /> Novo cadastro</Button> : undefined} />
+        <EmptyState icon={Users} title="Nenhum cadastro encontrado" description={termo ? "Tente outro nome, CPF ou número de processo." : "Cadastre o primeiro cliente ou importe um arquivo de contatos pelo botão «⋯» no alto da página."} action={can("gestao.manage") ? <Button onClick={() => navegar("/gestao/clientes/novo")}><Plus className="h-4 w-4" /> Novo cadastro</Button> : undefined} />
       ) : (
         <ul className="space-y-2.5">
           {lista.map((p) => {
@@ -56,7 +67,7 @@ export function Clientes() {
                   <AvatarPessoa id={p.id} nome={p.nome} />
                   <Link to={`/gestao/clientes/${p.id}`} className="grid min-w-0 flex-1 gap-0.5 sm:grid-cols-[1.4fr_1fr_1fr] sm:items-center sm:gap-4">
                     <span className="min-w-0"><span className="block truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{p.nome}</span><span className="block truncate text-xs text-zinc-500">{p.documento_formatado || "Sem documento"}</span></span>
-                    <span className="truncate text-sm text-zinc-600 dark:text-zinc-300">{p.telefone || "—"}</span>
+                    <span className="flex min-w-0 items-center gap-2 text-sm text-zinc-600 dark:text-zinc-300"><span className="truncate">{p.telefone || "—"}</span>{(() => { let d = (p.telefone || "").replace(/\D/g, ""); if (d.startsWith("55") && d.length > 11) d = d.slice(2); return d.length !== 10 && d.length !== 11 ? <Badge tone="warning">conferir</Badge> : null; })()}</span>
                     <span className="hidden truncate text-sm text-zinc-500 sm:block">{p.email || "—"}</span>
                   </Link>
                   <span className="hidden items-center gap-1.5 md:flex"><Badge tone={p.tipo === "cliente" ? "accent" : "neutral"}>{TIPOS[p.tipo] || p.tipo}</Badge>{!p.ativo && <Badge tone="warning">Inativo</Badge>}</span>

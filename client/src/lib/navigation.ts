@@ -165,13 +165,6 @@ export const navigation = [
     group: "financeiro",
   },
   {
-    to: "/agenda",
-    label: "Contatos do WhatsApp",
-    description: "Telefones e contatos usados nos avisos",
-    icon: Users,
-    group: "clientes",
-  },
-  {
     to: "/logs",
     label: "Atividade do sistema",
     description: "Ocorrências e resultados das integrações",
@@ -222,7 +215,6 @@ export function navigationPermission(to: string): Permission | null {
   if (to.startsWith("/templates")) return "templates.view";
   if (to === "/pendentes") return "pending.view";
   if (to === "/historico") return "history.view";
-  if (to === "/agenda") return "contacts.view";
   if (to === "/gestao/financeiro") return "financeiro.view";
   if (to.startsWith("/gestao")) return "gestao.view";
   if (to === "/logs") return "activity.view";

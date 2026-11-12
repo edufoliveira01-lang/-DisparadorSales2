@@ -35,7 +35,7 @@ const GRUPOS = [
   { group: "financeiro", label: "Financeiro", icon: Wallet },
   { group: "configuracoes", label: "Configurações", icon: Settings },
 ] as const;
-const CURTOS: Record<string, string> = {"/pericias":"Perícias","/calendario":"Agenda","/pendentes":"Retornos","/historico":"Envios","/processos":"Publicações","/processos/quadro":"Quadro","/processos/aguardando":"Espera","/gestao":"Painel","/gestao/tarefas":"Tarefas","/gestao/clientes":"Clientes","/gestao/financeiro":"Caixa","/gestao/indicadores":"Metas","/agenda":"Contatos","/configuracoes":"Ajustes"};
+const CURTOS: Record<string, string> = {"/pericias":"Perícias","/calendario":"Agenda","/pendentes":"Retornos","/historico":"Envios","/processos":"Publicações","/processos/quadro":"Quadro","/processos/aguardando":"Espera","/gestao":"Painel","/gestao/tarefas":"Tarefas","/gestao/clientes":"Clientes","/gestao/financeiro":"Caixa","/gestao/indicadores":"Metas","/configuracoes":"Ajustes"};
 
 export function Sidebar({
   open,

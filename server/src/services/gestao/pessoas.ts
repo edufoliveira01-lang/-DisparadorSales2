@@ -50,7 +50,11 @@ const CAMPOS = ["tipo", "pessoa_juridica", "nome", "documento", "rg", "email", "
 
 const visao = (p: Pessoa) => ({ ...p, documento_formatado: formatarDocumento(p.documento), pis_formatado: formatarPis(p.pis), cep_formatado: formatarCep(p.cep), ativo: Boolean(p.ativo), pessoa_juridica: Boolean(p.pessoa_juridica) });
 
-export function listarPessoas(f: { busca?: string; tipo?: string; ativo?: string; pagina?: number; limite?: number }) {
+/** Telefone "a conferir": vazio ou sem DDD + 8/9 dígitos (o aviso não chega). Aproxima pelo tamanho em dígitos (10 a 13 com o 55). */
+const FONE_DIGITOS = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(p.telefone,' ',''),'-',''),'(',''),')',''),'+','')";
+const SQL_FONE_CONFERIR = `(LENGTH(${FONE_DIGITOS})<10 OR LENGTH(${FONE_DIGITOS})>13)`;
+const SQL_SEM_PROCESSO = "NOT EXISTS (SELECT 1 FROM gestao_partes g WHERE g.pessoa_id=p.id)";
+export function listarPessoas(f: { busca?: string; tipo?: string; ativo?: string; pagina?: number; limite?: number; filtro?: string }) {
   const onde: string[] = []; const par: unknown[] = [];
   if (f.tipo && TIPOS_PESSOA.includes(f.tipo as TipoPessoa)) { onde.push("p.tipo=?"); par.push(f.tipo); }
   if (f.ativo === "0" || f.ativo === "1") { onde.push("p.ativo=?"); par.push(Number(f.ativo)); }
@@ -65,6 +69,14 @@ export function listarPessoas(f: { busca?: string; tipo?: string; ativo?: string
   }
   const limite = Math.min(100, Math.max(1, Math.trunc(f.limite || 30)));
   const pagina = Math.max(1, Math.trunc(f.pagina || 1));
+  // Os painéis de cima contam dentro de tipo/situação, sem a busca e sem o filtro escolhido.
+  const base = onde.slice(0, (f.tipo && TIPOS_PESSOA.includes(f.tipo as TipoPessoa) ? 1 : 0) + (f.ativo === "0" || f.ativo === "1" ? 1 : 0)), basePar = par.slice(0, base.length);
+  const wb = base.length ? `WHERE ${base.join(" AND ")}` : "";
+  const conta = (extra: string) => (db.prepare(`SELECT COUNT(*) n FROM gestao_pessoas p ${wb}${extra ? `${wb ? " AND" : "WHERE"} ${extra}` : ""}`).get(...basePar) as { n: number }).n;
+  const resumo = { total: conta(""), sem_processo: conta(SQL_SEM_PROCESSO), com_processo: conta(`NOT ${SQL_SEM_PROCESSO}`), telefone_conferir: conta(SQL_FONE_CONFERIR) };
+  if (f.filtro === "sem_processo") onde.push(SQL_SEM_PROCESSO);
+  else if (f.filtro === "com_processo") onde.push(`NOT ${SQL_SEM_PROCESSO}`);
+  else if (f.filtro === "telefone_conferir") onde.push(SQL_FONE_CONFERIR);
   const w = onde.length ? `WHERE ${onde.join(" AND ")}` : "";
   const total = (db.prepare(`SELECT COUNT(*) n FROM gestao_pessoas p ${w}`).get(...par) as { n: number }).n;
   const linhas = db.prepare(`SELECT p.*, (SELECT COUNT(*) FROM gestao_partes g WHERE g.pessoa_id=p.id) AS processos FROM gestao_pessoas p ${w} ORDER BY p.nome COLLATE NOCASE LIMIT ? OFFSET ?`)
@@ -73,7 +85,7 @@ export function listarPessoas(f: { busca?: string; tipo?: string; ativo?: string
   const procs = ids.length ? (db.prepare(`SELECT g.pessoa_id,g.papel,pr.id,pr.pasta,pr.numero,pr.titulo,pr.status,pr.area FROM gestao_partes g JOIN gestao_processos pr ON pr.id=g.processo_id WHERE g.pessoa_id IN (${ids.map(() => "?").join(",")}) ORDER BY pr.atualizado_em DESC`).all(...ids) as { pessoa_id: number; papel: string; id: number; pasta: string; numero: string; titulo: string; status: string; area: string }[]) : [];
   const porPessoa = new Map<number, typeof procs>();
   for (const x of procs) (porPessoa.get(x.pessoa_id) || porPessoa.set(x.pessoa_id, []).get(x.pessoa_id)!).push(x);
-  return { total, pagina, limite, itens: linhas.map((l) => ({ ...visao(l), processos_lista: (porPessoa.get(l.id) || []).slice(0, 4) })) };
+  return { total, pagina, limite, resumo, itens: linhas.map((l) => ({ ...visao(l), processos_lista: (porPessoa.get(l.id) || []).slice(0, 4) })) };
 }
 
 export function obterPessoa(id: number) {

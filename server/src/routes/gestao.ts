@@ -32,6 +32,7 @@ import { atendimentoDaInstancia } from "../atendimento/instancia";
 import { hojeSaoPaulo } from "../services/djen/cache";
 import { completarComDataJud, forcarConsulta, iniciarAcompanhamento, situacaoDoAcompanhamento } from "../services/djen/vigia";
 import { ErroDeskcomm, envioPeloDeskcommLigado, mascaraDeskcomm, salvarTokenDoDeskcomm, testarDeskcomm, tokenDoDeskcomm, urlDoDeskcomm } from "../services/gestao/deskcomm";
+import { agendarReconciliacao, importarArquivoComoClientes } from "../services/gestao/contatosEspelho";
 import { boletoEmPdf } from "../services/gestao/boleto";
 import { avisosDaParcela, enviarAviso, enviarEmLote, historicoDeAvisos, lerRegua, pausarAvisos, pendentesDaRegua, pessoaPausada, salvarRegua } from "../services/gestao/regua";
 import { getSetting, setSetting } from "../services/settingsService";
@@ -48,6 +49,8 @@ const kickDoHistorico = () => { if (licencaPermiteOperar()) void processarHistor
 /** Processo novo com número CNJ entra sozinho no acompanhamento do DJEN. */
 const acompanharAgora = (chave: string, numero: string) => { try { if (iniciarAcompanhamento(chave, numero)) kickDoHistorico(); } catch (e) { console.error("[gestao] acompanhamento automático:", e instanceof Error ? e.message : e); } };
 export const gestaoRouter = Router();
+// Ao gravar clientes, processos ou partes, o espelho de contatos dos avisos é recalculado (em segundo plano).
+gestaoRouter.use((req, res, next) => { res.on("finish", () => { if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method) && res.statusCode < 400 && /^\/(pessoas|processos|partes)/.test(req.path)) agendarReconciliacao(); }); next(); });
 
 // Módulos contratados no plano (SaaS): sem o módulo, a área inteira responde 403.
 gestaoRouter.use((req, res, next) => {
@@ -77,7 +80,13 @@ gestaoRouter.get("/resumo", rota(() => resumoGestao()));
 gestaoRouter.get("/responsaveis", rota(() => db.prepare("SELECT id, COALESCE(NULLIF(display_name,''), username) AS nome FROM users WHERE active=1 ORDER BY nome COLLATE NOCASE").all()));
 
 // ---------- pessoas ----------
-gestaoRouter.get("/pessoas", rota((req) => listarPessoas({ busca: String(req.query.busca ?? ""), tipo: String(req.query.tipo ?? ""), ativo: String(req.query.ativo ?? ""), pagina: Number(req.query.pagina), limite: Number(req.query.limite) })));
+gestaoRouter.get("/pessoas", rota((req) => listarPessoas({ busca: String(req.query.busca ?? ""), tipo: String(req.query.tipo ?? ""), ativo: String(req.query.ativo ?? ""), filtro: String(req.query.filtro ?? ""), pagina: Number(req.query.pagina), limite: Number(req.query.limite) })));
+gestaoRouter.post("/pessoas/importar-arquivo", rota((req) => {
+  if (!hasPermission(usuario(req), "gestao.manage")) throw new ErroGestao("Sem permissão.", 403);
+  const content = typeof req.body?.content === "string" ? req.body.content : "";
+  let r; try { r = importarArquivoComoClientes(content); } catch { throw new ErroGestao("Não foi possível ler o arquivo, ou nenhum contato com nome e telefone foi encontrado. Use um CSV (Google/Android) ou vCard (.vcf).", 400); }
+  auditAccess("gestao_clientes_importados_arquivo", usuario(req).id, null, r); return r;
+}));
 gestaoRouter.post("/pessoas/importar-contatos", rota((req) => { const r = importarContatos(); auditAccess("gestao_contatos_importados", usuario(req).id, null, r); return r; }));
 gestaoRouter.post("/pessoas", rota((req, res) => { const p = criarPessoa(req.body || {}); res.status(201); auditAccess("gestao_pessoa_criada", usuario(req).id, null, { pessoa: p.id }); return p; }));
 gestaoRouter.get("/pessoas/:id", rota((req) => obterPessoa(id(req))));

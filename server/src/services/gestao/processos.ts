@@ -230,6 +230,6 @@ export function resumoGestao() {
     processos_total: n("SELECT COUNT(*) n FROM gestao_processos"),
     sem_responsavel: n("SELECT COUNT(*) n FROM gestao_processos WHERE status='ativo' AND responsavel_user_id IS NULL"),
     pendentes_importacao: pendentesDeImportacao(),
-    contatos_sem_cadastro: n("SELECT COUNT(*) n FROM contacts c WHERE NOT EXISTS (SELECT 1 FROM gestao_pessoas p WHERE p.contact_id=c.id)"),
+    contatos_sem_cadastro: n("SELECT COUNT(*) n FROM contacts c WHERE c.pessoa_id IS NULL"),
   };
 }

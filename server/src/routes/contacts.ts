@@ -1,9 +1,11 @@
 import { Router } from "express";
 import { createContact, deleteContact, deleteContacts, getContact, listContacts, updateContact } from "../services/contactsService";
 import { parseImportContent } from "../services/contactImportService";
+import { agendarReconciliacao } from "../services/gestao/contatosEspelho";
 import { matchContact } from "../services/matcherService";
 
 export const contactsRouter = Router();
+contactsRouter.use((req, res, next) => { res.on("finish", () => { if (req.method !== "GET" && res.statusCode < 400) agendarReconciliacao(); }); next(); });
 
 contactsRouter.get("/", (_req, res) => {
   res.json(listContacts());

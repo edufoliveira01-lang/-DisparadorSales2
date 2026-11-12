@@ -28,9 +28,6 @@ const QuadroProcessos = lazy(() =>
 const Dashboard = lazy(() =>
   import("@/pages/Dashboard").then((module) => ({ default: module.Dashboard })),
 );
-const Agenda = lazy(() =>
-  import("@/pages/Agenda").then((module) => ({ default: module.Agenda })),
-);
 const Calendario = lazy(() =>
   import("@/pages/Calendario").then((module) => ({
     default: module.Calendario,
@@ -77,7 +74,7 @@ const Account = lazy(() => import("@/pages/Account").then((module) => ({ default
 /** Módulos das páginas, pré-carregados quando o navegador está ocioso para a troca de página ser imediata. */
 const PAGINAS_PARA_PRECARREGAR = [
   () => import("@/pages/Acompanhamento"), () => import("@/pages/QuadroProcessos"), () => import("@/pages/Dashboard"),
-  () => import("@/pages/Agenda"), () => import("@/pages/Calendario"), () => import("@/pages/Historico"),
+  () => import("@/pages/Calendario"), () => import("@/pages/Historico"),
   () => import("@/pages/PendentesResposta"), () => import("@/pages/CalendariosPrazos"), () => import("@/pages/Templates"),
   () => import("@/pages/Logs"), () => import("@/pages/Configuracoes"),
 ];
@@ -169,7 +166,7 @@ function AuthenticatedApp() {
                 <Route path="/processos/*" element={<AccessRoute permission="processes.view"><Acompanhamento /></AccessRoute>} />
                 <Route path="/" element={<Navigate to={can("gestao.view") ? "/gestao" : firstAllowedPage(user.permissions)} replace />} />
                 <Route path="/pericias" element={can("dashboard.view") ? <Dashboard /> : <Navigate to={firstAllowedPage(user.permissions)} replace />} />
-                <Route path="/agenda" element={<AccessRoute permission="contacts.view"><Agenda /></AccessRoute>} />
+                <Route path="/agenda" element={<Navigate to="/gestao/clientes" replace />} />
                 <Route path="/calendario" element={<AccessRoute permission="calendar.view"><Calendario /></AccessRoute>} />
                 <Route path="/templates/*" element={<AccessRoute permission="templates.view"><Cfg><Templates /></Cfg></AccessRoute>} />
                 <Route path="/historico" element={<AccessRoute permission="history.view"><Historico /></AccessRoute>} />
