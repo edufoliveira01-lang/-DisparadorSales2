@@ -71,3 +71,11 @@ export function listSystemLogs(limit = 500): SystemLog[] {
     .prepare("SELECT * FROM system_logs ORDER BY created_at DESC, id DESC LIMIT ?")
     .all(limiteSeguro) as SystemLog[];
 }
+
+/** Apaga registros mais antigos que N dias (7 a 3650) ou todos ("todos"). Devolve quantos foram apagados. */
+export function apagarLogsAntigos(dias: unknown): number {
+  if (dias === "todos") return db.prepare("DELETE FROM system_logs").run().changes;
+  const n = Number(dias);
+  if (!Number.isInteger(n) || n < 7 || n > 3650) throw new Error("Informe um período de 7 a 3650 dias, ou «todos».");
+  return db.prepare("DELETE FROM system_logs WHERE created_at < datetime('now', '-' || ? || ' days')").run(n).changes;
+}

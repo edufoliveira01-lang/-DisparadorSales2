@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ImagePlus } from "lucide-react";
+import { Button } from "@/components/ui/Button";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 
@@ -55,13 +56,29 @@ export function LoginBrandingSettings() {
     finally { setUploading(false); }
   }
 
-  return <div className="mt-5 border-t border-zinc-200 pt-5 dark:border-zinc-800">
-    <div className="mb-4 flex items-center gap-2"><ImagePlus className="h-5 w-5 text-violet-600" /><div><h3 className="font-semibold">Imagem da tela de login</h3><p className="text-sm text-zinc-500">Personalize o painel esquerdo. PNG, JPG ou WebP, até 5 MB; imagens maiores serão otimizadas antes do envio.</p></div></div>
-    <div className="grid items-center gap-5 sm:grid-cols-2"><div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-violet-700 to-indigo-500">
-      {branding.imageUrl ? <img src={branding.imageUrl} alt="Imagem atual da tela de login" className="h-full w-full object-cover" /> : <span className="px-7 text-center text-xl font-semibold text-white">Seu espaço de trabalho, com a identidade da sua equipe.</span>}
-    </div><div className="space-y-3"><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setImage(event.target.files?.[0] || null)} aria-label="Escolher imagem para o login" className="block w-full text-sm" />
-      <button type="button" onClick={() => void upload()} disabled={!image || uploading} className="rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{uploading ? "Enviando…" : "Salvar imagem"}</button>
-      {branding.imageUrl && <button type="button" onClick={() => { void api.delete<{ imageUrl: null }>("/branding/image").then((result) => { setBranding(result); show("Imagem removida. O padrão será exibido no login.", "success"); }).catch(() => show("Não foi possível remover a imagem.", "error")); }} className="ml-2 rounded-xl border border-zinc-200 px-4 py-2.5 text-sm dark:border-zinc-700">Usar padrão</button>}
-    </div></div>
-  </div>;
+  const remover = () => { void api.delete<{ imageUrl: null }>("/branding/image").then((result) => { setBranding(result); show("Imagem removida. O padrão será exibido no login.", "success"); }).catch((e) => show(e instanceof Error ? e.message : "Não foi possível remover a imagem.", "error")); };
+  return (
+    <div className="space-y-4">
+      <div className="grid items-start gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-accent-600 to-accent-800">
+          {branding.imageUrl
+            ? <img src={branding.imageUrl} alt="Imagem atual da tela de login" className="h-full w-full object-cover" />
+            : <span className="flex flex-col items-center gap-2 px-7 text-center text-sm font-medium text-white/90"><ImagePlus className="h-6 w-6" />Imagem padrão do sistema</span>}
+        </div>
+        <div className="min-w-0 space-y-3">
+          <div>
+            <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Imagem do painel esquerdo</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">PNG, JPG ou WebP, até 5 MB. Imagens grandes são reduzidas automaticamente. No celular, a tela de login mostra só o formulário.</p>
+          </div>
+          <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setImage(event.target.files?.[0] || null)} aria-label="Escolher imagem para o login"
+            className="block w-full text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border file:border-zinc-200 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-zinc-700 hover:file:bg-zinc-50 dark:text-zinc-300 dark:file:border-zinc-700 dark:file:bg-zinc-900 dark:file:text-zinc-200" />
+          {image && <p className="truncate text-xs text-zinc-500">Selecionada: {image.name}</p>}
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => void upload()} disabled={!image} loading={uploading}>Salvar imagem</Button>
+            {branding.imageUrl && <Button variant="ghost" className="danger-action" onClick={remover}>Remover imagem</Button>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }

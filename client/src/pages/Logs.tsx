@@ -11,6 +11,7 @@ import {
   RefreshCw,
   ScrollText,
   Search,
+  Trash2,
   X,
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -24,6 +25,8 @@ import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import { MenuSuspenso } from "@/components/MenuSuspenso";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useAuth } from "@/context/AuthContext";
 import { DetalhesNotificacao, formatarDataHora, lerDetalhes, rotuloOrigem } from "@/components/logs/detalhes";
 import { cn } from "@/lib/utils";
 
@@ -84,6 +87,20 @@ export function Logs() {
   const [abertos, setAbertos] = useState<Set<number>>(new Set());
   const [pagina, setPagina] = useState(0);
 
+  const { can } = useAuth();
+  const [apagarDias, setApagarDias] = useState<string | null>(null);
+  const [apagando, setApagando] = useState(false);
+  async function confirmarApagar() {
+    if (!apagarDias) return;
+    setApagando(true);
+    try {
+      const r = await api.delete<{ apagados: number }>(`/system-logs?dias=${apagarDias}`);
+      show(`${r.apagados} registro(s) apagado(s).`, "success");
+      setApagarDias(null);
+      await carregar();
+    } catch (err) { show(err instanceof Error ? err.message : "Não foi possível apagar.", "error"); }
+    finally { setApagando(false); }
+  }
   const carregar = useCallback(async () => {
     setCarregando(true);
     setErro("");
@@ -155,7 +172,19 @@ export function Logs() {
       <PageHeader
         title="Atividade do sistema"
         description="Ocorrências e resultados das integrações, da mais recente para a mais antiga."
-        actions={<Button variant="outline" onClick={() => void carregar()} loading={carregando}><RefreshCw className="h-4 w-4" /> Atualizar</Button>}
+        actions={<div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => void carregar()} loading={carregando}><RefreshCw className="h-4 w-4" /> Atualizar</Button>
+          {can("integrations.manage") && (
+            <MenuSuspenso gatilho={({ aberto, alternar }) => <Button variant="outline" aria-haspopup="menu" aria-expanded={aberto} onClick={alternar}><Trash2 className="h-4 w-4" /> Limpar <ChevronDown className="h-4 w-4" /></Button>}>
+              {(fechar) => (<>
+                <p className="menu-pop-title">Apagar registros</p>
+                {([["30", "Com mais de 30 dias"], ["90", "Com mais de 90 dias"], ["todos", "Todos os registros"]] as const).map(([d, rot]) => (
+                  <button key={d} type="button" role="menuitem" className="menu-pop-item" onClick={() => { fechar(); setApagarDias(d); }}>{rot}</button>
+                ))}
+              </>)}
+            </MenuSuspenso>
+          )}
+        </div>}
       />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -262,6 +291,15 @@ export function Logs() {
           <p className="text-right text-xs text-zinc-500">{filtrados.length} de {logs.length} ocorrência(s)</p>
         </>
       )}
+      <ConfirmDialog
+        open={apagarDias !== null}
+        title="Apagar registros?"
+        message={apagarDias === "todos" ? "Todos os registros da atividade do sistema serão apagados. Isso não pode ser desfeito." : `Os registros com mais de ${apagarDias} dias serão apagados. Isso não pode ser desfeito.`}
+        confirmLabel="Apagar"
+        loading={apagando}
+        onConfirm={() => void confirmarApagar()}
+        onCancel={() => setApagarDias(null)}
+      />
     </div>
   );
 }

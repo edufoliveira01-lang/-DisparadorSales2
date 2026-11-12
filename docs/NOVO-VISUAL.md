@@ -177,3 +177,7 @@ Peças comuns em `components/ui/Settings.tsx` (cartão com situação, blocos, c
 ## Celular e conexão do WhatsApp (3.28.2)
 - **Celular:** a página Início e os Indicadores deixam de esticar para o lado; valores em reais longos (Financeiro) não são mais cortados nos painéis; abas de várias opções (Indicadores, Financeiro…) rolam para o lado sem quebrar o texto; itens de grade podem encolher no celular.
 - **WhatsApp «Outra instância já controla a sessão»:** o aviso podia ficar preso após reiniciar o servidor se o número do processo antigo fosse reaproveitado por outro programa. Agora o sistema confere se o processo dono do bloqueio ainda é um processo Node.
+
+## Login e Logs — itens que faltavam (3.28.3)
+- **Personalização do login** (Configurações → Aparência): saiu do visual roxo; prévia da imagem em azul, escolha de arquivo mais clara, mostra o arquivo selecionado, botões padrão.
+- **Atividade do sistema → «Limpar»:** apaga registros com mais de 30 dias, mais de 90 dias ou todos, com confirmação. Só para quem gerencia integrações; a ação fica na auditoria e deixa um registro («Registros antigos apagados»). Nova rota `DELETE /api/system-logs?dias=30|90|todos` (7 a 3650 dias), com teste.
