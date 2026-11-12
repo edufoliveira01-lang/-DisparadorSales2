@@ -31,7 +31,7 @@ import { agendaDaPessoa, andamentoDoProcesso } from "../services/gestao/integrac
 import { atendimentoDaInstancia } from "../atendimento/instancia";
 import { hojeSaoPaulo } from "../services/djen/cache";
 import { completarComDataJud, forcarConsulta, iniciarAcompanhamento, situacaoDoAcompanhamento } from "../services/djen/vigia";
-import { ErroDeskcomm, envioPeloDeskcommLigado, mascaraDeskcomm, salvarTokenDoDeskcomm, testarDeskcomm, tokenDoDeskcomm, urlDoDeskcomm } from "../services/gestao/deskcomm";
+import { ErroDeskcomm, canalEscolhido, listarCanaisDoDeskcomm, salvarCanaisDoDeskcomm, envioPeloDeskcommLigado, mascaraDeskcomm, salvarTokenDoDeskcomm, testarDeskcomm, tokenDoDeskcomm, urlDoDeskcomm } from "../services/gestao/deskcomm";
 import { agendarReconciliacao, contatosSemCadastro, importarArquivoComoClientes, importarContatosEscolhidos } from "../services/gestao/contatosEspelho";
 import { boletoEmPdf } from "../services/gestao/boleto";
 import { avisosDaParcela, enviarAviso, enviarEmLote, historicoDeAvisos, lerRegua, pausarAvisos, pendentesDaRegua, pessoaPausada, salvarRegua } from "../services/gestao/regua";
@@ -212,9 +212,10 @@ gestaoRouter.put("/financeiro/regua", rota((req) => { gerirFinanceiro(req); retu
 gestaoRouter.get("/pessoas/:id/cobranca-pausa", rota((req) => ({ pausado: pessoaPausada(id(req)) })));
 gestaoRouter.put("/pessoas/:id/cobranca-pausa", rota((req) => { gerirFinanceiro(req); pausarAvisos(id(req), Boolean(req.body?.pausado)); return { pausado: pessoaPausada(id(req)) }; }));
 const erroDesk = (e: unknown): never => { if (e instanceof ErroDeskcomm) throw new ErroGestao(e.message, e.status); throw e; };
-const configDesk = () => ({ configurado: Boolean(tokenDoDeskcomm()), final: mascaraDeskcomm(tokenDoDeskcomm()), atendimento_ligado: Boolean(urlDoDeskcomm()), pronto: envioPeloDeskcommLigado() });
+const configDesk = () => ({ configurado: Boolean(tokenDoDeskcomm()), final: mascaraDeskcomm(tokenDoDeskcomm()), atendimento_ligado: Boolean(urlDoDeskcomm()), pronto: envioPeloDeskcommLigado(), canal_padrao: canalEscolhido(), canal_cobranca: canalEscolhido("cobranca") === canalEscolhido() ? "" : canalEscolhido("cobranca") });
 gestaoRouter.get("/deskcomm/config", rota((req) => { gerirIntegracoes(req); return configDesk(); }));
-gestaoRouter.put("/deskcomm/config", rota((req) => { gerirIntegracoes(req); try { salvarTokenDoDeskcomm(req.body?.token); } catch (e) { erroDesk(e); } auditAccess("deskcomm_token_salvo", usuario(req).id, null, {}); return configDesk(); }));
+gestaoRouter.put("/deskcomm/config", rota((req) => { gerirIntegracoes(req); try { if (req.body?.token !== undefined) salvarTokenDoDeskcomm(req.body.token); salvarCanaisDoDeskcomm(req.body ?? {}); } catch (e) { erroDesk(e); } auditAccess("deskcomm_token_salvo", usuario(req).id, null, {}); return configDesk(); }));
+gestaoRouter.get("/deskcomm/canais", rota(async (req) => { gerirIntegracoes(req); try { return { canais: await listarCanaisDoDeskcomm(), padrao: canalEscolhido(), cobranca: canalEscolhido("cobranca") }; } catch (e) { return erroDesk(e); } }));
 gestaoRouter.post("/deskcomm/testar", rota(async (req) => { gerirIntegracoes(req); try { return await testarDeskcomm(); } catch (e) { return erroDesk(e); } }));
 gestaoRouter.post("/financeiro/lancamentos/:id/cobranca/consultar", rota(async (req) => { gerirFinanceiro(req); try { return { cobranca: await consultarCobranca(id(req)) }; } catch (e) { return erroAsaas(e); } }));
 gestaoRouter.post("/financeiro/lancamentos/:id/cobranca/cancelar", rota(async (req) => { gerirFinanceiro(req); try { await cancelarCobranca(id(req), quem(req)); return { cobranca: cobrancaDoLancamento(id(req)) }; } catch (e) { return erroAsaas(e); } }));

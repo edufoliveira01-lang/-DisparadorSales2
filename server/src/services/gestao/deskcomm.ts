@@ -20,6 +20,36 @@ export function salvarTokenDoDeskcomm(valor: unknown) {
   setSetting("deskcomm_api_token", v);
 }
 
+/** Número de WhatsApp conectado no Deskcomm (um escritório pode ter vários celulares). */
+export interface CanalDeskcomm { id: string; nome: string; telefone: string; status: string; pronto: boolean; pausado: boolean }
+export const FINALIDADES_DE_CANAL = ["cobranca"] as const;
+export type FinalidadeDeCanal = (typeof FINALIDADES_DE_CANAL)[number];
+const chaveDoCanal = (f?: FinalidadeDeCanal) => (f ? `deskcomm_canal_${f}` : "deskcomm_canal_padrao");
+
+/** Número escolhido para uma finalidade; sem escolha própria usa o padrão; sem padrão, o Deskcomm escolhe o primeiro pronto. */
+export function canalEscolhido(finalidade?: FinalidadeDeCanal): string {
+  return ((finalidade && getSetting(chaveDoCanal(finalidade))) || getSetting(chaveDoCanal()) || "").trim();
+}
+export function salvarCanaisDoDeskcomm(corpo: { canal_padrao?: unknown; canal_cobranca?: unknown }) {
+  const limpa = (v: unknown) => { const t = String(v ?? "").trim(); if (t && !/^[0-9a-f-]{36}$/i.test(t)) throw new ErroDeskcomm("Número de WhatsApp inválido.", 400); return t; };
+  if (corpo.canal_padrao !== undefined) setSetting(chaveDoCanal(), limpa(corpo.canal_padrao));
+  if (corpo.canal_cobranca !== undefined) setSetting(chaveDoCanal("cobranca"), limpa(corpo.canal_cobranca));
+}
+
+/** Lista os números conectados no Deskcomm para o escritório escolher por qual enviar. */
+export async function listarCanaisDoDeskcomm(http: Http = fetch): Promise<CanalDeskcomm[]> {
+  type Linha = { id: string; display_name?: string | null; phone_number?: string | null; status?: string | null; metadata?: { disabled?: boolean } | null };
+  const linhas = await chamar<Linha[]>("GET", "/api/v1/channel-sessions", undefined, http);
+  return (Array.isArray(linhas) ? linhas : []).map((c) => ({
+    id: c.id,
+    nome: c.display_name?.trim() || c.phone_number || "Número sem nome",
+    telefone: c.phone_number ?? "",
+    status: c.status ?? "",
+    pausado: c.metadata?.disabled === true,
+    pronto: c.status === "WORKING" && c.metadata?.disabled !== true,
+  }));
+}
+
 const chamarForm = <T>(caminho: string, form: FormData, http: Http) => chamar<T>("POST", caminho, undefined, http, {}, form);
 async function chamar<T>(metodo: string, caminho: string, corpo: unknown, http: Http, extra: Record<string, string> = {}, form?: FormData): Promise<T> {
   const base = urlDoDeskcomm(), token = tokenDoDeskcomm();
@@ -36,7 +66,7 @@ async function chamar<T>(metodo: string, caminho: string, corpo: unknown, http: 
     const det = typeof j.error === "string" ? j.error : j.error?.message ?? j.message ?? "";
     if (r.status === 401) throw new ErroDeskcomm("O Deskcomm recusou o token (inválido, revogado ou vencido). Gere outro em Deskcomm → Configurações → API e atualize aqui.", 409);
     if (r.status === 403) throw new ErroDeskcomm(`O token do Deskcomm não tem permissão para enviar mensagens${det ? ` (${det})` : ""}. Gere um com a permissão de escrita (mcp:write).`, 409);
-    if (r.status === 404) throw new ErroDeskcomm("O Deskcomm não tem um WhatsApp conectado pronto para enviar. Confira a conexão no Atendimento.", 409);
+    if (r.status === 404) throw new ErroDeskcomm(canalEscolhido() || canalEscolhido("cobranca") ? "O número de WhatsApp escolhido não está disponível no Deskcomm (desconectado ou removido). Reconecte-o no Atendimento ou escolha outro em Configurações → WhatsApp." : "O Deskcomm não tem um WhatsApp conectado pronto para enviar. Confira a conexão no Atendimento.", 409);
     if (r.status === 429) throw new ErroDeskcomm("O Deskcomm pediu para esperar (muitos envios seguidos). Tente em alguns minutos.", 429);
     throw new ErroDeskcomm(det || `O Deskcomm recusou o envio (HTTP ${r.status}).`, 502);
   }
@@ -44,11 +74,12 @@ async function chamar<T>(metodo: string, caminho: string, corpo: unknown, http: 
 }
 
 /** Abre (ou acha) a conversa do telefone e envia o texto pelo canal do atendimento. Devolve o id da mensagem. */
-export async function enviarPeloDeskcomm(telefone: string, nome: string, texto: string, http: Http = fetch, seguintes: string[] = [], anexos: { nome: string; conteudo: Buffer; mime: string }[] = []): Promise<{ conversation_id: string; message_id: string | null }> {
+export async function enviarPeloDeskcomm(telefone: string, nome: string, texto: string, http: Http = fetch, seguintes: string[] = [], anexos: { nome: string; conteudo: Buffer; mime: string }[] = [], finalidade?: FinalidadeDeCanal): Promise<{ conversation_id: string; message_id: string | null }> {
   const d = telefone.replace(/\D/g, "");
   if (d.length < 10) throw new ErroDeskcomm("Telefone inválido.", 422);
   const fone = `+${d.startsWith("55") ? d : `55${d}`}`;
-  const c = await chamar<{ conversation_id: string }>("POST", "/api/v1/conversations/open-with-contact", { phone_number: fone, name: nome.slice(0, 200) || undefined }, http);
+  const canal = canalEscolhido(finalidade);
+  const c = await chamar<{ conversation_id: string }>("POST", "/api/v1/conversations/open-with-contact", { phone_number: fone, name: nome.slice(0, 200) || undefined, ...(canal ? { channel_session_id: canal } : {}) }, http);
   if (!c?.conversation_id) throw new ErroDeskcomm("O Deskcomm não abriu a conversa deste telefone.", 502);
   const enviar = (corpo: string) => chamar<{ id?: string }>("POST", "/api/v1/messages", { conversation_id: c.conversation_id, type: "text", body: corpo.slice(0, 4096) }, http, { "Idempotency-Key": crypto.randomUUID() });
   const m = await enviar(texto);

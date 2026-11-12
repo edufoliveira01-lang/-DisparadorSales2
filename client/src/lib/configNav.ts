@@ -24,7 +24,7 @@ export const GRUPOS_CONFIG: GrupoConfig[] = [
   ] },
   { id: "comunicacao", titulo: "Comunicação com clientes", descricao: "WhatsApp, mensagens, avisos e o atendimento automático.", itens: [
     { to: "/configuracoes?secao=whatsapp", titulo: "WhatsApp", descricao: "Conexão, QR Code, motor e sessão usados nos avisos.", icon: MessageCircle, permissao: "integrations.manage" },
-    { to: "/configuracoes?secao=deskcomm-envio", titulo: "Envio pelo Deskcomm", descricao: "Token de API para as cobranças e avisos saírem pelas conversas do atendimento.", icon: MessageCircle, permissao: "integrations.manage" },
+    { to: "/configuracoes?secao=deskcomm-envio", titulo: "Envio pelo Deskcomm", descricao: "Token de API e escolha do número de WhatsApp (o mesmo do atendimento) para cobranças e avisos.", icon: MessageCircle, permissao: "integrations.manage" },
     { to: "/templates", titulo: "Modelos de mensagens", descricao: "Textos e prévias dos avisos enviados por WhatsApp.", icon: MessageSquareText },
     { to: "/configuracoes?secao=notificacoes", titulo: "Notificações", descricao: "Alertas por Telegram e WhatsApp, entrega e falta de resposta.", icon: Bell, permissao: "integrations.manage" },
     { to: "/configuracoes?secao=intervalo", titulo: "Intervalo entre envios", descricao: "Espera usada nos disparos individuais e em lote.", icon: Timer, permissao: "integrations.manage" },

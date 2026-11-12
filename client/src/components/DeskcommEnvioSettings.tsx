@@ -7,8 +7,10 @@ import { Button } from "@/components/ui/Button";
 import { Callout, SettingRow, SettingsBlock, SettingsFooter, SettingsPanel } from "@/components/ui/Settings";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 
-interface Estado { configurado: boolean; final: string; atendimento_ligado: boolean; pronto: boolean }
+interface Estado { configurado: boolean; final: string; atendimento_ligado: boolean; pronto: boolean; canal_padrao: string; canal_cobranca: string }
+interface Canal { id: string; nome: string; telefone: string; status: string; pronto: boolean; pausado: boolean }
 
 /** Envio de cobranças e avisos pelo Deskcomm: o token de API do atendimento, para a mensagem sair pela conversa do cliente. */
 export function DeskcommEnvioSettings() {
@@ -18,7 +20,17 @@ export function DeskcommEnvioSettings() {
   const [salvando, setSalvando] = useState(false);
   const [testando, setTestando] = useState(false);
   const [resultado, setResultado] = useState<{ ok: boolean; texto: string } | null>(null);
-  const carregar = useCallback(async () => { try { setE(await api.get<Estado>("/gestao/deskcomm/config", { fresh: true } as never)); } catch { show("Não foi possível carregar.", "error"); } }, [show]);
+  const [canais, setCanais] = useState<Canal[] | null>(null);
+  const [erroCanais, setErroCanais] = useState("");
+  const [padrao, setPadrao] = useState("");
+  const [cobranca, setCobranca] = useState("");
+  const [salvandoCanal, setSalvandoCanal] = useState(false);
+  const carregarCanais = useCallback(async () => {
+    setErroCanais("");
+    try { const r = await api.get<{ canais: Canal[] }>("/gestao/deskcomm/canais", { fresh: true } as never); setCanais(r.canais); }
+    catch (err) { setCanais(null); setErroCanais(err instanceof ApiError ? err.message : "Não foi possível listar os números."); }
+  }, []);
+  const carregar = useCallback(async () => { try { const r = await api.get<Estado>("/gestao/deskcomm/config", { fresh: true } as never); setE(r); setPadrao(r.canal_padrao); setCobranca(r.canal_cobranca); if (r.pronto) void carregarCanais(); } catch { show("Não foi possível carregar.", "error"); } }, [show, carregarCanais]);
   useEffect(() => { void carregar(); }, [carregar]);
   const salvar = async () => {
     setSalvando(true); setResultado(null);
@@ -32,6 +44,12 @@ export function DeskcommEnvioSettings() {
     catch (err) { setResultado({ ok: false, texto: err instanceof ApiError ? err.message : "Não foi possível testar." }); }
     finally { setTestando(false); }
   };
+  const salvarCanais = async () => {
+    setSalvandoCanal(true);
+    try { setE(await api.put<Estado>("/gestao/deskcomm/config", { canal_padrao: padrao, canal_cobranca: cobranca })); show("Número de envio salvo.", "success"); }
+    catch (err) { show(err instanceof ApiError ? err.message : "Não foi possível salvar.", "error"); }
+    finally { setSalvandoCanal(false); }
+  };
   if (!e) return <Skeleton className="h-64 w-full" />;
   const status = e.pronto ? <Badge tone="success">Ligado · token {e.final}</Badge> : !e.atendimento_ligado ? <Badge tone="warning">Atendimento não ligado</Badge> : <Badge tone="warning">Sem token</Badge>;
   return (
@@ -44,7 +62,7 @@ export function DeskcommEnvioSettings() {
       <SettingsBlock step={1} title="Gere o token no Deskcomm">
         <ol className="list-decimal space-y-1 pl-5 text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
           <li>No Deskcomm, abra <i>Configurações → Tokens de API</i> e crie um token novo.</li>
-          <li>Marque a permissão de <b>escrita</b> (<code>mcp:write</code>) e copie o token (começa com <code>dsk_</code>). Ele só aparece uma vez.</li>
+          <li>Marque as permissões de <b>leitura</b> (<code>mcp:read</code>) e de <b>escrita</b> (<code>mcp:write</code>) e copie o token (começa com <code>dsk_</code>). Ele só aparece uma vez.</li>
         </ol>
       </SettingsBlock>
       <SettingsBlock step={2} title="Cole o token aqui">
@@ -57,6 +75,41 @@ export function DeskcommEnvioSettings() {
           <Button variant="outline" loading={testando} onClick={() => void testar()} disabled={!e.configurado}>Testar envio</Button>
           <Button loading={salvando} onClick={() => void salvar()} disabled={!token.trim()}>Salvar token</Button>
         </SettingsFooter>
+      </SettingsBlock>
+      <SettingsBlock step={3} title="Escolha o número de WhatsApp" description="O Deskcomm pode ter mais de um celular conectado. A conexão (QR Code) é feita lá; aqui você só escolhe por qual número o Sales envia.">
+        {!e.pronto ? <Callout tone="info">Salve o token no passo 2 para ver os números conectados.</Callout>
+          : erroCanais ? <Callout tone="aviso">{erroCanais} Se o Deskcomm foi atualizado agora, gere um token com permissão de leitura (<code>mcp:read</code>) e salve de novo.</Callout>
+          : !canais ? <Skeleton className="h-24 w-full" />
+          : canais.length === 0 ? <Callout tone="aviso">Nenhum número conectado no Deskcomm. Conecte um em <i>Atendimento → Conexões</i>.</Callout>
+          : (
+            <>
+              <ul className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Número padrão">
+                {[{ id: "", nome: "Automático", telefone: "O Deskcomm usa o primeiro número conectado.", status: "", pronto: true, pausado: false } as Canal, ...canais].map((c) => (
+                  <li key={c.id || "auto"}>
+                    <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${padrao === c.id ? "border-accent-400 bg-accent-50/60 dark:border-accent-600 dark:bg-accent-950/30" : "border-zinc-200 hover:border-zinc-300 dark:border-zinc-800"}`}>
+                      <input type="radio" name="canal-padrao" className="mt-1 accent-[var(--accent-500,#2563eb)]" checked={padrao === c.id} onChange={() => setPadrao(c.id)} />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex flex-wrap items-center gap-2"><span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</span>
+                          {c.id && <Badge tone={c.pausado ? "neutral" : c.pronto ? "success" : "warning"}>{c.pausado ? "Pausado" : c.pronto ? "Conectado" : "Desconectado"}</Badge>}</span>
+                        <span className="block text-xs text-zinc-500 dark:text-zinc-400">{c.telefone}</span>
+                      </span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+              <SettingRow label="Cobranças e boletos" htmlFor="canal-cobranca" hint="Opcional: use outro número só para cobrar.">
+                <Select id="canal-cobranca" value={cobranca} onChange={(ev) => setCobranca(ev.target.value)}>
+                  <option value="">Mesmo número padrão</option>
+                  {canais.map((c) => <option key={c.id} value={c.id}>{c.nome}{c.pronto ? "" : " (desconectado)"}</option>)}
+                </Select>
+              </SettingRow>
+              {[padrao, cobranca].some((id) => id && canais.find((c) => c.id === id && !c.pronto)) && <Callout tone="aviso">O número escolhido está desconectado no Deskcomm. Enquanto isso, os envios falham com aviso (o sistema não troca de número sozinho, para o cliente não receber de um celular desconhecido).</Callout>}
+              <SettingsFooter left="Conversas que já existem continuam no número em que começaram.">
+                <Button variant="outline" onClick={() => void carregarCanais()}>Atualizar lista</Button>
+                <Button loading={salvandoCanal} onClick={() => void salvarCanais()}>Salvar número</Button>
+              </SettingsFooter>
+            </>
+          )}
       </SettingsBlock>
     </SettingsPanel>
   );

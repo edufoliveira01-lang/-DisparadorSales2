@@ -166,3 +166,29 @@ describe("Régua automática", () => {
     expect(c.antes_dias).toEqual([2, 3]); expect(c.horario).toBe("09:00"); expect(lerRegua().ativa).toBe(false);
   });
 });
+
+describe("número de WhatsApp escolhido (Deskcomm)", () => {
+  it("manda o número escolhido para a cobrança e usa o padrão quando não há escolha própria", async () => {
+    const { salvarCanaisDoDeskcomm, enviarPeloDeskcomm, listarCanaisDoDeskcomm } = await import("../src/services/gestao/deskcomm");
+    const A = "11111111-1111-4111-8111-111111111111", B = "22222222-2222-4222-8222-222222222222";
+    const chamadas: { url: string; corpo: unknown }[] = [];
+    const http = (async (url: string, init?: RequestInit) => {
+      chamadas.push({ url, corpo: init?.body ? JSON.parse(String(init.body)) : null });
+      if (url.endsWith("/channel-sessions")) return new Response(JSON.stringify({ data: [{ id: A, display_name: "Celular 1", phone_number: "+5511900000001", status: "WORKING", metadata: { disabled: false } }, { id: B, phone_number: "+5511900000002", status: "STOPPED", metadata: {} }] }));
+      if (url.endsWith("/open-with-contact")) return new Response(JSON.stringify({ data: { conversation_id: "c1" } }));
+      return new Response(JSON.stringify({ data: { id: "m1" } }));
+    }) as unknown as typeof fetch;
+    salvarCanaisDoDeskcomm({ canal_padrao: A, canal_cobranca: B });
+    const canais = await listarCanaisDoDeskcomm(http);
+    expect(canais.map((c) => [c.nome, c.pronto])).toEqual([["Celular 1", true], ["+5511900000002", false]]);
+    await enviarPeloDeskcomm("11999998888", "Fulano", "oi", http, [], [], "cobranca");
+    expect((chamadas.find((c) => c.url.endsWith("/open-with-contact"))!.corpo as { channel_session_id: string }).channel_session_id).toBe(B);
+    chamadas.length = 0;
+    await enviarPeloDeskcomm("11999998888", "Fulano", "oi", http);
+    expect((chamadas.find((c) => c.url.endsWith("/open-with-contact"))!.corpo as { channel_session_id: string }).channel_session_id).toBe(A);
+    salvarCanaisDoDeskcomm({ canal_padrao: "", canal_cobranca: "" });
+    chamadas.length = 0;
+    await enviarPeloDeskcomm("11999998888", "Fulano", "oi", http);
+    expect(chamadas.find((c) => c.url.endsWith("/open-with-contact"))!.corpo).not.toHaveProperty("channel_session_id");
+  });
+});

@@ -84,6 +84,9 @@ export function WhatsappSection() {
       status={<Badge tone={tone}>{whatsapp.carregado ? STATUS_LABEL[whatsapp.status] : "Verificando conexão"}</Badge>}
     >
       <SettingsBlock>
+        <Callout tone="info">
+          As <b>cobranças e boletos</b> já saem pelo WhatsApp do Deskcomm, no número que você escolher em <a className="font-medium underline" href="/configuracoes?secao=deskcomm-envio">Envio pelo Deskcomm</a>. Os avisos de perícia e audiência ainda usam esta conexão própria; eles serão migrados para o Deskcomm em seguida.
+        </Callout>
         {whatsapp.status === "conectado" && (
           <Callout tone="ok">
             <p className="font-medium">WhatsApp conectado. Os envios estão liberados.</p>

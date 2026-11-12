@@ -149,3 +149,9 @@ Peças comuns em `components/ui/Settings.tsx` (cartão com situação, blocos, c
 - **Cartões de imagem** (cabeçalho, rodapé, ícone, logotipo da ficha) no padrão novo, com selo «Enviada / Sem imagem».
 - **Modelos de mensagens:** «Descartar alterações?» e «Excluir modelo?» agora usam a janela do sistema (`useConfirmar`), no lugar da janela do navegador.
 - Removidos três arquivos de modelos que nenhuma tela usava.
+
+## WhatsApp único com o Deskcomm — fase 1 (3.26.0)
+- **Escolha do número:** em «Envio pelo Deskcomm» (passo 3) o Sales lista os celulares conectados no Deskcomm (nome, telefone, Conectado/Desconectado/Pausado). A conexão por QR Code continua só no Deskcomm; no Sales escolhe-se **qual número envia**: um **padrão** (ou «Automático», o primeiro conectado) e, opcionalmente, **outro número só para cobranças**.
+- Se o número escolhido estiver desconectado, o envio falha com aviso claro. **Não há troca silenciosa de número.** Conversas que já existem continuam no número em que começaram.
+- Exige o Deskcomm atualizado (listar números por token) e um token com **leitura (`mcp:read`) e escrita (`mcp:write`)**.
+- Próximas fases: (2) avisos de perícia/audiência, lembretes e DJEN passam a sair pelo Deskcomm; (3) respostas e confirmações de leitura chegam do Deskcomm ao Sales (Aguardando resposta e Histórico) e a conexão própria do Sales é desligada.

@@ -175,7 +175,7 @@ export async function enviarAviso(lancamentoId: number, opts: { regra?: string; 
   const { texto, partes } = aplicarLink(textoDoModelo(p, hoje), link ? { url: link.invoice_url || link.bank_slip_url, pix: link.pix_payload, linha: link.linha_digitavel } : null, cfg.formato, anexar);
   try {
     if (!envioPeloDeskcommLigado()) throw new ErroDeskcomm(SEM_CANAL, 409);
-    await enviarPeloDeskcomm(p.telefone, p.nome, texto, opts.http, partes, anexar && pdf ? [{ nome: pdf.nome, conteudo: pdf.conteudo, mime: "application/pdf" }] : []);
+    await enviarPeloDeskcomm(p.telefone, p.nome, texto, opts.http, partes, anexar && pdf ? [{ nome: pdf.nome, conteudo: pdf.conteudo, mime: "application/pdf" }] : [], "cobranca");
     registro("enviado", texto, null);
     registrar(lancamentoId, "aviso_cobranca", `Aviso de cobrança enviado pelo WhatsApp (${opts.origem === "automatico" ? "automático" : opts.origem === "lote" ? "em lote" : "manual"}).`, opts.quem);
     return { lancamento_id: lancamentoId, status: "enviado" };
