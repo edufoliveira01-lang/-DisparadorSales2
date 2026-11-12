@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 process.env.ENCRYPTION_KEY = "chave-somente-para-testes-0123456789abcdef";
 Object.assign(process.env, { ATENDIMENTO_PONTE_URL: "https://painel.exemplo/ponte", ATENDIMENTO_URL: "https://desk.exemplo", ATENDIMENTO_SLUG: "teste", ATENDIMENTO_SEGREDO: "x".repeat(40) });
@@ -33,6 +33,8 @@ beforeEach(() => {
   vi.stubGlobal("fetch", http);
   vi.mocked(moveCard).mockClear();
 });
+
+afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("canal de envio: WhatsApp do Deskcomm", () => {
   it("só liga o Deskcomm para tudo com o token salvo e começa no WhatsApp próprio", () => {
