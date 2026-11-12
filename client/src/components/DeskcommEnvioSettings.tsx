@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 
-interface Estado { configurado: boolean; final: string; atendimento_ligado: boolean; pronto: boolean; canal_padrao: string; canal_cobranca: string }
+interface Estado { configurado: boolean; final: string; atendimento_ligado: boolean; pronto: boolean; canal_padrao: string; canal_cobranca: string; canal_avisos: string; canal_djen: string; provedor: "proprio" | "deskcomm" }
 interface Canal { id: string; nome: string; telefone: string; status: string; pronto: boolean; pausado: boolean }
 
 /** Envio de cobranças e avisos pelo Deskcomm: o token de API do atendimento, para a mensagem sair pela conversa do cliente. */
@@ -24,13 +24,16 @@ export function DeskcommEnvioSettings() {
   const [erroCanais, setErroCanais] = useState("");
   const [padrao, setPadrao] = useState("");
   const [cobranca, setCobranca] = useState("");
+  const [avisos, setAvisos] = useState("");
+  const [djen, setDjen] = useState("");
+  const [trocandoProvedor, setTrocandoProvedor] = useState(false);
   const [salvandoCanal, setSalvandoCanal] = useState(false);
   const carregarCanais = useCallback(async () => {
     setErroCanais("");
     try { const r = await api.get<{ canais: Canal[] }>("/gestao/deskcomm/canais", { fresh: true } as never); setCanais(r.canais); }
     catch (err) { setCanais(null); setErroCanais(err instanceof ApiError ? err.message : "Não foi possível listar os números."); }
   }, []);
-  const carregar = useCallback(async () => { try { const r = await api.get<Estado>("/gestao/deskcomm/config", { fresh: true } as never); setE(r); setPadrao(r.canal_padrao); setCobranca(r.canal_cobranca); if (r.pronto) void carregarCanais(); } catch { show("Não foi possível carregar.", "error"); } }, [show, carregarCanais]);
+  const carregar = useCallback(async () => { try { const r = await api.get<Estado>("/gestao/deskcomm/config", { fresh: true } as never); setE(r); setPadrao(r.canal_padrao); setCobranca(r.canal_cobranca); setAvisos(r.canal_avisos); setDjen(r.canal_djen); if (r.pronto) void carregarCanais(); } catch { show("Não foi possível carregar.", "error"); } }, [show, carregarCanais]);
   useEffect(() => { void carregar(); }, [carregar]);
   const salvar = async () => {
     setSalvando(true); setResultado(null);
@@ -46,9 +49,15 @@ export function DeskcommEnvioSettings() {
   };
   const salvarCanais = async () => {
     setSalvandoCanal(true);
-    try { setE(await api.put<Estado>("/gestao/deskcomm/config", { canal_padrao: padrao, canal_cobranca: cobranca })); show("Número de envio salvo.", "success"); }
+    try { setE(await api.put<Estado>("/gestao/deskcomm/config", { canal_padrao: padrao, canal_cobranca: cobranca, canal_avisos: avisos, canal_djen: djen })); show("Número de envio salvo.", "success"); }
     catch (err) { show(err instanceof ApiError ? err.message : "Não foi possível salvar.", "error"); }
     finally { setSalvandoCanal(false); }
+  };
+  const trocarProvedor = async (p: "proprio" | "deskcomm") => {
+    setTrocandoProvedor(true);
+    try { setE(await api.put<Estado>("/gestao/deskcomm/config", { provedor: p })); show(p === "deskcomm" ? "Agora tudo sai pelo WhatsApp do Deskcomm." : "Voltou ao WhatsApp conectado neste sistema.", "success"); }
+    catch (err) { show(err instanceof ApiError ? err.message : "Não foi possível trocar.", "error"); }
+    finally { setTrocandoProvedor(false); }
   };
   if (!e) return <Skeleton className="h-64 w-full" />;
   const status = e.pronto ? <Badge tone="success">Ligado · token {e.final}</Badge> : !e.atendimento_ligado ? <Badge tone="warning">Atendimento não ligado</Badge> : <Badge tone="warning">Sem token</Badge>;
@@ -97,19 +106,31 @@ export function DeskcommEnvioSettings() {
                   </li>
                 ))}
               </ul>
-              <SettingRow label="Cobranças e boletos" htmlFor="canal-cobranca" hint="Opcional: use outro número só para cobrar.">
-                <Select id="canal-cobranca" value={cobranca} onChange={(ev) => setCobranca(ev.target.value)}>
-                  <option value="">Mesmo número padrão</option>
-                  {canais.map((c) => <option key={c.id} value={c.id}>{c.nome}{c.pronto ? "" : " (desconectado)"}</option>)}
-                </Select>
-              </SettingRow>
-              {[padrao, cobranca].some((id) => id && canais.find((c) => c.id === id && !c.pronto)) && <Callout tone="aviso">O número escolhido está desconectado no Deskcomm. Enquanto isso, os envios falham com aviso (o sistema não troca de número sozinho, para o cliente não receber de um celular desconhecido).</Callout>}
+              {([["Cobranças e boletos", "canal-cobranca", cobranca, setCobranca, "Opcional: use outro número só para cobrar."], ["Avisos de perícia, audiência e lembretes", "canal-avisos", avisos, setAvisos, "Opcional: número dos avisos aos clientes."], ["Andamentos do processo (DJEN)", "canal-djen", djen, setDjen, "Opcional: número das mensagens sobre processos."]] as const).map(([rot, idc, val, set, dica]) => (
+                <SettingRow key={idc} label={rot} htmlFor={idc} hint={dica}>
+                  <Select id={idc} value={val} onChange={(ev) => set(ev.target.value)}>
+                    <option value="">Mesmo número padrão</option>
+                    {canais.map((c) => <option key={c.id} value={c.id}>{c.nome}{c.pronto ? "" : " (desconectado)"}</option>)}
+                  </Select>
+                </SettingRow>
+              ))}
+              {[padrao, cobranca, avisos, djen].some((id) => id && canais.find((c) => c.id === id && !c.pronto)) && <Callout tone="aviso">O número escolhido está desconectado no Deskcomm. Enquanto isso, os envios falham com aviso (o sistema não troca de número sozinho, para o cliente não receber de um celular desconhecido).</Callout>}
               <SettingsFooter left="Conversas que já existem continuam no número em que começaram.">
                 <Button variant="outline" onClick={() => void carregarCanais()}>Atualizar lista</Button>
                 <Button loading={salvandoCanal} onClick={() => void salvarCanais()}>Salvar número</Button>
               </SettingsFooter>
             </>
           )}
+      </SettingsBlock>
+      <SettingsBlock step={4} title="Usar este WhatsApp para tudo" description="Passa os avisos de perícia e audiência, os lembretes, as mensagens do DJEN e as cobranças para o WhatsApp do Deskcomm. As respostas e as confirmações de leitura voltam para cá sozinhas (a conferência roda a cada minuto).">
+        {e.provedor === "deskcomm"
+          ? <Callout tone="ok">Ligado: nenhum envio usa mais a conexão (QR Code) deste sistema. Se algo der errado, dá para voltar abaixo.</Callout>
+          : <Callout tone="info">Hoje as cobranças saem pelo Deskcomm, mas os avisos de perícia, lembretes e DJEN ainda usam o WhatsApp conectado neste sistema.</Callout>}
+        <SettingsFooter left={e.provedor === "deskcomm" ? "A sessão do WhatsApp deste sistema fica guardada: ao voltar, basta clicar em Conectar em Configurações → WhatsApp." : "Escolha o número no passo 3 antes de ligar."}>
+          {e.provedor === "deskcomm"
+            ? <Button variant="outline" loading={trocandoProvedor} onClick={() => void trocarProvedor("proprio")}>Voltar ao WhatsApp deste sistema</Button>
+            : <Button loading={trocandoProvedor} disabled={!e.pronto} onClick={() => void trocarProvedor("deskcomm")}>Usar o WhatsApp do Deskcomm para tudo</Button>}
+        </SettingsFooter>
       </SettingsBlock>
     </SettingsPanel>
   );

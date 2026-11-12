@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, Loader2, QrCode, Square, Unplug, Wifi } from "lucide-react";
+import { CheckCircle2, Loader2, MessageCircle, QrCode, Square, Unplug, Wifi } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type { WhatsappState } from "@/lib/types";
 import { useWhatsapp } from "@/context/WhatsappContext";
@@ -76,6 +76,35 @@ export function WhatsappSection() {
   const emAndamento = whatsapp.conectando || ["inicializando", "aguardando_qr", "pareando", "autenticado"].includes(whatsapp.status);
   const sincronizando = whatsapp.status === "autenticado" || (whatsapp.status === "inicializando" && typeof whatsapp.syncProgress === "number");
 
+  if (whatsapp.provedor === "deskcomm") {
+    const numeros = whatsapp.numeros ?? [];
+    return (
+      <SettingsPanel
+        icon={<MessageCircle />}
+        title="WhatsApp pelo Deskcomm"
+        description="Todos os envios (avisos, lembretes, DJEN e cobranças) saem pelo WhatsApp do atendimento. A conexão por QR Code é feita lá."
+        status={<Badge tone={whatsapp.status === "conectado" ? "success" : "warning"}>{whatsapp.status === "conectado" ? "Conectado" : whatsapp.status === "falha" ? "Sem resposta do Deskcomm" : "Sem número conectado"}</Badge>}
+      >
+        <SettingsBlock>
+          {whatsapp.lastError && <Callout tone="aviso">{whatsapp.lastError}</Callout>}
+          {numeros.length > 0 && (
+            <ul className="divide-y divide-zinc-100 rounded-xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+              {numeros.map((n) => (
+                <li key={n.telefone + n.nome} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                  <span className="min-w-0"><span className="block truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">{n.nome}</span><span className="text-xs text-zinc-500">{n.telefone}</span></span>
+                  <Badge tone={n.pronto ? "success" : "neutral"}>{n.pronto ? "Conectado" : "Desconectado"}</Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+          <SettingsFooter left="Para conectar, trocar ou remover um celular, use Atendimento → Conexões no Deskcomm.">
+            <a href="/configuracoes?secao=deskcomm-envio"><Button variant="outline">Escolher números e finalidades</Button></a>
+          </SettingsFooter>
+        </SettingsBlock>
+      </SettingsPanel>
+    );
+  }
+
   return (
     <SettingsPanel
       icon={<Wifi />}
@@ -85,7 +114,7 @@ export function WhatsappSection() {
     >
       <SettingsBlock>
         <Callout tone="info">
-          As <b>cobranças e boletos</b> já saem pelo WhatsApp do Deskcomm, no número que você escolher em <a className="font-medium underline" href="/configuracoes?secao=deskcomm-envio">Envio pelo Deskcomm</a>. Os avisos de perícia e audiência ainda usam esta conexão própria; eles serão migrados para o Deskcomm em seguida.
+          Quer usar o <b>mesmo WhatsApp do atendimento (Deskcomm)</b> para tudo? Em <a className="font-medium underline" href="/configuracoes?secao=deskcomm-envio">Envio pelo Deskcomm</a> você escolhe o número e passa os avisos, lembretes, DJEN e cobranças para ele, sem precisar conectar um segundo celular aqui.
         </Callout>
         {whatsapp.status === "conectado" && (
           <Callout tone="ok">

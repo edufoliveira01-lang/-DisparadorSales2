@@ -22,7 +22,7 @@ export function salvarTokenDoDeskcomm(valor: unknown) {
 
 /** Número de WhatsApp conectado no Deskcomm (um escritório pode ter vários celulares). */
 export interface CanalDeskcomm { id: string; nome: string; telefone: string; status: string; pronto: boolean; pausado: boolean }
-export const FINALIDADES_DE_CANAL = ["cobranca"] as const;
+export const FINALIDADES_DE_CANAL = ["cobranca", "avisos", "djen"] as const;
 export type FinalidadeDeCanal = (typeof FINALIDADES_DE_CANAL)[number];
 const chaveDoCanal = (f?: FinalidadeDeCanal) => (f ? `deskcomm_canal_${f}` : "deskcomm_canal_padrao");
 
@@ -30,10 +30,12 @@ const chaveDoCanal = (f?: FinalidadeDeCanal) => (f ? `deskcomm_canal_${f}` : "de
 export function canalEscolhido(finalidade?: FinalidadeDeCanal): string {
   return ((finalidade && getSetting(chaveDoCanal(finalidade))) || getSetting(chaveDoCanal()) || "").trim();
 }
-export function salvarCanaisDoDeskcomm(corpo: { canal_padrao?: unknown; canal_cobranca?: unknown }) {
+export function salvarCanaisDoDeskcomm(corpo: { canal_padrao?: unknown; canal_cobranca?: unknown; canal_avisos?: unknown; canal_djen?: unknown }) {
   const limpa = (v: unknown) => { const t = String(v ?? "").trim(); if (t && !/^[0-9a-f-]{36}$/i.test(t)) throw new ErroDeskcomm("Número de WhatsApp inválido.", 400); return t; };
   if (corpo.canal_padrao !== undefined) setSetting(chaveDoCanal(), limpa(corpo.canal_padrao));
   if (corpo.canal_cobranca !== undefined) setSetting(chaveDoCanal("cobranca"), limpa(corpo.canal_cobranca));
+  if (corpo.canal_avisos !== undefined) setSetting(chaveDoCanal("avisos"), limpa(corpo.canal_avisos));
+  if (corpo.canal_djen !== undefined) setSetting(chaveDoCanal("djen"), limpa(corpo.canal_djen));
 }
 
 /** Lista os números conectados no Deskcomm para o escritório escolher por qual enviar. */
@@ -48,6 +50,14 @@ export async function listarCanaisDoDeskcomm(http: Http = fetch): Promise<CanalD
     pausado: c.metadata?.disabled === true,
     pronto: c.status === "WORKING" && c.metadata?.disabled !== true,
   }));
+}
+
+/** Mensagem de uma conversa do Deskcomm (só o que o Sales usa). */
+export interface MensagemDoDeskcomm { id: string; direction: "inbound" | "outbound" | string; type?: string | null; body?: string | null; status?: string | null; ack?: number | null; created_at: string; delivered_at?: string | null; read_at?: string | null }
+/** Últimas mensagens da conversa (para conferir resposta do cliente e entrega/leitura). */
+export async function mensagensDaConversa(conversaId: string, http: Http = fetch): Promise<MensagemDoDeskcomm[]> {
+  const r = await chamar<MensagemDoDeskcomm[]>("GET", `/api/v1/conversations/${encodeURIComponent(conversaId)}/messages?limit=50`, undefined, http);
+  return Array.isArray(r) ? r : [];
 }
 
 const chamarForm = <T>(caminho: string, form: FormData, http: Http) => chamar<T>("POST", caminho, undefined, http, {}, form);

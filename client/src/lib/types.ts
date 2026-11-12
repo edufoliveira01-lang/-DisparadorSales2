@@ -107,6 +107,9 @@ export interface WhatsappState {
   syncProgress?: number | null;
   sessionSaved?: boolean;
   faseInicializacao?: string | null;
+  /** "deskcomm": o envio usa o WhatsApp do Deskcomm (sem QR Code neste sistema). */
+  provedor?: "deskcomm";
+  numeros?: { nome: string; telefone: string; pronto: boolean }[];
 }
 
 export interface Settings {

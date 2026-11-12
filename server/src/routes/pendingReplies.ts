@@ -13,7 +13,7 @@ import {
   listPendingReplies,
   resolvePendingReply,
 } from "../services/pendingRepliesService";
-import { whatsappManager } from "../services/whatsappService";
+import { canalPronto, enviarTextoConfirmado, mensagemCanalIndisponivel, resolverDestino } from "../services/canalWhatsapp";
 import { emitEvent } from "../websocket";
 import { normalizePhone } from "../utils/phone";
 import { recordSystemLog } from "../services/systemLogsService";
@@ -76,7 +76,7 @@ pendingRepliesRouter.post("/:id/cobrar", async (req, res) => {
   const pending = getPendingReply(id);
   if (!pending) return res.status(404).json({ error: "Registro não encontrado." });
   if (pending.status !== "aguardando") return res.status(400).json({ error: "Este registro já foi resolvido." });
-  if (!whatsappManager.isReady()) return res.status(400).json({ error: "WhatsApp não está conectado." });
+  if (!canalPronto()) return res.status(400).json({ error: mensagemCanalIndisponivel() });
 
   // telefone_digits pode ser um LID, e não um telefone. Consultamos o número real
   // novamente, em vez de confiar em um identificador antigo da sessão anterior.
@@ -90,7 +90,7 @@ pendingRepliesRouter.post("/:id/cobrar", async (req, res) => {
   let chatId: string | null = null;
   let tentouEnviar = false;
   try {
-    chatId = await whatsappManager.resolveChatId(telefone);
+    chatId = await resolverDestino(telefone);
     if (!chatId) throw new Error("Este telefone não foi encontrado no WhatsApp.");
     // O cliente pode ter respondido enquanto o telefone era consultado.
     if (getPendingReply(id)?.status !== "aguardando") {
@@ -105,7 +105,7 @@ pendingRepliesRouter.post("/:id/cobrar", async (req, res) => {
     const texto = renderCobranca(mensagemConfigurada, pending.card_nome || "", pericia);
     if (!texto.trim()) throw new Error("A mensagem de cobrança está vazia. Revise o modelo nas configurações.");
     tentouEnviar = true;
-    const resultado = await whatsappManager.sendMessageConfirmed(chatId, texto);
+    const resultado = await enviarTextoConfirmado(chatId, texto, { nome: pending.card_nome, finalidade: "avisos" });
     recordSystemLog({
       nivel: "info", categoria: "whatsapp", evento: "cobranca_enviada",
       titulo: "Mensagem de cobrança enviada", origem: "usuario",

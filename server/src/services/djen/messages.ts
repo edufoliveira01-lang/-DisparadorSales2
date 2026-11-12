@@ -1,5 +1,5 @@
 import { db } from "../../db";
-import { whatsappManager } from "../whatsappService";
+import { canalPronto, enviarTextoConfirmado, resolverDestino } from "../canalWhatsapp";
 import { normalizePhone } from "../../utils/phone";
 import { DjenInputError, publicacaoPorId } from "./store";
 
@@ -63,7 +63,7 @@ export async function enviarMensagemDjen(
     throw new DjenInputError(
       "Já existe um envio processual para este telefone. Aguarde.",
     );
-  if (!whatsappManager.isReady())
+  if (!canalPronto())
     throw new DjenInputError(
       "Conecte o WhatsApp nas configurações compartilhadas antes de enviar.",
     );
@@ -77,13 +77,13 @@ export async function enviarMensagemDjen(
   envios.add(telefone);
   let iniciouEnvio = false;
   try {
-    const chatId = await whatsappManager.resolveChatId(telefone);
+    const chatId = await resolverDestino(telefone);
     if (!chatId)
       throw new DjenInputError(
         "O telefone do contato não foi encontrado no WhatsApp.",
       );
     iniciouEnvio = true;
-    const enviado = await whatsappManager.sendMessageConfirmed(chatId, texto);
+    const enviado = await enviarTextoConfirmado(chatId, texto, { nome: p.cliente_nome, finalidade: "djen" });
     db.prepare(
       "UPDATE djen_mensagens SET status='sucesso',whatsapp_message_id=?,ack=?,finished_at=CURRENT_TIMESTAMP WHERE id=?",
     ).run(enviado.messageId, enviado.ack, messageId);

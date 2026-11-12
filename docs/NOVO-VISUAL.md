@@ -155,3 +155,10 @@ Peças comuns em `components/ui/Settings.tsx` (cartão com situação, blocos, c
 - Se o número escolhido estiver desconectado, o envio falha com aviso claro. **Não há troca silenciosa de número.** Conversas que já existem continuam no número em que começaram.
 - Exige o Deskcomm atualizado (listar números por token) e um token com **leitura (`mcp:read`) e escrita (`mcp:write`)**.
 - Próximas fases: (2) avisos de perícia/audiência, lembretes e DJEN passam a sair pelo Deskcomm; (3) respostas e confirmações de leitura chegam do Deskcomm ao Sales (Aguardando resposta e Histórico) e a conexão própria do Sales é desligada.
+
+## WhatsApp único com o Deskcomm — fases 2 e 3 (3.27.0)
+- **Um interruptor:** em «Envio pelo Deskcomm» → passo 4, «Usar o WhatsApp do Deskcomm para tudo». Ligado, **avisos de perícia/audiência, lembretes, reenvios, mensagens do DJEN, cobranças e «cobrar resposta»** saem todos pelo WhatsApp do Deskcomm, no número escolhido (padrão, ou um número por finalidade: cobranças, avisos, DJEN).
+- **Respostas e leitura voltam sozinhas:** a cada minuto o Sales confere as conversas das mensagens que enviou e atualiza ✓✓ entregue / lido e a **resposta do cliente** (resolve «Aguardando resposta» e move o cartão do Trello, como antes). Exige o Deskcomm atualizado (histórico de mensagens por token) e o token com `mcp:read` + `mcp:write`.
+- **Barra do topo e tela de WhatsApp** passam a mostrar a situação dos números do Deskcomm; a tela de WhatsApp lista os números e leva para as escolhas (a conexão por QR Code fica só no Deskcomm).
+- **Reversível:** o botão «Voltar ao WhatsApp deste sistema» desfaz. Com o Deskcomm ligado, o servidor **não restaura** a conexão própria ao iniciar.
+- Limites conhecidos: o telefone não é validado antes (o Deskcomm abre a conversa pelo número); com o WhatsApp do Deskcomm, ✓✓ e respostas dependem da conferência por minuto, não de evento instantâneo; reações (emoji) não resolvem a espera.

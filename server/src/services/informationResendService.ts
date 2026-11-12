@@ -2,7 +2,7 @@ import { normalizePhone } from "../utils/phone";
 import { emitEvent } from "../websocket";
 import { createLog, type SendLog } from "./logsService";
 import { recordSystemLog } from "./systemLogsService";
-import { whatsappManager } from "./whatsappService";
+import { canalPronto, enviarTextoConfirmado, mensagemCanalIndisponivel, resolverDestino } from "./canalWhatsapp";
 
 const SEPARADOR_MENSAGENS = "\n\n---\n\n";
 
@@ -13,7 +13,7 @@ const SEPARADOR_MENSAGENS = "\n\n---\n\n";
 export async function resendStoredInformation(original: SendLog): Promise<SendLog> {
   if (!original.telefone) throw new Error("Este registro não tem telefone associado.");
   if (!original.mensagem_enviada?.trim()) throw new Error("Este registro não possui uma mensagem para reenviar.");
-  if (!whatsappManager.isReady()) throw new Error("WhatsApp não está conectado.");
+  if (!canalPronto()) throw new Error(mensagemCanalIndisponivel());
 
   const telefone = normalizePhone(original.telefone);
   if (!/^\d{10,15}$/.test(telefone)) throw new Error("Este registro não possui um telefone válido para o reenvio.");
@@ -27,11 +27,11 @@ export async function resendStoredInformation(original: SendLog): Promise<SendLo
   let ultimoAck = 1;
 
   try {
-    chatId = await whatsappManager.resolveChatId(telefone);
+    chatId = await resolverDestino(telefone);
     if (!chatId) throw new Error("Este telefone não foi encontrado no WhatsApp.");
 
     for (const mensagem of mensagens) {
-      const resultado = await whatsappManager.sendMessageConfirmed(chatId, mensagem);
+      const resultado = await enviarTextoConfirmado(chatId, mensagem, { nome: original.card_nome, finalidade: "avisos" });
       ultimoMessageId = resultado.messageId;
       ultimoAck = resultado.ack;
       enviadas++;

@@ -42,6 +42,8 @@ import { iniciarAcompanhamentoDeContratos, pararAcompanhamentoDeContratos } from
 import { initWebsocket } from "./websocket";
 import { notifyDashboardChanges } from "./websocket/dashboardChanges";
 import { whatsappManager } from "./services/whatsappService";
+import { usaDeskcomm } from "./services/canalWhatsapp";
+import { iniciarSincronizacaoDoDeskcomm } from "./services/deskcommSync";
 import { verificarNotificacoesPendentes } from "./services/notificationService";
 import { podarPericiasAgendadasAntigas, reconciliarRemarcacoesAntigas } from "./services/periciasAgendadasService";
 import { recordSystemLog } from "./services/systemLogsService";
@@ -131,7 +133,8 @@ httpServer.listen(port, () => {
   }
   iniciarMonitorDjen();
   try { iniciarFilaDoArmazenamento(); iniciarAcompanhamentoDeContratos(); } catch (error) { console.error("[Armazenamento]", (error as Error).message); }
-  if (whatsappManager.restoreSavedSession()) {
+  iniciarSincronizacaoDoDeskcomm();
+  if (!usaDeskcomm() && whatsappManager.restoreSavedSession()) {
     console.log("[WhatsApp] Restaurando sessão salva automaticamente...");
   }
 });

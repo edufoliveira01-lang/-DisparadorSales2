@@ -186,6 +186,15 @@ export function runGestaoMigrations(db: Database.Database) {
       id TEXT PRIMARY KEY, data TEXT NOT NULL, tipo TEXT NOT NULL, descricao TEXT NOT NULL DEFAULT '', valor_centavos INTEGER NOT NULL, payment_id TEXT NOT NULL DEFAULT ''
     );
     CREATE INDEX IF NOT EXISTS idx_asaas_extrato_data ON gestao_asaas_extrato(data);
+    -- Mensagens enviadas pelo Deskcomm: guarda a conversa para conferir depois resposta e leitura (✓✓) do cliente
+    CREATE TABLE IF NOT EXISTS deskcomm_mensagens (
+      message_id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      telefone_digits TEXT NOT NULL,
+      ack INTEGER NOT NULL DEFAULT 1,
+      criada_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_deskcomm_mensagens_conversa ON deskcomm_mensagens(conversation_id);
     CREATE TABLE IF NOT EXISTS gestao_avisos_cobranca (
       id INTEGER PRIMARY KEY AUTOINCREMENT, lancamento_id INTEGER NOT NULL, regra TEXT NOT NULL, origem TEXT NOT NULL DEFAULT 'automatico',
       status TEXT NOT NULL, tentativas INTEGER NOT NULL DEFAULT 0, erro TEXT, mensagem TEXT NOT NULL DEFAULT '', telefone TEXT NOT NULL DEFAULT '',

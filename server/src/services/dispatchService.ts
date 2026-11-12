@@ -4,7 +4,7 @@ import { sortPericiasByDate, type Pericia } from "./parserService";
 import { composeDispatch, type ModoEnvio } from "./messageComposer";
 export type { ModoEnvio } from "./messageComposer";
 import { createLog, type SendLog } from "./logsService";
-import { whatsappManager } from "./whatsappService";
+import { canalPronto, enviarTexto, mensagemCanalIndisponivel, resolverDestino } from "./canalWhatsapp";
 import { getSetting } from "./settingsService";
 import { moveCard } from "./trelloService";
 import { createPendingReply, linkPendingReplyToSendLog, type PendingReply } from "./pendingRepliesService";
@@ -33,9 +33,9 @@ export async function dispatchSingle(item: SendItem, templateId: number | null):
   try {
     const composicao = composeDispatch(item, templateId);
     remarcacoesJson = composicao.remarcacoes.length ? JSON.stringify(composicao.remarcacoes) : null;
-    if (!whatsappManager.isReady()) throw new Error("WhatsApp não está conectado.");
+    if (!canalPronto()) throw new Error(mensagemCanalIndisponivel());
 
-    const chatId = await whatsappManager.resolveChatId(onlyDigits(item.telefone));
+    const chatId = await resolverDestino(onlyDigits(item.telefone));
     if (!chatId) throw new Error("Este telefone não foi encontrado no WhatsApp.");
 
     const sortedPericias = sortPericiasByDate(item.pericias);
@@ -47,7 +47,7 @@ export async function dispatchSingle(item: SendItem, templateId: number | null):
     // Guarda o id da última mensagem enviada para rastrear entrega/leitura (✓✓) no Histórico.
     let ultimoMessageId: string | null = null;
     for (const mensagem of mensagens) {
-      ultimoMessageId = await whatsappManager.sendMessage(chatId, mensagem);
+      ultimoMessageId = await enviarTexto(chatId, mensagem, { nome: item.nomeCliente, finalidade: "avisos" });
     }
 
     // Movimentação automática no Trello se configurada
@@ -143,10 +143,10 @@ const INTERVALO_VERIFICACAO_RECONEXAO_MS = 5000;
 async function aguardarReconexao(timeoutMs: number): Promise<boolean> {
   const inicio = Date.now();
   while (Date.now() - inicio < timeoutMs) {
-    if (whatsappManager.isReady()) return true;
+    if (canalPronto()) return true;
     await new Promise((resolve) => setTimeout(resolve, INTERVALO_VERIFICACAO_RECONEXAO_MS));
   }
-  return whatsappManager.isReady();
+  return canalPronto();
 }
 
 export async function dispatchBatch(
@@ -162,7 +162,7 @@ export async function dispatchBatch(
 
   try {
     for (let i = 0; i < items.length; i++) {
-      if (!whatsappManager.isReady()) {
+      if (!canalPronto()) {
         updateBatch(loteId, { aguardandoReconexao: true });
         emitEvent("send:batch-waiting-reconnect", {
           reason: "O WhatsApp desconectou durante o envio em lote. Aguardando reconexão para continuar automaticamente...",

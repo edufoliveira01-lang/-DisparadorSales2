@@ -1,13 +1,15 @@
 import { Router } from "express";
 import { whatsappManager, motorWhatsappAtual } from "../services/whatsappService";
+import { estadoDoCanalDeskcomm } from "../services/canalWhatsapp";
+import { usaDeskcomm } from "../services/canalProvedor";
 import { WhatsappSessionRecoveryError } from "../services/whatsappProfile";
 import { getUserById, getSession } from "../services/authService";
 import { hasPermission } from "../services/accessService";
 
 export const whatsappRouter = Router();
 
-whatsappRouter.get("/status", (req, res) => {
-  const state = whatsappManager.getState();
+whatsappRouter.get("/status", async (req, res) => {
+  const state = usaDeskcomm() ? await estadoDoCanalDeskcomm() : whatsappManager.getState();
   res.json(req.accessUser && hasPermission(req.accessUser, "whatsapp.manage") ? state : { status: state.status });
 });
 
@@ -82,13 +84,14 @@ whatsappRouter.get("/events", (req, res) => {
   const send = () => {
     if (closed) return;
     if (!valid()) { close(); return; }
+    if (usaDeskcomm()) { void estadoDoCanalDeskcomm().then((e) => { if (!closed) res.write(`data: ${JSON.stringify(e)}\n\n`); }); return; }
     res.write(`data: ${JSON.stringify(whatsappManager.getState())}\n\n`);
   };
   send();
   if (closed) return;
   unsubscribe = whatsappManager.onChange(send);
   // Comentários SSE mantêm o fluxo ativo mesmo quando o estado não muda por minutos.
-  heartbeat = setInterval(() => { if (!valid()) close(); else res.write(": keep-alive\n\n"); }, 15000);
+  heartbeat = setInterval(() => { if (!valid()) close(); else if (usaDeskcomm()) send(); else res.write(": keep-alive\n\n"); }, 15000);
   heartbeat.unref();
 
   req.on("close", close);

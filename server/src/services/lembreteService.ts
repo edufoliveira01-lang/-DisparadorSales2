@@ -28,7 +28,7 @@ import {
   LEMBRETE_HOJE_MENSAGEM_PADRAO,
   renderLembrete,
 } from "./templateService";
-import { whatsappManager } from "./whatsappService";
+import { canalPronto, enviarTexto, mensagemCanalIndisponivel, resolverDestino } from "./canalWhatsapp";
 import { normalizePhone } from "../utils/phone";
 import { normalizeProcesso } from "../utils/processo";
 
@@ -215,12 +215,12 @@ async function enviarGrupoLembrete(
   const contatoAgenda = contatoSeguroDaAgenda(principal, contatosAgenda);
 
   try {
-    if (!whatsappManager.isReady()) throw new Error("WhatsApp não está conectado.");
+    if (!canalPronto()) throw new Error(mensagemCanalIndisponivel());
     if (!principal.telefone_digits) throw new Error("Este compromisso não possui telefone válido.");
-    const chatId = await whatsappManager.resolveChatId(principal.telefone_digits);
+    const chatId = await resolverDestino(principal.telefone_digits);
     if (!chatId) throw new Error("Este telefone não foi encontrado no WhatsApp.");
 
-    const whatsappMessageId = await whatsappManager.sendMessage(chatId, mensagem);
+    const whatsappMessageId = await enviarTexto(chatId, mensagem, { nome: principal.nome, finalidade: "avisos" });
     const log = db.transaction(() => {
       const criado = createLog({
         card_id: cardIdLog,
@@ -299,7 +299,7 @@ export async function enviarLembretesEmMassa(ids: number[], intervalMinSec: numb
     emitEvent("lembrete:batch-started", { total: grupos.length, ignorados });
 
     for (let i = 0; i < grupos.length; i++) {
-      if (!whatsappManager.isReady()) {
+      if (!canalPronto()) {
         emitEvent("lembrete:batch-paused", {
           reason: "O WhatsApp desconectou durante o envio. Reconecte e retome o lote; os lembretes já enviados serão ignorados.",
           enviados,
