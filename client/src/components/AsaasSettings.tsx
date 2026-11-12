@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, Copy, Landmark } from "lucide-react";
+import { Copy, Landmark } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
-import { Input, Label } from "@/components/ui/Input";
+import { Callout, SettingRow, SettingsBlock, SettingsFooter, SettingsPanel } from "@/components/ui/Settings";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 
 interface Estado { configurado: boolean; final: string; ambiente: "sandbox" | "producao"; url_do_aviso: string; token_do_aviso: string }
@@ -36,43 +37,40 @@ export function AsaasSettings() {
   };
   const copiar = async (t: string, rot: string) => { try { await navigator.clipboard.writeText(t); show(`${rot} copiado.`, "success"); } catch { show("Não consegui copiar. Selecione e copie à mão.", "info"); } };
 
+  if (!e) return <Skeleton className="h-72 w-full" />;
   return (
-    <Card>
-      <CardHeader><CardTitle className="flex items-center gap-2"><Landmark className="h-5 w-5" /> Asaas (boleto e PIX)</CardTitle></CardHeader>
-      <CardContent className="space-y-6 text-sm">
-        <p className="text-zinc-600 dark:text-zinc-300">
-          Com o Asaas ligado, cada parcela a receber ganha o botão <b>Boleto/PIX</b>: o sistema gera a cobrança, você envia o link pelo WhatsApp e, quando o cliente paga, a parcela recebe a <b>baixa sozinha</b>.
-          Em <b>Financeiro → Taxas do Asaas</b> você acompanha quanto está gastando com tarifas. As notificações do próprio Asaas ficam desligadas (cada uma é cobrada).
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-zinc-500">Situação:</span>
-          {e?.configurado ? <Badge tone="success"><CheckCircle2 className="mr-1 inline h-3 w-3" />Chave salva ({e.final}) · {e.ambiente === "producao" ? "Produção" : "Testes"}</Badge> : <Badge tone="warning">Sem chave</Badge>}
-        </div>
+    <SettingsPanel
+      icon={<Landmark />}
+      title="Asaas (boleto e PIX)"
+      description="Gera boleto e PIX para cada parcela e dá baixa sozinho quando o cliente paga."
+      status={e.configurado ? <Badge tone="success">Conectado · {e.ambiente === "producao" ? "Produção" : "Testes"} · {e.final}</Badge> : <Badge tone="warning">Sem chave</Badge>}
+    >
+      <SettingsBlock step={1} title="Chave de API" description="No Asaas: Integrações → Chave de API.">
+        <SettingRow label="Ambiente" htmlFor="amb-asaas" hint="Comece pelo teste (sandbox): tem conta e chave próprias e não movimenta dinheiro.">
+          <Select id="amb-asaas" value={ambiente} onChange={(ev) => setAmbiente(ev.target.value as "sandbox" | "producao")}><option value="sandbox">Testes (sandbox)</option><option value="producao">Produção (dinheiro de verdade)</option></Select>
+        </SettingRow>
+        <SettingRow label="Chave de API" htmlFor="chave-asaas" hint={e.configurado ? `Chave atual termina em ${e.final}.` : "Cole a chave gerada no Asaas."}>
+          <Input id="chave-asaas" value={chave} onChange={(ev) => setChave(ev.target.value)} placeholder={e.configurado ? "Cole uma nova chave para trocar" : "$aact_..."} autoComplete="off" />
+        </SettingRow>
+        {resultado && <Callout tone={resultado.ok ? "ok" : "erro"}>{resultado.texto}</Callout>}
+        <SettingsFooter left="Cada parcela ganha o botão Boleto/PIX; as notificações do Asaas ficam desligadas (são cobradas).">
+          <Button variant="outline" loading={testando} onClick={() => void testar()} disabled={!e.configurado}>Testar conexão</Button>
+          <Button loading={salvando} onClick={() => void salvar()}>Salvar</Button>
+        </SettingsFooter>
+      </SettingsBlock>
 
-        <section className="space-y-3">
-          <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">1. Chave de API</h3>
-          <p className="text-xs text-zinc-500">No Asaas: <i>Integrações → Chave de API</i>. Comece pelo ambiente de <b>testes (sandbox)</b>, que tem conta e chave próprias e não movimenta dinheiro.</p>
-          <div className="grid gap-3 sm:grid-cols-[12rem_1fr_auto]">
-            <div><Label htmlFor="amb-asaas">Ambiente</Label><Select id="amb-asaas" value={ambiente} onChange={(ev) => setAmbiente(ev.target.value as "sandbox" | "producao")} className="mt-1.5"><option value="sandbox">Testes (sandbox)</option><option value="producao">Produção (dinheiro de verdade)</option></Select></div>
-            <div><Label htmlFor="chave-asaas">Chave de API</Label><Input id="chave-asaas" className="mt-1.5" value={chave} onChange={(ev) => setChave(ev.target.value)} placeholder={e?.configurado ? "Cole uma nova chave para trocar" : "$aact_..."} autoComplete="off" /></div>
-            <div className="flex items-end gap-2"><Button loading={salvando} onClick={() => void salvar()}>Salvar</Button><Button variant="outline" loading={testando} onClick={() => void testar()} disabled={!e?.configurado}>Testar</Button></div>
-          </div>
-          {resultado && <p role="status" className={resultado.ok ? "text-emerald-700 dark:text-emerald-300" : "text-red-600 dark:text-red-400"}>{resultado.texto}</p>}
-        </section>
-
-        {e?.configurado && (
-          <section className="space-y-3">
-            <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">2. Aviso de pagamento (baixa automática)</h3>
-            <p className="text-xs text-zinc-500">No Asaas: <i>Integrações → Webhooks → Novo webhook</i>. Cadastre os dados abaixo, com o tipo de envio <b>sequencial</b> e os eventos de <b>cobranças</b> ligados.</p>
-            {e.url_do_aviso ? (
-              <div className="space-y-2">
-                {([["URL do webhook", e.url_do_aviso], ["Token de autenticação", e.token_do_aviso]] as const).map(([r, v]) => (
-                  <div key={r} className="flex items-center gap-2"><div className="min-w-0 flex-1"><Label>{r}</Label><Input readOnly value={v} className="mt-1.5 font-mono text-xs" onFocus={(ev) => ev.currentTarget.select()} /></div><Button variant="outline" className="mt-6" onClick={() => void copiar(v, r)}><Copy className="h-4 w-4" /> Copiar</Button></div>))}
-              </div>
-            ) : <p className="text-amber-700 dark:text-amber-300">Este escritório ainda não tem o atendimento ligado, então não há endereço público para o aviso. Fale comigo e eu configuro.</p>}
-            <p className="text-xs text-zinc-500">Sem o webhook, o sistema ainda funciona: use <b>Atualizar situação</b> na cobrança de cada parcela para conferir se foi paga.</p>
-          </section>)}
-      </CardContent>
-    </Card>
+      {e.configurado && (
+        <SettingsBlock step={2} title="Aviso de pagamento (baixa automática)" description="No Asaas: Integrações → Webhooks → Novo webhook. Use envio sequencial e ligue os eventos de cobranças.">
+          {e.url_do_aviso ? (
+            <>
+              {([["URL do webhook", e.url_do_aviso], ["Token de autenticação", e.token_do_aviso]] as const).map(([r, v], i) => (
+                <SettingRow key={r} label={r} htmlFor={`asaas-wh-${i}`}>
+                  <div className="flex items-center gap-2"><Input id={`asaas-wh-${i}`} readOnly value={v} className="min-w-0 flex-1 font-mono text-xs" onFocus={(ev) => ev.currentTarget.select()} /><Button variant="outline" onClick={() => void copiar(v, r)}><Copy className="h-4 w-4" /> Copiar</Button></div>
+                </SettingRow>))}
+            </>
+          ) : <Callout tone="aviso">Este escritório ainda não tem o atendimento ligado, então não há endereço público para o aviso. Fale comigo e eu configuro.</Callout>}
+          <Callout>Sem o webhook o sistema continua funcionando: use <b>Atualizar situação</b> na cobrança de cada parcela para conferir se foi paga. Os custos aparecem em Financeiro → Taxas do Asaas.</Callout>
+        </SettingsBlock>)}
+    </SettingsPanel>
   );
 }

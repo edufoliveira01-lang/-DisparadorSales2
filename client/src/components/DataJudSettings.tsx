@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, ExternalLink, KeyRound } from "lucide-react";
+import { ExternalLink, KeyRound } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
-import { Input, Label } from "@/components/ui/Input";
+import { Callout, SettingRow, SettingsBlock, SettingsFooter, SettingsPanel } from "@/components/ui/Settings";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { Input } from "@/components/ui/Input";
 
 interface Estado { configurado: boolean; final: string }
 
@@ -37,30 +38,26 @@ export function DataJudSettings() {
     finally { setTestando(false); }
   };
 
+  if (!estado) return <Skeleton className="h-56 w-full" />;
   return (
-    <Card>
-      <CardHeader><CardTitle className="flex items-center gap-2"><KeyRound className="h-5 w-5" /> DataJud (CNJ)</CardTitle></CardHeader>
-      <CardContent className="space-y-5 text-sm">
-        <p className="text-zinc-600 dark:text-zinc-300">
-          O DJEN traz as publicações; o <b>DataJud</b>, base pública do CNJ, completa a ficha do processo com <b>assunto, data de ajuizamento, órgão julgador, classe</b> e mostra o <b>último movimento</b>.
-          Ele só funciona com a <b>chave pública</b> que o CNJ divulga na documentação do DataJud (procure por <i>“Chave Pública de Acesso”</i>). Ela muda de tempos em tempos: se parar de funcionar, cole a nova aqui.
-        </p>
-        <a className="inline-flex items-center gap-1 text-accent-700 underline dark:text-accent-300" href="https://datajud-wiki.cnj.jus.br/api-publica/acesso" target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3.5 w-3.5" /> Onde achar a chave pública</a>
-        <div className="flex items-center gap-2">
-          <span className="text-zinc-500">Situação:</span>
-          {estado?.configurado ? <Badge tone="success"><CheckCircle2 className="mr-1 inline h-3 w-3" />Chave salva ({estado.final})</Badge> : <Badge tone="warning">Sem chave</Badge>}
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="chave-datajud">Chave pública do DataJud</Label>
-          <div className="flex flex-wrap gap-2">
-            <Input id="chave-datajud" className="max-w-xl" value={chave} onChange={(e) => setChave(e.target.value)} placeholder={estado?.configurado ? "Cole uma nova chave para trocar (vazio e Salvar remove)" : "Cole aqui a chave"} autoComplete="off" />
-            <Button loading={salvando} onClick={() => void salvar()} disabled={!chave.trim() && !estado?.configurado}>Salvar</Button>
-            <Button variant="outline" loading={testando} onClick={() => void testar()} disabled={!estado?.configurado}>Testar com um processo</Button>
-          </div>
-          {resultado && <p role="status" className={resultado.ok ? "text-emerald-700 dark:text-emerald-300" : "text-red-600 dark:text-red-400"}>{resultado.texto}</p>}
-        </div>
-        <p className="text-xs text-zinc-500">A consulta roda sozinha junto com o DJEN (no máximo uma vez por dia por processo). Nada que alguém digitou na ficha é trocado: só o que está em branco é preenchido.</p>
-      </CardContent>
-    </Card>
+    <SettingsPanel
+      icon={<KeyRound />}
+      title="DataJud (CNJ)"
+      description="Completa a ficha do processo com assunto, data de ajuizamento, órgão julgador, classe e último movimento."
+      status={estado.configurado ? <Badge tone="success">Conectado · {estado.final}</Badge> : <Badge tone="warning">Sem chave</Badge>}
+      actions={<a className="inline-flex items-center gap-1 text-xs text-accent-700 underline dark:text-accent-300" href="https://datajud-wiki.cnj.jus.br/api-publica/acesso" target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3.5 w-3.5" /> Onde achar a chave</a>}
+    >
+      <SettingsBlock>
+        <Callout>O DJEN traz as publicações; o DataJud complementa o cadastro. Ele exige a <b>chave pública</b> divulgada pelo CNJ (procure por <i>“Chave Pública de Acesso”</i>). Ela muda de tempos em tempos: se parar de funcionar, cole a nova.</Callout>
+        <SettingRow label="Chave pública" htmlFor="chave-datajud" hint="Deixe vazio e salve para remover a chave.">
+          <Input id="chave-datajud" value={chave} onChange={(e) => setChave(e.target.value)} placeholder={estado.configurado ? "Cole uma nova chave para trocar" : "Cole aqui a chave"} autoComplete="off" />
+        </SettingRow>
+        {resultado && <Callout tone={resultado.ok ? "ok" : "erro"}>{resultado.texto}</Callout>}
+      </SettingsBlock>
+      <SettingsFooter left="Roda sozinho junto com o DJEN, no máximo uma vez por dia por processo, e só preenche o que está em branco.">
+        <Button variant="outline" loading={testando} onClick={() => void testar()} disabled={!estado.configurado}>Testar com um processo</Button>
+        <Button loading={salvando} onClick={() => void salvar()} disabled={!chave.trim() && !estado.configurado}>Salvar</Button>
+      </SettingsFooter>
+    </SettingsPanel>
   );
 }
