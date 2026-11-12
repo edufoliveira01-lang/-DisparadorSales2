@@ -157,6 +157,9 @@ export function excluirPessoa(id: number, opcoes: { cancelarPericias?: boolean }
 export function pessoaDoContato(contactId: number): number | null {
   const ja = db.prepare("SELECT id FROM gestao_pessoas WHERE contact_id=?").get(contactId) as { id: number } | undefined;
   if (ja) return ja.id;
+  // Contato espelhado (ou já ligado a um cliente pelo espelho): não cria cadastro duplicado.
+  const ligado = db.prepare("SELECT pessoa_id FROM contacts WHERE id=? AND pessoa_id IS NOT NULL").get(contactId) as { pessoa_id: number } | undefined;
+  if (ligado && db.prepare("SELECT 1 FROM gestao_pessoas WHERE id=?").get(ligado.pessoa_id)) return ligado.pessoa_id;
   const c = db.prepare("SELECT id,nome,telefone,observacoes FROM contacts WHERE id=?").get(contactId) as { id: number; nome: string; telefone: string; observacoes: string | null } | undefined;
   if (!c || c.nome.trim().length < 2) return null;
   const info = db.prepare("INSERT INTO gestao_pessoas(tipo,nome,telefone,observacoes,origem,contact_id) VALUES ('cliente',?,?,?,'Contatos do sistema',?)").run(c.nome.trim().slice(0, 200), c.telefone, c.observacoes || "", c.id);
@@ -165,7 +168,7 @@ export function pessoaDoContato(contactId: number): number | null {
 export function importarContatos() {
   let criadas = 0;
   db.transaction(() => {
-    for (const c of db.prepare("SELECT id FROM contacts").all() as { id: number }[]) {
+    for (const c of db.prepare("SELECT id FROM contacts WHERE pessoa_id IS NULL").all() as { id: number }[]) {
       const antes = db.prepare("SELECT id FROM gestao_pessoas WHERE contact_id=?").get(c.id);
       if (!antes && pessoaDoContato(c.id)) criadas++;
     }

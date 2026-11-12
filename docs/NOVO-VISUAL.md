@@ -96,3 +96,5 @@
 - **Duas seções:** «Sem resposta há 2 dias ou mais» (destaque âmbar) e «Esperando há pouco tempo». A ordem padrão passou a ser **mais antigos primeiro**.
 - **Linha por cliente:** avatar, nome, estado da mensagem (enviada, entregue, lida), **«há 5 dia(s)»**, telefone e data do envio. Botões: **Cobrar resposta** (principal), **Já respondeu** (antes «Confirmar recebimento»: marca o atendimento como concluído) e o menu **⋯** com **Finalizar espera (sem resposta)** e **Apagar registro**.
 - Busca, ordenação, filtro por período e ações em lote continuam; a barra de lote só aparece com itens marcados. Nenhuma regra do servidor mudou.
+
+> 3.20.1 — correção: a importação antiga de contatos (`/pessoas/importar-contatos`) criava um cadastro duplicado para contatos que o espelho já tinha ligado a um cliente; agora ignora contatos já ligados. Isso fazia o teste de gestão falhar de forma intermitente no deploy da 3.19.0.

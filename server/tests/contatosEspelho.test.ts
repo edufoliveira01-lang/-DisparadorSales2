@@ -4,7 +4,7 @@ process.env.ENCRYPTION_KEY = "chave-somente-para-testes-0123456789abcdef";
 
 import { db } from "../src/db";
 import { contatosSemCadastro, importarArquivoComoClientes, importarContatosEscolhidos, reconciliarContatos } from "../src/services/gestao/contatosEspelho";
-import { listarPessoas } from "../src/services/gestao/pessoas";
+import { importarContatos, listarPessoas } from "../src/services/gestao/pessoas";
 import { createContact } from "../src/services/contactsService";
 
 const pessoa = (nome: string, tel = "(13) 99999-1111", tipo = "cliente") => Number(db.prepare("INSERT INTO gestao_pessoas(tipo,nome,telefone) VALUES (?,?,?)").run(tipo, nome, tel).lastInsertRowid);
@@ -82,5 +82,12 @@ describe("Contatos espelhados dos clientes", () => {
     expect(listarPessoas({ tipo: "cliente", filtro: "telefone_conferir" }).itens.map((p) => p.nome)).toEqual(["Fone Ruim"]);
     expect(listarPessoas({ tipo: "cliente", filtro: "com_processo", busca: "Com" }).total).toBe(1);
     expect(listarPessoas({ tipo: "cliente", filtro: "com_processo", busca: "Com" }).resumo.total).toBe(3);
+  });
+
+  it("a importação antiga de contatos não duplica clientes que já têm contato espelhado", () => {
+    const a = pessoa("Maria Souza"); processo("50226768820254036100", a); reconciliarContatos();
+    const antes = (db.prepare("SELECT COUNT(*) n FROM gestao_pessoas").get() as { n: number }).n;
+    importarContatos(); importarContatos();
+    expect((db.prepare("SELECT COUNT(*) n FROM gestao_pessoas").get() as { n: number }).n).toBe(antes);
   });
 });
