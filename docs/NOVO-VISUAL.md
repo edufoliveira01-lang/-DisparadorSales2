@@ -51,3 +51,7 @@
 ## Publicações (3.13.1)
 - Os seis contadores (na lista, não lidos, aguardando retorno, perícias sem laudo, prazos do escritório, processos parados) viraram uma **faixa no topo**, clicável; a lateral ficou só com os filtros.
 - Cartões mais enxutos: **Abrir processo** e **Registrar providência** em destaque, **Concluir** e **Marcar lida** lado a lado. O aviso da IA só aparece quando há algo pendente ou pausado.
+
+## Quadro de processos (3.14.1)
+- Cartões mais compactos: a caixa de seleção fica ao lado do nome (sem a linha «Selecionar»), e a etiqueta «Etapa automática · DJEN» só aparece quando a etapa é manual ou ainda não foi identificada.
+- Cada coluna ganha uma faixa colorida no topo: cinza (triagem), amarela (etapa com contagem de espera), azul (etapa movida automaticamente por categoria do DJEN).

@@ -218,7 +218,7 @@ export function QuadroProcessos() {
             onDrop={(e) => { e.preventDefault(); const chave = e.dataTransfer.getData("application/x-disparazap-processo"); setArrastando(null);
               if (canManage && !busy && quadro.cartoes.some((c) => c.processo_chave === chave && c.lista_id !== lista.id))
                 void acao(() => api.put(`/djen/kanban/cartoes/${encodeURIComponent(chave)}`, { lista_id: lista.id })); }}
-            className="w-[310px] shrink-0 rounded-2xl border border-zinc-200/80 bg-zinc-100/70 p-3 dark:border-zinc-800 dark:bg-zinc-900">
+            className={`w-[310px] shrink-0 rounded-2xl border border-t-[3px] border-zinc-200/80 bg-zinc-100/70 p-3 dark:border-zinc-800 dark:bg-zinc-900 ${lista.codigo === "triagem" ? "border-t-zinc-400" : lista.contar_dias ? "border-t-amber-400" : lista.regra_categoria ? "border-t-accent-500" : "border-t-zinc-300 dark:border-t-zinc-700"}`}>
             {editando === lista.id ? <form className="space-y-2" onSubmit={(e) => {
               e.preventDefault(); void acao(async () => {
                 await api.put(`/djen/kanban/listas/${lista.id}`, { nome: nomeEdicao, contar_dias: contarEdicao, regra_categoria: regraEdicao });
@@ -255,10 +255,11 @@ export function QuadroProcessos() {
                 draggable={canManage && !busy}
                 onDragStart={(e) => { e.dataTransfer.setData("application/x-disparazap-processo", card.processo_chave); e.dataTransfer.effectAllowed = "move"; setArrastando(card.processo_chave); }}
                 onDragEnd={() => setArrastando(null)}
-                className={`rounded-xl border bg-white p-4 shadow-soft transition-[border-color,box-shadow] hover:shadow-card hover:border-accent-400 dark:bg-zinc-950 ${card.publicacoes_nao_lidas ? "border-l-4 border-l-accent-600 dark:border-zinc-800" : "border-zinc-200 dark:border-zinc-800"}`}>
-                {canManage && <label className="mb-2 flex items-center gap-2 text-[10px] text-zinc-500"><Checkbox aria-label={`Selecionar processo ${card.numero}`} checked={selecionados.includes(card.processo_chave)} onChange={() => alternar(card.processo_chave)} /> Selecionar</label>}
-                <button type="button" onClick={() => setPublicacaoAberta(card.publicacao_id)} className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500">
-                  <span className="flex items-start justify-between gap-2"><strong className="line-clamp-2 text-xs leading-snug text-zinc-900 dark:text-zinc-100">{card.cliente_nome || "Nome a conferir"}</strong></span>
+                className={`rounded-xl border bg-white p-3.5 shadow-soft transition-[border-color,box-shadow] hover:shadow-card hover:border-accent-400 dark:bg-zinc-950 ${card.publicacoes_nao_lidas ? "border-l-4 border-l-accent-600 dark:border-zinc-800" : "border-zinc-200 dark:border-zinc-800"}`}>
+                <div className="flex items-start gap-2">
+                {canManage && <span className="mt-0.5 shrink-0" title="Selecionar para mover em lote"><Checkbox aria-label={`Selecionar processo ${card.numero}`} checked={selecionados.includes(card.processo_chave)} onChange={() => alternar(card.processo_chave)} /></span>}
+                <button type="button" onClick={() => setPublicacaoAberta(card.publicacao_id)} className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500">
+                  <span className="flex items-start justify-between gap-2"><strong className="line-clamp-2 text-[13px] leading-snug text-zinc-900 dark:text-zinc-100">{card.cliente_nome || "Nome a conferir"}</strong></span>
                   <span className="mt-1 block text-[11px] text-zinc-500">{card.numero}</span>
                   {!areaFiltro && card.area && card.area !== "previdenciario" && <span className="mt-1 inline-flex rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-950 dark:text-violet-300">{rotuloArea(card.area)}</span>}
                   {card.classe && <span className="mt-0.5 block truncate text-[10px] text-zinc-400" title={`${card.classe}${card.tribunal ? ` · ${card.tribunal}` : ""}`}>{card.classe}{card.tribunal ? ` · ${card.tribunal}` : ""}</span>}
@@ -269,12 +270,13 @@ export function QuadroProcessos() {
                     {card.categorias.slice(0, 1).map((c) => <span key={c} className="rounded bg-zinc-100 px-1.5 py-0.5 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">{c.replaceAll("_", " ")}</span>)}
                   </span>
                 </button>
+                </div>
                 <div className="mt-2"><ActivityBadge atividade={card.atividade} /></div>
                 {canManage && card.atividade && <RegisterAction publicacaoId={card.publicacao_id} onSaved={carregar} />}
                 <div className="mt-2 text-[10px] text-zinc-500">
-                  <span className="inline-flex rounded-full bg-sky-50 px-2 py-0.5 font-medium text-sky-800 dark:bg-sky-950 dark:text-sky-300" title={card.etapa_evidencia || undefined}>
-                    {card.modo === "manual" ? "Etapa manual · mantida" : card.etapa_publicacao_id ? "Etapa automática · DJEN" : "Fase processual ainda não identificada"}
-                  </span>
+                  {(card.modo === "manual" || !card.etapa_publicacao_id) && <span className={`inline-flex rounded-full px-2 py-0.5 font-medium ${card.modo === "manual" ? "bg-violet-50 text-violet-800 dark:bg-violet-950 dark:text-violet-300" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"}`} title={card.etapa_evidencia || undefined}>
+                    {card.modo === "manual" ? "Etapa manual · mantida" : "Fase processual ainda não identificada"}
+                  </span>}
                   {card.etapa_evidencia && <p className="mt-1 line-clamp-2 leading-relaxed" title={card.etapa_evidencia}>Base: “{card.etapa_evidencia}”</p>}
                   {card.sugestao && <p className="mt-1 leading-relaxed" title={card.sugestao.evidencia || undefined}>O histórico sugere: {card.sugestao.lista_nome}. Sua escolha manual foi mantida.</p>}
                 </div>
