@@ -48,8 +48,16 @@ def datajud(d, chave):
     a = alias_datajud(d)
     if not a: raise RuntimeError("tribunal sem alias no DataJud")
     t0 = time.time()
-    r = requests.post(f"https://api-publica.datajud.cnj.jus.br/api_publica_{a}/_search", headers={"Authorization": f"APIKey {chave}", "Content-Type": "application/json"},
-                      json={"size": 5, "query": {"match": {"numeroProcesso": d}}}, timeout=40)
+    r = None
+    for espera in (0, 8, 20):  # o DataJud público limita o ritmo (429) e às vezes demora: tenta de novo com pausa
+        time.sleep(espera)
+        try:
+            r = requests.post(f"https://api-publica.datajud.cnj.jus.br/api_publica_{a}/_search", headers={"Authorization": f"APIKey {chave}", "Content-Type": "application/json"},
+                              json={"size": 5, "query": {"match": {"numeroProcesso": d}}}, timeout=60)
+        except requests.exceptions.RequestException:
+            r = None; continue
+        if r.status_code != 429: break
+    if r is None: raise RuntimeError("DataJud não respondeu (demora) nas 3 tentativas")
     r.raise_for_status()
     hits = r.json().get("hits", {}).get("hits", [])
     movs = [m for h in hits for m in (h.get("_source", {}).get("movimentos") or [])]
@@ -80,7 +88,7 @@ def main():
             try: r = fn()
             except Exception as e: r = {"achou": "", "qtd": "", "ultimo": "", "seg": "", "erro": str(e)[:120]}
             for k, v in r.items(): linha[f"{nome}_{k}"] = v
-        linhas.append(linha); print(linha)
+        linhas.append(linha); print(linha); time.sleep(2)  # pausa entre processos (respeita o limite das APIs públicas)
     campos = sorted({k for l in linhas for k in l}, key=lambda k: (k != "processo", k))
     with open("comparacao-andamentos.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=campos, delimiter=";"); w.writeheader(); w.writerows(linhas)
