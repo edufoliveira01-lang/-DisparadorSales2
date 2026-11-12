@@ -26,7 +26,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const refresh = async () => {
       try {
         const response = await fetch("/api/auth/me", { credentials: "same-origin" });
-        if (response.status === 401) { window.location.replace("/login"); return; }
+        if (response.status === 401) { window.location.replace(window.location.pathname === "/atendimento" ? "/login?next=atendimento" : "/login"); return; }
         if (!response.ok) throw new Error("Não foi possível verificar a sessão.");
         const data = await response.json() as { user: TeamUser };
         if (active) { setUser(data.user); setLoading(false); if (!data.user.must_change_password) socket.connect(); }

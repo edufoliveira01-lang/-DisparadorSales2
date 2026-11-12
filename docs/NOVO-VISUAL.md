@@ -186,3 +186,6 @@ Peças comuns em `components/ui/Settings.tsx` (cartão com situação, blocos, c
 - **Alternador no topo do menu** («Sistema | Atendimento»), que troca de ambiente na mesma aba com o mesmo acesso (sem pedir senha). Só aparece para quem pode usar o atendimento e se ele estiver liberado para o escritório.
 - **A página «Atendimento e vendas» deixou de ser destino do menu.** `/atendimento` virou só uma ponte: leva direto ao chat e só mostra aviso se faltar e-mail ou o atendimento não estiver liberado.
 - **Configurações → Atendimento e equipe** reúne o que estava nessa página: acesso, token e ambiente do ZapSign (contratos) e o envio da equipe ao atendimento.
+
+## Login federado com o atendimento (3.30.0)
+Quem abre o site de atendimento direto escolhe "Entrar com o sistema do escritório": o navegador vai a `/atendimento` do Sales; sem sessão, passa por `/login?next=atendimento` e, depois de entrar, volta e é levado ao chat pelo link assinado de uso único (60 s). A senha nunca sai do sistema em que foi digitada.
