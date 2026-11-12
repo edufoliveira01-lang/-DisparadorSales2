@@ -34,7 +34,8 @@ import { completarComDataJud, forcarConsulta, iniciarAcompanhamento, situacaoDoA
 import { ErroDeskcomm, envioPeloDeskcommLigado, mascaraDeskcomm, salvarTokenDoDeskcomm, testarDeskcomm, tokenDoDeskcomm, urlDoDeskcomm } from "../services/gestao/deskcomm";
 import { boletoEmPdf } from "../services/gestao/boleto";
 import { avisosDaParcela, enviarAviso, enviarEmLote, historicoDeAvisos, lerRegua, pausarAvisos, pendentesDaRegua, pessoaPausada, salvarRegua } from "../services/gestao/regua";
-import { ambienteDoAsaas, cancelarCobranca, chaveDoAsaas, cobrancaDoLancamento, consultarCobranca, ErroAsaas, gerarCobranca, mascara as mascaraAsaas, salvarConfigAsaas, sincronizarCobrancasAlteradas, sincronizarExtrato, taxasDoAsaas, testarAsaas, tokenDoWebhook } from "../services/gestao/asaas";
+import { getSetting, setSetting } from "../services/settingsService";
+import { agendarSincronizacaoAsaas, ambienteDoAsaas, cancelarCobranca, chaveDoAsaas, cobrancaDoLancamento, consultarCobranca, ErroAsaas, gerarCobranca, mascara as mascaraAsaas, salvarConfigAsaas, sincronizarCobrancasAlteradas, sincronizarExtrato, taxasDoAsaas, testarAsaas, tokenDoWebhook } from "../services/gestao/asaas";
 import { atualizarDoDataJud, chaveDoDataJud, ErroDataJud, mascararChave, salvarChaveDoDataJud } from "../services/djen/datajud";
 import { processarHistoricos } from "../services/djen/processHistory";
 import { licencaPermiteOperar } from "../licenca/cliente";
@@ -203,12 +204,14 @@ gestaoRouter.post("/financeiro/lancamentos/:id/cobranca/consultar", rota(async (
 gestaoRouter.post("/financeiro/lancamentos/:id/cobranca/cancelar", rota(async (req) => { gerirFinanceiro(req); try { await cancelarCobranca(id(req), quem(req)); return { cobranca: cobrancaDoLancamento(id(req)) }; } catch (e) { return erroAsaas(e); } }));
 gestaoRouter.get("/financeiro/asaas/taxas", rota((req) => {
   const hoje = hojeSaoPaulo(); const mes = /^\d{4}-\d{2}$/.test(String(req.query.mes ?? "")) ? String(req.query.mes) : hoje.slice(0, 7);
+  // Abrir a tela já dispara a atualização em segundo plano (se a última tem mais de 2 minutos); a tela se refaz sozinha.
+  const ult = Date.parse(getSetting("asaas_extrato_sync_em") || "") || 0; if (Date.now() - ult > 120_000) agendarSincronizacaoAsaas(300);
   return taxasDoAsaas(`${mes}-01`, `${mes}-31`);
 }));
 gestaoRouter.post("/financeiro/asaas/taxas/sincronizar", rota(async (req) => {
   gerirFinanceiro(req); const hoje = hojeSaoPaulo();
   const de = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.de ?? "")) ? String(req.body.de) : `${hoje.slice(0, 4)}-01-01`;
-  try { return await sincronizarExtrato(de, hoje); } catch (e) { return erroAsaas(e); }
+  try { const r = await sincronizarExtrato(de, hoje); setSetting("asaas_extrato_sync_em", new Date().toISOString()); setSetting("asaas_extrato_sync_erro", ""); return r; } catch (e) { return erroAsaas(e); }
 }));
 gestaoRouter.get("/financeiro/lancamentos/:id/parcelas-para-abater", rota((req) => parcelasParaAbater(id(req))));
 gestaoRouter.get("/financeiro/lancamentos/:id/historico", rota((req) => ({ itens: historicoDoLancamento(id(req)) })));

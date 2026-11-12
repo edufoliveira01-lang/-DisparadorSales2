@@ -1431,7 +1431,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                 <Input
                   id="djen-intervalo"
                   type="number"
-                  min={30}
+                  min={15}
                   max={1440}
                   value={config.intervalo_minutos}
                   onChange={(e) =>

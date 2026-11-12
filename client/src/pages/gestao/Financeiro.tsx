@@ -392,6 +392,7 @@ export function CobrancaModal({ lanc, aoFechar, aoMudar }: { lanc: Lanc; aoFecha
 }
 
 interface Taxas {
+  sincronizado_em?: string | null; sincronizacao_erro?: string | null; previstas?: { cobrancas: number; taxa_centavos: number };
   de: string; ate: string; total_centavos: number; origem: "extrato" | "cobrancas"; extrato_sincronizado_ate: string | null; recebido_centavos: number; cobrancas_pagas: number; taxa_por_cobranca_centavos: number; percentual_do_recebido: number;
   por_forma: { forma: string; pagas: number; recebido_centavos: number; taxa_centavos: number }[]; por_tipo: { tipo: string; rotulo: string; linhas: number; total_centavos: number }[];
   meses: { mes: string; taxa_centavos: number }[]; linhas: { data: string; tipo: string; rotulo: string; descricao: string; valor_centavos: number }[];
@@ -405,6 +406,8 @@ function TaxasAsaas() {
   const [sinc, setSinc] = useState(false);
   const carregar = useCallback(async () => { try { setT(await api.get<Taxas>(`/gestao/financeiro/asaas/taxas?mes=${mes}`, { fresh: true } as never)); } catch { show("Não foi possível carregar as taxas.", "error"); } }, [mes, show]);
   useEffect(() => { void carregar(); }, [carregar]);
+  // Atualiza sozinho: o servidor busca o extrato em segundo plano (ao abrir a tela, a cada lançamento e a cada 10 min); aqui só relemos a cada 30 s.
+  useEffect(() => { const id = window.setInterval(() => { if (!document.hidden) void carregar(); }, 30_000); return () => window.clearInterval(id); }, [carregar]);
   const sincronizar = async () => {
     setSinc(true);
     try { const r = await api.post<{ lidos: number }>("/gestao/financeiro/asaas/taxas/sincronizar", {}); show(`${r.lidos} lançamento(s) do extrato do Asaas atualizado(s).`, "success"); await carregar(); }
@@ -417,19 +420,20 @@ function TaxasAsaas() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <label className="text-sm text-zinc-600 dark:text-zinc-300">Mês <Input type="month" value={mes} onChange={(e) => e.target.value && setMes(e.target.value)} className="ml-2 inline-block h-10 w-44" /></label>
-        {can("financeiro.manage") && <Button variant="outline" loading={sinc} onClick={() => void sincronizar()}><Download className="h-4 w-4" /> Atualizar do Asaas</Button>}
+        {can("financeiro.manage") && <Button variant="outline" loading={sinc} onClick={() => void sincronizar()}><Download className="h-4 w-4" /> Atualizar agora</Button>}
+        <p className="text-xs text-zinc-500">{t?.sincronizado_em ? `Atualiza sozinho · última busca no Asaas às ${new Date(t.sincronizado_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} de ${new Date(t.sincronizado_em).toLocaleDateString("pt-BR")}` : "Atualiza sozinho · buscando o extrato do Asaas…"}{t?.sincronizacao_erro ? ` · último erro: ${t.sincronizacao_erro}` : ""}</p>
       </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard icon={<Wallet className="h-5 w-5" />} label="Gasto com taxas no mês" value={dinheiro(t?.total_centavos)} tone={t && t.total_centavos > 0 ? "warning" : "neutral"} helper={t?.origem === "cobrancas" ? "Pela diferença de cada cobrança paga" : t ? "Pelo extrato do Asaas" : undefined} />
         <StatCard icon={<Wallet className="h-5 w-5" />} label="% do recebido" value={`${(t?.percentual_do_recebido ?? 0).toLocaleString("pt-BR")}%`} tone="info" helper={`Recebido pelo Asaas: ${dinheiro(t?.recebido_centavos)}`} />
         <StatCard icon={<Wallet className="h-5 w-5" />} label="Custo por cobrança" value={dinheiro(t?.taxa_por_cobranca_centavos)} tone="neutral" helper={`${t?.cobrancas_pagas ?? 0} cobrança(s) paga(s)`} />
-        <StatCard icon={<Wallet className="h-5 w-5" />} label="Extrato do Asaas" value={t?.extrato_sincronizado_ate ? dataBr(t.extrato_sincronizado_ate) : "—"} tone="neutral" helper="Última data trazida" />
+        <StatCard icon={<Wallet className="h-5 w-5" />} label="Taxa prevista (em aberto)" value={dinheiro(t?.previstas?.taxa_centavos)} tone="neutral" helper={`${t?.previstas?.cobrancas ?? 0} cobrança(s) ainda não paga(s) · o valor final é o do pagamento`} />
       </div>
-      {t && t.origem === "cobrancas" && t.total_centavos === 0 && <p className="text-sm text-zinc-500">Ainda não há cobranças pagas neste mês. Clique em <b>Atualizar do Asaas</b> para trazer o extrato com todas as tarifas, inclusive notificações e transferências.</p>}
+      {t && t.origem === "cobrancas" && t.total_centavos === 0 && <p className="text-sm text-zinc-500">Ainda não há cobranças pagas neste mês. O extrato do Asaas é trazido sozinho; use <b>Atualizar agora</b> se quiser forçar, com todas as tarifas, inclusive notificações e transferências.</p>}
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="surface-panel p-5">
           <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Com o que gastamos</h2>
-          {(t?.por_tipo.length ?? 0) === 0 ? <p className="mt-3 text-sm text-zinc-500">Sem tarifas no extrato deste mês. Traga o extrato com o botão acima.</p> : (
+          {(t?.por_tipo.length ?? 0) === 0 ? <p className="mt-3 text-sm text-zinc-500">Sem tarifas no extrato deste mês. O extrato é trazido sozinho (ou use Atualizar agora).</p> : (
             <ul className="mt-3 space-y-3">{t!.por_tipo.map((x) => <li key={x.tipo}><div className="flex justify-between gap-2 text-sm"><span className="min-w-0 truncate">{x.rotulo}</span><b className="shrink-0">{dinheiro(x.total_centavos)}</b></div><div className="mt-1 h-2 rounded-full bg-zinc-100 dark:bg-white/10"><div className="h-2 rounded-full bg-amber-500" style={{ width: `${Math.max(3, (x.total_centavos / maxTipo) * 100)}%` }} /></div><p className="mt-0.5 text-[11px] text-zinc-400">{x.linhas} lançamento(s)</p></li>)}</ul>)}
         </section>
         <section className="surface-panel p-5">

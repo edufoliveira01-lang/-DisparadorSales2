@@ -193,14 +193,14 @@ export function salvarConfiguracaoDjen(data: Record<string, unknown>) {
     janela = Number(data.janela_inicial_dias);
   if (
     !Number.isInteger(intervalo) ||
-    intervalo < 30 ||
+    intervalo < 15 ||
     intervalo > 1440 ||
     !Number.isInteger(janela) ||
     janela < 1 ||
     janela > 31
   )
     throw new DjenInputError(
-      "Use um intervalo de 30 a 1440 minutos e uma janela de 1 a 31 dias.",
+      "Use um intervalo de 15 a 1440 minutos e uma janela de 1 a 31 dias.",
     );
   db.prepare(
     "UPDATE djen_config SET automatico=?, intervalo_minutos=?, janela_inicial_dias=? WHERE id=1",

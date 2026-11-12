@@ -88,7 +88,7 @@ export async function garantirCliente(pessoaId: number, http: Http = fetch): Pro
 }
 
 interface Pagamento { id: string; status?: string; value?: number; netValue?: number; dueDate?: string; billingType?: string; invoiceUrl?: string; bankSlipUrl?: string; paymentDate?: string; confirmedDate?: string; clientPaymentDate?: string; externalReference?: string; deleted?: boolean }
-export interface Cobranca { lancamento_id: number; payment_id: string; billing_type: string; status: string; invoice_url: string; bank_slip_url: string; linha_digitavel: string; pix_payload: string; valor_centavos: number; vencimento: string; taxa_centavos: number | null; liquido_centavos: number | null; pago_em: string | null; forma_paga: string; erro: string | null; criado_em: string }
+export interface Cobranca { lancamento_id: number; payment_id: string; billing_type: string; status: string; invoice_url: string; bank_slip_url: string; linha_digitavel: string; pix_payload: string; valor_centavos: number; vencimento: string; taxa_centavos: number | null; taxa_prevista_centavos?: number | null; liquido_centavos: number | null; pago_em: string | null; forma_paga: string; erro: string | null; criado_em: string }
 export const cobrancaDoLancamento = (id: number) => (db.prepare("SELECT * FROM gestao_asaas_cobrancas WHERE lancamento_id=?").get(id) as Cobranca | undefined) ?? null;
 const ENCERRADAS = ["DELETED", "CANCELADA", "REFUNDED", "RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"];
 
@@ -115,6 +115,8 @@ export async function gerarCobranca(lancamentoId: number, tipo: TipoCobranca = "
   const d = await detalhes(p.id, tipoAsaas, http);
   db.prepare(`INSERT OR REPLACE INTO gestao_asaas_cobrancas(lancamento_id,payment_id,billing_type,status,invoice_url,bank_slip_url,linha_digitavel,pix_payload,valor_centavos,vencimento,criado_em,atualizado_em)
     VALUES (?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`).run(lancamentoId, p.id, p.billingType || tipoAsaas, p.status || "PENDING", p.invoiceUrl ?? "", p.bankSlipUrl ?? "", d.linha, d.pix, l.valor_centavos, l.vencimento);
+  if (p.value !== undefined && p.netValue !== undefined) db.prepare("UPDATE gestao_asaas_cobrancas SET taxa_prevista_centavos=? WHERE lancamento_id=?").run(Math.max(0, centavos(p.value) - centavos(p.netValue)), lancamentoId);
+  agendarSincronizacaoAsaas();
   registrar(lancamentoId, "cobranca_gerada", `Cobrança gerada no Asaas (${tipo === "pix" ? "PIX" : tipo === "boleto" ? "boleto" : "boleto e PIX"}), vencimento ${l.vencimento.split("-").reverse().join("/")}.`, quem);
   return cobrancaDoLancamento(lancamentoId)!;
 }
@@ -127,10 +129,12 @@ export function aplicarPagamento(lancamentoId: number, p: Pagamento, quem?: Quem
   const pago = ["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"].includes(status);
   const forma = p.billingType === "PIX" ? "PIX" : p.billingType === "BOLETO" ? "Boleto" : p.billingType === "CREDIT_CARD" ? "Cartão" : c.forma_paga;
   const taxa = pago && p.value !== undefined && p.netValue !== undefined ? Math.max(0, centavos(p.value) - centavos(p.netValue)) : c.taxa_centavos;
+  // A tarifa que o Asaas já informa na própria cobrança (valor − líquido): vale como previsão até o pagamento, quando passa a ser a tarifa efetiva.
+  const prevista = p.value !== undefined && p.netValue !== undefined ? Math.max(0, centavos(p.value) - centavos(p.netValue)) : null;
   const liquido = pago && p.netValue !== undefined ? centavos(p.netValue) : c.liquido_centavos;
   const em = String(p.paymentDate || p.confirmedDate || p.clientPaymentDate || "").slice(0, 10) || (pago ? hojeSaoPaulo() : c.pago_em);
-  db.prepare("UPDATE gestao_asaas_cobrancas SET status=?,billing_type=COALESCE(NULLIF(?,''),billing_type),invoice_url=COALESCE(NULLIF(?,''),invoice_url),bank_slip_url=COALESCE(NULLIF(?,''),bank_slip_url),taxa_centavos=?,liquido_centavos=?,pago_em=?,forma_paga=?,erro=NULL,atualizado_em=CURRENT_TIMESTAMP WHERE lancamento_id=?")
-    .run(status, p.billingType ?? "", p.invoiceUrl ?? "", p.bankSlipUrl ?? "", taxa ?? null, liquido ?? null, em ?? null, forma, lancamentoId);
+  db.prepare("UPDATE gestao_asaas_cobrancas SET status=?,billing_type=COALESCE(NULLIF(?,''),billing_type),invoice_url=COALESCE(NULLIF(?,''),invoice_url),bank_slip_url=COALESCE(NULLIF(?,''),bank_slip_url),taxa_centavos=?,taxa_prevista_centavos=COALESCE(?,taxa_prevista_centavos),liquido_centavos=?,pago_em=?,forma_paga=?,erro=NULL,atualizado_em=CURRENT_TIMESTAMP WHERE lancamento_id=?")
+    .run(status, p.billingType ?? "", p.invoiceUrl ?? "", p.bankSlipUrl ?? "", taxa ?? null, prevista, liquido ?? null, em ?? null, forma, lancamentoId);
   if (!pago) return;
   const l = obterLancamento(lancamentoId);
   if (l.cancelado || l.pago_em) return;
@@ -195,6 +199,7 @@ export function processarWebhook(tokenRecebido: string | undefined, corpo: unkno
   if (!lancId || !cobrancaDoLancamento(lancId)) return { ok: true, tratado: false };
   if (String(ev.event).startsWith("PAYMENT_DELETED")) p.deleted = true;
   aplicarPagamento(lancId, p);
+  agendarSincronizacaoAsaas(); // a tarifa entra no extrato em seguida: traz sozinho, sem ninguém clicar
   return { ok: true, tratado: true };
 }
 
@@ -227,8 +232,10 @@ export function taxasDoAsaas(de: string, ate: string) {
   const recebido = cobr.reduce((s, c) => s + c.recebido, 0), taxaCobr = cobr.reduce((s, c) => s + c.taxa, 0), pagas = cobr.reduce((s, c) => s + c.pagas, 0);
   const totalExtrato = extrato.reduce((s, e) => s + e.total, 0);
   const ultima = db.prepare("SELECT MAX(data) AS d FROM gestao_asaas_extrato").get() as { d: string | null };
+  const prev = db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(taxa_prevista_centavos),0) AS taxa FROM gestao_asaas_cobrancas WHERE status IN ('PENDING','OVERDUE','AWAITING_RISK_ANALYSIS') AND taxa_prevista_centavos IS NOT NULL").get() as { n: number; taxa: number };
   return {
-    de, ate, extrato_sincronizado_ate: ultima.d,
+    de, ate, extrato_sincronizado_ate: ultima.d, sincronizado_em: getSetting("asaas_extrato_sync_em") || null, sincronizacao_erro: getSetting("asaas_extrato_sync_erro") || null,
+    previstas: { cobrancas: prev.n, taxa_centavos: prev.taxa },
     // "taxas" = o que o extrato do Asaas mostra; sem extrato sincronizado, vale a diferença entre o valor cobrado e o líquido de cada cobrança paga.
     total_centavos: totalExtrato || taxaCobr, origem: totalExtrato ? "extrato" : "cobrancas",
     recebido_centavos: recebido, cobrancas_pagas: pagas, taxa_por_cobranca_centavos: pagas ? Math.round((totalExtrato || taxaCobr) / pagas) : 0,
@@ -238,4 +245,55 @@ export function taxasDoAsaas(de: string, ate: string) {
     meses: meses.reverse().map((m) => ({ mes: m.mes, taxa_centavos: m.taxa })),
     linhas: linhas.map((l) => ({ ...l, rotulo: rotuloDoTipo(l.tipo) })),
   };
+}
+
+// ---------------- atualização automática ----------------
+let emSincronizacao = false;
+let agendada: ReturnType<typeof setTimeout> | null = null;
+
+/** Traz o extrato recente do Asaas (taxas e demais lançamentos). Na primeira vez traz o ano todo; depois só os últimos dias. */
+export async function sincronizarExtratoAuto(http: Http = fetch): Promise<{ lidos: number } | null> {
+  if (!chaveDoAsaas() || emSincronizacao) return null;
+  emSincronizacao = true;
+  try {
+    const hoje = hojeSaoPaulo();
+    const ult = (getSetting("asaas_extrato_sync_em") || "").slice(0, 10);
+    const de = /^\d{4}-\d{2}-\d{2}$/.test(ult) ? new Date(Date.parse(`${ult}T12:00:00Z`) - 3 * 86_400_000).toISOString().slice(0, 10) : `${hoje.slice(0, 4)}-01-01`;
+    const r = await sincronizarExtrato(de, hoje, http);
+    setSetting("asaas_extrato_sync_em", new Date().toISOString()); setSetting("asaas_extrato_sync_erro", "");
+    return r;
+  } catch (e) { setSetting("asaas_extrato_sync_erro", e instanceof Error ? e.message.slice(0, 200) : "Falha ao buscar o extrato."); return null; }
+  finally { emSincronizacao = false; }
+}
+
+/** Pede a atualização das taxas para daqui a pouco (junta vários pedidos seguidos numa só ida ao Asaas). */
+export function agendarSincronizacaoAsaas(atrasoMs = 4000): void {
+  if (!chaveDoAsaas() || agendada) return;
+  agendada = setTimeout(() => { agendada = null; void sincronizarExtratoAuto().catch(() => undefined); }, atrasoMs);
+  agendada.unref?.();
+}
+
+/** Confere no Asaas as cobranças ainda abertas (pega pagamento mesmo sem o aviso de pagamento configurado) e atualiza a tarifa prevista. */
+export async function conferirCobrancasAbertas(http: Http = fetch, limite = 30): Promise<number> {
+  if (!chaveDoAsaas()) return 0;
+  const abertas = db.prepare("SELECT lancamento_id, payment_id FROM gestao_asaas_cobrancas WHERE status IN ('PENDING','OVERDUE','AWAITING_RISK_ANALYSIS') ORDER BY atualizado_em ASC LIMIT ?").all(limite) as { lancamento_id: number; payment_id: string }[];
+  let mudou = 0;
+  for (const c of abertas) {
+    try {
+      const antes = cobrancaDoLancamento(c.lancamento_id)?.status;
+      const p = await chamar<Pagamento>("GET", `/payments/${c.payment_id}`, undefined, http);
+      aplicarPagamento(c.lancamento_id, p);
+      db.prepare("UPDATE gestao_asaas_cobrancas SET atualizado_em=CURRENT_TIMESTAMP WHERE lancamento_id=?").run(c.lancamento_id);
+      if (cobrancaDoLancamento(c.lancamento_id)?.status !== antes) mudou++;
+    } catch { /* tenta de novo na próxima rodada */ }
+  }
+  return mudou;
+}
+
+/** Rodada periódica (a cada 10 min): cobranças abertas, alterações pendentes e extrato. */
+export async function rotinaDoAsaas(http: Http = fetch): Promise<void> {
+  if (!chaveDoAsaas()) return;
+  await conferirCobrancasAbertas(http).catch(() => 0);
+  await sincronizarCobrancasAlteradas(http).catch(() => 0);
+  await sincronizarExtratoAuto(http);
 }

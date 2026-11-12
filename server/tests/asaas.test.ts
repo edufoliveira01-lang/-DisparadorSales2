@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 process.env.ENCRYPTION_KEY = "chave-somente-para-testes-0123456789abcdef";
 
 import { db } from "../src/db";
-import { cobrancaDoLancamento, gerarCobranca, processarWebhook, salvarConfigAsaas, sincronizarCobrancasAlteradas, sincronizarExtrato, taxasDoAsaas, tokenDoWebhook, ErroAsaas, cancelarCobranca } from "../src/services/gestao/asaas";
+import { conferirCobrancasAbertas, sincronizarExtratoAuto, cobrancaDoLancamento, gerarCobranca, processarWebhook, salvarConfigAsaas, sincronizarCobrancasAlteradas, sincronizarExtrato, taxasDoAsaas, tokenDoWebhook, ErroAsaas, cancelarCobranca } from "../src/services/gestao/asaas";
 import { historicoDoLancamento } from "../src/services/gestao/financeiro";
 
 const CPF = "52998224725";
@@ -130,5 +130,30 @@ describe("Asaas — configuração", () => {
     expect(() => salvarConfigAsaas({ ambiente: "qualquer" })).toThrow(/Ambiente/);
     expect(tokenDoWebhook()).toBe(tokenDoWebhook());
     expect(tokenDoWebhook()).toHaveLength(48);
+  });
+});
+
+describe("Asaas — atualização automática das taxas", () => {
+  it("guarda a taxa prevista ao gerar, dá baixa e fixa a taxa efetiva ao conferir, sem ninguém clicar", async () => {
+    const id = lanc(pessoa());
+    const f = falso(padrao({ "POST /payments": { id: "pay_1", status: "PENDING", invoiceUrl: "https://asaas/i/1", bankSlipUrl: "https://asaas/b/1", billingType: "UNDEFINED", value: 1000, netValue: 999.01 } }));
+    await gerarCobranca(id, "boleto_pix", undefined, f.http);
+    expect(cobrancaDoLancamento(id)!.taxa_prevista_centavos).toBe(99);
+    expect(taxasDoAsaas("2000-01-01", "2999-12-31").previstas).toEqual({ cobrancas: 1, taxa_centavos: 99 });
+    // o Asaas passa a cobrar a tarifa padrão no pagamento: vale a efetiva, que vem na própria cobrança
+    const f2 = falso({ "GET /payments/pay_1": { id: "pay_1", status: "RECEIVED", value: 1000, netValue: 998.01, billingType: "PIX", paymentDate: "2026-11-10" } });
+    expect(await conferirCobrancasAbertas(f2.http)).toBe(1);
+    expect(cobrancaDoLancamento(id)).toMatchObject({ status: "RECEIVED", taxa_centavos: 199 });
+    expect(db.prepare("SELECT pago_em FROM gestao_lancamentos WHERE id=?").get(id)).toMatchObject({ pago_em: expect.any(String) });
+    expect(taxasDoAsaas("2000-01-01", "2999-12-31").previstas.cobrancas).toBe(0);
+  });
+  it("traz o extrato sozinho e registra quando foi a última busca (e o erro, se houver)", async () => {
+    const f = falso({ "GET /financialTransactions": { data: [{ id: "t1", value: -1.99, type: "PAYMENT_FEE", date: "2026-11-10", paymentId: "pay_1" }], hasMore: false } });
+    expect(await sincronizarExtratoAuto(f.http)).toEqual({ lidos: 1 });
+    expect(taxasDoAsaas("2026-11-01", "2026-11-30").total_centavos).toBe(199);
+    expect(taxasDoAsaas("2026-11-01", "2026-11-30").sincronizado_em).toBeTruthy();
+    const ruim = falso({ "GET /financialTransactions": new Response("{}", { status: 500 }) });
+    expect(await sincronizarExtratoAuto(ruim.http)).toBeNull();
+    expect(taxasDoAsaas("2026-11-01", "2026-11-30").sincronizacao_erro).toBeTruthy();
   });
 });

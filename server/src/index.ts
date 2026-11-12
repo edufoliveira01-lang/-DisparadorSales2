@@ -21,6 +21,7 @@ import { licencaSomenteLeitura } from "./middleware/licenca";
 import { licenseRouter } from "./routes/license";
 import { licenca, licencaPermiteOperar } from "./licenca/cliente";
 import { executarRegua } from "./services/gestao/regua";
+import { rotinaDoAsaas } from "./services/gestao/asaas";
 import { verificarEspacoEmDisco } from "./services/espacoEmDisco";
 import { contactsRouter } from "./routes/contacts";
 import { logsRouter } from "./routes/logs";
@@ -181,6 +182,8 @@ function podarPericiasAgendadas(): void {
 }
 setTimeout(podarPericiasAgendadas, 90_000);
 setInterval(podarPericiasAgendadas, INTERVALO_PODA_PERICIAS_MS);
+// Asaas: a cada 10 minutos confere cobranças abertas e traz o extrato (taxas), sem ninguém clicar em «Atualizar».
+setInterval(() => { if (licencaPermiteOperar()) void rotinaDoAsaas().catch((e) => console.error("[Asaas] rotina:", e)); }, 600_000).unref();
 // Régua de cobrança: confere a cada 5 minutos se há avisos de vencimento para enviar (respeita o horário configurado).
 setInterval(() => { if (licencaPermiteOperar()) void executarRegua().catch((e) => console.error("[Cobrança] régua:", e)); }, 300_000).unref();
 
