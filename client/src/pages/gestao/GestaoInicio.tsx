@@ -302,7 +302,7 @@ function DocumentosDoDropbox({ d }: { d: Dash | null }) {
 
 function ListaDeCompromissos({ titulo, itens, vazio, mostrarData }: { titulo: string; itens: Compromisso[]; vazio: string; mostrarData: boolean }) {
   return (
-    <div>
+    <div className="min-w-0">
       <h3 className="mb-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">{titulo} <span className="font-normal text-zinc-400">({itens.length})</span></h3>
       {itens.length === 0 ? <p className="text-sm text-zinc-500">{vazio}</p> : (
         <ul className="space-y-2">

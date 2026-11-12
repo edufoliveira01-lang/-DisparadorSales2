@@ -68,9 +68,22 @@ function processoEstaAtivo(pid: number): boolean {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
-    return true;
   } catch (err) {
-    return (err as NodeJS.ErrnoException).code === "EPERM";
+    return (err as NodeJS.ErrnoException).code === "EPERM" ? processoEhNode(pid) : false;
+  }
+  return processoEhNode(pid);
+}
+
+/**
+ * Depois de um reinício, o número (PID) do processo antigo pode ter sido reaproveitado por OUTRO programa do servidor,
+ * e o lock ficaria "preso" para sempre. No Linux conferimos se o PID ainda é um processo Node; se não der para ler, vale o PID.
+ */
+function processoEhNode(pid: number): boolean {
+  try {
+    const linha = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8").toLowerCase();
+    return linha.includes("node");
+  } catch {
+    return true;
   }
 }
 

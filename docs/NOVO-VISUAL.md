@@ -173,3 +173,7 @@ Peças comuns em `components/ui/Settings.tsx` (cartão com situação, blocos, c
 - **Login:** painel de marca à esquerda (celular: só o formulário), rótulos, mostrar/ocultar senha, erros em aviso, carregamento no botão, foco automático, recuperação de senha. Nome e logotipo do escritório continuam personalizáveis.
 - **Equipe e acessos:** pessoas em tabela com busca e filtros por perfil/situação; editar/adicionar abre uma página com Identificação, Perfil (cartões com descrição), Permissões (áreas recolhíveis, marcar tudo, «x de y» e resumo em linguagem simples), Senha e Situação; barra de salvar com aviso de alterações não salvas; «Alterações recentes» virou aba.
 - **Alinhamento das imagens (3.28.1):** os botões Esquerda/Centro/Direita agora cabem dentro do cartão de imagem (antes vazavam para fora em telas estreitas).
+
+## Celular e conexão do WhatsApp (3.28.2)
+- **Celular:** a página Início e os Indicadores deixam de esticar para o lado; valores em reais longos (Financeiro) não são mais cortados nos painéis; abas de várias opções (Indicadores, Financeiro…) rolam para o lado sem quebrar o texto; itens de grade podem encolher no celular.
+- **WhatsApp «Outra instância já controla a sessão»:** o aviso podia ficar preso após reiniciar o servidor se o número do processo antigo fosse reaproveitado por outro programa. Agora o sistema confere se o processo dono do bloqueio ainda é um processo Node.

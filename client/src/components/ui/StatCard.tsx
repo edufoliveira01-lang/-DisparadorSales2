@@ -41,7 +41,7 @@ export function StatCard({
           <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 sm:text-xs">
             {label}
           </p>
-          <p className="mt-1 text-[26px] font-semibold leading-tight tracking-tight text-zinc-900 tabular-nums dark:text-zinc-100 sm:text-[32px]">
+          <p className={cn("mt-1 font-semibold leading-tight tracking-tight text-zinc-900 tabular-nums dark:text-zinc-100 sm:text-[32px]", String(value).length > 9 ? "text-[19px] sm:text-[28px]" : "text-[26px]")}>
             {value}
           </p>
         </div>

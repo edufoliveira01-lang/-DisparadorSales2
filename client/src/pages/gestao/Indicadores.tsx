@@ -67,7 +67,7 @@ function Colunas({ itens, vazio = "Sem dados neste período." }: { itens: { mes:
 }
 
 const Cartao = ({ titulo, descricao, children, className = "" }: { titulo: string; descricao?: string; children: ReactNode; className?: string }) => (
-  <section className={cn("surface-panel p-5", className)}>
+  <section className={cn("surface-panel min-w-0 p-5", className)}>
     <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{titulo}</h2>
     {descricao && <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{descricao}</p>}
     <div className="mt-4">{children}</div>
@@ -88,12 +88,12 @@ function Numero({ icone, rotulo, valor, tom = "neutro", nota, onClick }: { icone
       <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl [&>svg]:h-[18px] [&>svg]:w-[18px]", TONS[tom])}>{icone}</span>
       <span className="min-w-0">
         <span className="block text-2xl font-bold leading-none tabular-nums text-zinc-900 dark:text-zinc-100">{valor}</span>
-        <span className="mt-1 block truncate text-xs text-zinc-500 dark:text-zinc-400">{rotulo}</span>
-        {nota && <span className="block truncate text-[11px] text-zinc-400">{nota}</span>}
+        <span className="mt-1 block text-xs leading-snug text-zinc-500 dark:text-zinc-400">{rotulo}</span>
+        {nota && <span className="block text-[11px] leading-snug text-zinc-400">{nota}</span>}
       </span>
     </>
   );
-  const base = "surface-panel flex items-center gap-3 p-4 text-left";
+  const base = "surface-panel flex min-w-0 items-center gap-3 p-4 text-left";
   return onClick
     ? <button type="button" onClick={onClick} className={cn(base, "transition hover:border-accent-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500")}>{conteudo}</button>
     : <div className={base}>{conteudo}</div>;
@@ -182,7 +182,7 @@ export function Indicadores() {
                         const linha = (
                           <>
                             <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg [&>svg]:h-4 [&>svg]:w-4", TONS[a.tom])}>{a.icone}</span>
-                            <span className="min-w-0 flex-1 truncate text-sm text-zinc-700 dark:text-zinc-200">{texto}</span>
+                            <span className="min-w-0 flex-1 text-sm leading-snug text-zinc-700 dark:text-zinc-200">{texto}</span>
                             <ChevronRight className="h-4 w-4 shrink-0 text-zinc-400" />
                           </>
                         );

@@ -201,6 +201,13 @@
   }
   .page-tabs {
     @apply flex gap-1 overflow-x-auto rounded-2xl border border-zinc-200/70 bg-white p-1.5 shadow-soft dark:border-zinc-800 dark:bg-zinc-900;
+    scrollbar-width: none;
+  }
+  .page-tabs::-webkit-scrollbar { display: none; }
+  .page-tabs > * { @apply shrink-0 whitespace-nowrap; }
+  /* Celular: itens de grade podem encolher (sem isso um texto longo estica a página inteira para o lado). */
+  @media (max-width: 767px) {
+    .grid > *, .flex > .min-w-0 { min-width: 0; }
   }
   .settings-tile {
     @apply relative rounded-2xl border border-zinc-200/80 bg-white p-5 text-left shadow-soft dark:border-zinc-800 dark:bg-zinc-900 sm:p-6;
