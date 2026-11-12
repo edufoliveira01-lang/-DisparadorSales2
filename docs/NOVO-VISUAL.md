@@ -70,3 +70,10 @@
 - **Arrastar etapas:** cada título tem um puxador (⋮⋮): arraste para qualquer posição, ou use as setas ←/→ com o puxador em foco. As setas de cada coluna foram removidas.
 - **Arrastar cartões:** solte sobre outro cartão para colocar antes dele (reordena) ou sobre a coluna para ir ao final. Ao arrastar, aparece uma barra **«Solte em qualquer etapa»** com todas as etapas (inclusive as vazias), e o quadro rola sozinho perto das bordas.
 - Reordenar um cartão dentro da mesma etapa agora só muda a posição: não vira «etapa manual» nem reinicia a contagem de espera.
+
+## Contatos do WhatsApp (3.17.0) — refeita por inteiro
+- Título igual ao do menu: **«Contatos do WhatsApp»**. Botões: **Novo contato** em destaque, Importar e Exportar ao lado.
+- **Painéis clicáveis** no topo: Todos, Com processo, Sem processo e **Telefone a conferir** (número que não tem DDD + 8/9 dígitos, e portanto o aviso não chega).
+- A fileira de letras A–Z saiu; a busca (nome, telefone ou processo) e a ordenação (A–Z ou mais recentes) resolvem.
+- Cada contato virou uma linha limpa: avatar com iniciais, nome, telefone, processo e a observação em uma linha (antes ficava atrás de um botão «Observações»). **Abrir conversa** no atendimento (ícone verde), **Editar**, e **Apagar** dentro do menu «⋯».
+- A barra de ações em lote só aparece quando há contatos marcados. No celular a linha se adapta (ícones sem texto).

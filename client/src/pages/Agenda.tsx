@@ -1,23 +1,18 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ChevronDown,
-  ChevronUp,
-  CircleAlert,
   Download,
-  FileText,
+  MessageCircle,
+  MoreHorizontal,
   Pencil,
   Phone,
   Plus,
   Search,
-  ShieldCheck,
-  StickyNote,
   Trash2,
   Upload,
   Users,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatPhoneDisplay, formatPhoneInput } from "@/lib/phone";
-import { cn } from "@/lib/utils";
 import type { Contact } from "@/lib/types";
 import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
@@ -26,24 +21,25 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Input, Label, Textarea } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Pagination } from "@/components/ui/Pagination";
-import { SelectableCard } from "@/components/ui/SelectableCard";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { WorkspacePanel, WorkspaceRow } from "@/components/ui/Workspace";
+import { Badge } from "@/components/ui/Badge";
+import { Select } from "@/components/ui/Select";
+import { MenuSuspenso } from "@/components/MenuSuspenso";
+import { useAtendimentoLiberado } from "@/pages/gestao/AvatarPessoa";
 import { useAuth } from "@/context/AuthContext";
 
 const ITENS_POR_PAGINA = 20;
-const LETRAS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-
-function inicialSemAcento(nome: string): string {
-  return nome
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .charAt(0)
-    .toUpperCase();
+const FILTROS = [["todos", "Todos"], ["com_processo", "Com processo"], ["sem_processo", "Sem processo"], ["conferir", "Telefone a conferir"]] as const;
+type Filtro = (typeof FILTROS)[number][0];
+/** Telefone brasileiro com DDD (10 ou 11 dígitos, com ou sem o 55). Fora disso o aviso não chega: vale conferir. */
+function telefoneOk(t: string): boolean {
+  let d = t.replace(/\D/g, "");
+  if (d.startsWith("55") && d.length > 11) d = d.slice(2);
+  return d.length === 10 || d.length === 11;
 }
+const iniciais = (nome: string) => nome.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
 
 export function Agenda() {
   const { can } = useAuth();
@@ -51,7 +47,9 @@ export function Agenda() {
   const { show } = useToast();
   const [contacts, setContacts] = useState<Contact[] | null>(null);
   const [busca, setBusca] = useState("");
-  const [letra, setLetra] = useState<string | null>(null);
+  const [filtro, setFiltro] = useState<Filtro>("todos");
+  const [ordem, setOrdem] = useState<"nome" | "recentes">("nome");
+  const atendimento = useAtendimentoLiberado();
   const [modalAberto, setModalAberto] = useState(false);
   const [editando, setEditando] = useState<Contact | null>(null);
   const [nome, setNome] = useState("");
@@ -66,7 +64,6 @@ export function Agenda() {
   const [apagandoSelecionados, setApagandoSelecionados] = useState(false);
   const [excluirAlvo, setExcluirAlvo] = useState<Contact | null>(null);
   const [confirmMassaAberto, setConfirmMassaAberto] = useState(false);
-  const [expandido, setExpandido] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function carregar() {
@@ -82,8 +79,10 @@ export function Agenda() {
     if (!contacts) return [];
     const termo = busca.trim().toLowerCase();
     const termoDigits = termo.replace(/\D/g, "");
-    return contacts.filter((c) => {
-      if (letra && inicialSemAcento(c.nome) !== letra) return false;
+    const lista = contacts.filter((c) => {
+      if (filtro === "com_processo" && !c.processo?.trim()) return false;
+      if (filtro === "sem_processo" && c.processo?.trim()) return false;
+      if (filtro === "conferir" && telefoneOk(c.telefone)) return false;
       if (!termo) return true;
       return (
         c.nome.toLowerCase().includes(termo) ||
@@ -91,11 +90,12 @@ export function Agenda() {
         Boolean(termoDigits && (c.processo || "").replace(/\D/g, "").includes(termoDigits))
       );
     });
-  }, [contacts, busca, letra]);
+    return ordem === "nome" ? [...lista].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")) : [...lista].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }, [contacts, busca, filtro, ordem]);
 
   useEffect(() => {
     setPagina(0);
-  }, [busca, letra]);
+  }, [busca, filtro, ordem]);
 
   const contatosPaginados = useMemo(
     () => filtrados.slice(pagina * ITENS_POR_PAGINA, (pagina + 1) * ITENS_POR_PAGINA),
@@ -105,7 +105,7 @@ export function Agenda() {
   const resumo = useMemo(() => {
     const lista = contacts ?? [];
     const comProcesso = lista.filter((contato) => Boolean(contato.processo?.trim())).length;
-    return { total: lista.length, comProcesso, semProcesso: lista.length - comProcesso };
+    return { total: lista.length, comProcesso, semProcesso: lista.length - comProcesso, conferir: lista.filter((c) => !telefoneOk(c.telefone)).length };
   }, [contacts]);
 
   useEffect(() => {
@@ -241,60 +241,66 @@ export function Agenda() {
     });
   }
 
+  const paginaMarcada = contatosPaginados.length > 0 && contatosPaginados.every((c) => selecionados.has(c.id));
+  const contagens: Record<Filtro, number> = { todos: resumo.total, com_processo: resumo.comProcesso, sem_processo: resumo.semProcesso, conferir: resumo.conferir };
   return (
-    <div className="space-y-5 md:space-y-6">
+    <div className="space-y-5">
       <PageHeader
-        title="Contatos"
-        description="Contatos usados para identificar cada cliente com segurança pelo nome completo e número do processo."
-        actions={<div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
-          {canManage && <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv,.vcf,text/csv,text/vcard"
-            className="hidden"
-            onChange={handleArquivoSelecionado}
-          />}
-          {canManage && <Button className="col-span-2 sm:order-3 sm:col-auto" onClick={abrirNovo}>
-            <Plus className="h-4 w-4" /> Novo contato
-          </Button>}
-          {canManage && <Button variant="outline" onClick={() => fileInputRef.current?.click()} loading={importando}>
-            <Upload className="h-4 w-4" /> Importar
-          </Button>}
-          <Button variant="outline" onClick={() => window.open("/api/contacts/export", "_blank")}>
-            <Download className="h-4 w-4" /> Exportar
-          </Button>
+        title="Contatos do WhatsApp"
+        description="Quem recebe os avisos do escritório: nome, telefone e, se houver, o processo. O nome e o processo confirmam o cliente certo."
+        actions={<div className="flex flex-wrap items-center gap-2">
+          {canManage && <input ref={fileInputRef} type="file" accept=".csv,.vcf,text/csv,text/vcard" className="hidden" onChange={handleArquivoSelecionado} />}
+          {canManage && <Button variant="outline" onClick={() => fileInputRef.current?.click()} loading={importando} title="Importar CSV do Google/Android ou vCard (.vcf)"><Upload className="h-4 w-4" /> Importar</Button>}
+          <Button variant="outline" onClick={() => window.open("/api/contacts/export", "_blank")}><Download className="h-4 w-4" /> Exportar</Button>
+          {canManage && <Button onClick={abrirNovo}><Plus className="h-4 w-4" /> Novo contato</Button>}
         </div>}
       />
 
-      <WorkspacePanel className="contact-directory" title="Seu diretório" description="Dados usados na identificação e nos avisos aos clientes."
-        aside={<span className="text-xs text-zinc-500 dark:text-zinc-400">{resumo.total} contatos · {resumo.comProcesso} com processo · {resumo.semProcesso} sem processo</span>}
-        toolbar={<div className="space-y-4">
-          <div className="relative max-w-xl"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" /><Input aria-label="Buscar contatos" placeholder="Buscar nome, telefone ou processo…" className="pl-9" value={busca} onChange={e => setBusca(e.target.value)} /></div>
-          <nav aria-label="Filtrar contatos pela inicial" className="scrollbar-thin flex gap-1 overflow-x-auto pb-1">
-            <button type="button" onClick={() => setLetra(null)} className={cn("shrink-0 rounded-md px-3 py-1.5 text-xs", letra === null ? "bg-accent-50 font-semibold text-accent-700 dark:bg-accent-900/30 dark:text-accent-300" : "text-zinc-500 dark:text-zinc-400")}>Todos</button>
-            {LETRAS.map(item => <button key={item} type="button" onClick={() => setLetra(letra === item ? null : item)} className={cn("h-7 w-7 shrink-0 rounded-md text-xs", letra === item ? "bg-accent-50 font-semibold text-accent-700 dark:bg-accent-900/30 dark:text-accent-300" : "text-zinc-500 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800")}>{item}</button>)}
-          </nav>
-          {canManage && <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
-            <label className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400"><Checkbox checked={contatosPaginados.length > 0 && contatosPaginados.every(c => selecionados.has(c.id))} onChange={alternarSelecionarTodos} />Selecionar esta página · {filtrados.length} resultados</label>
-            {selecionados.size > 0 && <div className="flex flex-wrap gap-2"><Button variant="ghost" size="sm" onClick={() => setSelecionados(new Set())}>Limpar seleção</Button><Button variant="outline" className="danger-action" size="sm" onClick={() => setConfirmMassaAberto(true)} loading={apagandoSelecionados}><Trash2 className="h-3.5 w-3.5" /> Apagar selecionados ({selecionados.size})</Button></div>}
-          </div>}
-        </div>}
-        footer={canManage ? "Importação disponível em CSV do Google/Android ou vCard (.vcf)." : undefined}
-      >
-        {contacts === null ? <div className="p-5"><Skeleton className="h-40" /></div> : filtrados.length === 0 ? <EmptyState icon={Users} title={busca || letra ? "Nenhum contato encontrado" : "Nenhum contato cadastrado ainda"} description="Adicione um contato ou ajuste os filtros da busca." action={canManage && !busca && !letra && <Button onClick={abrirNovo}>Novo contato</Button>} /> : <>
-          {contatosPaginados.map(c => <WorkspaceRow key={c.id} selected={selecionados.has(c.id)}
-            selection={canManage ? <Checkbox aria-label={`Selecionar ${c.nome}`} checked={selecionados.has(c.id)} onChange={() => alternarSelecionado(c.id)} /> : undefined}
-            primary={<div><span className="directory-avatar" aria-hidden="true">{c.nome.split(" ").filter(Boolean).slice(0,2).map(word=>word[0]).join("")}</span><h3 className="break-words text-[13px] font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</h3><p className="mt-1 break-all text-xs text-zinc-500 dark:text-zinc-400">{c.processo || "Processo não informado"}</p></div>}
-            secondary={<span className="inline-flex items-center gap-2 text-sm"><Phone className="h-3.5 w-3.5 text-zinc-400" />{formatPhoneDisplay(c.telefone)}</span>}
-            actions={<>
-              {c.observacoes && <Button size="sm" variant="ghost" aria-expanded={expandido === c.id} onClick={() => setExpandido(expandido === c.id ? null : c.id)}><StickyNote className="h-3.5 w-3.5" /> Observações</Button>}
-              {canManage && <Button size="sm" variant="outline" aria-label={`Editar ${c.nome}`} onClick={() => abrirEdicao(c)}><Pencil className="h-3.5 w-3.5" /> Editar</Button>}
-              {canManage && <Button size="sm" variant="ghost" className="text-red-600 dark:text-red-400" aria-label={`Apagar ${c.nome}`} onClick={() => setExcluirAlvo(c)} loading={excluindo === c.id}><Trash2 className="h-3.5 w-3.5" /> Apagar</Button>}
-            </>}
-          >{expandido === c.id && c.observacoes && <div><p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Observações</p><p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">{c.observacoes}</p></div>}</WorkspaceRow>)}
-          <div className="border-t border-zinc-200 px-5 py-4 dark:border-zinc-800"><Pagination page={pagina} totalItems={filtrados.length} pageSize={ITENS_POR_PAGINA} onPageChange={setPagina} /></div>
-        </>}
-      </WorkspacePanel>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        {FILTROS.map(([k, rotulo]) => (
+          <button key={k} type="button" onClick={() => setFiltro(filtro === k && k !== "todos" ? "todos" : k)} aria-pressed={filtro === k}
+            className={`rounded-2xl border p-4 text-left transition ${filtro === k ? "border-accent-500 bg-accent-50 dark:bg-accent-500/10" : "border-zinc-200 bg-white hover:border-accent-400 dark:border-zinc-800 dark:bg-zinc-900"} ${k === "conferir" && contagens[k] > 0 && filtro !== k ? "border-amber-300 dark:border-amber-700" : ""}`}>
+            <span className={`block text-2xl font-semibold leading-none ${k === "conferir" && contagens[k] > 0 ? "text-amber-700 dark:text-amber-300" : ""}`}>{contagens[k]}</span>
+            <span className="mt-1.5 block text-xs text-zinc-500">{rotulo}</span>
+          </button>))}
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900 sm:flex-row sm:items-center">
+        <div className="relative flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" /><Input aria-label="Buscar contatos" placeholder="Buscar nome, telefone ou processo…" className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} /></div>
+        <Select aria-label="Ordenar contatos" className="sm:max-w-[200px]" value={ordem} onChange={(e) => setOrdem(e.target.value as "nome" | "recentes")}><option value="nome">Nome (A–Z)</option><option value="recentes">Mais recentes</option></Select>
+        {canManage && contatosPaginados.length > 0 && <label className="flex shrink-0 cursor-pointer items-center gap-2 px-1 text-xs text-zinc-600 dark:text-zinc-300"><Checkbox checked={paginaMarcada} onChange={alternarSelecionarTodos} /> Marcar esta página</label>}
+      </div>
+
+      {canManage && selecionados.size > 0 && <div role="region" aria-label="Ações em lote" className="sticky top-20 z-20 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-accent-300 bg-accent-50 px-4 py-2.5 shadow-sm dark:border-accent-800 dark:bg-accent-950">
+        <strong className="text-sm">{selecionados.size} contato(s) selecionado(s)</strong>
+        <span className="flex gap-2"><Button variant="ghost" size="sm" onClick={() => setSelecionados(new Set())}>Limpar seleção</Button><Button variant="outline" className="danger-action" size="sm" onClick={() => setConfirmMassaAberto(true)} loading={apagandoSelecionados}><Trash2 className="h-3.5 w-3.5" /> Apagar selecionados</Button></span>
+      </div>}
+
+      {contacts === null ? <Skeleton className="h-56" /> : filtrados.length === 0 ? (
+        <EmptyState icon={Users} title={busca || filtro !== "todos" ? "Nenhum contato encontrado" : "Nenhum contato cadastrado ainda"} description={busca || filtro !== "todos" ? "Tente outra busca ou volte para «Todos»." : "Adicione um contato ou importe um arquivo do Google/Android ou vCard (.vcf)."} action={canManage && !busca && filtro === "todos" ? <Button onClick={abrirNovo}><Plus className="h-4 w-4" /> Novo contato</Button> : undefined} />
+      ) : (
+        <ul className="divide-y divide-zinc-100 overflow-hidden surface-panel dark:divide-zinc-800">
+          {contatosPaginados.map((c) => { const ok = telefoneOk(c.telefone); return (
+            <li key={c.id} className={`flex items-center gap-3 px-4 py-3 transition hover:bg-accent-50/40 dark:hover:bg-white/5 ${selecionados.has(c.id) ? "bg-accent-50/60 dark:bg-accent-500/10" : ""}`}>
+              {canManage && <Checkbox aria-label={`Selecionar ${c.nome}`} checked={selecionados.has(c.id)} onChange={() => alternarSelecionado(c.id)} />}
+              <span aria-hidden className="hidden h-10 w-10 shrink-0 items-center sm:flex justify-center rounded-full bg-accent-100 text-sm font-semibold text-accent-700 dark:bg-accent-500/20 dark:text-accent-200">{iniciais(c.nome) || "?"}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2"><h3 className="break-words text-sm font-semibold text-zinc-900 dark:text-zinc-100">{c.nome}</h3>{!ok && <Badge tone="warning">Telefone a conferir</Badge>}</div>
+                <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-zinc-500"><span className="inline-flex items-center gap-1"><Phone className="h-3 w-3" />{formatPhoneDisplay(c.telefone)}</span>{c.processo && <span className="font-mono">Proc. {c.processo}</span>}</p>
+                {c.observacoes && <p className="mt-1 truncate text-xs text-zinc-500" title={c.observacoes}>{c.observacoes}</p>}
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                {atendimento && ok && <a href={`/api/atendimento/entrar?telefone=${(() => { const d = c.telefone.replace(/\D/g, ""); return d.startsWith("55") ? d : `55${d}`; })()}`} target="_blank" rel="noopener noreferrer" aria-label={`Abrir a conversa de ${c.nome} no atendimento`} title="Abrir conversa no atendimento" className="rounded-lg p-2 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"><MessageCircle className="h-4 w-4" /></a>}
+                {canManage && <Button size="sm" variant="outline" aria-label={`Editar ${c.nome}`} onClick={() => abrirEdicao(c)}><Pencil className="h-3.5 w-3.5" /><span className="hidden sm:inline"> Editar</span></Button>}
+                {canManage && <MenuSuspenso gatilho={({ aberto, alternar }) => <button type="button" aria-label={`Mais ações para ${c.nome}`} aria-expanded={aberto} onClick={alternar} className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><MoreHorizontal className="h-4 w-4" /></button>}>
+                  {(fechar) => <button type="button" role="menuitem" className="menu-pop-item text-red-600 dark:text-red-400" onClick={() => { fechar(); setExcluirAlvo(c); }}><Trash2 className="h-4 w-4" /> Apagar contato</button>}
+                </MenuSuspenso>}
+              </div>
+            </li>); })}
+        </ul>
+      )}
+      {filtrados.length > ITENS_POR_PAGINA && <Pagination page={pagina} totalItems={filtrados.length} pageSize={ITENS_POR_PAGINA} onPageChange={setPagina} />}
+      {filtrados.length > 0 && <p className="text-right text-xs text-zinc-500">{filtrados.length} contato(s){filtro !== "todos" || busca ? " neste filtro" : ""}</p>}
 
       <Modal
         open={modalAberto}
