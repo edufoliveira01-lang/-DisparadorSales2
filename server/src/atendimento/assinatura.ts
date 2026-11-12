@@ -14,8 +14,8 @@ export const assinarRequisicao = (segredo: string, d: { metodo: string; caminho:
 /** Chave própria de cada escritório para a entrada direta (derivada do segredo geral; só o painel conhece o segredo). */
 export const chaveSso = (segredo: string, slug: string) => hmac(segredo, `sso:${slug}`);
 
-export function emitirTokenSso(chave: string, d: { slug: string; email: string }, agora = Math.floor(Date.now() / 1000), validadeS = 60): string {
-  const carga = b64u(JSON.stringify({ slug: d.slug, email: d.email, exp: agora + validadeS, jti: randomUUID() }));
+export function emitirTokenSso(chave: string, d: { slug: string; email: string; src?: string }, agora = Math.floor(Date.now() / 1000), validadeS = 60): string {
+  const carga = b64u(JSON.stringify({ slug: d.slug, email: d.email, ...(d.src ? { src: d.src } : {}), exp: agora + validadeS, jti: randomUUID() }));
   return `${carga}.${hmac(chave, carga)}`;
 }
 

@@ -22,8 +22,10 @@ export function atendimentoDaInstancia(env: NodeJS.ProcessEnv = process.env): At
 }
 
 /** Endereço (na ponte) que leva o navegador logado ao atendimento. O token vale 60 segundos e uma vez. */
-export function enderecoDeEntrada(a: AtendimentoDaInstancia, email: string, telefone = ""): string {
-  const base = `${a.ponteUrl}/sso?t=${encodeURIComponent(emitirTokenSso(a.chaveSso, { slug: a.slug, email: email.trim().toLowerCase() }))}`;
+export function enderecoDeEntrada(a: AtendimentoDaInstancia, email: string, telefone = "", origem = ""): string {
+  // `origem` (endereço público deste sistema) vai assinada dentro do token: o atendimento usa para o botão "Sistema" voltar para cá.
+  const src = /^https:\/\/[a-z0-9.-]+(:\d+)?$/i.test(origem) ? origem.toLowerCase() : undefined;
+  const base = `${a.ponteUrl}/sso?t=${encodeURIComponent(emitirTokenSso(a.chaveSso, { slug: a.slug, email: email.trim().toLowerCase(), src }))}`;
   const d = telefone.replace(/\D/g, "");
   // Com telefone, o atendimento abre direto na conversa desse número (a ponte só aceita este destino).
   return d.length >= 8 && d.length <= 15 ? `${base}&next=${encodeURIComponent(`/app/abrir-conversa?telefone=${d}`)}` : base;
