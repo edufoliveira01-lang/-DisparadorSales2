@@ -101,6 +101,16 @@ export function listarAdvogados(): AdvogadoDjen[] {
     .prepare("SELECT * FROM djen_advogados ORDER BY nome, id")
     .all() as AdvogadoDjen[];
 }
+/** Remove um advogado sem histórico. Com publicações vinculadas, recusa: o certo é pausar as consultas. */
+export function removerAdvogado(id: number): void {
+  const existe = db.prepare("SELECT id FROM djen_advogados WHERE id=?").get(id);
+  if (!existe) throw new DjenInputError("Advogado não encontrado.");
+  const vinculadas = (db.prepare("SELECT COUNT(*) n FROM djen_publicacao_advogados WHERE advogado_id=?").get(id) as { n: number }).n;
+  if (vinculadas > 0) {
+    throw new DjenInputError(`Este advogado tem ${vinculadas} publicação(ões) vinculada(s). Para não perder o histórico, pause as consultas em vez de remover.`);
+  }
+  db.prepare("DELETE FROM djen_advogados WHERE id=?").run(id);
+}
 export function salvarAdvogado(
   data: Record<string, unknown>,
   id?: number,

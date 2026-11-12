@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { useConfirmar } from "@/components/ui/useConfirmar";
 import { MessageSquarePlus, MessageSquareText, Save, Trash2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { TemplatesPericia } from "./TemplatesPericia";
@@ -36,13 +37,16 @@ type Form = Omit<Model, "id">;
 
 export function Templates() {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const { confirmar: confirmarTroca, dialogo: dialogoTroca } = useConfirmar();
   const dirtyEditor = useRef(false);
   const category = CATEGORIES.find(c => c.path === pathname) || CATEGORIES[0];
   return <div className="space-y-6">
+    {dialogoTroca}
     <PageHeader title="Modelos de mensagens" description="Textos dos avisos de WhatsApp. Escolha a categoria, selecione um modelo e edite com a prévia ao lado." />
     <div className="surface-panel p-2">
       <nav aria-label="Categorias de mensagens" className="flex gap-1 overflow-x-auto">
-        {CATEGORIES.map(c => <NavLink key={c.key} to={c.path} end onClick={event => { if (pathname !== c.path && dirtyEditor.current && !window.confirm("Descartar as alterações não salvas?")) event.preventDefault(); else if (pathname !== c.path) dirtyEditor.current = false; }} className={({ isActive }) => cn("shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-colors", isActive ? "bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300" : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800")}>{c.label}</NavLink>)}
+        {CATEGORIES.map(c => <NavLink key={c.key} to={c.path} end onClick={event => { if (pathname === c.path) return; if (!dirtyEditor.current) return; event.preventDefault(); void confirmarTroca({ titulo: "Descartar alterações?", mensagem: "Há alterações não salvas neste modelo. Se continuar, elas serão perdidas.", confirmar: "Descartar", perigo: true }).then(ok => { if (ok) { dirtyEditor.current = false; navigate(c.path); } }); }} className={({ isActive }) => cn("shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-colors", isActive ? "bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300" : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800")}>{c.label}</NavLink>)}
       </nav>
     </div>
     {category.key === "pericia" ? <TemplatesPericia /> : <MessageTemplateEditor key={category.key} category={category.key} label={category.label} onDirty={value => { dirtyEditor.current = value; }} />}
@@ -69,7 +73,8 @@ function MessageTemplateEditor({ category, label, onDirty }: { category: string;
     dirty.current = false;
     onDirty(false);
   }
-  function allowChange() { return !dirty.current || window.confirm("Descartar as alterações não salvas?"); }
+  const { confirmar, dialogo } = useConfirmar();
+  async function allowChange() { return !dirty.current || confirmar({ titulo: "Descartar alterações?", mensagem: "Há alterações não salvas neste modelo. Se continuar, elas serão perdidas.", confirmar: "Descartar", perigo: true }); }
   async function load(preferred?: number) {
     const data = await api.get<{ templates: Model[]; scopes: Record<string, Scope> }>(`/message-templates?categoria=${category}`);
     setModels(data.templates);
@@ -97,8 +102,8 @@ function MessageTemplateEditor({ category, label, onDirty }: { category: string;
   }, [form.mensagem, form.escopo]);
 
   function edit(data: Partial<Form>) { dirty.current = true; onDirty(true); setForm(current => ({ ...current, ...data })); }
-  function newModel() {
-    if (!allowChange()) return;
+  async function newModel() {
+    if (!(await allowChange())) return;
     const scope = form.escopo || Object.keys(scopes)[0];
     setSelected(null);
     setForm({ categoria: category, escopo: scope, nome: "Novo modelo", mensagem: scopes[scope].content, padrao: 0 });
@@ -124,7 +129,7 @@ function MessageTemplateEditor({ category, label, onDirty }: { category: string;
     finally { setBusy(false); }
   }
   async function remove() {
-    if (!selected || !window.confirm(`Excluir o modelo “${form.nome}”?`)) return;
+    if (!selected || !(await confirmar({ titulo: "Excluir modelo?", mensagem: `O modelo «${form.nome}» será excluído. Essa ação não pode ser desfeita.`, confirmar: "Excluir", perigo: true }))) return;
     setBusy(true);
     try { await api.delete(`/message-templates/${selected}`); await load(); show("Modelo excluído.", "success"); }
     catch (error) { show(error instanceof ApiError ? error.message : "Erro ao excluir modelo.", "error"); }
@@ -134,13 +139,14 @@ function MessageTemplateEditor({ category, label, onDirty }: { category: string;
   const ehPadraoSalvo = models.find(m => m.id === selected)?.padrao === 1;
   const descricao = category === "remarcacao" ? "Mensagens enviadas quando uma perícia ou audiência é remarcada." : "Crie modelos e defina qual é o padrão de cada aplicação.";
   return <div className="space-y-5">
+    {dialogo}
     <PageHeader compact title={`Mensagens de ${label}`} description={descricao} actions={<Button onClick={newModel} disabled={loading || busy || !Object.keys(scopes).length}><MessageSquarePlus className="h-4 w-4" /> Novo modelo</Button>} />
     {loading ? <CarregandoModelos /> : !models.length && selected === null && !form.nome ? <EmptyState icon={MessageSquareText} title="Nenhum modelo nesta categoria" description="Crie o primeiro modelo para definir o texto enviado." action={<Button onClick={newModel} disabled={!Object.keys(scopes).length}><MessageSquarePlus className="h-4 w-4" /> Novo modelo</Button>} /> : <div className="space-y-5">
       <div className="surface-panel space-y-4 p-4">
         {Object.entries(scopes).map(([scope, config]) => {
           const group = models.filter(m => m.escopo === scope);
           if (!group.length) return null;
-          return <GrupoModelos key={scope} titulo={config.label}>{group.map(model => <ModeloCard key={model.id} nome={model.nome} trecho={model.mensagem} padrao={model.padrao === 1} selecionado={selected === model.id} disabled={busy} onClick={() => { if (allowChange()) choose(model); }} />)}</GrupoModelos>;
+          return <GrupoModelos key={scope} titulo={config.label}>{group.map(model => <ModeloCard key={model.id} nome={model.nome} trecho={model.mensagem} padrao={model.padrao === 1} selecionado={selected === model.id} disabled={busy} onClick={() => { void allowChange().then(ok => { if (ok) choose(model); }); }} />)}</GrupoModelos>;
         })}
         {selected === null && <p className="rounded-lg border border-dashed border-accent-300 bg-accent-50/50 px-3 py-2 text-xs text-accent-700 dark:border-accent-700 dark:bg-accent-900/10 dark:text-accent-300">Novo modelo em edição (ainda não salvo).</p>}
       </div>

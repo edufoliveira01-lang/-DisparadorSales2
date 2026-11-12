@@ -516,6 +516,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
   const [superados, setSuperados] = useState<(AguardandoRetorno & { motivo_superada: string; ultimo_andamento_em: string | null })[]>([]);
   const [selecionados, setSelecionados] = useState<number[]>([]);
   const [confirmarLote, setConfirmarLote] = useState(false);
+  const [removerAdv, setRemoverAdv] = useState<Advogado | null>(null);
   const [selecionandoTodos, setSelecionandoTodos] = useState(false);
   const [carregandoSemLaudo, setCarregandoSemLaudo] = useState(false);
   const [mensagem, setMensagem] = useState<{
@@ -1289,6 +1290,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
           onAdicionar={() => setFormAdv({ nome: "", numero_oab: "", uf_oab: "SP", modo_busca: "ambos", ativo: true })}
           onEditar={(a) => setFormAdv({ ...a, ativo: Boolean(a.ativo) })}
           onConsultar={(a) => { setConsulta((c) => ({ ...c, advogado_id: String(a.id) })); setConsultaAberta(true); }}
+          onRemover={(a) => setRemoverAdv(a)}
           onAlternarAtivo={(a) => void acao(async () => {
             await api.put(`/djen/advogados/${a.id}`, { ...a, ativo: !a.ativo });
             await carregarStatus();
@@ -1470,6 +1472,24 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
           </div>
         )}
       </Modal>
+      <ConfirmDialog
+        open={removerAdv !== null}
+        title="Remover advogado?"
+        message={`«${removerAdv?.nome ?? ""}» deixa de ser acompanhado. Se já houver publicações dele no sistema, a remoção é recusada e o certo é pausar as consultas.`}
+        confirmLabel="Remover"
+        loading={salvando}
+        onConfirm={() => {
+          const alvo = removerAdv;
+          setRemoverAdv(null);
+          if (!alvo) return;
+          void acao(async () => {
+            await api.delete(`/djen/advogados/${alvo.id}`);
+            await carregarStatus();
+            show("Advogado removido.", "success");
+          });
+        }}
+        onCancel={() => setRemoverAdv(null)}
+      />
       <ConfirmDialog
         open={confirmarLote}
         title="Concluir processos selecionados?"

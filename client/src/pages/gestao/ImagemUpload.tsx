@@ -2,6 +2,7 @@ import { useRef, useState, type ReactNode } from "react";
 import { AlignCenter, AlignLeft, AlignRight, ImagePlus, Trash2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
+import { Badge } from "@/components/ui/Badge";
 import { useToast } from "@/components/ui/Toast";
 
 export type Alinha = "left" | "center" | "right";
@@ -40,19 +41,22 @@ export function CartaoImagem({ titulo, descricao, urlBase, tem, aoMudar, podeEdi
     catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível remover.", "error"); }
   };
   return (
-    <div className="space-y-3">
-      <div>
-        <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">{titulo}</h3>
-        <p className="mt-0.5 text-[13px] text-zinc-500">{descricao}</p>
+    <div className="flex h-full flex-col gap-3 rounded-xl border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{titulo}</h3>
+          <p className="mt-0.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{descricao}</p>
+        </div>
+        <Badge tone={tem ? "success" : "neutral"}>{tem ? "Enviada" : "Sem imagem"}</Badge>
       </div>
-      <div className={`flex min-h-[5rem] items-center justify-center rounded-xl border border-dashed border-zinc-300 p-3 dark:border-zinc-700 ${fundoEscuro ? "bg-zinc-800" : "bg-zinc-50 dark:bg-zinc-950/40"}`}>
-        {tem ? <img key={versao} src={`${urlBase}?v=${versao}&t=${Date.now() % 100000}`} alt={titulo} className={`${altura} max-w-full object-contain`} /> : <span className="text-xs text-zinc-500">Nenhuma imagem.</span>}
+      <div className={`flex min-h-[5rem] flex-1 items-center justify-center rounded-lg border border-dashed border-zinc-300 p-3 dark:border-zinc-700 ${fundoEscuro ? "bg-zinc-800" : "bg-white dark:bg-zinc-950/40"}`}>
+        {tem ? <img key={versao} src={`${urlBase}?v=${versao}&t=${Date.now() % 100000}`} alt={titulo} className={`${altura} max-w-full object-contain`} /> : <span className="flex items-center gap-1.5 text-xs text-zinc-400"><ImagePlus className="h-4 w-4" /> Nenhuma imagem enviada</span>}
       </div>
       {extra}
       {podeEditar && (
         <div className="flex flex-wrap gap-2">
           <Button type="button" size="sm" variant="outline" onClick={() => entrada.current?.click()}><ImagePlus className="h-4 w-4" /> {tem ? "Trocar imagem" : "Enviar imagem"}</Button>
-          {tem && <Button type="button" size="sm" variant="ghost" onClick={() => void tirar()}><Trash2 className="h-4 w-4" /> Remover</Button>}
+          {tem && <Button type="button" size="sm" variant="ghost" className="danger-action" onClick={() => void tirar()}><Trash2 className="h-4 w-4" /> Remover</Button>}
           <input ref={entrada} type="file" accept="image/png,image/jpeg,image/webp,.ico,image/x-icon" hidden onChange={(e) => void enviar(e.target.files?.[0])} />
         </div>
       )}

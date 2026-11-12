@@ -39,6 +39,7 @@ import {
   salvarConfiguracaoDjen,
   listarAdvogados,
   salvarAdvogado,
+  removerAdvogado,
   listarPublicacoes,
   listarIdsPublicacoes,
   detalhesPublicacao,
@@ -228,6 +229,14 @@ djenRouter.put(
   "/advogados/:id",
   wrap((req, res) => {
     res.json(salvarAdvogado(req.body, id(req.params.id)));
+    changed();
+  }),
+);
+djenRouter.delete(
+  "/advogados/:id",
+  wrap((req, res) => {
+    removerAdvogado(id(req.params.id));
+    res.json({ ok: true });
     changed();
   }),
 );

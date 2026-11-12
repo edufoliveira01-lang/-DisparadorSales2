@@ -8,8 +8,8 @@ import { Select } from "@/components/ui/Select";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { Callout, SettingRow, SettingsBlock, SettingsPanel } from "@/components/ui/Settings";
-import { CalendarDays, ChevronDown, RefreshCw } from "lucide-react";
+import { Callout, SettingRow, SettingsBlock, SettingsFooter, SettingsPanel } from "@/components/ui/Settings";
+import { CalendarDays, ChevronDown, ExternalLink, Info, RefreshCw } from "lucide-react";
 
 type Tipo = "feriado" | "suspensao" | "expediente_parcial" | "pendencia";
 type Evento = {
@@ -250,6 +250,15 @@ export function AutomaticCalendars() {
   );
 }
 
+const UFS = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"];
+
+function seloEvento(e: Evento): { tone: "success" | "warning" | "info" | "neutral"; label: string } {
+  if (e.tipo === "pendencia") return { tone: "warning", label: "A conferir" };
+  if (e.tipo === "expediente_parcial") return { tone: "info", label: "Expediente parcial" };
+  if (e.tipo === "suspensao") return /recesso/i.test(e.descricao) ? { tone: "neutral", label: "Recesso" } : { tone: "warning", label: "Suspensão" };
+  return { tone: "success", label: "Feriado" };
+}
+
 function CalendarioCard({
   c,
   estado,
@@ -266,24 +275,17 @@ function CalendarioCard({
   const salvo = estado.config.localidades.find(
     (l) => l.tribunal === c.tribunal && l.orgao === c.orgao,
   );
-  const [municipio, setMunicipio] = useState(
-      salvo?.municipio || c.municipio || "",
-    ),
+  const [municipio, setMunicipio] = useState(salvo?.municipio || c.municipio || ""),
     [uf, setUf] = useState(salvo?.uf || c.uf || ""),
     [instancia, setInstancia] = useState<"primeiro" | "segundo">(
       salvo?.instancia ||
-        (/turma|câmara|tribunal/i.test(c.orgao) &&
-        !/vara|recursal/i.test(c.orgao)
-          ? "segundo"
-          : "primeiro"),
+        (/turma|câmara|tribunal/i.test(c.orgao) && !/vara|recursal/i.test(c.orgao) ? "segundo" : "primeiro"),
     );
   const [tipo, setTipo] = useState<Tipo>("feriado"),
     [inicio, setInicio] = useState(""),
     [fim, setFim] = useState(""),
     [descricao, setDescricao] = useState(""),
-    [historico, setHistorico] = useState<
-      { id: number; descricao: string; created_at: string }[] | null
-    >(null);
+    [historico, setHistorico] = useState<{ id: number; descricao: string; created_at: string }[] | null>(null);
   useEffect(() => {
     setMunicipio(salvo?.municipio || c.municipio || "");
     setUf(salvo?.uf || c.uf || "");
@@ -301,6 +303,7 @@ function CalendarioCard({
     (e) => e.tipo === "pendencia" && !c.ajustes.ignorar.includes(e.id),
   ).length;
   const [manualAberto, setManualAberto] = useState(false);
+  const lista = [...c.eventos, ...c.ajustes.adicionar];
 
   return (
     <details className="group rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
@@ -320,344 +323,225 @@ function CalendarioCard({
           <ChevronDown className="h-4 w-4 text-zinc-500 transition-transform group-open:rotate-180" />
         </span>
       </summary>
-      <div className="space-y-3 border-t border-zinc-100 p-3 text-xs dark:border-zinc-800">
-        {!suportado && <Callout tone="aviso">Ainda não há importador automático validado para {c.tribunal}. A localidade, por si só, não habilita a importação. <button type="button" className="font-semibold underline" onClick={() => setManualAberto(true)}>Preencher calendário manual deste órgão</button>.</Callout>}
-        {c.erro && <Callout tone="aviso">{c.erro}</Callout>}
-        {c.avisos.map((a) => (
-          <p key={a} className="text-zinc-500">
-            {a}
-          </p>
-        ))}
-        {suportado && <Button
-          size="sm"
-          variant="outline"
-          disabled={busy}
-          onClick={() =>
-            void executar(() =>
-              api.post("/djen/calendarios/sincronizar", {
-                tribunal: c.tribunal,
-                orgao: c.orgao,
-                ano: c.ano,
-              }),
-            )
-          }
-        >
-          Atualizar este calendário
-        </Button>}
-        {suportado && <details>
-          <summary className="cursor-pointer font-semibold">
-            Informar ou corrigir localidade
-          </summary>
-          <form
-            className="mt-3 grid gap-3 sm:grid-cols-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const local: Localidade = {
-                tribunal: c.tribunal,
-                orgao: c.orgao,
-                municipio: municipio.trim(),
-                uf,
-                instancia,
-              };
-              void executar(() =>
-                api.put("/djen/calendarios/config", {
-                  ...estado.config,
-                  localidades: [
-                    ...estado.config.localidades.filter(
-                      (l) => l.tribunal !== c.tribunal || l.orgao !== c.orgao,
-                    ),
-                    local,
-                  ],
-                }),
-              );
-            }}
-          >
-            <label>
-              <span className="mb-1.5 block text-[11px] text-zinc-500">
-                Município / subseção
-              </span>
-              <Input
-                value={municipio}
-                maxLength={150}
-                onChange={(e) => setMunicipio(e.target.value)}
-                placeholder="Ex.: São Paulo"
-              />
-            </label>
-            <label>
-              <span className="mb-1.5 block text-[11px] text-zinc-500">UF</span>
-              <Select
-                aria-label="UF"
-                value={uf}
-                onChange={(e) => setUf(e.target.value)}
+      <div className="divide-y divide-zinc-100 border-t border-zinc-100 text-xs dark:divide-zinc-800 dark:border-zinc-800">
+        <SettingsBlock className="px-3 py-4 sm:px-4">
+          {!suportado && <Callout tone="aviso">Ainda não há importador automático validado para {c.tribunal}. A localidade, por si só, não habilita a importação. <button type="button" className="font-semibold underline" onClick={() => setManualAberto(true)}>Preencher calendário manual deste órgão</button>.</Callout>}
+          {c.erro && <Callout tone="aviso">{c.erro}</Callout>}
+          {c.avisos.map((a) => <Callout key={a} tone="info">{a}</Callout>)}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            {suportado && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => void executar(() => api.post("/djen/calendarios/sincronizar", { tribunal: c.tribunal, orgao: c.orgao, ano: c.ano }))}
               >
-                <option value="">Identificar automaticamente</option>
-                {[
-                  "AC",
-                  "AL",
-                  "AP",
-                  "AM",
-                  "BA",
-                  "CE",
-                  "DF",
-                  "ES",
-                  "GO",
-                  "MA",
-                  "MT",
-                  "MS",
-                  "MG",
-                  "PA",
-                  "PB",
-                  "PR",
-                  "PE",
-                  "PI",
-                  "RJ",
-                  "RN",
-                  "RS",
-                  "RO",
-                  "RR",
-                  "SC",
-                  "SP",
-                  "SE",
-                  "TO",
-                ].map((u) => (
-                  <option key={u}>{u}</option>
-                ))}
-              </Select>
-            </label>
-            <label>
-              <span className="mb-1.5 block text-[11px] text-zinc-500">
-                Instância
-              </span>
-              <Select
-                aria-label="Instância"
-                value={instancia}
-                onChange={(e) =>
-                  setInstancia(e.target.value as "primeiro" | "segundo")
-                }
-              >
-                <option value="primeiro">Primeiro grau / turma recursal</option>
-                <option value="segundo">Segundo grau</option>
-              </Select>
-            </label>
-            <div className="flex items-end">
-              <Button size="sm" disabled={busy} type="submit">
-                Salvar localidade e importar
+                <RefreshCw className="h-4 w-4" />Atualizar este calendário
               </Button>
-            </div>
-          </form>
-        </details>}
-        <details>
-          <summary className="cursor-pointer font-semibold">
-            Ver datas e corrigir manualmente ({c.eventos.length} importados ·{" "}
-            {c.ajustes.adicionar.length} ajustes)
-          </summary>
-          <p className="my-3 text-zinc-500">
-            Os ajustes ficam separados da importação e são preservados na
-            atualização. Atos pendentes só bloqueiam cálculos que atravessem o
-            período indicado. Expediente parcial afeta o início e o vencimento,
-            sem excluir o dia intermediário da contagem.
-          </p>
-          <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
-            {[...c.eventos, ...c.ajustes.adicionar].map((e) => {
-              const manual = e.fonte === "manual",
-                ignorado = !manual && c.ajustes.ignorar.includes(e.id);
-              return (
-                <div
-                  key={`${manual}:${e.id}`}
-                  className={`rounded-lg border p-2 ${ignorado ? "opacity-60" : ""}`}
-                >
-                  <p className="font-medium">
-                    {dataBR(e.inicio)}
-                    {e.fim !== e.inicio ? ` a ${dataBR(e.fim)}` : ""} ·{" "}
-                    {tipos[e.tipo]}
-                    {manual ? " · Ajuste manual" : ""}
-                    {ignorado ? " · Desconsiderado" : ""}
-                  </p>
-                  <p className="mt-1 whitespace-pre-wrap break-words">
-                    {e.descricao}
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {manual ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() =>
-                          void salvar({
-                            ...c.ajustes,
-                            adicionar: c.ajustes.adicionar.filter(
-                              (x) => x.id !== e.id,
-                            ),
-                          })
-                        }
-                      >
-                        Remover ajuste
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() => void ignorar(e)}
-                      >
-                        {ignorado
-                          ? "Restaurar"
-                          : e.tipo === "pendencia"
-                            ? "Não se aplica a este órgão"
-                            : "Desconsiderar este ato"}
-                      </Button>
-                    )}
-                    {e.tipo === "pendencia" && !ignorado && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() =>
-                          void salvar({
-                            ignorar: [...c.ajustes.ignorar, e.id],
-                            adicionar: [
-                              ...c.ajustes.adicionar,
-                              { ...e, tipo: "suspensao", fonte: "manual" },
-                            ],
-                          })
-                        }
-                      >
-                        Confirmar suspensão neste órgão
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+            )}
+            {suportado && (
+              <button type="button" className="font-medium text-accent-600 underline dark:text-accent-300" onClick={() => setManualAberto(true)}>
+                Calendário manual deste órgão
+              </button>
+            )}
+            {c.fontes.map((f, i) => (
+              <a key={f} href={f} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-accent-600 underline dark:text-accent-300">
+                Fonte oficial {i + 1}<ExternalLink className="h-3 w-3" />
+              </a>
+            ))}
           </div>
+        </SettingsBlock>
+
+        {suportado && (
+          <details className="group/loc" open={c.status === "localidade_pendente" || undefined}>
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-3 text-sm font-semibold text-zinc-800 sm:px-4 dark:text-zinc-200">
+              <span>Localidade e instância<span className="ml-2 text-xs font-normal text-zinc-500 dark:text-zinc-400">{c.municipio ? `${c.municipio}${c.uf ? `/${c.uf}` : ""}` : "não informada"}</span></span>
+              <ChevronDown className="h-4 w-4 text-zinc-500 transition-transform group-open/loc:rotate-180" />
+            </summary>
+            <form
+              className="space-y-4 px-3 pb-4 sm:px-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const local: Localidade = { tribunal: c.tribunal, orgao: c.orgao, municipio: municipio.trim(), uf, instancia };
+                void executar(() =>
+                  api.put("/djen/calendarios/config", {
+                    ...estado.config,
+                    localidades: [
+                      ...estado.config.localidades.filter((l) => l.tribunal !== c.tribunal || l.orgao !== c.orgao),
+                      local,
+                    ],
+                  }),
+                );
+              }}
+            >
+              <SettingRow label="Município / subseção" hint="Define os feriados municipais aplicados.">
+                <Input aria-label="Município / subseção" value={municipio} maxLength={150} onChange={(e) => setMunicipio(e.target.value)} placeholder="Ex.: São Paulo" />
+              </SettingRow>
+              <SettingRow label="UF">
+                <Select aria-label="UF" value={uf} onChange={(e) => setUf(e.target.value)}>
+                  <option value="">Identificar automaticamente</option>
+                  {UFS.map((u) => <option key={u}>{u}</option>)}
+                </Select>
+              </SettingRow>
+              <SettingRow label="Instância">
+                <Select aria-label="Instância" value={instancia} onChange={(e) => setInstancia(e.target.value as "primeiro" | "segundo")}>
+                  <option value="primeiro">Primeiro grau / turma recursal</option>
+                  <option value="segundo">Segundo grau</option>
+                </Select>
+              </SettingRow>
+              <div className="flex justify-end">
+                <Button size="sm" disabled={busy} type="submit">Salvar localidade e importar</Button>
+              </div>
+            </form>
+          </details>
+        )}
+
+        <SettingsBlock
+          className="px-3 py-4 sm:px-4"
+          title="Datas do calendário"
+          description={`${c.eventos.length} importada(s) · ${c.ajustes.adicionar.length} ajuste(s) manual(is). Seus ajustes são preservados nas atualizações.`}
+        >
+          <details className="group/regra rounded-xl border border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2.5 font-medium">
+              <span className="flex items-center gap-2"><Info className="h-4 w-4" />Como os ajustes afetam o cálculo</span>
+              <ChevronDown className="h-4 w-4 transition-transform group-open/regra:rotate-180" />
+            </summary>
+            <p className="px-3 pb-3 leading-relaxed">
+              Os ajustes ficam separados da importação e são preservados na atualização. Atos pendentes só bloqueiam
+              cálculos que atravessem o período indicado. Expediente parcial afeta o início e o vencimento, sem excluir
+              o dia intermediário da contagem.
+            </p>
+          </details>
+          {lista.length ? (
+            <ul className="max-h-80 divide-y divide-zinc-100 overflow-y-auto rounded-xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+              {lista.map((e) => {
+                const manual = e.fonte === "manual",
+                  ignorado = !manual && c.ajustes.ignorar.includes(e.id),
+                  selo = seloEvento(e);
+                return (
+                  <li key={`${manual}:${e.id}`} className={`flex flex-wrap items-start justify-between gap-2 px-3 py-2.5 ${ignorado ? "opacity-60" : ""}`}>
+                    <div className="min-w-0 flex-1 basis-56">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-medium tabular-nums text-zinc-900 dark:text-zinc-100">
+                          {dataBR(e.inicio)}{e.fim !== e.inicio ? ` a ${dataBR(e.fim)}` : ""}
+                        </span>
+                        <Badge tone={selo.tone}>{selo.label}</Badge>
+                        {manual && <Badge tone="accent">Ajuste manual</Badge>}
+                        {ignorado && <Badge tone="neutral">Desconsiderado</Badge>}
+                      </div>
+                      <p className="mt-1 whitespace-pre-wrap break-words text-zinc-600 dark:text-zinc-400">{e.descricao}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {manual ? (
+                        <Button size="sm" variant="outline" disabled={busy} onClick={() => void salvar({ ...c.ajustes, adicionar: c.ajustes.adicionar.filter((x) => x.id !== e.id) })}>
+                          Remover ajuste
+                        </Button>
+                      ) : (
+                        <Button size="sm" variant="outline" disabled={busy} onClick={() => void ignorar(e)}>
+                          {ignorado ? "Restaurar" : e.tipo === "pendencia" ? "Não se aplica a este órgão" : "Desconsiderar este ato"}
+                        </Button>
+                      )}
+                      {e.tipo === "pendencia" && !ignorado && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() =>
+                            void salvar({
+                              ignorar: [...c.ajustes.ignorar, e.id],
+                              adicionar: [...c.ajustes.adicionar, { ...e, tipo: "suspensao", fonte: "manual" }],
+                            })
+                          }
+                        >
+                          Confirmar suspensão neste órgão
+                        </Button>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <Callout tone="info">Nenhuma data importada ou ajustada para este calendário.</Callout>
+          )}
+        </SettingsBlock>
+
+        <SettingsBlock
+          className="px-3 py-4 sm:px-4"
+          title="Adicionar data manualmente"
+          description="Para feriados ou suspensões que a fonte oficial não trouxe."
+        >
           <form
-            className="mt-4 space-y-3 rounded-lg border p-3"
+            className="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800"
             onSubmit={(e) => {
               e.preventDefault();
               void salvar({
                 ...c.ajustes,
                 adicionar: [
                   ...c.ajustes.adicionar,
-                  {
-                    id: "",
-                    tipo,
-                    inicio,
-                    fim: fim || inicio,
-                    descricao: descricao.trim(),
-                    fonte: "manual",
-                  },
+                  { id: "", tipo, inicio, fim: fim || inicio, descricao: descricao.trim(), fonte: "manual" },
                 ],
               });
             }}
           >
-            <h4 className="font-semibold">
-              Adicionar feriado ou suspensão manualmente
-            </h4>
-            <label className="block">
-              <span className="mb-1.5 block text-[11px] text-zinc-500">
-                Tipo de ajuste
-              </span>
-              <Select
-                aria-label="Tipo de ajuste"
-                value={tipo}
-                onChange={(e) => setTipo(e.target.value as Tipo)}
-              >
-                {Object.entries(tipos)
-                  .filter(([t]) => t !== "pendencia")
-                  .map(([t, label]) => (
-                    <option key={t} value={t}>
-                      {label}
-                    </option>
-                  ))}
-              </Select>
-            </label>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 p-3 sm:grid-cols-2 xl:grid-cols-4">
               <label>
-                <span className="mb-1.5 block text-[11px] text-zinc-500">
-                  Início
-                </span>
-                <Input
-                  required
-                  type="date"
-                  min={`${c.ano}-01-01`}
-                  max={`${c.ano}-12-31`}
-                  value={inicio}
-                  onChange={(e) => setInicio(e.target.value)}
-                />
+                <span className="mb-1 block text-[11px] text-zinc-500 dark:text-zinc-400">Tipo</span>
+                <Select aria-label="Tipo de ajuste" value={tipo} onChange={(e) => setTipo(e.target.value as Tipo)}>
+                  {Object.entries(tipos).filter(([t]) => t !== "pendencia").map(([t, label]) => <option key={t} value={t}>{label}</option>)}
+                </Select>
               </label>
               <label>
-                <span className="mb-1.5 block text-[11px] text-zinc-500">
-                  Término (opcional)
-                </span>
-                <Input
-                  type="date"
-                  min={inicio || `${c.ano}-01-01`}
-                  max={`${c.ano}-12-31`}
-                  value={fim}
-                  onChange={(e) => setFim(e.target.value)}
-                />
+                <span className="mb-1 block text-[11px] text-zinc-500 dark:text-zinc-400">Início</span>
+                <Input required type="date" min={`${c.ano}-01-01`} max={`${c.ano}-12-31`} value={inicio} onChange={(e) => setInicio(e.target.value)} />
+              </label>
+              <label>
+                <span className="mb-1 block text-[11px] text-zinc-500 dark:text-zinc-400">Término (opcional)</span>
+                <Input type="date" min={inicio || `${c.ano}-01-01`} max={`${c.ano}-12-31`} value={fim} onChange={(e) => setFim(e.target.value)} />
+              </label>
+              <label>
+                <span className="mb-1 block text-[11px] text-zinc-500 dark:text-zinc-400">Motivo / ato oficial</span>
+                <Input required maxLength={2000} value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Ex.: suspensão por portaria local" />
               </label>
             </div>
-            <label className="block">
-              <span className="mb-1.5 block text-[11px] text-zinc-500">
-                Motivo / ato oficial
-              </span>
-              <Input
-                required
-                maxLength={2000}
-                value={descricao}
-                onChange={(e) => setDescricao(e.target.value)}
-                placeholder="Ex.: suspensão por portaria local"
-              />
-            </label>
-            <Button size="sm" type="submit" disabled={busy}>
-              Salvar ajuste manual
-            </Button>
+            <SettingsFooter left="O ajuste vale só para este órgão e ano.">
+              <Button size="sm" type="submit" disabled={busy}>Salvar ajuste</Button>
+            </SettingsFooter>
           </form>
-        </details>
-        <div className="flex flex-wrap gap-3">
-          {c.fontes.map((f, i) => (
-            <a
-              key={f}
-              href={f}
-              target="_blank"
-              rel="noreferrer"
-              className="font-medium text-accent-600 underline dark:text-accent-300"
+        </SettingsBlock>
+
+        <details className="group/hist">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-3 text-sm font-semibold text-zinc-800 sm:px-4 dark:text-zinc-200">
+            Histórico das atualizações
+            <ChevronDown className="h-4 w-4 text-zinc-500 transition-transform group-open/hist:rotate-180" />
+          </summary>
+          <div className="space-y-3 px-3 pb-4 sm:px-4">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => void executar(async () => { setHistorico(await api.get(`/djen/calendarios/${c.chave}/historico`)); })}
             >
-              Fonte oficial {i + 1}
-            </a>
-          ))}
-        </div>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={busy}
-          onClick={() =>
-            void executar(async () => {
-              setHistorico(
-                await api.get(`/djen/calendarios/${c.chave}/historico`),
-              );
-            })
-          }
-        >
-          Histórico das atualizações
-        </Button>
-        {historico && (
-          <div className="space-y-1 text-zinc-500">
-            {historico.length ? (
-              historico.map((h) => (
-                <p key={h.id}>
-                  {h.created_at} · {h.descricao}
-                </p>
-              ))
-            ) : (
-              <p>Nenhuma alteração registrada.</p>
+              {historico ? "Recarregar histórico" : "Carregar histórico"}
+            </Button>
+            {historico && (
+              historico.length ? (
+                <ul className="divide-y divide-zinc-100 rounded-xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+                  {historico.map((h) => (
+                    <li key={h.id} className="px-3 py-2 text-zinc-600 dark:text-zinc-400">
+                      <span className="block text-[11px] text-zinc-500">{h.created_at}</span>
+                      {h.descricao}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-zinc-500 dark:text-zinc-400">Nenhuma alteração registrada.</p>
+              )
             )}
           </div>
-        )}
+        </details>
       </div>
-    <Modal open={manualAberto} onClose={() => setManualAberto(false)} title="Calendário manual do órgão" maxWidth="max-w-3xl"><DeadlineSettings manualOnly initialCalendar={{tribunal:c.tribunal,orgao:c.orgao,ano:c.ano}} /></Modal>
+      <Modal open={manualAberto} onClose={() => setManualAberto(false)} title="Calendário manual do órgão" maxWidth="max-w-3xl"><DeadlineSettings manualOnly initialCalendar={{ tribunal: c.tribunal, orgao: c.orgao, ano: c.ano }} /></Modal>
     </details>
   );
 }
-

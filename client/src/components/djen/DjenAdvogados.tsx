@@ -1,4 +1,4 @@
-import { BriefcaseBusiness, MoreHorizontal, Pencil, PauseCircle, PlayCircle, Plus, Search } from "lucide-react";
+import { BriefcaseBusiness, MoreHorizontal, Pencil, PauseCircle, PlayCircle, Plus, Search, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Callout, SettingsPanel } from "@/components/ui/Settings";
@@ -11,7 +11,7 @@ const dia = (s: string) => s.slice(0, 10).split("-").reverse().join("/");
 const modoTexto = { ambos: "OAB e nome", oab: "Somente OAB", nome: "Somente nome · conferir OAB" } as const;
 
 /** Lista de advogados acompanhados no DJEN: uma linha compacta por advogado, ações no menu «⋯». */
-export function AdvogadosAcompanhados({ advogados, carregando, ocupado, onAdicionar, onEditar, onAlternarAtivo, onConsultar }: {
+export function AdvogadosAcompanhados({ advogados, carregando, ocupado, onAdicionar, onEditar, onAlternarAtivo, onConsultar, onRemover }: {
   advogados: Advogado[] | undefined;
   carregando: boolean;
   ocupado: boolean;
@@ -19,6 +19,7 @@ export function AdvogadosAcompanhados({ advogados, carregando, ocupado, onAdicio
   onEditar: (advogado: Advogado) => void;
   onAlternarAtivo: (advogado: Advogado) => void;
   onConsultar: (advogado: Advogado) => void;
+  onRemover: (advogado: Advogado) => void;
 }) {
   const lista = advogados || [];
   const ativos = lista.filter((a) => a.ativo).length;
@@ -73,6 +74,7 @@ export function AdvogadosAcompanhados({ advogados, carregando, ocupado, onAdicio
                       <button type="button" role="menuitem" className="menu-pop-item" disabled={ocupado} onClick={() => { fechar(); onAlternarAtivo(a); }}>
                         {a.ativo ? <PauseCircle className="h-4 w-4 text-zinc-500" /> : <PlayCircle className="h-4 w-4 text-zinc-500" />}{a.ativo ? "Pausar consultas" : "Reativar consultas"}
                       </button>
+                      <button type="button" role="menuitem" className="menu-pop-item text-red-600 dark:text-red-400" disabled={ocupado} onClick={() => { fechar(); onRemover(a); }}><Trash2 className="h-4 w-4" />Remover advogado</button>
                     </>
                   )}
                 </MenuSuspenso>
