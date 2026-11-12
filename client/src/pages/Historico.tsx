@@ -1,4 +1,3 @@
-import { WorkspacePanel, WorkspaceRow } from "@/components/ui/Workspace";
 import { remarcacoesDoLog, comparacaoRemarcacao } from "@/lib/remarcacaoHistorico";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import {
@@ -12,7 +11,7 @@ import {
   Clock,
   FileText,
   History as HistoryIcon,
-  Eye,
+  MoreHorizontal,
   MapPin,
   MessageSquareReply,
   NotebookPen,
@@ -41,12 +40,12 @@ import { Checkbox } from "@/components/ui/Checkbox";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Input, Label } from "@/components/ui/Input";
 import { Pagination } from "@/components/ui/Pagination";
-import { SelectableCard } from "@/components/ui/SelectableCard";
 import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { StatCard } from "@/components/ui/StatCard";
+import { MenuSuspenso } from "@/components/MenuSuspenso";
+import { Modal } from "@/components/ui/Modal";
 import { useAuth } from "@/context/AuthContext";
 
 const ITENS_POR_PAGINA = 20;
@@ -60,21 +59,23 @@ const ORDENACAO_OPTIONS: { value: Ordenacao; label: string }[] = [
   { value: "za", label: "Nome (Z-A)" },
 ];
 
-const LETRAS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+type FiltroEnvio = "todos" | "falha" | "nao_entregue" | "entregue" | "lido" | "respondido" | "remarcacao";
+const iniciais = (nome: string | null) => (nome || "?").split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+function combinaEnvio(log: SendLog, f: FiltroEnvio): boolean {
+  switch (f) {
+    case "todos": return true;
+    case "falha": return log.status === "falha";
+    case "nao_entregue": return log.status === "sucesso" && (log.ack === null || log.ack < 2);
+    case "entregue": return log.status === "sucesso" && log.ack === 2 && log.resposta_status !== "respondido";
+    case "lido": return log.status === "sucesso" && log.ack !== null && log.ack >= 3 && log.resposta_status !== "respondido";
+    case "respondido": return log.resposta_status === "respondido";
+    case "remarcacao": return remarcacoesDoLog(log).length > 0;
+  }
+}
 
 /** Data local (America/Sao_Paulo) no formato YYYY-MM-DD, para comparar com o valor de um <input type="date">. */
 function dataLocalYMD(createdAtUtc: string): string {
   return new Date(createdAtUtc + "Z").toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-}
-
-/** Primeira letra do nome, maiúscula e sem acento, para comparar com o filtro alfabético. */
-function inicialSemAcento(nome: string): string {
-  return (nome || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .charAt(0)
-    .toUpperCase();
 }
 
 function formatarDataHora(data?: string | null): string | null {
@@ -342,11 +343,11 @@ export function Historico() {
   const [apagarAlvo, setApagarAlvo] = useState<SendLog | null>(null);
   const [confirmMassaAberto, setConfirmMassaAberto] = useState(false);
   const [busca, setBusca] = useState("");
-  const [tipoFiltro, setTipoFiltro] = useState<"todos" | "remarcacao">("todos");
+  const [filtro, setFiltro] = useState<FiltroEnvio>("todos");
+  const [reenviarAlvo, setReenviarAlvo] = useState<SendLog | null>(null);
   const [ordenacao, setOrdenacao] = useState<Ordenacao>("recentes");
   const [dataDe, setDataDe] = useState("");
   const [dataAte, setDataAte] = useState("");
-  const [letra, setLetra] = useState<string | null>(null);
   const [mostrarPeriodo, setMostrarPeriodo] = useState(false);
 
   async function carregar() {
@@ -379,7 +380,7 @@ export function Historico() {
     const termo = busca.trim().toLowerCase();
     const termoDigits = termo.replace(/\D/g, "");
     const filtrados = logs.filter((log) => {
-      if (tipoFiltro === "remarcacao" && !remarcacoesDoLog(log).length) return false;
+      if (!combinaEnvio(log, filtro)) return false;
       if (termo) {
         const nomeMatch = (log.card_nome || "").toLowerCase().includes(termo);
         const telefoneMatch = termoDigits.length > 0 && (log.telefone || "").replace(/\D/g, "").includes(termoDigits);
@@ -396,7 +397,6 @@ export function Historico() {
         if (dataDe && dataLog < dataDe) return false;
         if (dataAte && dataLog > dataAte) return false;
       }
-      if (letra && inicialSemAcento(log.card_nome || "") !== letra) return false;
       return true;
     });
     return [...filtrados].sort((a, b) => {
@@ -411,7 +411,7 @@ export function Historico() {
           return (b.card_nome || "").localeCompare(a.card_nome || "", "pt-BR");
       }
     });
-  }, [logs, busca, dataDe, dataAte, letra, ordenacao, tipoFiltro]);
+  }, [logs, busca, dataDe, dataAte, ordenacao, filtro]);
 
   const logsPaginados = useMemo(
     () => logsFiltrados.slice(pagina * ITENS_POR_PAGINA, (pagina + 1) * ITENS_POR_PAGINA),
@@ -420,11 +420,8 @@ export function Historico() {
 
   const resumo = useMemo(() => {
     const lista = logs ?? [];
-    return {
-      envios: lista.length,
-      entregues: lista.filter((log) => log.ack !== null && log.ack >= 2).length,
-      respondidos: lista.filter(temRespostaRecebida).length,
-    };
+    const n = (f: FiltroEnvio) => lista.filter((l) => combinaEnvio(l, f)).length;
+    return { todos: lista.length, falha: n("falha"), nao_entregue: n("nao_entregue"), entregue: n("entregue"), lido: n("lido"), respondido: n("respondido"), remarcacao: n("remarcacao") };
   }, [logs]);
 
   useEffect(() => {
@@ -434,13 +431,14 @@ export function Historico() {
 
   useEffect(() => {
     setPagina(0);
-  }, [busca, dataDe, dataAte, letra, ordenacao, tipoFiltro]);
+  }, [busca, dataDe, dataAte, ordenacao, filtro]);
 
   async function reenviar(log: SendLog) {
     if (!templateId) {
       show("Selecione um template para reenviar.", "error");
       return;
     }
+    setReenviarAlvo(null);
     setReenviando(log.id);
     try {
       await api.post(`/logs/${log.id}/reenviar`, { templateId });
@@ -542,168 +540,103 @@ export function Historico() {
   }
 
   const periodoAtivo = Boolean(dataDe || dataAte);
+  const paineis: [FiltroEnvio, string, number][] = [["todos", "Envios", resumo.todos], ["falha", "Com falha", resumo.falha], ["nao_entregue", "Ainda não entregues", resumo.nao_entregue], ["entregue", "Entregues", resumo.entregue], ["lido", "Lidas", resumo.lido], ["respondido", "Respondidas", resumo.respondido], ["remarcacao", "Remarcações", resumo.remarcacao]];
+  const aberto = (log: SendLog) => expandido === log.id;
 
   return (
-    <div className="min-w-0 max-w-full space-y-5 [overflow-wrap:anywhere] md:space-y-6">
+    <div className="min-w-0 max-w-full space-y-5 [overflow-wrap:anywhere]">
       <PageHeader
         title="Histórico de envios"
-        description="Consulte mensagens enviadas, dados utilizados, confirmações de entrega e respostas dos clientes."
-        actions={<Button variant="outline" onClick={carregar}>
-            <RefreshCw className="h-4 w-4" /> Atualizar
-          </Button>}
+        description="Tudo o que foi enviado aos clientes: entrega, leitura, resposta e os dados usados em cada aviso."
+        actions={<Button variant="outline" onClick={carregar}><RefreshCw className="h-4 w-4" /> Atualizar</Button>}
       />
 
-      <div className="grid grid-cols-3 gap-2 md:gap-3">
-        <StatCard icon={<Send />} label="Envios" value={resumo.envios} tone="accent" />
-        <StatCard icon={<CheckCheck />} label="Entregues" value={resumo.entregues} tone="warning" />
-        <StatCard icon={<Eye />} label="Respondidas" value={resumo.respondidos} tone="info" />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+        {paineis.map(([k, rotulo, n]) => (
+          <button key={k} type="button" onClick={() => setFiltro(filtro === k && k !== "todos" ? "todos" : k)} aria-pressed={filtro === k}
+            className={`rounded-2xl border p-3.5 text-left transition ${filtro === k ? "border-accent-500 bg-accent-50 dark:bg-accent-500/10" : "border-zinc-200 bg-white hover:border-accent-400 dark:border-zinc-800 dark:bg-zinc-900"} ${k === "falha" && n > 0 && filtro !== k ? "border-red-300 dark:border-red-800" : ""}`}>
+            <span className={`block text-2xl font-semibold leading-none ${k === "falha" && n > 0 ? "text-red-600 dark:text-red-400" : ""}`}>{n}</span>
+            <span className="mt-1.5 block text-xs text-zinc-500">{rotulo}</span>
+          </button>))}
       </div>
 
-      <section className="surface-panel p-3 md:p-4">
-        <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_180px_180px_auto] xl:items-end xl:gap-4">
-          <div>
-            <Label className="text-xs">Buscar no histórico</Label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-              <Input
-                placeholder="Nome, telefone, processo ou mensagem…"
-                className="pl-9"
-                value={busca}
-                onChange={(e) => setBusca(e.target.value)}
-              />
-            </div>
-          </div>
-          <div>
-            <Label className="text-xs">Ordenar registros</Label>
-            <Select value={ordenacao} onChange={(e) => setOrdenacao(e.target.value as Ordenacao)} className="w-full">
-              {ORDENACAO_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </Select>
-          </div>
-          <div className="min-w-0">
-            <Label className="text-xs">Tipo de envio</Label>
-            <Select value={tipoFiltro} onChange={event => setTipoFiltro(event.target.value as "todos" | "remarcacao")} className="w-full">
-              <option value="todos">Todos os envios</option>
-              <option value="remarcacao">Remarcações</option>
-            </Select>
-          </div>
-          <Button
-            variant={periodoAtivo ? "secondary" : "outline"}
-            className="w-full lg:w-auto"
-            onClick={() => setMostrarPeriodo((valor) => !valor)}
-          >
-            <SlidersHorizontal className="h-4 w-4" /> {periodoAtivo ? "Período aplicado" : "Filtrar período"}
-          </Button>
+      <div className="space-y-2 rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" /><Input aria-label="Buscar no histórico" placeholder="Nome, telefone, processo ou mensagem…" className="pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} /></div>
+          <Select value={ordenacao} onChange={(e) => setOrdenacao(e.target.value as Ordenacao)} className="sm:max-w-[210px]" aria-label="Ordenar">
+            {ORDENACAO_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </Select>
+          <Button variant={periodoAtivo ? "secondary" : "outline"} onClick={() => setMostrarPeriodo((valor) => !valor)}><SlidersHorizontal className="h-4 w-4" /> {periodoAtivo ? "Período aplicado" : "Período"}</Button>
+          {canManage && logsPaginados.length > 0 && <label className="flex shrink-0 cursor-pointer items-center gap-2 px-1 text-xs text-zinc-600 dark:text-zinc-300"><Checkbox checked={logsPaginados.every((l) => selecionados.has(l.id))} onChange={alternarSelecionarTodos} /> Marcar esta página</label>}
         </div>
-
         {(mostrarPeriodo || periodoAtivo) && (
-          <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-zinc-50 p-3 dark:bg-zinc-800/50 sm:flex sm:items-end">
-            <div className="min-w-0 sm:w-44">
-              <Label className="text-xs">Enviados de</Label>
-              <Input type="date" value={dataDe} onChange={(e) => setDataDe(e.target.value)} className="w-full" />
-            </div>
-            <div className="min-w-0 sm:w-44">
-              <Label className="text-xs">Até</Label>
-              <Input type="date" value={dataAte} onChange={(e) => setDataAte(e.target.value)} className="w-full" />
-            </div>
-            {periodoAtivo && (
-              <Button variant="ghost" size="sm" className="col-span-2" onClick={() => { setDataDe(""); setDataAte(""); }}>
-                <X className="h-3.5 w-3.5" /> Limpar período
-              </Button>
-            )}
+          <div className="grid grid-cols-2 gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800 sm:flex sm:items-end">
+            <div className="min-w-0 sm:w-44"><Label className="text-xs">Enviados de</Label><Input type="date" value={dataDe} onChange={(e) => setDataDe(e.target.value)} className="w-full" /></div>
+            <div className="min-w-0 sm:w-44"><Label className="text-xs">Até</Label><Input type="date" value={dataAte} onChange={(e) => setDataAte(e.target.value)} className="w-full" /></div>
+            {periodoAtivo && <Button variant="ghost" size="sm" className="col-span-2" onClick={() => { setDataDe(""); setDataAte(""); }}><X className="h-3.5 w-3.5" /> Limpar período</Button>}
           </div>
         )}
-
-        <div className="mt-3 flex flex-col gap-3 border-t border-zinc-100 pt-3 dark:border-zinc-800 sm:flex-row sm:items-end sm:justify-between">
-          <div className="min-w-0 sm:w-72">
-            <Label className="text-xs">Template usado somente em reenvios</Label>
-            <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="w-full">
-              {templates.map((template) => (
-                <option key={template.id} value={template.id}>{template.nome}</option>
-              ))}
-            </Select>
-          </div>
-          <p className="pb-1 text-xs text-zinc-500 dark:text-zinc-400">
-            {logsFiltrados.length} de {logs?.length ?? 0} registro(s) exibido(s)
-          </p>
-        </div>
-      </section>
-
-      <div className="scrollbar-thin flex items-center gap-1 overflow-x-auto rounded-xl border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-900">
-        <button
-          onClick={() => setLetra(null)}
-          className={cn(
-            "shrink-0 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-            letra === null
-              ? "bg-accent-500 text-white"
-              : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-          )}
-        >
-          Todos
-        </button>
-        {LETRAS.map((l) => (
-          <button
-            key={l}
-            onClick={() => setLetra(letra === l ? null : l)}
-            className={cn(
-              "h-7 w-7 shrink-0 rounded-md text-xs font-medium transition-colors",
-              letra === l
-                ? "bg-accent-500 text-white"
-                : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-            )}
-          >
-            {l}
-          </button>
-        ))}
       </div>
 
       {canManage && selecionados.size > 0 && (
-        <div className="flex items-center justify-between rounded-xl border border-accent-200 bg-accent-50 px-4 py-3 dark:border-accent-900 dark:bg-accent-900/20">
-          <p className="text-sm font-medium text-accent-800 dark:text-accent-300">
-            {selecionados.size} registro(s) selecionado(s)
-          </p>
-          <div className="flex gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setSelecionados(new Set())}>
-              Limpar seleção
-            </Button>
-            <Button variant="outline" className="danger-action" size="sm" onClick={() => setConfirmMassaAberto(true)} loading={apagandoSelecionados}>
-              <Trash2 className="h-3.5 w-3.5 text-red-500 dark:text-red-400" /> Apagar selecionados
-            </Button>
-          </div>
+        <div role="region" aria-label="Ações em lote" className="sticky top-20 z-20 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-accent-300 bg-accent-50 px-4 py-2.5 shadow-sm dark:border-accent-800 dark:bg-accent-950">
+          <strong className="text-sm">{selecionados.size} registro(s) selecionado(s)</strong>
+          <span className="flex gap-2"><Button variant="ghost" size="sm" onClick={() => setSelecionados(new Set())}>Limpar seleção</Button><Button variant="outline" className="danger-action" size="sm" onClick={() => setConfirmMassaAberto(true)} loading={apagandoSelecionados}><Trash2 className="h-3.5 w-3.5" /> Apagar selecionados</Button></span>
         </div>
       )}
 
       {logs === null ? (
-        <div className="space-y-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-16 w-full" />
-          ))}
-        </div>
+        <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}</div>
       ) : logs.length === 0 ? (
-        <EmptyState icon={HistoryIcon} title="Nenhum envio registrado ainda" description="Os envios feitos pelo Dashboard aparecerão aqui." />
+        <EmptyState icon={HistoryIcon} title="Nenhum envio registrado ainda" description="Os envios feitos pelo sistema aparecerão aqui." />
       ) : logsFiltrados.length === 0 ? (
-        <EmptyState
-          icon={HistoryIcon}
-          title="Nenhum resultado para esses filtros"
-          description="Tente ajustar a busca, o período, a letra ou a ordenação."
-        />
+        <EmptyState icon={HistoryIcon} title="Nenhum resultado para esses filtros" description="Escolha outro painel acima, ajuste a busca ou o período." />
       ) : (
         <>
-          <WorkspacePanel title="Mensagens enviadas" description="Entrega, resposta e dados usados em cada aviso."
-            aside={canManage ? <label className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400"><Checkbox checked={logsPaginados.length > 0 && logsPaginados.every(l => selecionados.has(l.id))} onChange={alternarSelecionarTodos} />Selecionar esta página</label> : undefined}
-          >
-            {logsPaginados.map(log => <WorkspaceRow key={log.id} selected={selecionados.has(log.id)}
-              selection={canManage ? <Checkbox aria-label={`Selecionar registro de ${log.card_nome || "cliente"}`} checked={selecionados.has(log.id)} onChange={() => alternarSelecionado(log.id)} /> : undefined}
-              primary={<div><h3 className="break-words text-[13px] font-medium text-zinc-900 dark:text-zinc-100">{log.card_nome || "Sem nome"}</h3><p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{log.telefone ? formatPhoneDisplay(log.telefone) : "Telefone não informado"}</p><ResumoRemarcacao log={log} /><div className="mt-2 flex flex-wrap gap-1">{log.tipo_envio === "lembrete" && <Badge tone="info">Lembrete</Badge>}{log.tipo_envio === "reenvio" && <Badge tone="accent">Reenvio</Badge>}</div></div>}
-              secondary={<div className="space-y-2"><StatusBadge sendStatus={log.status} ack={log.ack} respostaStatus={log.resposta_status} /><div><AckIndicator ack={log.ack} sendStatus={log.status} respondido={log.resposta_status === "respondido"} /></div><p className="text-[11px] text-zinc-500 dark:text-zinc-400">{formatarData(log)}</p></div>}
-              actions={<><Button variant="outline" size="sm" aria-expanded={expandido === log.id} onClick={() => setExpandido(expandido === log.id ? null : log.id)}>{expandido === log.id ? "Recolher detalhes" : "Ver detalhes"}</Button>{canSend && log.status === "falha" && log.tipo_envio === "disparo" && <Button variant="outline" size="sm" onClick={() => reenviar(log)} loading={reenviando === log.id}><RotateCcw className="h-3.5 w-3.5" /> Reenviar</Button>}{canManage && <Button variant="ghost" size="icon" aria-label={`Apagar registro de ${log.card_nome || "cliente"}`} onClick={() => setApagarAlvo(log)} disabled={apagando === log.id}><Trash2 className="h-4 w-4 text-red-500 dark:text-red-400" /></Button>}</>}
-            >{expandido === log.id && <div className="space-y-4">{log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}<div className="grid min-w-0 gap-4 xl:grid-cols-2"><PainelAgendamento log={log} /><PainelComunicacao log={log} onReenviarInformacoes={setReenviarInformacoesAlvo} reenviando={reenviandoInformacoes === log.id} /></div></div>}</WorkspaceRow>)}
-          </WorkspacePanel>
-          <Pagination page={pagina} totalItems={logsFiltrados.length} pageSize={ITENS_POR_PAGINA} onPageChange={setPagina} />
+          <ul className="divide-y divide-zinc-100 overflow-hidden surface-panel dark:divide-zinc-800">
+            {logsPaginados.map((log) => (
+              <li key={log.id} className={selecionados.has(log.id) ? "bg-accent-50/50 dark:bg-accent-500/10" : ""}>
+                <div className={`flex flex-col gap-3 px-4 py-3 transition hover:bg-accent-50/40 dark:hover:bg-white/5 sm:flex-row sm:items-center ${log.status === "falha" ? "border-l-4 border-l-red-500" : ""}`}>
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                    {canManage && <span className="mt-1"><Checkbox aria-label={`Selecionar registro de ${log.card_nome || "cliente"}`} checked={selecionados.has(log.id)} onChange={() => alternarSelecionado(log.id)} /></span>}
+                    <span aria-hidden className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-100 text-sm font-semibold text-accent-700 dark:bg-accent-500/20 dark:text-accent-200 sm:flex">{iniciais(log.card_nome)}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="break-words text-sm font-semibold text-zinc-900 dark:text-zinc-100">{log.card_nome || "Sem nome"}</h3>
+                        <StatusBadge sendStatus={log.status} ack={log.ack} respostaStatus={log.resposta_status} />
+                        {log.tipo_envio === "lembrete" && <Badge tone="info">Lembrete</Badge>}
+                        {log.tipo_envio === "reenvio" && <Badge tone="accent">Reenvio</Badge>}
+                        {remarcacoesDoLog(log).length > 0 && <Badge tone="warning"><CalendarClock className="h-3 w-3" /> Remarcação</Badge>}
+                      </div>
+                      <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-zinc-500 dark:text-zinc-400"><span className="inline-flex items-center gap-1"><Phone className="h-3 w-3" />{log.telefone ? formatPhoneDisplay(log.telefone) : "Telefone não informado"}</span><span>{formatarData(log)}</span><AckIndicator ack={log.ack} sendStatus={log.status} respondido={log.resposta_status === "respondido"} /></p>
+                      {log.status === "falha" && log.erro ? <p className="mt-1 line-clamp-1 text-xs text-red-600 dark:text-red-400" title={log.erro}>{log.erro}</p> : log.mensagem_enviada ? <p className="mt-1 line-clamp-1 text-xs text-zinc-600 dark:text-zinc-300" title={log.mensagem_enviada}>{log.mensagem_enviada}</p> : null}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    {canSend && log.status === "falha" && log.tipo_envio === "disparo" && <Button size="sm" onClick={() => setReenviarAlvo(log)} loading={reenviando === log.id}><RotateCcw className="h-3.5 w-3.5" /> Reenviar</Button>}
+                    <Button variant="outline" size="sm" aria-expanded={aberto(log)} onClick={() => setExpandido(aberto(log) ? null : log.id)}><ChevronDown className={`h-3.5 w-3.5 transition ${aberto(log) ? "rotate-180" : ""}`} /> {aberto(log) ? "Recolher" : "Detalhes"}</Button>
+                    {canManage && <MenuSuspenso gatilho={({ aberto: a, alternar }) => <button type="button" aria-label={`Mais ações para ${log.card_nome || "cliente"}`} aria-expanded={a} onClick={alternar} className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><MoreHorizontal className="h-4 w-4" /></button>}>
+                      {(fechar) => <button type="button" role="menuitem" className="menu-pop-item text-red-600 dark:text-red-400" onClick={() => { fechar(); setApagarAlvo(log); }}><Trash2 className="h-4 w-4" /> Apagar registro</button>}
+                    </MenuSuspenso>}
+                  </div>
+                </div>
+                {aberto(log) && <div className="space-y-4 border-t border-zinc-100 bg-zinc-50/60 px-4 py-4 dark:border-zinc-800 dark:bg-white/[0.02]">
+                  {log.erro && log.status === "falha" && <p className="text-xs text-red-500">{log.erro}</p>}
+                  <div className="grid min-w-0 gap-4 xl:grid-cols-2"><PainelAgendamento log={log} /><PainelComunicacao log={log} onReenviarInformacoes={setReenviarInformacoesAlvo} reenviando={reenviandoInformacoes === log.id} /></div>
+                </div>}
+              </li>))}
+          </ul>
+          {logsFiltrados.length > ITENS_POR_PAGINA && <Pagination page={pagina} totalItems={logsFiltrados.length} pageSize={ITENS_POR_PAGINA} onPageChange={setPagina} />}
+          <p className="text-right text-xs text-zinc-500">{logsFiltrados.length} de {logs.length} registro(s)</p>
         </>
       )}
 
+      <Modal open={reenviarAlvo !== null} onClose={() => setReenviarAlvo(null)} title="Reenviar mensagem" description={`Escolha o modelo para reenviar a ${reenviarAlvo?.card_nome || "este cliente"}.`}
+        footer={<><Button variant="outline" onClick={() => setReenviarAlvo(null)}>Cancelar</Button><Button onClick={() => reenviarAlvo && void reenviar(reenviarAlvo)} disabled={!templateId}><RotateCcw className="h-4 w-4" /> Reenviar</Button></>}>
+        <div><Label className="text-xs">Modelo de mensagem</Label>
+          <Select value={templateId ?? ""} onChange={(e) => setTemplateId(Number(e.target.value))} className="w-full">{templates.map((template) => <option key={template.id} value={template.id}>{template.nome}</option>)}</Select>
+          <p className="mt-2 text-xs text-zinc-500">Os dados do agendamento do registro original são usados no modelo escolhido.</p></div>
+      </Modal>
       <ConfirmDialog
         open={reenviarInformacoesAlvo !== null}
         title="Reenviar informações da perícia?"

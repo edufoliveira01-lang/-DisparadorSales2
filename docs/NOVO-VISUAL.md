@@ -98,3 +98,10 @@
 - Busca, ordenação, filtro por período e ações em lote continuam; a barra de lote só aparece com itens marcados. Nenhuma regra do servidor mudou.
 
 > 3.20.1 — correção: a importação antiga de contatos (`/pessoas/importar-contatos`) criava um cadastro duplicado para contatos que o espelho já tinha ligado a um cliente; agora ignora contatos já ligados. Isso fazia o teste de gestão falhar de forma intermitente no deploy da 3.19.0.
+
+## Histórico de envios (3.21.0) — refeita por inteiro
+- **Painéis clicáveis** no topo (substituem o seletor «Tipo de envio»): Envios, **Com falha**, Ainda não entregues, Entregues, Lidas, Respondidas e Remarcações.
+- Saiu a **fileira A–Z** e o **seletor de modelo fixo** («Template usado somente em reenvios»): ao clicar em **Reenviar** (envios com falha), abre uma janela para escolher o modelo.
+- **Uma linha por envio:** avatar, nome, estado (enviado, entregue, lido, respondido, erro), tipo (Lembrete, Reenvio, Remarcação), telefone, data e **a mensagem em uma linha** (ou o motivo do erro, em vermelho). Envios com falha ganham uma barra vermelha à esquerda.
+- **Detalhes** abre os dados do agendamento e a comunicação com o cliente (como antes); **Apagar** ficou no menu «⋯».
+- Busca (nome, telefone, processo, mensagem), ordenação, período e ações em lote continuam; nenhuma regra do servidor mudou.
