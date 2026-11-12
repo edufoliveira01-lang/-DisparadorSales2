@@ -44,6 +44,12 @@ const sections = [
     icon: Cloud,
   },
   {
+    key: "atendimento",
+    title: "Atendimento e equipe",
+    description: "Entrada no atendimento, contratos com assinatura (ZapSign) e a equipe que usa o chat.",
+    icon: MessageCircle,
+  },
+  {
     key: "deskcomm-envio",
     title: "Envio pelo Deskcomm",
     description: "Token de API para as cobranças e avisos saírem pelas conversas do atendimento.",

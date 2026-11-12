@@ -117,7 +117,7 @@ function ConfiguracoesRota() {
   const [q] = useSearchParams();
   const legado = ["ia", "whatsapp", "google", "prazos"].find((k) => q.has(k));
   const secao = q.get("secao") ?? legado ?? null;
-  return <Cfg>{!secao ? <ConfigHome /> : can("integrations.manage") ? <Configuracoes secao={secao} /> : <p className="text-sm text-zinc-500">Você não tem permissão para esta configuração.</p>}</Cfg>;
+  return <Cfg>{!secao ? <ConfigHome /> : (can("integrations.manage") || (secao === "atendimento" && can("atendimento.use"))) ? <Configuracoes secao={secao} /> : <p className="text-sm text-zinc-500">Você não tem permissão para esta configuração.</p>}</Cfg>;
 }
 function AccessRoute({ permission, children }: { permission: Permission; children: React.ReactNode }) {
   const { can, user } = useAuth();

@@ -11,6 +11,7 @@ import { ArmazenamentoSettings } from "@/components/ArmazenamentoSettings";
 import { DataJudSettings } from "@/components/DataJudSettings";
 import { AsaasSettings } from "@/components/AsaasSettings";
 import { CobrancaSettings } from "@/components/CobrancaSettings";
+import { AtendimentoSettings } from "@/components/AtendimentoSettings";
 import { DeskcommEnvioSettings } from "@/components/DeskcommEnvioSettings";
 import { AparenciaSection } from "@/components/settings/AparenciaSection";
 import { AcessoSection } from "@/components/settings/AcessoSection";
@@ -52,6 +53,7 @@ export function Configuracoes({ secao }: { secao?: string | null } = {}) {
         {configSection === "asaas" && <AsaasSettings />}
         {configSection === "cobranca" && <CobrancaSettings />}
         {configSection === "deskcomm-envio" && <DeskcommEnvioSettings />}
+        {configSection === "atendimento" && <AtendimentoSettings />}
         {configSection === "intervalo" && <IntervaloSection />}
         {configSection === "backup" && <BackupSection />}
       </div></div>

@@ -19,6 +19,7 @@ import { emAreaDeConfig } from "@/lib/configNav";
 import { useAuth } from "@/context/AuthContext";
 import { APP_VERSION } from "@/lib/appVersion";
 import { useIdentidade } from "@/context/IdentidadeContext";
+import { AlternadorDeAmbiente } from "@/components/AlternadorDeAmbiente";
 
 interface SidebarProps {
   open: boolean;
@@ -121,6 +122,7 @@ export function Sidebar({
           <X className="h-5 w-5" />
         </button>
       </div>
+      <AlternadorDeAmbiente aoNavegar={onNavigate} />
       <nav
         aria-label="Menu principal"
         className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-3 py-2"

@@ -1,7 +1,7 @@
 import {
   Receipt, BrainCircuit, Bell, Building2, CalendarDays, Database, FileText, KeyRound, MessageCircle, MessageSquareText, Palette, Printer, ScrollText, Search, Timer,
   Trello, UserRound, UserRoundCog, BriefcaseBusiness, Scale, Plug, Cloud, type LucideIcon,
-  Landmark,
+  Landmark, Headset,
 } from "lucide-react";
 import type { Permission } from "@/context/AuthContext";
 import { navigationPermission } from "./navigation";
@@ -24,6 +24,7 @@ export const GRUPOS_CONFIG: GrupoConfig[] = [
   ] },
   { id: "comunicacao", titulo: "Comunicação com clientes", descricao: "WhatsApp, mensagens, avisos e o atendimento automático.", itens: [
     { to: "/configuracoes?secao=whatsapp", titulo: "WhatsApp", descricao: "Conexão, QR Code, motor e sessão usados nos avisos.", icon: MessageCircle, permissao: "integrations.manage" },
+    { to: "/configuracoes?secao=atendimento", titulo: "Atendimento e equipe", descricao: "Entrada no atendimento, contratos com assinatura (ZapSign) e a equipe que usa o chat.", icon: Headset, permissao: "atendimento.use" },
     { to: "/configuracoes?secao=deskcomm-envio", titulo: "Envio pelo Deskcomm", descricao: "Token de API e escolha do número de WhatsApp (o mesmo do atendimento) para cobranças e avisos.", icon: MessageCircle, permissao: "integrations.manage" },
     { to: "/templates", titulo: "Modelos de mensagens", descricao: "Textos e prévias dos avisos enviados por WhatsApp.", icon: MessageSquareText },
     { to: "/configuracoes?secao=notificacoes", titulo: "Notificações", descricao: "Alertas por Telegram e WhatsApp, entrega e falta de resposta.", icon: Bell, permissao: "integrations.manage" },

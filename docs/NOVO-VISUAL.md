@@ -181,3 +181,8 @@ Peças comuns em `components/ui/Settings.tsx` (cartão com situação, blocos, c
 ## Login e Logs — itens que faltavam (3.28.3)
 - **Personalização do login** (Configurações → Aparência): saiu do visual roxo; prévia da imagem em azul, escolha de arquivo mais clara, mostra o arquivo selecionado, botões padrão.
 - **Atividade do sistema → «Limpar»:** apaga registros com mais de 30 dias, mais de 90 dias ou todos, com confirmação. Só para quem gerencia integrações; a ação fica na auditoria e deixa um registro («Registros antigos apagados»). Nova rota `DELETE /api/system-logs?dias=30|90|todos` (7 a 3650 dias), com teste.
+
+## Alternador Sistema | Atendimento (3.29.0)
+- **Alternador no topo do menu** («Sistema | Atendimento»), que troca de ambiente na mesma aba com o mesmo acesso (sem pedir senha). Só aparece para quem pode usar o atendimento e se ele estiver liberado para o escritório.
+- **A página «Atendimento e vendas» deixou de ser destino do menu.** `/atendimento` virou só uma ponte: leva direto ao chat e só mostra aviso se faltar e-mail ou o atendimento não estiver liberado.
+- **Configurações → Atendimento e equipe** reúne o que estava nessa página: acesso, token e ambiente do ZapSign (contratos) e o envio da equipe ao atendimento.

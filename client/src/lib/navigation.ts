@@ -108,13 +108,6 @@ export const navigation = [
     group: "configuracoes",
   },
   {
-    to: "/atendimento",
-    label: "Atendimento e vendas",
-    description: "Chat de WhatsApp com IA, funil de vendas e atendimento",
-    icon: Headset,
-    group: "comunicacao",
-  },
-  {
     to: "/gestao",
     label: "Meu painel",
     description: "Suas tarefas, prazos e o resumo do escritório",
