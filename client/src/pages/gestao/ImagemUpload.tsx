@@ -11,11 +11,11 @@ const OPCOES: [Alinha, string, typeof AlignLeft][] = [["left", "Esquerda", Align
 /** Esquerda, centro ou direita. */
 export function BotoesAlinhamento({ valor, aoMudar, desabilitado }: { valor: Alinha; aoMudar: (v: Alinha) => void; desabilitado?: boolean }) {
   return (
-    <div role="radiogroup" aria-label="Alinhamento" className="inline-flex overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-700">
+    <div role="radiogroup" aria-label="Alinhamento" className="grid w-full max-w-sm grid-cols-3 overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
       {OPCOES.map(([v, rotulo, Icone]) => (
-        <button key={v} type="button" role="radio" aria-checked={valor === v} disabled={desabilitado} onClick={() => aoMudar(v)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition ${valor === v ? "bg-accent-500/15 text-accent-700 dark:text-accent-300" : "text-zinc-600 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800"}`}>
-          <Icone className="h-3.5 w-3.5" /> {rotulo}
+        <button key={v} type="button" role="radio" aria-checked={valor === v} aria-label={rotulo} title={rotulo} disabled={desabilitado} onClick={() => aoMudar(v)}
+          className={`flex min-w-0 items-center justify-center gap-1 border-r border-zinc-200 px-1.5 py-1.5 text-[11px] font-medium transition last:border-r-0 dark:border-zinc-700 ${valor === v ? "bg-accent-500/15 text-accent-700 dark:text-accent-300" : "text-zinc-600 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800"}`}>
+          <Icone className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{rotulo}</span>
         </button>
       ))}
     </div>
