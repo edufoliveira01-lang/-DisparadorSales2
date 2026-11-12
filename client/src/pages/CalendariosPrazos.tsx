@@ -13,12 +13,10 @@ export function CalendariosPrazos() {
     <div className="space-y-5">
       <PageHeader
         title="Calendários de prazos"
-        description="Acompanhe a importação de feriados e suspensões por tribunal e unidade. Confira a cobertura antes de calcular prazos."
+        description="Feriados e suspensões por tribunal e unidade. Confira a cobertura antes de calcular prazos."
         actions={can("deadlines.manage") ? <Button variant="outline" onClick={() => setManualAberto(true)}>Calendário manual</Button> : undefined}
       />
-      <section className="surface-panel p-5">
-        <AutomaticCalendars />
-      </section>
+      <AutomaticCalendars />
       <Modal open={manualAberto} onClose={() => setManualAberto(false)} title="Calendário manual" maxWidth="max-w-3xl"><DeadlineSettings manualOnly /></Modal>
     </div>
   );
