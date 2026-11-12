@@ -132,3 +132,13 @@
 - **Título certo em cada página** (antes todas as integrações mostravam «Conexões e sistema»); «Sair do sistema» fica em Dados de acesso e Minha conta.
 - **Minha conta** e **Equipe e acessos** saíram do visual roxo antigo para o padrão atual.
 - Nenhuma configuração mudou de lugar no servidor; os endereços antigos continuam funcionando.
+
+## Sub-páginas de Configurações (3.25.0) — todas no mesmo padrão
+Peças comuns em `components/ui/Settings.tsx` (cartão com situação, blocos, campos com dica, rodapé de ações, avisos). Cada tela mostra a **situação no topo**, o essencial primeiro, o avançado recolhido e o resultado de testes em aviso colorido.
+- **Cobrança:** Asaas (passos: chave → aviso de pagamento), Envio pelo Deskcomm (passos: gerar token → colar), Cobranças e avisos (Mensagens · Como enviar · Avisos automáticos, um só Salvar), DataJud.
+- **Conexões:** WhatsApp (situação grande, QR em destaque, motor em «Opções avançadas»), Notificações (Telegram e Whapi separados, cada um com Testar), Trello (4 passos), Intervalo, Backup (baixar / restaurar com confirmação), Aparência, Dados de acesso.
+- **Integrações:** Inteligência artificial (3 passos), Google Agenda (sincronização + destinos em acordeão), Dropbox (2 passos + onde salvar), Prazos e agenda processual (3 cartões, calendário manual agrupado por tribunal com busca).
+- **Escritório e documentos:** Dados do escritório (cartões por assunto, barra «alterações não salvas»; enviar imagem não descarta o que foi digitado), Documentos (lista à esquerda, abas comum/a rogo/representado, prévia), Atendimento com IA, Ficha de cadastro (prévia fixa).
+- **Modelos de mensagens:** abas por categoria, cartões com «Padrão», variáveis clicáveis e prévia em balão de WhatsApp.
+- **DJEN:** Monitoramento (cartão de situação, avançado recolhido, histórico recolhido), Advogados (uma linha por advogado, ⋯ com Editar/Consultar/Pausar) e Calendários de prazos (órgãos recolhíveis com situação).
+- Mudança de comportamento: as seções de WhatsApp/Notificações/Trello/etc. carregam seus dados ao abrir e **não guardam texto digitado** ao trocar de aba sem salvar.
