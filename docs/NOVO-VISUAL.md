@@ -189,3 +189,6 @@ Peças comuns em `components/ui/Settings.tsx` (cartão com situação, blocos, c
 
 ## Login federado com o atendimento (3.30.0)
 Quem abre o site de atendimento direto escolhe "Entrar com o sistema do escritório": o navegador vai a `/atendimento` do Sales; sem sessão, passa por `/login?next=atendimento` e, depois de entrar, volta e é levado ao chat pelo link assinado de uso único (60 s). A senha nunca sai do sistema em que foi digitada.
+
+## Página inicial por pessoa (3.31.0)
+Em Minha conta → "Página inicial", cada pessoa escolhe qual página abre ao entrar (entre as que o perfil dela acessa). Fica guardada no navegador, por usuário; sem escolha (ou se o acesso for removido) abre o Início, como antes.

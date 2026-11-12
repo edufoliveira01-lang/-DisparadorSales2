@@ -5,6 +5,7 @@ import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
 import { Callout } from "@/components/ui/Settings";
 import { APP_VERSION } from "@/lib/appVersion";
+import { paginaInicialDe } from "@/lib/paginaInicial";
 import { firstAllowedPage } from "@/lib/navigation";
 import type { TeamUser } from "@/context/AuthContext";
 import { useIdentidade } from "@/context/IdentidadeContext";
@@ -60,7 +61,7 @@ export function Login() {
         const result = await api.post<{ user: TeamUser }>("/auth/login", { username, password });
         // Quem veio do site de atendimento ("Entrar com o sistema do escritório") volta para ele depois de entrar aqui.
         const voltar = new URLSearchParams(window.location.search).get("next") === "atendimento" && result.user.permissions.includes("atendimento.use");
-        window.location.replace(voltar ? "/atendimento" : firstAllowedPage(result.user.permissions));
+        window.location.replace(voltar ? "/atendimento" : (paginaInicialDe(result.user.id, result.user.permissions) ?? firstAllowedPage(result.user.permissions)));
         return;
       } else if (mode === "forgot") {
         const result = await api.post<{ message: string }>("/auth/forgot-password", { username });
