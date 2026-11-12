@@ -138,6 +138,19 @@ describe("quadro processual", () => {
     expect(() => moverCartaoKanban("mover-a", quadro.listas[0].id, "mover-b")).toThrow();
     expect(() => moverCartaoKanban("ausente", sentenca.id)).toThrow();
   });
+  it("reordenar dentro da mesma etapa só muda a posição: não vira manual nem reinicia a espera", () => {
+    publicar("ord-a", "2026-10-01", "Ciência.");
+    publicar("ord-b", "2026-10-01", "Ciência.");
+    const quadro = listarKanban();
+    const origem = quadro.cartoes.find((c) => c.processo_chave === "ord-a")!;
+    const antes = origem.modo;
+    const mesma = origem.lista_id;
+    moverCartaoKanban("ord-b", mesma, "ord-a");
+    const depois = listarKanban().cartoes.filter((c) => c.lista_id === mesma).map((c) => c.processo_chave);
+    expect(depois.indexOf("ord-b")).toBeLessThan(depois.indexOf("ord-a"));
+    const a = listarKanban().cartoes.find((c) => c.processo_chave === "ord-a")!;
+    expect(a.modo).toBe(antes); expect(a.modo).toBe("automatico");
+  });
   it("classifica lista personalizada pela categoria já verificada do DJEN e avança com publicação posterior", () => {
     const texto = "O INSS apresentou proposta de acordo nos autos.";
     const id = publicar("acordo-custom", "2026-07-01", texto);

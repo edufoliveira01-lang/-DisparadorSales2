@@ -1,7 +1,7 @@
 import { ActivityBadge, RegisterAction, type AtividadeProcesso } from "@/components/djen/ActivityBadge";
 import { Acompanhamento } from "./Acompanhamento";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, CalendarClock, Clock3, History, Pencil, Plus, RefreshCw, Search, Sparkles, Trash2, X } from "lucide-react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { CalendarClock, ChevronDown, Clock3, GripVertical, History, Pencil, Plus, RefreshCw, Search, Sparkles, Trash2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useSocketEvent } from "@/hooks/useSocketEvent";
 import { useToast } from "@/components/ui/Toast";
@@ -73,6 +73,19 @@ export function QuadroProcessos() {
   const escolherArea = (a: string) => { setAreaFiltro(a); setFoco(null); try { localStorage.setItem(CHAVE_AREA, a); } catch { /* preferência só desta sessão */ } };
   const [areaEdicao, setAreaEdicao] = useState("");
   const [selecionados, setSelecionados] = useState<string[]>([]);
+  const [vazias, setVazias] = useState(() => { try { return localStorage.getItem("disparazap:quadro-vazias") === "1"; } catch { return false; } });
+  const alternarVazias = (v: boolean) => { setVazias(v); try { localStorage.setItem("disparazap:quadro-vazias", v ? "1" : "0"); } catch { /* só desta sessão */ } };
+  const [listaArrastada, setListaArrastada] = useState<number | null>(null);
+  const [alvoLista, setAlvoLista] = useState<number | null>(null);
+  const [alvoCartao, setAlvoCartao] = useState<string | null>(null);
+  const [alvoEtapa, setAlvoEtapa] = useState<number | null>(null);
+  const [menuEtapas, setMenuEtapas] = useState(false), [buscaEtapa, setBuscaEtapa] = useState("");
+  const menuEtapasRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!menuEtapas) return;
+    const fora = (e: MouseEvent) => { if (menuEtapasRef.current && !menuEtapasRef.current.contains(e.target as Node)) setMenuEtapas(false); };
+    document.addEventListener("mousedown", fora); return () => document.removeEventListener("mousedown", fora);
+  }, [menuEtapas]);
   const [destinoLote, setDestinoLote] = useState("");
   // A roda do mouse rola o quadro na horizontal. Uma coluna que ainda pode rolar na vertical
   // continua rolando por dentro; nas pontas do quadro a página volta a rolar normalmente.
@@ -117,12 +130,26 @@ export function QuadroProcessos() {
     void api.get<Movimento[]>(`/djen/kanban/cartoes/${encodeURIComponent(c.processo_chave)}/historico`)
       .then(setHistorico).catch((e) => show(msg(e), "error"));
   }
-  function ordenar(lista: Lista, passo: number) {
-    if (!quadro) return;
-    const ids = quadro.listas.map((l) => l.id), origem = ids.indexOf(lista.id), destino = origem + passo;
-    if (destino < 0 || destino >= ids.length) return;
-    [ids[origem], ids[destino]] = [ids[destino], ids[origem]];
+  /** Coloca a lista `origem` na posição da lista `alvo` (arrastar e soltar ou teclado). */
+  function moverListaPara(origem: number, alvo: number) {
+    if (!quadro || origem === alvo) return;
+    const ids = quadro.listas.map((l) => l.id), de = ids.indexOf(origem), para = ids.indexOf(alvo);
+    if (de < 0 || para < 0) return;
+    ids.splice(de, 1); ids.splice(para, 0, origem);
     void acao(() => api.put("/djen/kanban/listas/ordem", { ids }));
+  }
+  /** Rola o quadro quando o cartão ou a lista é levado para perto das bordas (com muitas etapas, o destino pode estar longe). */
+  function rolarAoArrastar(e: React.DragEvent) {
+    const el = quadroRef.current; if (!el) return;
+    const r = el.getBoundingClientRect(), borda = 110;
+    if (e.clientX < r.left + borda) el.scrollBy({ left: -34 }); else if (e.clientX > r.right - borda) el.scrollBy({ left: 34 });
+  }
+  function soltarCartao(chave: string, destino: number, antesDe?: string) {
+    setArrastando(null); setAlvoCartao(null); setAlvoEtapa(null);
+    const c = quadro?.cartoes.find((x) => x.processo_chave === chave);
+    if (!c || !canManage || busy || chave === antesDe) return;
+    if (c.lista_id === destino && antesDe === undefined) return;
+    void acao(() => api.put(`/djen/kanban/cartoes/${encodeURIComponent(chave)}`, { lista_id: destino, ...(antesDe ? { antes_de: antesDe } : {}) }));
   }
 
   const codigoDa = (c: Cartao) => quadro?.listas.find((l) => l.id === c.lista_id)?.codigo;
@@ -147,7 +174,10 @@ export function QuadroProcessos() {
   const alvoLote = filtrados.filter((c) => foco === null || c.lista_id === foco).slice(0, 500);
   const filtrando = Boolean(termo) || filtro !== "todos" || Boolean(classeFiltro) || foco !== null;
   const listasDaArea = quadro?.listas.filter((l) => !areaFiltro || listaServeArea(l, areaFiltro) || filtrados.some((c) => c.lista_id === l.id)) || [];
-  const listasVisiveis = listasDaArea.filter((l) => foco === null || l.id === foco);
+  const qtdNaLista = (id: number) => filtrados.filter((c) => c.lista_id === id).length;
+  const listasVisiveis = listasDaArea.filter((l) => (foco === null || l.id === foco) && (vazias || foco === l.id || qtdNaLista(l.id) > 0 || Boolean(editando === l.id)));
+  const vaziasOcultas = listasDaArea.length - listasVisiveis.length;
+  const etapaDoFoco = quadro?.listas.find((l) => l.id === foco);
   const contagemPorArea = (a: string) => quadro?.cartoes.filter((c) => areaDoCartao(c) === a).length ?? 0;
   const alternar = (chave: string) => setSelecionados((atual) => atual.includes(chave) ? atual.filter((c) => c !== chave) : [...atual, chave]);
   const moverLote = () => {
@@ -188,13 +218,23 @@ export function QuadroProcessos() {
       {AREAS.map(([k, nome]) => <button key={k} type="button" onClick={() => escolherArea(areaFiltro === k ? "" : k)} aria-pressed={areaFiltro === k} disabled={!contagemPorArea(k) && areaFiltro !== k}
         className={`rounded-full border px-3 py-1 text-xs transition disabled:opacity-40 ${areaFiltro === k ? "border-accent-600 bg-accent-600 text-white" : "border-zinc-200 bg-white text-zinc-600 hover:border-accent-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"}`}>{nome} <strong className="ml-1">{contagemPorArea(k)}</strong></button>)}
     </div>}
-    {quadro && <div className="flex flex-wrap items-center gap-2" aria-label="Resumo por lista">
-      <button type="button" onClick={() => setFoco(null)} aria-pressed={foco === null} className={`rounded-full border px-3 py-1 text-xs font-medium transition ${foco === null ? "border-accent-600 bg-accent-600 text-white" : "border-zinc-200 bg-white text-zinc-600 hover:border-accent-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"}`}>Todas as listas</button>
-      {listasDaArea.map((l) => {
-        const n = filtrados.filter((c) => c.lista_id === l.id).length;
-        return <button key={l.id} type="button" onClick={() => setFoco(foco === l.id ? null : l.id)} aria-pressed={foco === l.id} disabled={!n && foco !== l.id}
-          className={`rounded-full border px-3 py-1 text-xs transition disabled:opacity-40 ${foco === l.id ? "border-accent-600 bg-accent-600 text-white" : "border-zinc-200 bg-white text-zinc-600 hover:border-accent-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"}`}>{l.nome} <strong className="ml-1">{n}</strong></button>;
-      })}
+    {quadro && <div className="flex flex-wrap items-center gap-3" aria-label="Etapas do quadro">
+      <div ref={menuEtapasRef} className="relative">
+        <button type="button" onClick={() => setMenuEtapas((v) => !v)} aria-expanded={menuEtapas} className={`flex h-10 items-center gap-2 rounded-xl border px-3 text-sm font-medium transition ${etapaDoFoco ? "border-accent-600 bg-accent-50 text-accent-800 dark:bg-accent-500/10 dark:text-accent-200" : "border-zinc-200 bg-white text-zinc-700 hover:border-accent-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"}`}>
+          {etapaDoFoco ? `Etapa: ${etapaDoFoco.nome}` : `Etapas (${listasVisiveis.length} de ${listasDaArea.length} no quadro)`} <ChevronDown className="h-4 w-4" />
+        </button>
+        {etapaDoFoco && <button type="button" aria-label="Voltar a mostrar todas as etapas" onClick={() => setFoco(null)} className="ml-1 rounded-full p-1.5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><X className="h-4 w-4" /></button>}
+        {menuEtapas && <div className="absolute left-0 top-12 z-40 w-[320px] rounded-2xl border border-zinc-200 bg-white p-2 shadow-card dark:border-zinc-700 dark:bg-zinc-900">
+          <Input autoFocus aria-label="Buscar etapa" placeholder="Buscar etapa…" className="mb-2" value={buscaEtapa} onChange={(e) => setBuscaEtapa(e.target.value)} />
+          <ul className="max-h-[360px] overflow-y-auto">
+            <li><button type="button" onClick={() => { setFoco(null); setMenuEtapas(false); }} className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 ${foco === null ? "font-semibold text-accent-700" : ""}`}>Todas as etapas <span className="text-xs text-zinc-500">{filtrados.length}</span></button></li>
+            {listasDaArea.filter((l) => !buscaEtapa.trim() || normal(l.nome).includes(normal(buscaEtapa.trim()))).map((l) => { const n = qtdNaLista(l.id); return (
+              <li key={l.id}><button type="button" onClick={() => { setFoco(l.id); setMenuEtapas(false); }} className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 ${foco === l.id ? "font-semibold text-accent-700" : n ? "" : "text-zinc-400"}`}><span className="truncate">{l.nome}</span><span className={`rounded-full px-2 py-0.5 text-xs ${n ? "bg-accent-50 text-accent-700 dark:bg-accent-500/15 dark:text-accent-200" : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"}`}>{n}</span></button></li>); })}
+          </ul>
+        </div>}
+      </div>
+      <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300"><Checkbox checked={vazias} onChange={(e) => alternarVazias(e.target.checked)} /> Mostrar etapas vazias{!vazias && vaziasOcultas > 0 ? ` (${vaziasOcultas} oculta${vaziasOcultas > 1 ? "s" : ""})` : ""}</label>
+      {canManage && <span className="text-xs text-zinc-500">Arraste os <GripVertical className="inline h-3.5 w-3.5" /> do título para reordenar as etapas e os cartões para movê-los ou ordená-los.</span>}
     </div>}
     {canManage && selecionados.length > 0 && <div role="region" aria-label="Ações em lote" className="sticky top-20 z-20 flex flex-wrap items-center gap-2 rounded-xl border border-accent-300 bg-accent-50 p-3 shadow-sm dark:border-accent-800 dark:bg-accent-950">
       <strong className="text-xs">{selecionados.length} processo(s) selecionado(s)</strong>
@@ -207,18 +247,27 @@ export function QuadroProcessos() {
     </div>}
     {erro && <p role="alert" className="rounded-lg bg-red-50 p-3 text-xs text-red-700">{erro}</p>}
     {!quadro && !erro && <p className="text-sm text-zinc-500">Carregando quadro…</p>}
+    {canManage && arrastando && quadro && <div role="region" aria-label="Soltar em qualquer etapa" className="fixed inset-x-0 bottom-0 z-50 border-t border-zinc-200 bg-white/95 p-3 shadow-card backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95 lg:left-[251px]">
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Solte em qualquer etapa</p>
+      <div className="flex max-h-[28vh] flex-wrap gap-2 overflow-y-auto">
+        {quadro.listas.map((l) => <div key={l.id} onDragOver={(e) => { e.preventDefault(); setAlvoEtapa(l.id); }} onDragLeave={() => setAlvoEtapa((a) => (a === l.id ? null : a))}
+          onDrop={(e) => { e.preventDefault(); soltarCartao(e.dataTransfer.getData("application/x-disparazap-processo"), l.id); }}
+          className={`rounded-full border px-3 py-1.5 text-xs transition ${alvoEtapa === l.id ? "border-accent-600 bg-accent-600 text-white" : "border-zinc-300 bg-white text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200"}`}>{l.nome}</div>)}
+      </div>
+    </div>}
     {quadro && <div ref={quadroRef} className="-mx-4 overflow-x-auto px-4 pb-5 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
       <div className="flex min-h-[420px] w-max items-start gap-3">
         {listasVisiveis.map((lista) => {
-          const indice = quadro.listas.findIndex((l) => l.id === lista.id);
           const cartoes = filtrados.filter((c) => c.lista_id === lista.id);
           const totalNaLista = quadro.cartoes.filter((c) => c.lista_id === lista.id).length;
           return <section key={lista.id} aria-label={`${lista.nome}: ${cartoes.length} processos`}
-            onDragOver={(e) => { if (canManage && !busy && arrastando) e.preventDefault(); }}
-            onDrop={(e) => { e.preventDefault(); const chave = e.dataTransfer.getData("application/x-disparazap-processo"); setArrastando(null);
-              if (canManage && !busy && quadro.cartoes.some((c) => c.processo_chave === chave && c.lista_id !== lista.id))
-                void acao(() => api.put(`/djen/kanban/cartoes/${encodeURIComponent(chave)}`, { lista_id: lista.id })); }}
-            className={`w-[310px] shrink-0 rounded-2xl border border-t-[3px] border-zinc-200/80 bg-zinc-100/70 p-3 dark:border-zinc-800 dark:bg-zinc-900 ${lista.codigo === "triagem" ? "border-t-zinc-400" : lista.contar_dias ? "border-t-amber-400" : lista.regra_categoria ? "border-t-accent-500" : "border-t-zinc-300 dark:border-t-zinc-700"}`}>
+            onDragOver={(e) => { if (!canManage || busy) return; if (listaArrastada !== null) { e.preventDefault(); setAlvoLista(lista.id); rolarAoArrastar(e); } else if (arrastando) { e.preventDefault(); rolarAoArrastar(e); } }}
+            onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) { setAlvoLista((a) => (a === lista.id ? null : a)); } }}
+            onDrop={(e) => { e.preventDefault();
+              const dl = e.dataTransfer.getData("application/x-disparazap-lista");
+              if (dl) { setListaArrastada(null); setAlvoLista(null); moverListaPara(Number(dl), lista.id); return; }
+              soltarCartao(e.dataTransfer.getData("application/x-disparazap-processo"), lista.id); }}
+            className={`w-[310px] shrink-0 rounded-2xl border border-t-[3px] border-zinc-200/80 bg-zinc-100/70 p-3 dark:border-zinc-800 dark:bg-zinc-900 ${alvoLista === lista.id && listaArrastada !== null && listaArrastada !== lista.id ? "ring-2 ring-accent-500 ring-offset-2 dark:ring-offset-zinc-950" : ""} ${listaArrastada === lista.id ? "opacity-50" : ""} ${lista.codigo === "triagem" ? "border-t-zinc-400" : lista.contar_dias ? "border-t-amber-400" : lista.regra_categoria ? "border-t-accent-500" : "border-t-zinc-300 dark:border-t-zinc-700"}`}>
             {editando === lista.id ? <form className="space-y-2" onSubmit={(e) => {
               e.preventDefault(); void acao(async () => {
                 await api.put(`/djen/kanban/listas/${lista.id}`, { nome: nomeEdicao, contar_dias: contarEdicao, regra_categoria: regraEdicao });
@@ -232,7 +281,13 @@ export function QuadroProcessos() {
               <label className="flex items-center gap-2 text-xs"><Checkbox checked={contarEdicao} onChange={(e) => setContarEdicao(e.target.checked)} /> Contar dias nesta etapa</label>
               <div className="flex gap-2"><Button size="sm" disabled={busy} type="submit">Salvar</Button><Button size="sm" variant="ghost" type="button" onClick={() => setEditando(null)}>Cancelar</Button></div>
             </form> : <div className="mb-3 flex items-center justify-between gap-1 px-1">
-              <h2 className="min-w-0 truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100" title={lista.nome}>{lista.nome}</h2>
+              <h2 className="flex min-w-0 items-center gap-1 text-sm font-semibold text-zinc-800 dark:text-zinc-100" title={lista.nome}>
+                {canManage && <span role="button" tabIndex={0} draggable aria-label={`Reordenar a etapa ${lista.nome}: arraste, ou use as setas do teclado`} title="Arraste para reordenar a etapa"
+                  onDragStart={(e) => { e.dataTransfer.setData("application/x-disparazap-lista", String(lista.id)); e.dataTransfer.effectAllowed = "move"; const sec = e.currentTarget.closest("section"); if (sec) e.dataTransfer.setDragImage(sec, 24, 24); setListaArrastada(lista.id); }}
+                  onDragEnd={() => { setListaArrastada(null); setAlvoLista(null); }}
+                  onKeyDown={(e) => { if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return; e.preventDefault(); const i = listasVisiveis.findIndex((l) => l.id === lista.id), v = listasVisiveis[i + (e.key === "ArrowLeft" ? -1 : 1)]; if (v) moverListaPara(lista.id, v.id); }}
+                  className="-ml-1 shrink-0 cursor-grab rounded p-1 text-zinc-400 hover:bg-white hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 active:cursor-grabbing dark:hover:bg-zinc-800"><GripVertical className="h-4 w-4" /></span>}
+                <span className="truncate">{lista.nome}</span></h2>
               <span className="flex shrink-0 items-center gap-2">
                 {canManage && cartoes.length > 0 && <label className="flex items-center gap-1 text-[10px] text-zinc-500" title="Selecionar todos desta lista"><Checkbox aria-label={`Selecionar todos de ${lista.nome}`} checked={cartoes.every((c) => selecionados.includes(c.processo_chave))}
                   onChange={(e) => setSelecionados((atual) => e.target.checked ? [...new Set([...atual, ...cartoes.map((c) => c.processo_chave)])] : atual.filter((c) => !cartoes.some((x) => x.processo_chave === c)))} /></label>}
@@ -244,17 +299,19 @@ export function QuadroProcessos() {
                 ? <span className="mr-auto max-w-[145px] truncate text-[10px] text-sky-700 dark:text-sky-300" title={`Categoria DJEN: ${regras.find(([codigo]) => codigo === lista.regra_categoria)?.[1] || lista.regra_categoria}`}>DJEN: {regras.find(([codigo]) => codigo === lista.regra_categoria)?.[1] || lista.regra_categoria}</span>
                 : lista.contar_dias ? <span className="mr-auto flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-300"><CalendarClock className="h-3 w-3" /> Contagem de espera</span>
                   : <span className="mr-auto text-[10px] text-zinc-400">Etapa do processo</span>}
-              <button type="button" disabled={indice === 0 || busy} aria-label={`Mover lista ${lista.nome} à esquerda`} title="Mover lista à esquerda" onClick={() => ordenar(lista, -1)} className="rounded p-1 text-zinc-500 hover:bg-white disabled:opacity-30 dark:hover:bg-zinc-800"><ArrowLeft className="h-3.5 w-3.5" /></button>
-              <button type="button" disabled={indice === quadro.listas.length - 1 || busy} aria-label={`Mover lista ${lista.nome} à direita`} title="Mover lista à direita" onClick={() => ordenar(lista, 1)} className="rounded p-1 text-zinc-500 hover:bg-white disabled:opacity-30 dark:hover:bg-zinc-800"><ArrowRight className="h-3.5 w-3.5" /></button>
               <button type="button" aria-label={`Editar lista ${lista.nome}`} title="Editar lista" onClick={() => { setEditando(lista.id); setNomeEdicao(lista.nome); setContarEdicao(Boolean(lista.contar_dias)); setRegraEdicao(lista.regra_categoria || ""); }} className="rounded p-1 text-zinc-500 hover:bg-white dark:hover:bg-zinc-800"><Pencil className="h-3.5 w-3.5" /></button>
               <button type="button" aria-label={`Excluir lista ${lista.nome}`} title={lista.codigo ? "Etapa padrão do quadro" : totalNaLista ? "A lista contém processos" : "Excluir lista"} disabled={busy || totalNaLista > 0 || Boolean(lista.codigo)} onClick={() => setExcluir(lista)} className="rounded p-1 text-zinc-500 hover:bg-white disabled:opacity-30 dark:hover:bg-zinc-800"><Trash2 className="h-3.5 w-3.5" /></button>
             </div>}
             {!lista.codigo && !lista.regra_categoria && editando !== lista.id && <p className="mb-2 rounded-lg bg-amber-50 p-2 text-[11px] text-amber-800">Escolha uma categoria do DJEN em Editar lista para ativar a movimentação automática.</p>}
             <div data-rolagem-coluna className="scrollbar-thin max-h-[min(68vh,780px)] min-h-24 space-y-2 overflow-y-auto pr-1">
-              {cartoes.map((card) => <article key={card.processo_chave}
+              {cartoes.map((card) => <Fragment key={card.processo_chave}>
+              {alvoCartao === card.processo_chave && arrastando && arrastando !== card.processo_chave && <div aria-hidden className="h-1.5 rounded-full bg-accent-500" />}
+              <article
                 draggable={canManage && !busy}
+                onDragOver={(e) => { if (canManage && !busy && arrastando && arrastando !== card.processo_chave && listaArrastada === null) { e.preventDefault(); e.stopPropagation(); setAlvoCartao(card.processo_chave); rolarAoArrastar(e); } }}
+                onDrop={(e) => { if (listaArrastada !== null || !arrastando) return; e.preventDefault(); e.stopPropagation(); soltarCartao(e.dataTransfer.getData("application/x-disparazap-processo"), lista.id, card.processo_chave); }}
                 onDragStart={(e) => { e.dataTransfer.setData("application/x-disparazap-processo", card.processo_chave); e.dataTransfer.effectAllowed = "move"; setArrastando(card.processo_chave); }}
-                onDragEnd={() => setArrastando(null)}
+                onDragEnd={() => { setArrastando(null); setAlvoCartao(null); setAlvoEtapa(null); }}
                 className={`rounded-xl border bg-white p-3.5 shadow-soft transition-[border-color,box-shadow] hover:shadow-card hover:border-accent-400 dark:bg-zinc-950 ${card.publicacoes_nao_lidas ? "border-l-4 border-l-accent-600 dark:border-zinc-800" : "border-zinc-200 dark:border-zinc-800"}`}>
                 <div className="flex items-start gap-2">
                 {canManage && <span className="mt-0.5 shrink-0" title="Selecionar para mover em lote"><Checkbox aria-label={`Selecionar processo ${card.numero}`} checked={selecionados.includes(card.processo_chave)} onChange={() => alternar(card.processo_chave)} /></span>}
@@ -293,7 +350,7 @@ export function QuadroProcessos() {
                   </>}
                   <button type="button" aria-label={`Histórico das etapas de ${card.numero}`} title="Histórico das etapas" onClick={() => abrirHistorico(card)} className="rounded p-1.5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><History className="h-4 w-4" /></button>
                 </div>
-              </article>)}
+              </article></Fragment>)}
               {!cartoes.length && <p className="rounded-lg border border-dashed border-zinc-300 p-3 text-center text-xs text-zinc-400 dark:border-zinc-700">Nenhum processo nesta etapa</p>}
             </div>
           </section>;

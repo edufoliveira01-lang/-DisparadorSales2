@@ -64,3 +64,9 @@
 - Os avisos jurídicos (publicação antiga não é pendência confirmada, prazo expresso, conferir os autos antes de cobrar) saíram do topo para o botão **«Como funciona»**; os avisos continuam no texto de cada cartão em «Ver detalhes».
 - Ordenação (mais antigos, mais recentes, cliente A–Z) e busca. Os botões (Ver processo, Cobrança feita, Já foi cumprido) funcionam como antes.
 - Componente novo: `components/djen/Acompanhamentos.tsx`.
+
+## Quadro de processos — etapas e arrastar (3.16.0)
+- A «lista gigante» de etapas saiu. No lugar, o botão **Etapas (N de M no quadro)** abre um menu com busca e contagem, para focar numa etapa. **Etapas vazias ficam ocultas** por padrão (opção «Mostrar etapas vazias»); o quadro mostra só o que tem processo.
+- **Arrastar etapas:** cada título tem um puxador (⋮⋮): arraste para qualquer posição, ou use as setas ←/→ com o puxador em foco. As setas de cada coluna foram removidas.
+- **Arrastar cartões:** solte sobre outro cartão para colocar antes dele (reordena) ou sobre a coluna para ir ao final. Ao arrastar, aparece uma barra **«Solte em qualquer etapa»** com todas as etapas (inclusive as vazias), e o quadro rola sozinho perto das bordas.
+- Reordenar um cartão dentro da mesma etapa agora só muda a posição: não vira «etapa manual» nem reinicia a contagem de espera.

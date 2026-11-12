@@ -280,6 +280,11 @@ export function moverCartaoKanban(processo: string, destino: number, antesDe?: s
   const indice = antesDe === undefined ? ordem.length : ordem.indexOf(antesDe);
   if (indice < 0) throw new DjenInputError("O cartão de referência não está na lista de destino. Atualize o quadro.");
   ordem.splice(indice, 0, processo);
+  if (atual.lista_id === destino) {
+    // Só reordenou dentro da mesma etapa: muda a posição e nada mais (não vira etapa manual nem reinicia a espera).
+    db.transaction(() => { const reposicionar = db.prepare("UPDATE djen_kanban_cartoes SET posicao=? WHERE processo_chave=?"); ordem.forEach((chave, posicao) => reposicionar.run(posicao, chave)); })();
+    return { ok: true };
+  }
   db.transaction(() => {
     db.prepare(`UPDATE djen_kanban_cartoes SET lista_id=?,modo='manual',revisar_etapa=1,
       entrou_em=CASE WHEN lista_id<>? THEN CURRENT_TIMESTAMP ELSE entrou_em END,
