@@ -194,4 +194,6 @@ export function runGestaoMigrations(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_avisos_cobranca_criado ON gestao_avisos_cobranca(criado_em DESC);
     CREATE TABLE IF NOT EXISTS gestao_cobranca_pausa (pessoa_id INTEGER PRIMARY KEY);
   `);
+  const colsCob = (db.prepare("PRAGMA table_info(gestao_asaas_cobrancas)").all() as { name: string }[]).map((c) => c.name);
+  if (!colsCob.includes("boleto_arquivo_id")) db.exec("ALTER TABLE gestao_asaas_cobrancas ADD COLUMN boleto_arquivo_id INTEGER");
 }

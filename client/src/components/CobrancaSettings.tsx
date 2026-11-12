@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Input, Label, Textarea } from "@/components/ui/Input";
 
 interface Modelos { antes: string; hoje: string; depois: string }
-interface Config { ativa: boolean; antes_dias: number[]; no_dia: boolean; depois_dias: number[]; horario: string; pagamento: "" | "boleto_pix" | "pix" | "boleto"; formato: "separado" | "junto"; modelos: Modelos }
+interface Config { ativa: boolean; antes_dias: number[]; no_dia: boolean; depois_dias: number[]; horario: string; pagamento: "" | "boleto_pix" | "pix" | "boleto"; formato: "separado" | "junto"; anexar_boleto: boolean; salvar_boleto_dropbox: boolean; modelos: Modelos }
 const lista = (t: string) => t.split(/[,\s;]+/).map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 90);
 const sel = "mt-1.5 h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm dark:border-white/10 dark:bg-zinc-900";
 
@@ -54,6 +54,11 @@ export function CobrancaSettings() {
                 <option value="separado">Separado: texto com o link; PIX e linha digitável em mensagens próprias</option><option value="junto">Tudo junto: uma única mensagem</option>
               </select>
               <p className="mt-1 text-xs text-zinc-500">Separado é mais fácil para o cliente copiar o código. O nome e a cidade do PIX são enviados sem espaços para o código não quebrar.</p></div>
+          </div>
+          <div className="space-y-2 rounded-xl border border-zinc-200 p-3 dark:border-white/10">
+            <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={c.anexar_boleto} disabled={bloqueado} onChange={(e) => setC({ ...c, anexar_boleto: e.target.checked })} /><span><b>Enviar o boleto em PDF</b> junto do aviso (chega como arquivo na conversa, logo depois do texto).</span></label>
+            <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={c.salvar_boleto_dropbox} disabled={bloqueado} onChange={(e) => setC({ ...c, salvar_boleto_dropbox: e.target.checked })} /><span><b>Guardar o boleto em PDF</b> no cadastro do cliente (Arquivos) e copiar para a pasta <i>BOLETOS E COBRANÇAS</i> dele no Dropbox. Precisa do <a className="underline" href="/configuracoes?secao=dropbox">Dropbox conectado</a>; sem ele, fica só no cadastro.</span></label>
+            <p className="text-xs text-zinc-500">O PDF só existe para boleto (não para PIX puro) e é baixado do Asaas na hora de gerar ou avisar.</p>
           </div>
         </section>
 

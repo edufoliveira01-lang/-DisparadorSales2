@@ -20,13 +20,14 @@ export function salvarTokenDoDeskcomm(valor: unknown) {
   setSetting("deskcomm_api_token", v);
 }
 
-async function chamar<T>(metodo: string, caminho: string, corpo: unknown, http: Http, extra: Record<string, string> = {}): Promise<T> {
+const chamarForm = <T>(caminho: string, form: FormData, http: Http) => chamar<T>("POST", caminho, undefined, http, {}, form);
+async function chamar<T>(metodo: string, caminho: string, corpo: unknown, http: Http, extra: Record<string, string> = {}, form?: FormData): Promise<T> {
   const base = urlDoDeskcomm(), token = tokenDoDeskcomm();
   if (!base) throw new ErroDeskcomm("O atendimento (Deskcomm) não está ligado a este escritório.", 409);
   if (!token) throw new ErroDeskcomm("Falta o token de API do Deskcomm. Cadastre em Configurações → Atendimento (envio de mensagens).", 409);
   let r: Response;
   try {
-    r = await http(`${base}${caminho}`, { method: metodo, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...extra }, body: corpo ? JSON.stringify(corpo) : undefined, signal: AbortSignal.timeout(25_000) });
+    r = await http(`${base}${caminho}`, { method: metodo, headers: { Authorization: `Bearer ${token}`, ...(form ? {} : { "Content-Type": "application/json" }), ...extra }, body: form ?? (corpo ? JSON.stringify(corpo) : undefined), signal: AbortSignal.timeout(25_000) });
   } catch { throw new ErroDeskcomm("Não consegui falar com o Deskcomm agora. Tente de novo em instantes.", 502); }
   const txt = await r.text();
   let j: { data?: T; error?: { message?: string } | string; message?: string } = {};
@@ -43,7 +44,7 @@ async function chamar<T>(metodo: string, caminho: string, corpo: unknown, http: 
 }
 
 /** Abre (ou acha) a conversa do telefone e envia o texto pelo canal do atendimento. Devolve o id da mensagem. */
-export async function enviarPeloDeskcomm(telefone: string, nome: string, texto: string, http: Http = fetch, seguintes: string[] = []): Promise<{ conversation_id: string; message_id: string | null }> {
+export async function enviarPeloDeskcomm(telefone: string, nome: string, texto: string, http: Http = fetch, seguintes: string[] = [], anexos: { nome: string; conteudo: Buffer; mime: string }[] = []): Promise<{ conversation_id: string; message_id: string | null }> {
   const d = telefone.replace(/\D/g, "");
   if (d.length < 10) throw new ErroDeskcomm("Telefone inválido.", 422);
   const fone = `+${d.startsWith("55") ? d : `55${d}`}`;
@@ -51,7 +52,15 @@ export async function enviarPeloDeskcomm(telefone: string, nome: string, texto: 
   if (!c?.conversation_id) throw new ErroDeskcomm("O Deskcomm não abriu a conversa deste telefone.", 502);
   const enviar = (corpo: string) => chamar<{ id?: string }>("POST", "/api/v1/messages", { conversation_id: c.conversation_id, type: "text", body: corpo.slice(0, 4096) }, http, { "Idempotency-Key": crypto.randomUUID() });
   const m = await enviar(texto);
-  // Códigos (PIX copia e cola, linha digitável) vão sozinhos, em mensagens separadas: ficam inteiros e fáceis de copiar.
+  // Primeiro o texto, depois os arquivos (boleto em PDF) e por último os códigos (PIX copia e cola, linha digitável), cada um sozinho: chegam inteiros e fáceis de copiar.
+  for (const a of anexos) {
+    await new Promise((r) => setTimeout(r, 1200));
+    const form = new FormData();
+    form.append("file", new Blob([new Uint8Array(a.conteudo)], { type: a.mime }), a.nome);
+    form.append("nome_arquivo", a.nome); // o Deskcomm atualizado usa este nome; versões antigas ignoram e mantêm o nome gerado
+    const up = await chamarForm<{ storage_path: string; media_mime: string; media_size_bytes: number }>("/api/v1/conversations/" + c.conversation_id + "/media", form, http);
+    await chamar("POST", "/api/v1/messages", { conversation_id: c.conversation_id, type: "document", media_storage_path: up.storage_path, media_mime: up.media_mime, media_size_bytes: up.media_size_bytes }, http, { "Idempotency-Key": crypto.randomUUID() });
+  }
   for (const parte of seguintes) { await new Promise((r) => setTimeout(r, 1200)); await enviar(parte); }
   return { conversation_id: c.conversation_id, message_id: m?.id ?? null };
 }

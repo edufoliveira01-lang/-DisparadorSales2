@@ -1,0 +1,54 @@
+/**
+ * O boleto em PDF: baixa do Asaas, guarda no cadastro do cliente (Arquivos) e copia para a pasta «BOLETOS E COBRANÇAS» dele no Dropbox.
+ * O mesmo PDF é anexado ao aviso enviado pelo Deskcomm.
+ */
+import fs from "node:fs";
+import { db } from "../../db";
+import { enfileirarCopia } from "../../armazenamento/fila";
+import { cobrancaDoLancamento } from "./asaas";
+import { obterArquivo, salvarArquivo } from "./arquivos";
+import { obterLancamento, registrar, type Quem } from "./financeiro";
+
+type Http = typeof fetch;
+export interface BoletoPdf { arquivoId: number; nome: string; conteudo: Buffer }
+
+const dataBr = (iso: string) => iso.slice(0, 10).split("-").reverse().join("-");
+const MAX = 5 * 1024 * 1024;
+/** Descrição da parcela sem barras («Parcela 1/3»), que quebrariam o nome do arquivo. */
+const limpa = (t: unknown, n: number) => String(t).replace(/[\\/]+/g, "-").slice(0, n);
+
+/** Só aceita o endereço do boleto se for do Asaas (a URL vem da resposta deles, mas nunca se confia em endereço para baixar). */
+function urlDoAsaas(u: string): URL | null {
+  try { const x = new URL(u); return x.protocol === "https:" && /(^|\.)asaas\.com$/i.test(x.hostname) ? x : null; } catch { return null; }
+}
+
+/**
+ * Devolve o PDF do boleto da parcela: o que já foi guardado ou, se ainda não houver, baixa do Asaas e guarda.
+ * `null` quando a cobrança não tem boleto (só PIX), já foi paga/cancelada ou o Asaas ainda não liberou o PDF.
+ */
+export async function boletoEmPdf(lancamentoId: number, opts: { quem?: Quem; http?: Http; copiarParaDrive?: boolean } = {}): Promise<BoletoPdf | null> {
+  const c = cobrancaDoLancamento(lancamentoId);
+  if (!c || c.billing_type === "PIX" || ["DELETED", "CANCELADA", "REFUNDED", "RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"].includes(c.status)) return null;
+  const ja = (db.prepare("SELECT boleto_arquivo_id AS id FROM gestao_asaas_cobrancas WHERE lancamento_id=?").get(lancamentoId) as { id: number | null } | undefined)?.id;
+  if (ja) { try { const a = obterArquivo(ja); return { arquivoId: ja, nome: a.nome, conteudo: fs.readFileSync(a.caminho) }; } catch { /* apagado: baixa de novo */ } }
+  const url = urlDoAsaas(c.bank_slip_url);
+  if (!url) return null;
+  let r: Response;
+  try { r = await (opts.http ?? fetch)(url.toString(), { signal: AbortSignal.timeout(25_000), redirect: "follow" }); } catch { return null; }
+  if (!r.ok) return null;
+  const conteudo = Buffer.from(await r.arrayBuffer());
+  if (conteudo.length < 200 || conteudo.length > MAX || conteudo.subarray(0, 5).toString("latin1") !== "%PDF-") return null;
+  const l = obterLancamento(lancamentoId);
+  if (!l.pessoa_id) return null;
+  const nome = `Boleto - ${limpa(l.descricao, 80)} - venc ${dataBr(c.vencimento)}.pdf`;
+  const arq = salvarArquivo({ pessoaId: l.pessoa_id }, nome, conteudo, { categoria: "Financeiro", descricao: "Boleto gerado pelo Asaas" }, { id: opts.quem?.id ?? null, nome: opts.quem?.nome ?? "Sistema" });
+  db.prepare("UPDATE gestao_asaas_cobrancas SET boleto_arquivo_id=? WHERE lancamento_id=?").run(arq.id, lancamentoId);
+  registrar(lancamentoId, "boleto_pdf", "Boleto em PDF guardado no cadastro do cliente.", opts.quem);
+  if (opts.copiarParaDrive) {
+    try {
+      if (enfileirarCopia({ pessoaId: l.pessoa_id, arquivoId: arq.id, tipoPasta: "BOLETOS E COBRANÇAS", titulo: `Boleto - ${limpa(l.descricao, 60)} (venc ${dataBr(c.vencimento)})`, extensao: "pdf" }))
+        registrar(lancamentoId, "boleto_dropbox", "Boleto enviado para a fila de cópia ao Dropbox.", opts.quem);
+    } catch { /* o drive não é requisito para cobrar */ }
+  }
+  return { arquivoId: arq.id, nome: arq.nome, conteudo };
+}

@@ -32,6 +32,7 @@ import { atendimentoDaInstancia } from "../atendimento/instancia";
 import { hojeSaoPaulo } from "../services/djen/cache";
 import { completarComDataJud, forcarConsulta, iniciarAcompanhamento, situacaoDoAcompanhamento } from "../services/djen/vigia";
 import { ErroDeskcomm, envioPeloDeskcommLigado, mascaraDeskcomm, salvarTokenDoDeskcomm, testarDeskcomm, tokenDoDeskcomm, urlDoDeskcomm } from "../services/gestao/deskcomm";
+import { boletoEmPdf } from "../services/gestao/boleto";
 import { avisosDaParcela, enviarAviso, enviarEmLote, historicoDeAvisos, lerRegua, pausarAvisos, pendentesDaRegua, pessoaPausada, salvarRegua } from "../services/gestao/regua";
 import { ambienteDoAsaas, cancelarCobranca, chaveDoAsaas, cobrancaDoLancamento, consultarCobranca, ErroAsaas, gerarCobranca, mascara as mascaraAsaas, salvarConfigAsaas, sincronizarCobrancasAlteradas, sincronizarExtrato, taxasDoAsaas, testarAsaas, tokenDoWebhook } from "../services/gestao/asaas";
 import { atualizarDoDataJud, chaveDoDataJud, ErroDataJud, mascararChave, salvarChaveDoDataJud } from "../services/djen/datajud";
@@ -185,7 +186,7 @@ gestaoRouter.get("/asaas/config", rota((req) => { gerirIntegracoes(req); return 
 gestaoRouter.put("/asaas/config", rota((req) => { gerirIntegracoes(req); try { salvarConfigAsaas(req.body || {}); } catch (e) { erroAsaas(e); } auditAccess("asaas_config_salva", usuario(req).id, null, {}); return configAsaas(); }));
 gestaoRouter.post("/asaas/testar", rota(async (req) => { gerirIntegracoes(req); try { return await testarAsaas(); } catch (e) { return erroAsaas(e); } }));
 gestaoRouter.get("/financeiro/lancamentos/:id/cobranca", rota((req) => ({ cobranca: cobrancaDoLancamento(id(req)), configurado: Boolean(chaveDoAsaas()) })));
-gestaoRouter.post("/financeiro/lancamentos/:id/cobranca", rota(async (req, res) => { gerirFinanceiro(req); try { const c = await gerarCobranca(id(req), req.body?.tipo, quem(req)); auditAccess("asaas_cobranca_gerada", usuario(req).id, null, { lancamento: id(req) }); res.status(201); return { cobranca: c }; } catch (e) { return erroAsaas(e); } }));
+gestaoRouter.post("/financeiro/lancamentos/:id/cobranca", rota(async (req, res) => { gerirFinanceiro(req); try { const c = await gerarCobranca(id(req), req.body?.tipo, quem(req)); if (lerRegua().salvar_boleto_dropbox) void boletoEmPdf(id(req), { quem: quem(req), copiarParaDrive: true }).catch(() => undefined); auditAccess("asaas_cobranca_gerada", usuario(req).id, null, { lancamento: id(req) }); res.status(201); return { cobranca: c }; } catch (e) { return erroAsaas(e); } }));
 gestaoRouter.post("/financeiro/lancamentos/:id/cobranca/enviar", rota(async (req) => { gerirFinanceiro(req); const r = await enviarAviso(id(req), { origem: "manual", quem: quem(req) }); if (r.status === "falhou") throw new ErroGestao(r.motivo || "Não foi possível enviar.", 409); return { resultado: r }; }));
 gestaoRouter.get("/financeiro/lancamentos/:id/avisos", rota((req) => ({ avisos: avisosDaParcela(id(req)) })));
 gestaoRouter.post("/financeiro/avisos/lote", rota(async (req) => { gerirFinanceiro(req); const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number) : []; return enviarEmLote(ids, { quem: quem(req) }); }));

@@ -28,6 +28,7 @@ export const TIPOS_DE_PASTA = [
   "DOCUMENTOS ADMINISTRATIVO",
   "CONTRATOS E PROCURAÇÕES",
   "A CLASSIFICAR",
+  "BOLETOS E COBRANÇAS",
 ] as const;
 export type TipoDePasta = (typeof TIPOS_DE_PASTA)[number];
 

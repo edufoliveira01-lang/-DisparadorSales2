@@ -28,3 +28,8 @@ A chave e o token do webhook ficam criptografados no banco. O painel só repassa
 ### Configurações de cobrança e PIX (3.12.3)
 - **Tudo se configura em Configurações → Cobranças e avisos**; os botões (Cobrar, Avisar, Enviar aviso, lote e régua) só executam. Lá ficam: se vai boleto/PIX junto (e qual), **formato de envio** (*separado*: texto com o link e PIX/linha digitável em mensagens próprias; *tudo junto*: uma mensagem), os **textos** dos avisos (antes, no dia e depois do vencimento, com as variáveis `{nome}`, `{descricao}`, `{valor}`, `{vencimento}`, `{quando}`, `{link}`) e os **avisos automáticos** (dias, horário, liga/desliga).
 - **PIX sem espaços:** o código copia e cola traz o nome e a cidade do recebedor com espaços e os apps de mensagem o quebravam. O Sales remove os espaços desses dois campos, refaz tamanhos e CRC (o código continua válido) e envia o PIX sozinho.
+
+### Boleto em PDF (3.13.0)
+- O boleto é baixado do Asaas em PDF (só endereços do próprio Asaas e só se o arquivo for mesmo um PDF), guardado em **Arquivos do cliente** (categoria *Financeiro*) e copiado para **`/CLIENTES/<cliente>/BOLETOS E COBRANÇAS`** no Dropbox (fila já existente; sem Dropbox conectado, fica só no cadastro). Acontece ao gerar a cobrança e ao enviar um aviso.
+- O PDF segue **como arquivo na conversa** (Deskcomm: `POST /api/v1/conversations/<id>/media` + `POST /api/v1/messages` tipo `document`), logo após o texto e antes do PIX/linha digitável. Ambas as opções ficam em Configurações → Cobranças e avisos.
+- No **Deskcomm** (build novo), o upload aceita o campo opcional `nome_arquivo`: o cliente vê «Boleto-Maria-Parcela-1-3.pdf» em vez de um nome gerado. Sem atualizar o Deskcomm, o PDF vai do mesmo jeito, só com o nome gerado.

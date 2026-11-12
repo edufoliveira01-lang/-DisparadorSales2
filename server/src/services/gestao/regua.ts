@@ -5,6 +5,7 @@
 import { db } from "../../db";
 import { getSetting, setSetting } from "../settingsService";
 import { hojeSaoPaulo } from "../djen/cache";
+import { boletoEmPdf } from "./boleto";
 import { enviarPeloDeskcomm, envioPeloDeskcommLigado, ErroDeskcomm } from "./deskcomm";
 import { telefoneValidoParaLembrete } from "../lembreteUtils";
 import { ErroGestao } from "./pessoas";
@@ -18,6 +19,8 @@ export interface ReguaConfig {
   depois_dias: number[]; // avisos após o vencimento (ex.: 1, 7)
   horario: string; // HH:MM (Brasília) a partir do qual os avisos do dia saem
   pagamento: "" | TipoCobranca; // gera e envia boleto/PIX junto do aviso ("" = só o lembrete); vale para avisos automáticos, em lote e pelos botões
+  anexar_boleto: boolean; // envia o boleto em PDF junto do aviso
+  salvar_boleto_dropbox: boolean; // guarda o PDF no cadastro e copia para a pasta do cliente no Dropbox
   formato: "separado" | "junto"; // PIX e linha digitável em mensagens separadas (fácil de copiar) ou tudo na mesma mensagem
   modelos: Modelos; // textos dos avisos (editáveis)
 }
@@ -28,7 +31,7 @@ export const MODELOS_PADRAO: Modelos = {
   hoje: "Olá, {nome}! Tudo bem? Aqui é do escritório. Passando para lembrar que a parcela \"{descricao}\", no valor de {valor}, vence hoje.\n\n{link}\n\nSe já pagou, é só nos avisar e desconsidere esta mensagem. 🙏",
   depois: "Olá, {nome}! Tudo bem? Aqui é do escritório. Notamos que a parcela \"{descricao}\", no valor de {valor}, com vencimento em {vencimento}, ainda consta em aberto. Podemos ajudar a regularizar?\n\n{link}\n\nSe já pagou, é só nos avisar e desconsidere esta mensagem. 🙏",
 };
-export const REGUA_PADRAO: ReguaConfig = { ativa: false, antes_dias: [3], no_dia: true, depois_dias: [3], horario: "09:00", pagamento: "boleto_pix", formato: "separado", modelos: { ...MODELOS_PADRAO } };
+export const REGUA_PADRAO: ReguaConfig = { ativa: false, antes_dias: [3], no_dia: true, depois_dias: [3], horario: "09:00", pagamento: "boleto_pix", formato: "separado", anexar_boleto: true, salvar_boleto_dropbox: true, modelos: { ...MODELOS_PADRAO } };
 
 const dias = (v: unknown): number[] => [...new Set((Array.isArray(v) ? v : []).map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 90))].sort((a, b) => a - b).slice(0, 5);
 export function lerRegua(): ReguaConfig {
@@ -47,7 +50,7 @@ function normalizarRegua(d: Partial<ReguaConfig>): ReguaConfig {
   const horario = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(d.horario)) ? String(d.horario) : REGUA_PADRAO.horario;
   const legado = d as { gerar_cobranca?: boolean; tipo?: string };
   const pagamento = d.pagamento !== undefined ? d.pagamento : legado.gerar_cobranca === false ? "" : legado.tipo === "pix" || legado.tipo === "boleto" ? legado.tipo : "boleto_pix";
-  return { ativa: Boolean(d.ativa), antes_dias: dias(d.antes_dias), no_dia: Boolean(d.no_dia), depois_dias: dias(d.depois_dias), horario, pagamento: pagamento === "pix" || pagamento === "boleto" || pagamento === "boleto_pix" ? pagamento : "", formato: d.formato === "junto" ? "junto" : "separado", modelos: normalizarModelos(d.modelos) };
+  return { ativa: Boolean(d.ativa), antes_dias: dias(d.antes_dias), no_dia: Boolean(d.no_dia), depois_dias: dias(d.depois_dias), horario, pagamento: pagamento === "pix" || pagamento === "boleto" || pagamento === "boleto_pix" ? pagamento : "", formato: d.formato === "junto" ? "junto" : "separado", anexar_boleto: d.anexar_boleto !== false, salvar_boleto_dropbox: d.salvar_boleto_dropbox !== false, modelos: normalizarModelos(d.modelos) };
 }
 export function salvarRegua(d: Partial<ReguaConfig>): ReguaConfig {
   const c = normalizarRegua({ ...lerRegua(), ...d });
@@ -82,12 +85,13 @@ export function textoDoModelo(p: DadosAviso, hoje: string, modelos: Modelos = le
     .replace(/,\s*([!?.])/g, "$1").replace(/Olá,?\s+!/g, "Olá!");
 }
 /** Resolve {link}: com cobrança vira o link de pagamento; sem ela o marcador some. O PIX e a linha digitável vão em mensagens separadas (código sozinho, fácil de copiar). */
-export function aplicarLink(texto: string, link?: { url?: string; pix?: string; linha?: string } | null, formato: "separado" | "junto" = "separado"): { texto: string; partes: string[] } {
+export function aplicarLink(texto: string, link?: { url?: string; pix?: string; linha?: string } | null, formato: "separado" | "junto" = "separado", comPdf = false): { texto: string; partes: string[] } {
   const partes: string[] = [];
   let bloco = "";
   if (link?.url) {
     bloco = `Para pagar por boleto ou PIX, use este link: ${link.url}`;
     const pix = link.pix ? pixSemEspacos(link.pix) : "";
+    if (comPdf) bloco += "\n\nSegue também o boleto em PDF.";
     if (formato === "junto") {
       if (pix) bloco += `\n\nPIX copia e cola:\n${pix}`;
       if (link.linha) bloco += `\n\nLinha digitável do boleto:\n${link.linha}`;
@@ -165,10 +169,13 @@ export async function enviarAviso(lancamentoId: number, opts: { regra?: string; 
   if (!link && gerar && chaveDoAsaas() && p.vencimento >= hoje) {
     try { link = await gerarCobranca(lancamentoId, gerar, opts.quem, opts.http); } catch { link = null; /* segue só com o lembrete, sem link */ }
   }
-  const { texto, partes } = aplicarLink(textoDoModelo(p, hoje), link ? { url: link.invoice_url || link.bank_slip_url, pix: link.pix_payload, linha: link.linha_digitavel } : null, cfg.formato);
+  let pdf: Awaited<ReturnType<typeof boletoEmPdf>> = null;
+  if (link && (cfg.anexar_boleto || cfg.salvar_boleto_dropbox)) { try { pdf = await boletoEmPdf(lancamentoId, { quem: opts.quem, http: opts.http, copiarParaDrive: cfg.salvar_boleto_dropbox }); } catch { pdf = null; } }
+  const anexar = Boolean(pdf && cfg.anexar_boleto);
+  const { texto, partes } = aplicarLink(textoDoModelo(p, hoje), link ? { url: link.invoice_url || link.bank_slip_url, pix: link.pix_payload, linha: link.linha_digitavel } : null, cfg.formato, anexar);
   try {
     if (!envioPeloDeskcommLigado()) throw new ErroDeskcomm(SEM_CANAL, 409);
-    await enviarPeloDeskcomm(p.telefone, p.nome, texto, opts.http, partes);
+    await enviarPeloDeskcomm(p.telefone, p.nome, texto, opts.http, partes, anexar && pdf ? [{ nome: pdf.nome, conteudo: pdf.conteudo, mime: "application/pdf" }] : []);
     registro("enviado", texto, null);
     registrar(lancamentoId, "aviso_cobranca", `Aviso de cobrança enviado pelo WhatsApp (${opts.origem === "automatico" ? "automático" : opts.origem === "lote" ? "em lote" : "manual"}).`, opts.quem);
     return { lancamento_id: lancamentoId, status: "enviado" };

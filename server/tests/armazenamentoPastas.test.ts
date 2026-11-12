@@ -93,8 +93,8 @@ describe("a TRAVA de /CLIENTES", () => {
       expect(() => dentroDaRaiz(ruim), ruim).toThrow(ErroArmazenamento);
     }
   });
-  it("as cinco pastas de tipo existem e o caminho do tipo fica dentro da raiz", () => {
-    expect(TIPOS_DE_PASTA).toHaveLength(5);
+  it("as pastas de tipo existem e o caminho do tipo fica dentro da raiz", () => {
+    expect(TIPOS_DE_PASTA).toHaveLength(6);
     expect(ehTipoDePasta("PARTE MÉDICA")).toBe(true);
     expect(ehTipoDePasta("OUTRA")).toBe(false);
     expect(dentroDaRaiz(caminhoDoTipo("ANA LIMA", "DOCUMENTOS PESSOAIS"))).toBe("/CLIENTES/ANA LIMA/DOCUMENTOS PESSOAIS");

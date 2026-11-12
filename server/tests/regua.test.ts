@@ -15,6 +15,7 @@ const http = (async (url: string, init: RequestInit) => {
 }) as unknown as typeof fetch;
 
 import { db } from "../src/db";
+import { boletoEmPdf } from "../src/services/gestao/boleto";
 import { aplicarLink, pixSemEspacos, textoDoModelo, enviarAviso, enviarEmLote, executarRegua, lerRegua, mensagemDoAviso, pausarAvisos, pendentesDaRegua, regraDe, salvarRegua } from "../src/services/gestao/regua";
 import { salvarTokenDoDeskcomm } from "../src/services/gestao/deskcomm";
 import { hojeSaoPaulo } from "../src/services/djen/cache";
@@ -26,7 +27,7 @@ const hoje = hojeSaoPaulo();
 const tardeDemais = new Date(`${hoje}T23:00:00-03:00`);
 
 beforeEach(() => {
-  db.exec("DELETE FROM gestao_avisos_cobranca; DELETE FROM gestao_cobranca_pausa; DELETE FROM gestao_asaas_cobrancas; DELETE FROM gestao_lancamentos_historico; DELETE FROM gestao_lancamentos; DELETE FROM gestao_pessoas;");
+  db.exec("DELETE FROM gestao_avisos_cobranca; DELETE FROM gestao_cobranca_pausa; DELETE FROM gestao_asaas_cobrancas; DELETE FROM gestao_lancamentos_historico; DELETE FROM gestao_lancamentos; DELETE FROM gestao_arquivos; DELETE FROM gestao_pessoas;");
   db.prepare("DELETE FROM settings WHERE chave IN ('cobranca_regua','asaas_api_key')").run();
   db.prepare("INSERT OR REPLACE INTO settings(chave,valor) VALUES ('send_interval_min','0'),('send_interval_max','0')").run();
   enviadas.length = 0; estado.pronto = true; estado.falhaEnvio = ""; salvarTokenDoDeskcomm("dsk_token_de_teste_123456");
@@ -96,6 +97,45 @@ describe("Texto editável e PIX separado", () => {
   it("formato «junto» manda link, PIX e linha digitável na mesma mensagem", () => {
     const r = aplicarLink("Oi\n\n{link}", { url: "https://x/i", pix: "000201", linha: "2379" }, "junto");
     expect(r.partes).toEqual([]); expect(r.texto).toContain("PIX copia e cola:\n000201"); expect(r.texto).toContain("Linha digitável do boleto:\n2379");
+  });
+});
+
+describe("Boleto em PDF", () => {
+  const PDF = Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.alloc(400, 65)]);
+  const prep = () => {
+    const p = pessoa(); const id = lanc(p, somar(hoje, 5));
+    db.prepare("INSERT INTO gestao_asaas_cobrancas(lancamento_id,payment_id,billing_type,status,invoice_url,bank_slip_url,pix_payload,valor_centavos,vencimento) VALUES (?,?,?,?,?,?,?,?,?)")
+      .run(id, "pay_1", "UNDEFINED", "PENDING", "https://www.asaas.com/i/1", "https://www.asaas.com/b/pdf/1", "000201", 50000, somar(hoje, 5));
+    return id;
+  };
+  const sistema = { ...process.env };
+  it("baixa o PDF do Asaas, guarda no cadastro e envia como anexo depois do texto", async () => {
+    const id = prep();
+    const feitos: string[] = [];
+    const http2 = (async (url: string, init: RequestInit) => {
+      if (String(url).startsWith("https://www.asaas.com/b/pdf")) { feitos.push("pdf"); return new Response(PDF, { status: 200 }); }
+      if (String(url).includes("/media")) { feitos.push("upload"); expect((init.body as FormData).get("nome_arquivo")).toMatch(/^Boleto - Parcela 1-3 - venc \d\d-\d\d-\d{4}\.pdf$/); return new Response(JSON.stringify({ data: { storage_path: "o/c/out-1/Boleto.pdf", media_mime: "application/pdf", media_size_bytes: PDF.length } }), { status: 201 }); }
+      const corpo = JSON.parse(String(init.body ?? "{}"));
+      if (String(url).endsWith("/messages")) feitos.push(corpo.type === "document" ? "msg-documento" : "msg-texto");
+      return http(url, init);
+    }) as unknown as typeof fetch;
+    const r = await enviarAviso(id, { origem: "manual", http: http2, gerar: false });
+    expect(r.motivo).toBeUndefined(); expect(r.status).toBe("enviado");
+    expect(feitos.slice(0, 3)).toEqual(["pdf", "msg-texto", "upload"]);
+    expect(feitos).toContain("msg-documento");
+    expect(enviadas[0]!.texto).toContain("Segue também o boleto em PDF.");
+    expect((db.prepare("SELECT boleto_arquivo_id AS a FROM gestao_asaas_cobrancas").get() as { a: number }).a).toBeGreaterThan(0);
+    expect(Number((db.prepare("SELECT COUNT(*) n FROM gestao_arquivos WHERE nome LIKE 'Boleto - %'").get() as { n: number }).n)).toBe(1);
+  });
+  it("só PIX, endereço fora do Asaas ou arquivo que não é PDF: não anexa", async () => {
+    const id = prep();
+    const r1 = await boletoEmPdf(id, { http: (async () => new Response("<html>oi</html>", { status: 200 })) as unknown as typeof fetch });
+    expect(r1).toBeNull();
+    db.prepare("UPDATE gestao_asaas_cobrancas SET bank_slip_url='https://malicioso.exemplo/x.pdf'").run();
+    expect(await boletoEmPdf(id, { http: (async () => new Response(PDF)) as unknown as typeof fetch })).toBeNull();
+    db.prepare("UPDATE gestao_asaas_cobrancas SET bank_slip_url='https://www.asaas.com/b/pdf/1', billing_type='PIX'").run();
+    expect(await boletoEmPdf(id, { http: (async () => new Response(PDF)) as unknown as typeof fetch })).toBeNull();
+    void sistema;
   });
 });
 
