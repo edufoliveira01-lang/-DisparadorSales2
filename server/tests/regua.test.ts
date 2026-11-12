@@ -15,7 +15,7 @@ const http = (async (url: string, init: RequestInit) => {
 }) as unknown as typeof fetch;
 
 import { db } from "../src/db";
-import { aplicarLink, previaDoAviso, textoDoModelo, enviarAviso, enviarEmLote, executarRegua, lerRegua, mensagemDoAviso, pausarAvisos, pendentesDaRegua, regraDe, salvarRegua } from "../src/services/gestao/regua";
+import { aplicarLink, pixSemEspacos, textoDoModelo, enviarAviso, enviarEmLote, executarRegua, lerRegua, mensagemDoAviso, pausarAvisos, pendentesDaRegua, regraDe, salvarRegua } from "../src/services/gestao/regua";
 import { salvarTokenDoDeskcomm } from "../src/services/gestao/deskcomm";
 import { hojeSaoPaulo } from "../src/services/djen/cache";
 
@@ -74,7 +74,7 @@ describe("Texto editável e PIX separado", () => {
   it("o PIX copia e cola e a linha digitável vão em mensagens separadas, inteiros", () => {
     const pix = "00020101021226820014br.gov.bcb.pix2560pix-h.asaas.com/qr/cobv/f9ad467f-e3a2-479a-a73e-e6ccb47f0d065204000053039865802BR5924Eduardo Freitas Oliveira6011Sao Vicente61081134001062070503***6304F3E1";
     const r = aplicarLink("Oi!\n\n{link}\n\nTchau", { url: "https://asaas/i/1", pix, linha: "23793.38128 60000.000003" });
-    expect(r.partes).toEqual([pix, "23793.38128 60000.000003"]);
+    expect(r.partes).toEqual([pixSemEspacos(pix), "23793.38128 60000.000003"]);
     expect(r.texto).toContain("https://asaas/i/1"); expect(r.texto).not.toContain("00020101"); expect(r.texto).toContain("Em seguida, envio o código PIX copia e cola e a linha digitável do boleto.");
     expect(aplicarLink("Oi\n\n{link}\n\nTchau", null)).toEqual({ texto: "Oi\n\nTchau", partes: [] });
   });
@@ -85,11 +85,17 @@ describe("Texto editável e PIX separado", () => {
     expect(lerRegua().modelos.hoje).toContain("vence hoje");
     expect(textoDoModelo({ ...p, nome: "" }, hoje, { antes: "Olá, {nome}! Oi", hoje: "", depois: "" })).toBe("Olá! Oi");
   });
-  it("mensagem editada vai como está, com {link} resolvido, e o PIX segue sozinho", async () => {
-    const id = lanc(pessoa(), somar(hoje, 5));
-    expect(previaDoAviso(id).texto).toContain("{link}");
-    const r = await enviarAviso(id, { origem: "manual", http, mensagem: "Texto meu, {valor}? {link}" });
-    expect(r.status).toBe("enviado"); expect(enviadas[0]!.texto).toBe("Texto meu, {valor}?");
+  it("PIX sem espaços: nome e cidade viram uma palavra, tamanhos e CRC refeitos (código continua válido)", () => {
+    const pix = "00020101021226820014br.gov.bcb.pix2560pix-h.asaas.com/qr/cobv/f9ad467f-e3a2-479a-a73e-e6ccb47f0d065204000053039865802BR5924Eduardo Freitas Oliveira6011Sao Vicente61081134001062070503***6304F3E1";
+    const novo = pixSemEspacos(pix);
+    expect(novo).not.toMatch(/\s/); expect(novo).toContain("5922EduardoFreitasOliveira6010SaoVicente");
+    expect(pixSemEspacos(novo)).toBe(novo); // idempotente (CRC novo confere)
+    expect(pixSemEspacos("codigo qualquer 1234")).toBe("codigo qualquer 1234"); // fora do padrão: devolve como veio
+    expect(aplicarLink("{link}", { url: "u", pix }).partes[0]).toBe(novo);
+  });
+  it("formato «junto» manda link, PIX e linha digitável na mesma mensagem", () => {
+    const r = aplicarLink("Oi\n\n{link}", { url: "https://x/i", pix: "000201", linha: "2379" }, "junto");
+    expect(r.partes).toEqual([]); expect(r.texto).toContain("PIX copia e cola:\n000201"); expect(r.texto).toContain("Linha digitável do boleto:\n2379");
   });
 });
 
@@ -97,7 +103,7 @@ describe("Régua automática", () => {
   it("só envia o que a regra de hoje manda, uma vez por parcela e só depois do horário", async () => {
     const p = pessoa();
     const ant = lanc(p, somar(hoje, 3)), dia = lanc(p, hoje), dep = lanc(p, somar(hoje, -3)); lanc(p, somar(hoje, 10)); lanc(p, somar(hoje, -1));
-    salvarRegua({ ativa: true, antes_dias: [3], no_dia: true, depois_dias: [3], horario: "09:00", gerar_cobranca: false });
+    salvarRegua({ ativa: true, antes_dias: [3], no_dia: true, depois_dias: [3], horario: "09:00", pagamento: "" });
     expect(pendentesDaRegua().map((i) => i.lancamento_id).sort()).toEqual([ant, dia, dep].sort());
     expect(await executarRegua(new Date(`${hoje}T08:00:00-03:00`), http)).toBeNull(); expect(enviadas).toHaveLength(0);
     expect(await executarRegua(tardeDemais, http)).toEqual({ enviados: 3, falhas: 0 });
@@ -106,7 +112,7 @@ describe("Régua automática", () => {
   it("desligada, pausada, sem token: não envia; falha tenta no máximo 3 vezes", async () => {
     const p = pessoa(); lanc(p, hoje);
     expect(await executarRegua(tardeDemais, http)).toBeNull();
-    salvarRegua({ ativa: true, antes_dias: [], no_dia: true, depois_dias: [], horario: "00:00", gerar_cobranca: false });
+    salvarRegua({ ativa: true, antes_dias: [], no_dia: true, depois_dias: [], horario: "00:00", pagamento: "" });
     salvarTokenDoDeskcomm(""); expect(await executarRegua(tardeDemais, http)).toBeNull();
     salvarTokenDoDeskcomm("dsk_token_de_teste_123456"); pausarAvisos(p, true); expect(pendentesDaRegua()).toHaveLength(0); pausarAvisos(p, false);
     const id = (db.prepare("SELECT id FROM gestao_lancamentos").get() as { id: number }).id;

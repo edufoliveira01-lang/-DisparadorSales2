@@ -25,6 +25,6 @@ A chave e o token do webhook ficam criptografados no banco. O painel só repassa
 - **Cobrança automática** (Financeiro → aba *Cobrança automática*): liga/desliga, dias antes/depois do vencimento, aviso no dia, horário, e se gera boleto/PIX antes de avisar (parcelas ainda não vencidas). Cada parcela recebe cada aviso uma vez; falhas são repetidas até 3 vezes; não envia sem o token do Deskcomm nem para clientes pausados. O histórico mostra o que foi enviado e o motivo das falhas. O agendador confere a cada 5 minutos.
 - Tabelas: `gestao_avisos_cobranca`, `gestao_cobranca_pausa`.
 
-### Texto editável e PIX (3.12.2)
-- Antes de enviar uma cobrança/aviso individual, o texto aparece para **edição** (com «voltar ao texto padrão»). Os textos padrão (antes, no dia, depois do vencimento) são editáveis em Financeiro → Cobrança automática, com as variáveis `{nome}`, `{descricao}`, `{valor}`, `{vencimento}`, `{quando}` e `{link}`.
-- O **PIX copia e cola** e a **linha digitável** saem cada um em mensagem própria, sozinhos, para chegarem inteiros e poderem ser copiados com um toque (dentro do texto longo o código era cortado/formatado pelo WhatsApp).
+### Configurações de cobrança e PIX (3.12.3)
+- **Tudo se configura em Configurações → Cobranças e avisos**; os botões (Cobrar, Avisar, Enviar aviso, lote e régua) só executam. Lá ficam: se vai boleto/PIX junto (e qual), **formato de envio** (*separado*: texto com o link e PIX/linha digitável em mensagens próprias; *tudo junto*: uma mensagem), os **textos** dos avisos (antes, no dia e depois do vencimento, com as variáveis `{nome}`, `{descricao}`, `{valor}`, `{vencimento}`, `{quando}`, `{link}`) e os **avisos automáticos** (dias, horário, liga/desliga).
+- **PIX sem espaços:** o código copia e cola traz o nome e a cidade do recebedor com espaços e os apps de mensagem o quebravam. O Sales remove os espaços desses dois campos, refaz tamanhos e CRC (o código continua válido) e envia o PIX sozinho.

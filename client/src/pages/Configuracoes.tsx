@@ -51,6 +51,7 @@ import { GoogleCalendarSettings } from "@/components/GoogleCalendarSettings";
 import { ArmazenamentoSettings } from "@/components/ArmazenamentoSettings";
 import { DataJudSettings } from "@/components/DataJudSettings";
 import { AsaasSettings } from "@/components/AsaasSettings";
+import { CobrancaSettings } from "@/components/CobrancaSettings";
 import { DeskcommEnvioSettings } from "@/components/DeskcommEnvioSettings";
 import { LoginBrandingSettings } from "@/components/LoginBrandingSettings";
 import { useAuth } from "@/context/AuthContext";
@@ -951,6 +952,7 @@ export function Configuracoes({ secao }: { secao?: string | null } = {}) {
       {configSection === "dropbox" && <ArmazenamentoSettings />}
       {configSection === "datajud" && <DataJudSettings />}
       {configSection === "asaas" && <AsaasSettings />}
+      {configSection === "cobranca" && <CobrancaSettings />}
       {configSection === "deskcomm-envio" && <DeskcommEnvioSettings />}
 
       <section hidden={configSection !== "notificacoes"}><CollapsibleCard alwaysOpen

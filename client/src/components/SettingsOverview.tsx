@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  Receipt,
   BrainCircuit,
   Bell,
   CalendarDays,
@@ -47,6 +48,12 @@ const sections = [
     title: "Envio pelo Deskcomm",
     description: "Token de API para as cobranças e avisos saírem pelas conversas do atendimento.",
     icon: MessageCircle,
+  },
+  {
+    key: "cobranca",
+    title: "Cobranças e avisos",
+    description: "Textos, boleto/PIX, formato de envio e avisos automáticos de vencimento.",
+    icon: Receipt,
   },
   {
     key: "asaas",
