@@ -118,3 +118,9 @@
 - **Barra compacta:** busca, tipo, modelo, «Marcar todos os exibidos» e «Enviar selecionados».
 - **Cartões compactos (metade da altura):** avatar, nome, selos de estado (contato, aviso enviado/falha, modo audiência, revisar dados), processo e telefone, uma linha por perícia com lápis de edição, último aviso; botões «Revisar e avisar», «Editar/Cadastrar contato» e «Ver detalhes».
 - A coluna «No seu radar» (Hoje / Próxima data / Depois) foi mantida. Nenhuma regra do servidor mudou.
+
+## Calendário (3.23.0) — refeito por inteiro
+- **Nova visão «Lista» (padrão):** compromissos de hoje em diante agrupados por dia (Hoje destacado), com «Mostrar mais dias». «Semana» e «Mês» continuam disponíveis para ver datas passadas.
+- **Painéis clicáveis** (Próximos compromissos, Perícias médicas, Perícias sociais, Audiências) filtram a lista; saiu o resumo escondido em «Ver resumo por tipo».
+- **Barra única** com visão, navegação (semana/mês), busca em todos os meses, tipo e «Mostrar substituídas».
+- Enviar lembrete, editar e apagar continuam em cada linha; nenhuma regra do servidor mudou.

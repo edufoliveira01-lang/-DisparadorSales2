@@ -212,61 +212,6 @@ function montarGrade(ano: number, mes: number): Celula[] {
 
 const MAX_VISIVEIS_NA_CELULA = 3;
 
-function ResumoCalendarioItem({
-  icon,
-  valor,
-  rotulo,
-  className,
-}: {
-  icon: ReactNode;
-  valor: number;
-  rotulo: string;
-  className: string;
-}) {
-  return (
-    <div className="flex min-w-0 items-center gap-2.5 rounded-xl px-3 py-2.5 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
-      <span className={cn("inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg [&>svg]:h-4 [&>svg]:w-4", className)}>
-        {icon}
-      </span>
-      <div className="min-w-0">
-        <p className="text-lg font-bold leading-none text-zinc-900 dark:text-zinc-100">{valor}</p>
-        <p className="mt-1 truncate text-[11px] leading-tight text-zinc-500 dark:text-zinc-400 sm:text-xs">{rotulo}</p>
-      </div>
-    </div>
-  );
-}
-
-function ResumoCalendarioGrupo({
-  icon,
-  titulo,
-  descricao,
-  className,
-  children,
-}: {
-  icon: ReactNode;
-  titulo: string;
-  descricao: string;
-  className: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="surface-panel p-2">
-      <div className="flex items-center gap-2 px-2 py-1.5">
-        <span className={cn("inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg [&>svg]:h-4 [&>svg]:w-4", className)}>
-          {icon}
-        </span>
-        <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{titulo}</h2>
-          <p className="text-[11px] text-zinc-400 dark:text-zinc-500">{descricao}</p>
-        </div>
-      </div>
-      <div className="mt-1 grid grid-cols-2 gap-1 border-t border-zinc-100 pt-1 dark:border-zinc-800">
-        {children}
-      </div>
-    </section>
-  );
-}
-
 function contarEventosResumo(eventos: PericiaAgendada[]) {
   const tipos = eventos.map(classificarTipo);
   return {
@@ -286,11 +231,12 @@ export function Calendario() {
     const [y, m] = hojeYMD().split("-").map(Number);
     return { ano: y, mes: m };
   });
-  const [visualizacao, setVisualizacao] = useState<"semana" | "mes">("semana");
+  const [visualizacao, setVisualizacao] = useState<"agenda" | "semana" | "mes">("agenda");
   const [semanaReferencia, setSemanaReferencia] = useState(hojeYMD);
   const [busca, setBusca] = useState("");
   const [tipoFiltro, setTipoFiltro] = useState("todos");
   const [mostrarSubstituidas, setMostrarSubstituidas] = useState(false);
+  const [agendaDias, setAgendaDias] = useState(10);
   const [diaSelecionado, setDiaSelecionado] = useState<string | null>(null);
   const [diasExpandidos, setDiasExpandidos] = useState<Set<string>>(() => new Set([hojeYMD()]));
   const [apagarAlvo, setApagarAlvo] = useState<PericiaAgendada | null>(null);
@@ -455,7 +401,7 @@ export function Calendario() {
     const [ano, mes] = proxima.split("-").map(Number);
     setAnoMes({ano, mes});
   }
-  function escolherVisualizacao(valor: "semana" | "mes") {
+  function escolherVisualizacao(valor: "agenda" | "semana" | "mes") {
     if (valor === "semana") {
       const prefixo = `${ano}-${String(mes).padStart(2, "0")}`;
       if (!semanaReferencia.startsWith(prefixo)) setSemanaReferencia(`${prefixo}-01`);
@@ -475,6 +421,11 @@ export function Calendario() {
   const gruposDaBusca = useMemo(
     () => Array.from(porDia.entries()).sort(([dataA], [dataB]) => dataA.localeCompare(dataB)),
     [porDia]
+  );
+
+  const gruposDaAgenda = useMemo(
+    () => Array.from(porDia.entries()).filter(([dia]) => dia >= hoje).sort(([a], [b]) => a.localeCompare(b)),
+    [porDia, hoje]
   );
 
   function irParaMesAnterior() {
@@ -510,10 +461,7 @@ export function Calendario() {
     <div className="space-y-4 md:space-y-6">
       <PageHeader
         title="Calendário"
-        description={<>
-          <span className="md:hidden">Consulte perícias e audiências agendadas ou importadas.</span>
-          <span className="hidden md:inline">Acompanhe compromissos criados manualmente, comunicados por WhatsApp ou importados do Trello.</span>
-        </>}
+        description="Perícias e audiências que estão por vir, em lista, semana ou mês. Envie lembretes direto de cada compromisso."
         actions={can("calendar.manage") ?
           <Button onClick={() => abrirNovoEvento()}>
             <CalendarPlus className="h-4 w-4" /> Novo compromisso
@@ -521,74 +469,68 @@ export function Calendario() {
         : undefined}
       />
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="page-tabs" aria-label="Visualização do calendário">
-          {(["semana", "mes"] as const).map(valor => <button key={valor} type="button" aria-pressed={visualizacao === valor} onClick={() => escolherVisualizacao(valor)} className={cn("rounded-md px-4 py-2 text-xs font-medium", visualizacao === valor ? "bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300" : "text-zinc-500 dark:text-zinc-400")}>{valor === "semana" ? "Semana" : "Mês"}</button>)}
-        </div>
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">{resumo.todos.total} agendamentos · {resumo.hojeEFuturos.total} de hoje em diante</p>
-      </div>
-      <details className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"><summary className="cursor-pointer px-5 py-3 text-xs text-zinc-500 dark:text-zinc-400">Ver resumo por tipo de compromisso</summary><div className="p-4 pt-0">
-      <div className="grid gap-3 lg:grid-cols-2">
-        <ResumoCalendarioGrupo
-          icon={<CalendarDays />}
-          titulo="Todos os agendamentos"
-          descricao="Inclui datas passadas"
-          className="bg-accent-50 text-accent-600 dark:bg-accent-950/50 dark:text-accent-400"
-        >
-          <ResumoCalendarioItem icon={<CalendarDays />} valor={resumo.todos.total} rotulo="Total" className="bg-accent-50 text-accent-600 dark:bg-accent-950/50 dark:text-accent-400" />
-          <ResumoCalendarioItem icon={<Stethoscope />} valor={resumo.todos.medicas} rotulo="Perícias médicas" className="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400" />
-          <ResumoCalendarioItem icon={<Users />} valor={resumo.todos.sociais} rotulo="Perícias sociais" className="bg-violet-50 text-violet-600 dark:bg-violet-950/50 dark:text-violet-400" />
-          <ResumoCalendarioItem icon={<Gavel />} valor={resumo.todos.audiencias} rotulo="Audiências" className="bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400" />
-        </ResumoCalendarioGrupo>
-
-        <ResumoCalendarioGrupo
-          icon={<CalendarRange />}
-          titulo="Hoje e futuros"
-          descricao="Sem datas passadas"
-          className="bg-cyan-50 text-cyan-600 dark:bg-cyan-950/50 dark:text-cyan-400"
-        >
-          <ResumoCalendarioItem icon={<CalendarRange />} valor={resumo.hojeEFuturos.total} rotulo="Total" className="bg-cyan-50 text-cyan-600 dark:bg-cyan-950/50 dark:text-cyan-400" />
-          <ResumoCalendarioItem icon={<Stethoscope />} valor={resumo.hojeEFuturos.medicas} rotulo="Perícias médicas" className="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400" />
-          <ResumoCalendarioItem icon={<Users />} valor={resumo.hojeEFuturos.sociais} rotulo="Perícias sociais" className="bg-violet-50 text-violet-600 dark:bg-violet-950/50 dark:text-violet-400" />
-          <ResumoCalendarioItem icon={<Gavel />} valor={resumo.hojeEFuturos.audiencias} rotulo="Audiências" className="bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400" />
-        </ResumoCalendarioGrupo>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {([
+          { chave: "todos", rotulo: "Próximos compromissos", valor: resumo.hojeEFuturos.total, icon: <CalendarRange className="h-4 w-4" />, cor: "text-accent-600 dark:text-accent-400" },
+          { chave: "pericia_medica", rotulo: "Perícias médicas", valor: resumo.hojeEFuturos.medicas, icon: <Stethoscope className="h-4 w-4" />, cor: "text-emerald-600 dark:text-emerald-400" },
+          { chave: "pericia_social", rotulo: "Perícias sociais", valor: resumo.hojeEFuturos.sociais, icon: <Users className="h-4 w-4" />, cor: "text-violet-600 dark:text-violet-400" },
+          { chave: "audiencias", rotulo: "Audiências", valor: resumo.hojeEFuturos.audiencias, icon: <Gavel className="h-4 w-4" />, cor: "text-blue-600 dark:text-blue-400" },
+        ]).map((t) => {
+          const ativo = tipoFiltro === t.chave;
+          return (
+            <button
+              key={t.chave}
+              type="button"
+              aria-pressed={ativo}
+              onClick={() => setTipoFiltro(ativo ? "todos" : t.chave)}
+              className={cn(
+                "surface-panel flex flex-col gap-1 p-4 text-left transition-colors hover:border-accent-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500",
+                ativo && "border-accent-400 bg-accent-50/60 dark:border-accent-600 dark:bg-accent-950/30"
+              )}
+            >
+              <span className={cn("flex items-center gap-1.5 text-xs font-medium", t.cor)}>{t.icon}{t.rotulo}</span>
+              <span className="text-2xl font-bold leading-none text-zinc-900 dark:text-zinc-100">{t.valor}</span>
+              <span className="text-[11px] text-zinc-400">de hoje em diante</span>
+            </button>
+          );
+        })}
       </div>
 
-      </div></details>
-
-      <div className="surface-panel flex flex-col gap-3 p-3 md:flex-row md:items-center md:justify-between md:p-4">
-        {buscaAtiva ? (
-          <div className="flex min-h-10 w-full items-center gap-2 md:w-auto">
-            <Search className="h-4 w-4 shrink-0 text-accent-600 dark:text-accent-400" />
-            <div>
-              <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Resultados em todos os meses</p>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                {filtradas.length} {filtradas.length === 1 ? "evento encontrado" : "eventos encontrados"}
-              </p>
+      <div className="surface-panel flex flex-col gap-3 p-3 md:p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="page-tabs" aria-label="Visualização do calendário">
+            {([["agenda", "Lista"], ["semana", "Semana"], ["mes", "Mês"]] as const).map(([valor, rotulo]) => (
+              <button key={valor} type="button" aria-pressed={visualizacao === valor} onClick={() => escolherVisualizacao(valor)} className={cn("rounded-md px-4 py-2 text-xs font-medium", visualizacao === valor ? "bg-accent-50 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300" : "text-zinc-500 dark:text-zinc-400")}>{rotulo}</button>
+            ))}
+          </div>
+          {buscaAtiva ? (
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              <Search className="mr-1 inline h-3.5 w-3.5 text-accent-600" />
+              {filtradas.length} {filtradas.length === 1 ? "evento encontrado" : "eventos encontrados"} em todos os meses
+            </p>
+          ) : visualizacao === "agenda" ? (
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">{gruposDaAgenda.length} {gruposDaAgenda.length === 1 ? "dia com compromissos" : "dias com compromissos"} · {resumo.todos.total} no total</p>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="icon" onClick={() => visualizacao === "semana" ? navegarSemana(-1) : irParaMesAnterior()} title={visualizacao === "semana" ? "Semana anterior" : "Mês anterior"}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="min-w-[10rem] text-center text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                {visualizacao === "semana" ? `${diasDaSemana[0].split("-").reverse().join("/")} — ${diasDaSemana[6].split("-").reverse().join("/")}` : `${NOMES_MES[mes - 1]} ${ano}`}
+              </span>
+              <Button variant="outline" size="icon" onClick={() => visualizacao === "semana" ? navegarSemana(1) : irParaProximoMes()} title={visualizacao === "semana" ? "Próxima semana" : "Próximo mês"}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="sm" onClick={irParaHoje}>Hoje</Button>
             </div>
-          </div>
-        ) : (
-          <div className="grid w-full grid-cols-[2.25rem_minmax(0,1fr)_2.25rem_auto] items-center gap-2 md:flex md:w-auto">
-            <Button variant="outline" size="icon" onClick={() => visualizacao === "semana" ? navegarSemana(-1) : irParaMesAnterior()} title={visualizacao === "semana" ? "Semana anterior" : "Mês anterior"}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <span className="min-w-0 text-center text-xs font-semibold text-zinc-900 dark:text-zinc-100 md:w-56">
-              {visualizacao === "semana" ? `${diasDaSemana[0].split("-").reverse().join("/")} — ${diasDaSemana[6].split("-").reverse().join("/")}` : `${NOMES_MES[mes - 1]} ${ano}`}
-            </span>
-            <Button variant="outline" size="icon" onClick={() => visualizacao === "semana" ? navegarSemana(1) : irParaProximoMes()} title={visualizacao === "semana" ? "Próxima semana" : "Próximo mês"}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="sm" onClick={irParaHoje}>
-              Hoje
-            </Button>
-          </div>
-        )}
+          )}
+        </div>
 
-        <div className="grid w-full grid-cols-2 items-center gap-2 md:flex md:w-auto md:flex-wrap">
-          <div className="relative col-span-2 w-full md:col-auto md:max-w-[220px]">
+        <div className="grid grid-cols-2 items-center gap-2 md:flex md:flex-wrap">
+          <div className="relative col-span-2 w-full md:col-auto md:w-72">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
             <Input
-              placeholder="Nome, telefone ou processo…"
+              placeholder="Buscar nome, telefone ou processo…"
               className={cn("pl-9", busca && "pr-9")}
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
@@ -605,7 +547,7 @@ export function Calendario() {
               </button>
             )}
           </div>
-          <Select value={tipoFiltro} onChange={(e) => setTipoFiltro(e.target.value)} className="w-full min-w-0 md:w-44">
+          <Select value={tipoFiltro} onChange={(e) => setTipoFiltro(e.target.value)} className="w-full min-w-0 md:w-48">
             <option value="todos">Todos os tipos</option>
             <option value="audiencias">Todas as audiências</option>
             {tiposDisponiveis.map((tipo) => (
@@ -614,7 +556,7 @@ export function Calendario() {
               </option>
             ))}
           </Select>
-          <label className="flex h-10 min-w-0 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-2.5 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 md:h-auto md:border-0 md:bg-transparent md:px-0 md:text-sm md:dark:bg-transparent">
+          <label className="flex h-10 min-w-0 items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400 md:text-sm">
             <Checkbox checked={mostrarSubstituidas} onChange={() => setMostrarSubstituidas((v) => !v)} />
             <span className="leading-tight">Mostrar substituídas</span>
           </label>
@@ -699,6 +641,54 @@ export function Calendario() {
                 );
               })}
             </div>
+          </div>
+        )
+      ) : visualizacao === "agenda" ? (
+        gruposDaAgenda.length === 0 ? (
+          <EmptyState
+            icon={CalendarDays}
+            title="Nenhum compromisso pela frente"
+            description="Não há perícias ou audiências de hoje em diante com os filtros atuais. Use «Semana» ou «Mês» para ver datas passadas."
+          />
+        ) : (
+          <div className="space-y-4">
+            {gruposDaAgenda.slice(0, agendaDias).map(([data, itens]) => {
+              const partes = formatarPartesData(data);
+              const ehHoje = data === hoje;
+              return (
+                <section key={data} className="surface-panel overflow-hidden">
+                  <header className={cn("flex items-baseline justify-between gap-3 border-b border-zinc-200 px-4 py-2.5 dark:border-zinc-800", ehHoje ? "bg-accent-50/70 dark:bg-accent-900/20" : "bg-zinc-50/70 dark:bg-zinc-800/30")}>
+                    <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                      <span className="mr-1.5 text-lg font-bold">{partes.dia}</span>
+                      <span className="capitalize">{partes.mes}</span>
+                      <span className="ml-2 inline-block text-xs font-normal text-zinc-500 first-letter:uppercase dark:text-zinc-400">{partes.diaSemana}</span>
+                      {ehHoje && <span className="ml-2 rounded-full bg-accent-500 px-2 py-0.5 text-[10px] font-semibold text-white">Hoje</span>}
+                    </h2>
+                    <span className="text-xs text-zinc-500 dark:text-zinc-400">{itens.length} {itens.length === 1 ? "compromisso" : "compromissos"}</span>
+                  </header>
+                  <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                    {itens.map((p) => (
+                      <ResultadoBuscaLinha
+                        key={p.id}
+                        pericia={p}
+                        substituidaPor={p.substituida_por_id ? porId.get(p.substituida_por_id) ?? null : null}
+                        onReminderSent={() => void carregar()}
+                        onEditar={() => abrirEdicao(p)}
+                        onExcluir={() => setApagarAlvo(p)}
+                        excluindo={apagando === p.id}
+                      />
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
+            {gruposDaAgenda.length > agendaDias && (
+              <div className="text-center">
+                <Button variant="outline" onClick={() => setAgendaDias((n) => n + 10)}>
+                  Mostrar mais dias ({gruposDaAgenda.length - agendaDias} restantes)
+                </Button>
+              </div>
+            )}
           </div>
         )
       ) : visualizacao === "semana" ? (
