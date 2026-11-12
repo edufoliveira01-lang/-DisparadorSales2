@@ -90,3 +90,9 @@
 - Regras (`motivoDeSuperada`, em `services/djen/externalFollowUp.ts`): (1) qualquer publicação posterior de fase posterior supera a ordem; (2) ordem com 180+ dias e publicações posteriores até pelo menos 90 dias depois dela também é superada. Ordem recente, ou com andamento só nas semanas seguintes, continua na lista.
 - As superadas aparecem num bloco recolhido **«Provavelmente superados»** no fim da tela, com o motivo («O processo já entrou em fase posterior (rpv, em 16/10/2026)»), para conferência. Endpoint: `GET /api/djen/aguardando/superados`.
 - Ordem já marcada como cobrada ou resolvida não muda de lugar por esta regra.
+
+## Aguardando resposta (3.20.0) — refeita por inteiro
+- **Painéis clicáveis** no topo, que substituem o menu de filtro: Aguardando resposta, **Sem resposta há 2+ dias**, Lidas sem resposta, Entregues não lidas e Ainda não entregues.
+- **Duas seções:** «Sem resposta há 2 dias ou mais» (destaque âmbar) e «Esperando há pouco tempo». A ordem padrão passou a ser **mais antigos primeiro**.
+- **Linha por cliente:** avatar, nome, estado da mensagem (enviada, entregue, lida), **«há 5 dia(s)»**, telefone e data do envio. Botões: **Cobrar resposta** (principal), **Já respondeu** (antes «Confirmar recebimento»: marca o atendimento como concluído) e o menu **⋯** com **Finalizar espera (sem resposta)** e **Apagar registro**.
+- Busca, ordenação, filtro por período e ações em lote continuam; a barra de lote só aparece com itens marcados. Nenhuma regra do servidor mudou.
