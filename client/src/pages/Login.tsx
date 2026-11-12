@@ -1,12 +1,25 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { ArrowLeft, ArrowRight, Eye, EyeOff, KeyRound, LockKeyhole, Mail, MessageSquareText, ShieldCheck, Zap } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { ArrowLeft, Eye, EyeOff, ShieldCheck, Zap } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
+import { Button } from "@/components/ui/Button";
+import { Callout } from "@/components/ui/Settings";
 import { APP_VERSION } from "@/lib/appVersion";
 import { firstAllowedPage } from "@/lib/navigation";
 import type { TeamUser } from "@/context/AuthContext";
 import { useIdentidade } from "@/context/IdentidadeContext";
 import "./Login.css";
+
+type Mode = "login" | "forgot" | "reset";
+
+const fieldClass = "h-11 w-full rounded-xl border border-zinc-300 bg-white px-3 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-500/25 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500";
+const labelClass = "mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300";
+
+const titles: Record<Mode, { title: string; text: string; button: string }> = {
+  login: { title: "Entrar", text: "Use seu usuário e senha para acessar o sistema.", button: "Entrar" },
+  forgot: { title: "Recuperar acesso", text: "Informe seu usuário para receber as instruções no canal cadastrado.", button: "Enviar instruções" },
+  reset: { title: "Criar nova senha", text: "Escolha uma senha com pelo menos 12 caracteres.", button: "Salvar nova senha" },
+};
 
 export function Login() {
   const { show } = useToast();
@@ -15,9 +28,12 @@ export function Login() {
   const [password, setPassword] = useState("");
   const [visible, setVisible] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<"login" | "forgot" | "reset">("login");
+  const [mode, setMode] = useState<Mode>("login");
   const [token, setToken] = useState("");
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const userRef = useRef<HTMLInputElement>(null);
+  const passRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const param = new URLSearchParams(window.location.search).get("token");
@@ -28,47 +44,114 @@ export function Login() {
       .catch(() => {});
   }, []);
 
+  // Foco automático no primeiro campo da etapa atual.
+  useEffect(() => {
+    (mode === "reset" ? passRef : userRef).current?.focus();
+  }, [mode]);
+
+  const goTo = (next: Mode) => { setError(""); setMode(next); };
+
   const submit = async (event: FormEvent) => {
-    event.preventDefault(); setBusy(true);
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true); setError("");
     try {
       if (mode === "login") {
         const result = await api.post<{ user: TeamUser }>("/auth/login", { username, password });
         window.location.replace(firstAllowedPage(result.user.permissions));
+        return;
       } else if (mode === "forgot") {
         const result = await api.post<{ message: string }>("/auth/forgot-password", { username });
-        show(result.message, "info"); setMode("login");
+        show(result.message, "info"); goTo("login");
       } else {
         await api.post("/auth/reset-password", { token, password });
         show("Senha alterada. Entre com sua nova senha.", "success");
-        window.history.replaceState({}, "", "/login"); setPassword(""); setMode("login");
+        window.history.replaceState({}, "", "/login"); setPassword(""); goTo("login");
       }
-    } catch (error) { show(error instanceof ApiError ? error.message : "Não foi possível continuar. Tente novamente.", "error"); }
-    finally { setBusy(false); }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Não foi possível continuar. Verifique sua conexão e tente novamente.");
+      if (mode === "login") passRef.current?.select();
+    }
+    setBusy(false);
   };
 
-  return <main className="login-layout">
-    <section className={`login-visual ${imageUrl ? "has-image" : ""}`} style={imageUrl ? { backgroundImage: `linear-gradient(180deg, rgba(21,18,58,.16), rgba(19,15,63,.78)), url("${imageUrl}")` } : undefined} aria-label="DisparaZap 2 · Sales & Associados">
-      <div className="login-visual-header"><span className="login-brand-symbol">{identidade.faviconUrl ? <img src={identidade.faviconUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain", background: "#fff", borderRadius: 12, padding: 4 }} /> : <Zap size={25} fill="currentColor" />}</span><span><strong>DisparaZap <i>2</i></strong><small>{identidade.nome || "Sales & Associados"}</small></span></div>
-      {!imageUrl && <div className="login-illustration" aria-hidden="true"><div className="login-orbit orbit-one" /><div className="login-orbit orbit-two" /><div className="login-floating floating-one"><MessageSquareText size={27} /><span>Mensagens</span></div><div className="login-center-card"><span className="login-center-logo"><Zap size={37} fill="currentColor" /></span><span className="login-center-line" /><span className="login-center-line short" /><span className="login-center-progress"><span /></span></div><div className="login-floating floating-two"><ShieldCheck size={25} /><span>Acompanhamento</span></div></div>}
-      <div className="login-visual-copy"><span className="login-eyebrow">UM ESPAÇO DE TRABALHO MAIS CLARO</span><h2>Seu trabalho conectado.<br />Sua rotina no controle.</h2><p>Perícias, mensagens e processos organizados no mesmo lugar.</p></div>
-      <span className="login-visual-footer">DisparaZap 2 · v{APP_VERSION}</span>
-    </section>
+  const nome = identidade.nome || "Sales & Associados";
+  const logo = identidade.faviconUrl
+    ? <img src={identidade.faviconUrl} alt="" className="h-full w-full rounded-lg bg-white object-contain p-1" />
+    : <Zap className="h-5 w-5" fill="currentColor" />;
+  const copy = titles[mode];
 
-    <section className="login-form-side"><div className="login-form-wrap">
-      <div className="login-mobile-brand">{identidade.faviconUrl ? <img src={identidade.faviconUrl} alt="" style={{ width: 20, height: 20, objectFit: "contain" }} /> : <Zap size={20} fill="currentColor" />} DisparaZap 2</div>
-      <span className="login-form-eyebrow">BEM-VINDO AO SEU ESPAÇO</span>
-      <h1>{mode === "login" ? "Entre na sua conta" : mode === "forgot" ? "Recuperar acesso" : "Criar nova senha"}</h1>
-      <p className="login-intro">{mode === "login" ? "Acesse o que você precisa, com as permissões da sua equipe." : mode === "forgot" ? "Informe seu usuário para receber as instruções no canal cadastrado." : "Escolha uma senha segura de pelo menos 12 caracteres."}</p>
-      <form onSubmit={submit} className="login-form">
-        {mode !== "reset" && <label htmlFor="login-username">Usuário</label>}
-        {mode !== "reset" && <div className="login-input-wrap"><Mail size={19} /><input id="login-username" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="Seu nome de usuário" required /></div>}
-        {mode !== "forgot" && <><label htmlFor="login-password">{mode === "reset" ? "Nova senha" : "Senha"}</label><div className="login-input-wrap"><LockKeyhole size={19} /><input id="login-password" type={visible ? "text" : "password"} autoComplete={mode === "reset" ? "new-password" : "current-password"} value={password} onChange={(event) => setPassword(event.target.value)} placeholder={mode === "reset" ? "Pelo menos 12 caracteres" : "Sua senha"} minLength={mode === "reset" ? 12 : undefined} required /><button type="button" className="login-visibility" onClick={() => setVisible(!visible)} aria-label={visible ? "Ocultar senha" : "Mostrar senha"}>{visible ? <EyeOff size={19} /> : <Eye size={19} />}</button></div></>}
-        {mode === "login" && <div className="login-inline"><span><KeyRound size={15} /> Acesso individual e protegido</span><button type="button" onClick={() => setMode("forgot")}>Esqueci minha senha</button></div>}
-        <button type="submit" className="login-submit" disabled={busy}>{busy ? "Aguarde…" : mode === "login" ? "Entrar no sistema" : mode === "forgot" ? "Enviar instruções" : "Salvar nova senha"}<ArrowRight size={19} /></button>
-        {mode !== "login" && <button type="button" className="login-back" onClick={() => setMode("login")}><ArrowLeft size={17} /> Voltar para o login</button>}
-      </form>
-      <div className="login-footnote"><ShieldCheck size={18} /><span>Sua conta é criada pelo administrador. Cada pessoa acessa apenas suas áreas autorizadas.</span></div>
-      <p className="login-mobile-version">DisparaZap 2 · v{APP_VERSION}</p>
-    </div></section>
-  </main>;
+  return (
+    <main className="grid min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 lg:grid-cols-[minmax(0,1fr)_minmax(420px,520px)]">
+      <section
+        className={`login-hero ${imageUrl ? "has-image" : ""} relative hidden flex-col justify-between overflow-hidden p-10 text-white lg:flex`}
+        style={imageUrl ? { backgroundImage: `linear-gradient(180deg, rgba(10,20,40,.15), rgba(10,20,40,.7)), url("${imageUrl}")` } : undefined}
+        aria-label={nome}
+      >
+        <div className="relative flex items-center gap-3">
+          <span className="grid h-11 w-11 place-items-center rounded-xl bg-white/20">{logo}</span>
+          <span className="leading-tight"><strong className="block text-lg">DisparaZap 2</strong><small className="text-sm text-white/80">{nome}</small></span>
+        </div>
+        <div className="relative max-w-md">
+          <h2 className="text-3xl font-semibold leading-tight tracking-tight">Mensagens, perícias e processos no mesmo lugar.</h2>
+          <p className="mt-3 text-sm text-white/80">Cada pessoa acessa apenas as áreas autorizadas pela equipe.</p>
+        </div>
+        <span className="relative text-xs text-white/70">DisparaZap 2 · v{APP_VERSION}</span>
+      </section>
+
+      <section className="flex items-center justify-center px-4 py-10 sm:px-8">
+        <div className="login-card w-full max-w-[400px]">
+          <div className="mb-8 flex items-center gap-3 lg:hidden">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-accent-600 text-white">{logo}</span>
+            <span className="leading-tight"><strong className="block">DisparaZap 2</strong><small className="text-xs text-zinc-500 dark:text-zinc-400">{nome}</small></span>
+          </div>
+
+          <div className="surface-panel rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:p-8">
+            <h1 className="text-2xl font-semibold tracking-tight">{copy.title}</h1>
+            <p className="mt-1.5 text-sm text-zinc-500 dark:text-zinc-400">{copy.text}</p>
+
+            <form onSubmit={submit} className="mt-6 space-y-4" noValidate={false}>
+              {error && <Callout tone="erro">{error}</Callout>}
+
+              {mode !== "reset" && (
+                <div>
+                  <label htmlFor="login-username" className={labelClass}>Usuário</label>
+                  <input ref={userRef} id="login-username" className={fieldClass} autoComplete="username" autoCapitalize="none" spellCheck={false} value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Seu nome de usuário" required />
+                </div>
+              )}
+
+              {mode !== "forgot" && (
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <label htmlFor="login-password" className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{mode === "reset" ? "Nova senha" : "Senha"}</label>
+                    {mode === "login" && <button type="button" onClick={() => goTo("forgot")} className="rounded text-xs font-medium text-accent-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 dark:text-accent-400">Esqueci minha senha</button>}
+                  </div>
+                  <div className="relative">
+                    <input ref={passRef} id="login-password" className={`${fieldClass} pr-11`} type={visible ? "text" : "password"} autoComplete={mode === "reset" ? "new-password" : "current-password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={mode === "reset" ? "Pelo menos 12 caracteres" : "Sua senha"} minLength={mode === "reset" ? 12 : undefined} required />
+                    <button type="button" onClick={() => setVisible(!visible)} aria-label={visible ? "Ocultar senha" : "Mostrar senha"} aria-pressed={visible} className="absolute right-1 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-lg text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
+                      {visible ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <Button type="submit" size="lg" className="w-full" loading={busy}>{busy ? "Aguarde…" : copy.button}</Button>
+
+              {mode !== "login" && (
+                <button type="button" onClick={() => goTo("login")} className="mx-auto flex items-center gap-1.5 rounded text-sm font-medium text-zinc-600 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 dark:text-zinc-400 dark:hover:text-zinc-100">
+                  <ArrowLeft className="h-4 w-4" /> Voltar para o login
+                </button>
+              )}
+            </form>
+          </div>
+
+          <p className="mt-5 flex items-start gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>Sua conta é criada pelo administrador. Se não tem acesso, fale com ele.</span>
+          </p>
+          <p className="mt-3 text-center text-xs text-zinc-400 lg:hidden">DisparaZap 2 · v{APP_VERSION}</p>
+        </div>
+      </section>
+    </main>
+  );
 }

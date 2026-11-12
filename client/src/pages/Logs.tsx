@@ -1,344 +1,267 @@
-import { WorkspacePanel, WorkspaceRow } from "@/components/ui/Workspace";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
-  BellRing,
-  Bot,
-  CheckCircle2,
-  ChevronDown,
-  ChevronUp,
   CircleX,
-  Clock3,
+  ChevronDown,
+  Clipboard,
+  Copy,
+  Filter,
   Info,
+  MoreHorizontal,
   RefreshCw,
-  Search,
   ScrollText,
-  Send,
-  Smartphone,
-  UserRound,
+  Search,
+  X,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { SystemLog } from "@/lib/types";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Pagination } from "@/components/ui/Pagination";
 import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { StatCard } from "@/components/ui/StatCard";
+import { useToast } from "@/components/ui/Toast";
+import { MenuSuspenso } from "@/components/MenuSuspenso";
+import { DetalhesNotificacao, formatarDataHora, lerDetalhes, rotuloOrigem } from "@/components/logs/detalhes";
 import { cn } from "@/lib/utils";
 
-interface ResultadoCanal {
-  canal?: string;
-  sucesso?: boolean;
-  erro?: string | null;
+const ITENS_POR_PAGINA = 20;
+
+type Nivel = SystemLog["nivel"];
+type Periodo = "todos" | "24h" | "7d" | "30d";
+
+const PERIODOS: { value: Periodo; label: string; ms: number }[] = [
+  { value: "todos", label: "Todo o período", ms: 0 },
+  { value: "24h", label: "Últimas 24 horas", ms: 86_400_000 },
+  { value: "7d", label: "Últimos 7 dias", ms: 7 * 86_400_000 },
+  { value: "30d", label: "Últimos 30 dias", ms: 30 * 86_400_000 },
+];
+
+const NIVEIS: Record<Nivel, { label: string; plural: string; icon: typeof Info; icone: string; tile: string }> = {
+  erro: { label: "Erro", plural: "Erros", icon: CircleX, icone: "text-red-600 dark:text-red-400", tile: "text-red-700 dark:text-red-300" },
+  aviso: { label: "Atenção", plural: "Avisos", icon: AlertTriangle, icone: "text-amber-600 dark:text-amber-400", tile: "text-amber-700 dark:text-amber-300" },
+  info: { label: "Informação", plural: "Informações", icon: Info, icone: "text-accent-600 dark:text-accent-300", tile: "" },
+};
+
+const CATEGORIAS_NOMES: Record<string, string> = {
+  whatsapp: "WhatsApp",
+  trello: "Trello",
+  djen: "DJEN",
+  asaas: "Asaas",
+};
+const nomeCategoria = (c: string) => CATEGORIAS_NOMES[c.toLowerCase()] ?? c.charAt(0).toUpperCase() + c.slice(1);
+
+function horaRelativa(valor: string): string {
+  const t = Date.parse(valor.endsWith("Z") ? valor : `${valor}Z`);
+  if (Number.isNaN(t)) return valor;
+  const min = Math.max(0, Math.round((Date.now() - t) / 60000));
+  if (min < 1) return "agora";
+  if (min < 60) return `há ${min} min`;
+  if (min < 1440) return `há ${Math.round(min / 60)} h`;
+  return `há ${Math.floor(min / 1440)} d`;
 }
 
-interface ItemNotificacao {
-  id?: number;
-  cliente?: string | null;
-  telefone?: string | null;
-  enviado_em?: string | null;
-  tipo_envio?: string;
-  status?: string;
-  ack?: number | null;
-  erro?: string | null;
+function jsonLegivel(bruto: string | null): string {
+  if (!bruto) return "";
+  try { return JSON.stringify(JSON.parse(bruto), null, 2); } catch { return bruto; }
 }
 
-interface DetalhesLog {
-  tipo_verificacao?: string;
-  horas_limite?: number;
-  detectado_em?: string;
-  canais?: ResultadoCanal[];
-  envios?: ItemNotificacao[];
-  pendentes?: ItemNotificacao[];
-  regra_alerta?: "falha_envio" | "nao_entregue" | "falha_ou_nao_entregue" | "nao_respondida";
-  [chave: string]: unknown;
-}
-
-const ITENS_POR_PAGINA = 12;
-
-function formatarDataHora(valor?: string | null): string {
-  if (!valor) return "—";
-  const data = new Date(valor.endsWith("Z") ? valor : `${valor}Z`);
-  if (Number.isNaN(data.getTime())) return valor;
-  return data.toLocaleString("pt-BR", {
-    timeZone: "America/Sao_Paulo",
-    dateStyle: "short",
-    timeStyle: "short",
-  });
-}
-
-function formatarTelefone(valor?: string | null): string {
-  if (!valor) return "Telefone não informado";
-  let digitos = valor.replace(/\D/g, "");
-  if ((digitos.length === 12 || digitos.length === 13) && digitos.startsWith("55")) digitos = digitos.slice(2);
-  if (digitos.length !== 10 && digitos.length !== 11) return valor;
-  const corte = digitos.length === 11 ? 7 : 6;
-  return `(${digitos.slice(0, 2)}) ${digitos.slice(2, corte)}-${digitos.slice(corte)}`;
-}
-
-function lerDetalhes(log: SystemLog): DetalhesLog | null {
-  if (!log.detalhes_json) return null;
-  try {
-    const detalhes = JSON.parse(log.detalhes_json);
-    return detalhes && typeof detalhes === "object" ? detalhes as DetalhesLog : null;
-  } catch {
-    return null;
-  }
-}
-
-function rotuloOrigem(log: SystemLog, detalhes: DetalhesLog | null): string {
-  if (log.origem === "usuario") return "Ação do usuário";
-  if (detalhes?.tipo_verificacao === "inicializacao") return "Automático ao iniciar";
-  if (log.origem === "automatico") return "Verificação automática";
-  return "Evento do sistema";
-}
-
-function badgeNivel(nivel: SystemLog["nivel"]): { tone: "info" | "warning" | "danger"; label: string } {
-  if (nivel === "erro") return { tone: "danger", label: "Erro" };
-  if (nivel === "aviso") return { tone: "warning", label: "Atenção" };
-  return { tone: "info", label: "Informação" };
-}
-
-function ackDescricao(ack?: number | null): string {
-  if (ack === null || ack === undefined) return "Sem confirmação";
-  if (ack < 0) return "Erro confirmado";
-  if (ack === 0) return "Pendente";
-  if (ack === 1) return "Enviado ao servidor";
-  if (ack === 2) return "Entregue";
-  if (ack >= 3) return "Lido";
-  return `Confirmação ${ack}`;
-}
-
-function descricaoRegra(detalhes: DetalhesLog): string {
-  const horas = detalhes.horas_limite;
-  const falhas = detalhes.envios?.filter((item) => item.status === "falha").length ?? 0;
-  const totalEnvios = detalhes.envios?.length ?? 0;
-  if (detalhes.regra_alerta === "falha_envio") return "Falha no envio da mensagem";
-  if (detalhes.regra_alerta === "falha_ou_nao_entregue") {
-    return horas ? `Falha no envio ou mensagem não entregue após ${horas}h` : "Falha no envio ou mensagem não entregue";
-  }
-  if (!detalhes.regra_alerta && totalEnvios > 0 && falhas === totalEnvios) return "Falha no envio da mensagem";
-  if (!detalhes.regra_alerta && falhas > 0) {
-    return horas ? `Falha no envio ou mensagem não entregue após ${horas}h` : "Falha no envio ou mensagem não entregue";
-  }
-  if (detalhes.regra_alerta === "nao_respondida" || detalhes.pendentes) {
-    return horas ? `Mensagem entregue e sem resposta após ${horas}h` : "Mensagem entregue e sem resposta";
-  }
-  if (detalhes.regra_alerta === "nao_entregue" || detalhes.envios) {
-    return horas ? `Mensagem não entregue após ${horas}h` : "Mensagem não entregue";
-  }
-  return horas ? `Prazo de ${horas}h ultrapassado` : "Regra automática";
-}
-
-function DetalhesNotificacao({ detalhes }: { detalhes: DetalhesLog }) {
-  const itens = detalhes.envios ?? detalhes.pendentes ?? [];
-  const rotuloItem = detalhes.envios ? "Envio" : "Pendente";
-  const camposConhecidos = new Set(["tipo_verificacao", "regra_alerta", "horas_limite", "detectado_em", "canais", "envios", "pendentes"]);
-  const extras = Object.fromEntries(Object.entries(detalhes).filter(([chave]) => !camposConhecidos.has(chave)));
-
-  return (
-    <div className="mt-4 space-y-4 border-t border-zinc-100 pt-4 dark:border-zinc-800">
-      {(detalhes.detectado_em || detalhes.horas_limite) && (
-        <div className="grid gap-2 text-sm sm:grid-cols-2">
-          {detalhes.detectado_em && (
-            <div className="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-800/60">
-              <span className="text-xs text-zinc-500 dark:text-zinc-400">Detectado em</span>
-              <p className="mt-0.5 font-medium text-zinc-800 dark:text-zinc-200">{formatarDataHora(detalhes.detectado_em)}</p>
-            </div>
-          )}
-          {detalhes.horas_limite && (
-            <div className="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-800/60">
-              <span className="text-xs text-zinc-500 dark:text-zinc-400">Regra que gerou o alerta</span>
-              <p className="mt-0.5 font-medium text-zinc-800 dark:text-zinc-200">{descricaoRegra(detalhes)}</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {detalhes.canais && detalhes.canais.length > 0 && (
-        <section>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Canais notificados</p>
-          <div className="flex flex-wrap gap-2">
-            {detalhes.canais.map((canal, index) => (
-              <div
-                key={`${canal.canal}-${index}`}
-                className={cn(
-                  "flex items-center gap-2 rounded-xl border px-3 py-2 text-sm",
-                  canal.sucesso
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300"
-                    : "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"
-                )}
-              >
-                {canal.sucesso ? <CheckCircle2 className="h-4 w-4" /> : <CircleX className="h-4 w-4" />}
-                <span className="font-medium">{canal.canal || "Canal"}</span>
-                <span>{canal.sucesso ? "enviado" : canal.erro || "falhou"}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {itens.length > 0 && (
-        <section>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            {detalhes.envios ? "Envios relacionados" : "Respostas pendentes relacionadas"}
-          </p>
-          <div className="space-y-2">
-            {itens.map((item, index) => (
-              <div key={`${item.id}-${index}`} className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-700">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <p className="font-semibold text-zinc-900 dark:text-zinc-100">
-                      {item.id ? `${rotuloItem} #${item.id} · ` : ""}{item.cliente || "Cliente sem nome"}
-                    </p>
-                    <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{formatarTelefone(item.telefone)}</p>
-                  </div>
-                  <Badge tone={item.status === "falha" ? "danger" : "neutral"}>
-                    {item.erro || ackDescricao(item.ack)}
-                  </Badge>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
-                  <span className="flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" /> Enviado em {formatarDataHora(item.enviado_em)}</span>
-                  {item.tipo_envio && <span className="flex items-center gap-1.5"><Send className="h-3.5 w-3.5" /> {item.tipo_envio === "lembrete" ? "Lembrete" : item.tipo_envio === "reenvio" ? "Reenvio" : "Disparo"}</span>}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {Object.keys(extras).length > 0 && (
-        <details className="rounded-xl bg-zinc-50 p-3 text-xs dark:bg-zinc-800/60">
-          <summary className="cursor-pointer font-medium text-zinc-600 dark:text-zinc-300">Dados técnicos</summary>
-          <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-words text-zinc-500 dark:text-zinc-400">{JSON.stringify(extras, null, 2)}</pre>
-        </details>
-      )}
-    </div>
-  );
+async function copiar(texto: string): Promise<boolean> {
+  try { await navigator.clipboard.writeText(texto); return true; } catch { return false; }
 }
 
 export function Logs() {
+  const { show } = useToast();
   const [logs, setLogs] = useState<SystemLog[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
   const [busca, setBusca] = useState("");
-  const [nivel, setNivel] = useState("todos");
+  const [nivel, setNivel] = useState<Nivel | "todos">("todos");
   const [categoria, setCategoria] = useState("todas");
+  const [periodo, setPeriodo] = useState<Periodo>("todos");
   const [abertos, setAbertos] = useState<Set<number>>(new Set());
   const [pagina, setPagina] = useState(0);
 
-  async function carregar() {
+  const carregar = useCallback(async () => {
     setCarregando(true);
     setErro("");
     try {
       setLogs(await api.get<SystemLog[]>("/system-logs?limit=500"));
     } catch (err) {
-      setErro(err instanceof Error ? err.message : "Não foi possível carregar os logs.");
+      setErro(err instanceof Error ? err.message : "Não foi possível carregar os registros.");
     } finally {
       setCarregando(false);
     }
-  }
+  }, []);
 
-  useEffect(() => { void carregar(); }, []);
+  useEffect(() => { void carregar(); }, [carregar]);
 
-  const categorias = useMemo(() => Array.from(new Set(logs.map((log) => log.categoria))).sort(), [logs]);
-  const filtrados = useMemo(() => {
+  const ts = (log: SystemLog) => Date.parse(`${log.created_at}Z`);
+  const noPeriodo = useMemo(() => {
+    const ms = PERIODOS.find((p) => p.value === periodo)?.ms ?? 0;
     const termo = busca.trim().toLocaleLowerCase("pt-BR");
     return logs.filter((log) => {
-      if (nivel !== "todos" && log.nivel !== nivel) return false;
-      if (categoria !== "todas" && log.categoria !== categoria) return false;
+      if (ms && Date.now() - ts(log) > ms) return false;
       if (!termo) return true;
       return [log.titulo, log.mensagem, log.evento, log.categoria, log.detalhes_json]
-        .some((valor) => valor?.toLocaleLowerCase("pt-BR").includes(termo));
+        .some((v) => v?.toLocaleLowerCase("pt-BR").includes(termo));
     });
-  }, [logs, busca, nivel, categoria]);
+  }, [logs, periodo, busca]);
 
-  useEffect(() => {
-    setPagina(0);
-    setAbertos(new Set());
-  }, [busca, nivel, categoria]);
+  const contagemNivel = useMemo(() => {
+    const base = noPeriodo.filter((l) => categoria === "todas" || l.categoria === categoria);
+    return { total: base.length, erro: base.filter((l) => l.nivel === "erro").length, aviso: base.filter((l) => l.nivel === "aviso").length, info: base.filter((l) => l.nivel === "info").length };
+  }, [noPeriodo, categoria]);
+
+  const categorias = useMemo(() => {
+    const base = noPeriodo.filter((l) => nivel === "todos" || l.nivel === nivel);
+    const mapa = new Map<string, number>();
+    for (const l of base) mapa.set(l.categoria, (mapa.get(l.categoria) ?? 0) + 1);
+    return Array.from(mapa.entries()).sort((a, b) => b[1] - a[1]);
+  }, [noPeriodo, nivel]);
+
+  const filtrados = useMemo(
+    () => noPeriodo.filter((l) => (nivel === "todos" || l.nivel === nivel) && (categoria === "todas" || l.categoria === categoria)),
+    [noPeriodo, nivel, categoria],
+  );
+
+  useEffect(() => { setPagina(0); setAbertos(new Set()); }, [busca, nivel, categoria, periodo]);
 
   const totalPaginas = Math.max(1, Math.ceil(filtrados.length / ITENS_POR_PAGINA));
   const paginaAtual = Math.min(pagina, totalPaginas - 1);
-  const logsPaginados = filtrados.slice(
-    paginaAtual * ITENS_POR_PAGINA,
-    paginaAtual * ITENS_POR_PAGINA + ITENS_POR_PAGINA
-  );
+  const visiveis = filtrados.slice(paginaAtual * ITENS_POR_PAGINA, (paginaAtual + 1) * ITENS_POR_PAGINA);
+  const filtrosAtivos = nivel !== "todos" || categoria !== "todas" || periodo !== "todos" || busca.trim() !== "";
 
-  const ultimas24h = logs.filter((log) => Date.now() - new Date(`${log.created_at}Z`).getTime() <= 24 * 60 * 60 * 1000).length;
-  const avisos = logs.filter((log) => log.nivel === "aviso").length;
-  const erros = logs.filter((log) => log.nivel === "erro").length;
-
+  function limparFiltros() { setNivel("todos"); setCategoria("todas"); setPeriodo("todos"); setBusca(""); }
   function alternar(id: number) {
-    setAbertos((atuais) => {
-      const proximos = new Set(atuais);
-      if (proximos.has(id)) proximos.delete(id);
-      else proximos.add(id);
-      return proximos;
-    });
+    setAbertos((atuais) => { const p = new Set(atuais); if (p.has(id)) p.delete(id); else p.add(id); return p; });
+  }
+  async function copiarTexto(texto: string, aviso: string) {
+    const ok = await copiar(texto);
+    show(ok ? aviso : "Não foi possível copiar.", ok ? "info" : "error");
   }
 
+  const tiles: { chave: Nivel | "todos"; rotulo: string; n: number; tom: string }[] = [
+    { chave: "todos", rotulo: "Todas as ocorrências", n: contagemNivel.total, tom: "" },
+    { chave: "erro", rotulo: "Erros", n: contagemNivel.erro, tom: NIVEIS.erro.tile },
+    { chave: "aviso", rotulo: "Avisos", n: contagemNivel.aviso, tom: NIVEIS.aviso.tile },
+    { chave: "info", rotulo: "Informações", n: contagemNivel.info, tom: "" },
+  ];
+
   return (
-    <div className="space-y-4 md:space-y-6">
+    <div className="space-y-5">
       <PageHeader
         title="Atividade do sistema"
-        description="Auditoria de notificações automáticas e erros do sistema, com horários, origem, registros envolvidos e resultado por canal."
+        description="Ocorrências e resultados das integrações, da mais recente para a mais antiga."
         actions={<Button variant="outline" onClick={() => void carregar()} loading={carregando}><RefreshCw className="h-4 w-4" /> Atualizar</Button>}
       />
 
-      <div className="grid grid-cols-3 gap-2 md:gap-3">
-        <StatCard icon={<Clock3 />} label="Últimas 24h" value={ultimas24h} tone="info" />
-        <StatCard icon={<AlertTriangle />} label="Avisos" value={avisos} tone="warning" />
-        <StatCard icon={<CircleX />} label="Erros" value={erros} tone="danger" />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        {tiles.map((t) => (
+          <button key={t.chave} type="button" aria-pressed={nivel === t.chave} onClick={() => setNivel(nivel === t.chave ? "todos" : t.chave)}
+            className={cn("rounded-2xl border p-4 text-left transition", nivel === t.chave ? "border-accent-500 bg-accent-50 dark:bg-accent-500/10" : "border-zinc-200 bg-white hover:border-accent-400 dark:border-zinc-800 dark:bg-zinc-900")}>
+            <span className={cn("block text-2xl font-semibold leading-none", t.n > 0 && t.tom)}>{t.n}</span>
+            <span className="mt-1.5 block text-xs text-zinc-500">{t.rotulo}</span>
+          </button>
+        ))}
       </div>
 
-      <Card className="p-3 md:p-4">
-        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_180px_180px]">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+      <div className="space-y-2 rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
             <Input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar cliente, telefone, evento ou erro…" className="pl-9" />
           </div>
-          <Select value={nivel} onChange={(e) => setNivel(e.target.value)}>
-            <option value="todos">Todos os níveis</option>
-            <option value="info">Informações</option>
-            <option value="aviso">Avisos</option>
-            <option value="erro">Erros</option>
+          <Select value={periodo} onChange={(e) => setPeriodo(e.target.value as Periodo)} className="sm:max-w-[190px]" aria-label="Período">
+            {PERIODOS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
           </Select>
-          <Select value={categoria} onChange={(e) => setCategoria(e.target.value)}>
-            <option value="todas">Todas as categorias</option>
-            {categorias.map((item) => <option key={item} value={item}>{item}</option>)}
-          </Select>
+          {filtrosAtivos && <Button variant="ghost" onClick={limparFiltros}><X className="h-4 w-4" /> Limpar filtros</Button>}
         </div>
-      </Card>
+        {categorias.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 border-t border-zinc-100 pt-2 dark:border-zinc-800" role="group" aria-label="Origem">
+            <Filter className="h-3.5 w-3.5 text-zinc-400" aria-hidden />
+            {[["todas", "Todas", categorias.reduce((a, [, n]) => a + n, 0)] as [string, string, number], ...categorias.map(([c, n]) => [c, nomeCategoria(c), n] as [string, string, number])].map(([c, rotulo, n]) => (
+              <button key={c} type="button" aria-pressed={categoria === c} onClick={() => setCategoria(categoria === c ? "todas" : c)}
+                className={cn("rounded-full border px-2.5 py-1 text-xs font-medium transition", categoria === c ? "border-accent-500 bg-accent-50 text-accent-700 dark:bg-accent-500/10 dark:text-accent-200" : "border-zinc-200 text-zinc-600 hover:border-accent-400 dark:border-zinc-700 dark:text-zinc-300")}>
+                {rotulo} <span className="text-zinc-400">{n}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
-      {carregando ? (
-        <div className="space-y-3">{[1, 2, 3].map((item) => <Skeleton key={item} className="h-36 rounded-2xl" />)}</div>
+      {carregando && logs.length === 0 ? (
+        <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}</div>
       ) : erro ? (
-        <EmptyState icon={CircleX} title="Não foi possível carregar os logs" description={erro} action={<Button variant="outline" onClick={() => void carregar()}>Tentar novamente</Button>} />
+        <EmptyState icon={CircleX} title="Não foi possível carregar os registros" description={erro} action={<Button variant="outline" onClick={() => void carregar()}>Tentar novamente</Button>} />
       ) : filtrados.length === 0 ? (
-        <EmptyState icon={ScrollText} title={logs.length ? "Nenhum log encontrado" : "Nenhum evento registrado ainda"} description={logs.length ? "Tente alterar os filtros ou a busca." : "Os próximos alertas automáticos e erros aparecerão aqui com todos os detalhes."} />
+        <EmptyState icon={ScrollText} title={logs.length ? "Nenhuma ocorrência para esses filtros" : "Nenhuma ocorrência registrada ainda"}
+          description={logs.length ? "Escolha outro painel, ajuste a busca ou o período." : "Alertas automáticos, erros e resultados das integrações aparecerão aqui."}
+          action={logs.length ? <Button variant="outline" onClick={limparFiltros}>Limpar filtros</Button> : undefined} />
       ) : (
-        <WorkspacePanel title="Ocorrências da operação" description="Eventos, alertas e resultados das integrações." aside={<span className="text-xs text-zinc-500 dark:text-zinc-400">{filtrados.length} registros</span>}
-          footer={<Pagination page={paginaAtual} totalItems={filtrados.length} pageSize={ITENS_POR_PAGINA} onPageChange={proximaPagina => { setPagina(proximaPagina); setAbertos(new Set()); window.scrollTo({top:0,behavior:"smooth"}); }} />}
-        >
-          {logsPaginados.map(log => {
-            const detalhes = lerDetalhes(log);
-            const nivelVisual = badgeNivel(log.nivel);
-            const aberto = abertos.has(log.id);
-            return <WorkspaceRow key={log.id}
-              primary={<div><h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{log.titulo}</h3><p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">{formatarDataHora(log.created_at)} · {rotuloOrigem(log, detalhes)} · #{log.id}</p></div>}
-              secondary={<div><div className="mb-2 flex flex-wrap gap-1.5"><Badge tone={nivelVisual.tone}>{nivelVisual.label}</Badge><Badge>{log.categoria}</Badge></div>{log.mensagem && <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{log.mensagem}</p>}</div>}
-              actions={<Button variant="outline" size="sm" aria-expanded={aberto} onClick={() => alternar(log.id)}>{aberto ? "Recolher" : "Ver ocorrência"}</Button>}
-            >{aberto && <div className="space-y-3"><p className="text-xs text-zinc-500 dark:text-zinc-400">Evento: {log.evento} · Origem: {rotuloOrigem(log, detalhes)}</p>{detalhes && <DetalhesNotificacao detalhes={detalhes} />}</div>}</WorkspaceRow>;
-          })}
-        </WorkspacePanel>
+        <>
+          <ul className="divide-y divide-zinc-100 overflow-hidden surface-panel dark:divide-zinc-800">
+            {visiveis.map((log) => {
+              const detalhes = lerDetalhes(log);
+              const n = NIVEIS[log.nivel] ?? NIVEIS.info;
+              const Icone = n.icon;
+              const aberto = abertos.has(log.id);
+              const json = jsonLegivel(log.detalhes_json);
+              return (
+                <li key={log.id}>
+                  <div className="flex items-center gap-1 pr-2 transition hover:bg-accent-50/40 dark:hover:bg-white/5">
+                    <button type="button" aria-expanded={aberto} onClick={() => alternar(log.id)} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left">
+                      <Icone className={cn("h-4 w-4 shrink-0", n.icone)} aria-label={n.label} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{log.titulo}</span>
+                        <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">{nomeCategoria(log.categoria)} · {rotuloOrigem(log, detalhes)}{log.mensagem ? ` · ${log.mensagem}` : ""}</span>
+                      </span>
+                      <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300" title={formatarDataHora(log.created_at)}>{horaRelativa(log.created_at)}</span>
+                      <ChevronDown className={cn("h-4 w-4 shrink-0 text-zinc-400 transition", aberto && "rotate-180")} />
+                    </button>
+                    <MenuSuspenso gatilho={({ aberto: a, alternar: alt }) => (
+                      <button type="button" aria-label={`Mais ações para ${log.titulo}`} aria-expanded={a} onClick={alt} className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><MoreHorizontal className="h-4 w-4" /></button>
+                    )}>
+                      {(fechar) => <>
+                        <button type="button" role="menuitem" className="menu-pop-item" onClick={() => { fechar(); void copiarTexto(`${log.titulo}${log.mensagem ? `\n${log.mensagem}` : ""}`, "Texto copiado."); }}><Copy className="h-4 w-4" /> Copiar texto</button>
+                        {json && <button type="button" role="menuitem" className="menu-pop-item" onClick={() => { fechar(); void copiarTexto(json, "Detalhes copiados."); }}><Clipboard className="h-4 w-4" /> Copiar detalhes (JSON)</button>}
+                        <button type="button" role="menuitem" className="menu-pop-item" onClick={() => { fechar(); setCategoria(log.categoria); }}><Filter className="h-4 w-4" /> Ver só {nomeCategoria(log.categoria)}</button>
+                      </>}
+                    </MenuSuspenso>
+                  </div>
+                  {aberto && (
+                    <div className="space-y-3 bg-zinc-50/60 px-4 pb-4 pt-3 text-sm dark:bg-zinc-900/40">
+                      <dl className="grid gap-x-6 gap-y-1 text-xs text-zinc-500 sm:grid-cols-2 dark:text-zinc-400">
+                        <div><dt className="inline">Quando: </dt><dd className="inline text-zinc-800 dark:text-zinc-200">{formatarDataHora(log.created_at)}</dd></div>
+                        <div><dt className="inline">Nível: </dt><dd className="inline text-zinc-800 dark:text-zinc-200">{n.label}</dd></div>
+                        <div><dt className="inline">Evento: </dt><dd className="inline break-all text-zinc-800 dark:text-zinc-200">{log.evento}</dd></div>
+                        <div><dt className="inline">Registro: </dt><dd className="inline text-zinc-800 dark:text-zinc-200">#{log.id}</dd></div>
+                      </dl>
+                      {log.mensagem && <p className="whitespace-pre-wrap break-words text-sm text-zinc-700 dark:text-zinc-300">{log.mensagem}</p>}
+                      {detalhes && <DetalhesNotificacao detalhes={detalhes} />}
+                      {json && (
+                        <details className="rounded-xl border border-zinc-200 bg-white p-3 text-xs dark:border-zinc-700 dark:bg-zinc-900">
+                          <summary className="cursor-pointer font-medium text-zinc-600 dark:text-zinc-300">Detalhes completos (JSON)</summary>
+                          <div className="mt-2 flex justify-end">
+                            <Button size="sm" variant="outline" onClick={() => void copiarTexto(json, "Detalhes copiados.")}><Copy className="h-3.5 w-3.5" /> Copiar</Button>
+                          </div>
+                          <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-zinc-50 p-3 text-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">{json}</pre>
+                        </details>
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          {filtrados.length > ITENS_POR_PAGINA && (
+            <Pagination page={paginaAtual} totalItems={filtrados.length} pageSize={ITENS_POR_PAGINA} onPageChange={(p) => { setPagina(p); setAbertos(new Set()); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
+          )}
+          <p className="text-right text-xs text-zinc-500">{filtrados.length} de {logs.length} ocorrência(s)</p>
+        </>
       )}
     </div>
   );
 }
-
