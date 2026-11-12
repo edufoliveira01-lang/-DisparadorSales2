@@ -142,3 +142,10 @@ Peças comuns em `components/ui/Settings.tsx` (cartão com situação, blocos, c
 - **Modelos de mensagens:** abas por categoria, cartões com «Padrão», variáveis clicáveis e prévia em balão de WhatsApp.
 - **DJEN:** Monitoramento (cartão de situação, avançado recolhido, histórico recolhido), Advogados (uma linha por advogado, ⋯ com Editar/Consultar/Pausar) e Calendários de prazos (órgãos recolhíveis com situação).
 - Mudança de comportamento: as seções de WhatsApp/Notificações/Trello/etc. carregam seus dados ao abrir e **não guardam texto digitado** ao trocar de aba sem salvar.
+
+## Fechamento das Configurações (3.25.1)
+- **Calendários de prazos:** o interior de cada órgão também foi refeito (erros em avisos, localidade recolhida que abre sozinha quando pendente, datas em lista compacta com selo do tipo e ações na linha, adicionar data em uma linha, histórico recolhido, regras de cálculo em aviso recolhível).
+- **Advogados acompanhados:** novo «Remover advogado» no menu ⋯ (com confirmação). Se já existirem publicações dele, a remoção é recusada e o sistema orienta a pausar, para não perder histórico. Novo `DELETE /djen/advogados/:id` com teste.
+- **Cartões de imagem** (cabeçalho, rodapé, ícone, logotipo da ficha) no padrão novo, com selo «Enviada / Sem imagem».
+- **Modelos de mensagens:** «Descartar alterações?» e «Excluir modelo?» agora usam a janela do sistema (`useConfirmar`), no lugar da janela do navegador.
+- Removidos três arquivos de modelos que nenhuma tela usava.
