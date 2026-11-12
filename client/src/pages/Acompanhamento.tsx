@@ -1050,8 +1050,8 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
       )}
       {secao === "aguardando" && conteudoAguardando}
       {secao === "publicacoes" && (
-        <div className="process-workbench"><aside className="process-filter-rail"><div className="process-summary">
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
+        <div className="process-workbench"><aside className="process-filter-rail"><div className="pub-resumo">
+          <div>
             {[
               { label: "Processos na lista", value: total, Icon: FolderOpen, action: () => filtrar("categoria", "") },
               { label: "Processos não lidos", value: status?.resumo.nao_lidas ?? 0, Icon: FileCheck2, action: () => filtrar("situacao", "nao_lidas") },
@@ -1081,7 +1081,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
             </div>
 <div className="process-filter-fields"><div><span className="process-filter-label">Categorias de andamento</span><MultiSelect inline label="Categorias (múltiplas)" placeholder="Todas as categorias" value={filtro.categoria.split(",").filter(Boolean)} options={Object.entries(FILTROS).map(([value, label]) => ({ value, label }))} onChange={(v) => filtrar("categoria", v.join(","))} /></div><div><span className="process-filter-label">Resultado da sentença</span><MultiSelect inline label="Resultado da sentença" placeholder="Todos os resultados" value={filtro.resultado.split(",").filter(Boolean)} options={Object.entries(RESULTADOS).map(([value, label]) => ({ value, label }))} onChange={(v) => filtrar("resultado", v.join(","))} /></div><div><span className="process-filter-label">Advogado</span><MultiSelect inline label="Advogado" placeholder="Todos os advogados" value={filtro.advogado_id.split(",").filter(Boolean)} options={(status?.advogados || []).map((a) => ({ value: String(a.id), label: `${a.nome} · ${a.uf_oab} ${a.numero_oab}` }))} onChange={(v) => filtrar("advogado_id", v.join(","))} /></div><div><span className="process-filter-label">Leitura e pendências</span><MultiSelect inline label="Situação" placeholder="Todas as situações" value={filtro.situacao.split(",").filter(Boolean)} options={[{ value: "nao_lidas", label: "Não lidas" }, { value: "lidas", label: "Lidas" }, { value: "revisar", label: "A revisar" }, { value: "com_prazo", label: "Com prazo em aberto" }]} onChange={(v) => filtrar("situacao", v.join(","))} /></div></div>          </section>
           </aside><div className="process-results">
-          <p className="flex items-center gap-2 text-[11px] text-zinc-500"><Sparkles className="h-3.5 w-3.5" />{status?.ia.pausa ? `Análise pausada: ${status.ia.pausa}` : `${status?.ia.pendentes ?? 0} publicação(ões) aguardando classificação pela IA`}. Classificações pendentes aparecem em Outros até a análise.</p>
+          {(Boolean(status?.ia.pausa) || (status?.ia.pendentes ?? 0) > 0) && <p className="flex items-center gap-2 text-[11px] text-zinc-500"><Sparkles className="h-3.5 w-3.5" />{status?.ia.pausa ? `Análise pausada: ${status.ia.pausa}` : `${status?.ia.pendentes ?? 0} publicação(ões) aguardando classificação pela IA`}. Classificações pendentes aparecem em Outros até a análise.</p>}
           <div
             id="navegacao-publicacoes"
             className="sticky top-20 z-20 scroll-mt-24 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white/95 px-4 py-2 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95"
@@ -1287,9 +1287,9 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                         </p>
                       )}
                     </div>
-                    <div className="grid w-full shrink-0 grid-cols-2 content-start gap-2 self-start sm:w-48 sm:grid-cols-1">
-                      <Button size="sm" className="col-span-2 w-full sm:col-span-1" onClick={() => void abrir(p.id)}>Abrir processo <ArrowRight className="h-3.5 w-3.5" /></Button>
-                      {!p.concluida && <RegisterAction publicacaoId={p.id} onSaved={carregarLista} className="w-full" />}
+                    <div className="grid w-full shrink-0 grid-cols-2 content-start gap-2 self-start sm:w-52">
+                      <Button size="sm" className="col-span-2 w-full" onClick={() => void abrir(p.id)}>Abrir processo <ArrowRight className="h-3.5 w-3.5" /></Button>
+                      {!p.concluida && <RegisterAction publicacaoId={p.id} onSaved={carregarLista} className="col-span-2 w-full" />}
                       <Button
                         size="sm"
                         variant="outline"
@@ -1312,12 +1312,12 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                           })
                         }
                       >
-                        {p.concluida ? "Reabrir processo" : "Concluir processo"}
+                        {p.concluida ? "Reabrir" : "Concluir"}
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="col-span-2 w-full text-zinc-500 sm:col-span-1"
+                        className="w-full text-zinc-500"
                         disabled={salvando}
                         onClick={() =>
                           void acao(async () => {
@@ -1330,7 +1330,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                           })
                         }
                       >
-                        {p.lida ? "Marcar não lida" : "Marcar lida"}
+                        {p.lida ? "Não lida" : "Marcar lida"}
                       </Button>
                     </div>
                   </div>

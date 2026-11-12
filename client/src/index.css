@@ -543,3 +543,18 @@ html.dark.modo-leve .app-topbar { background: rgb(9 9 11 / .96); }
 
 /* Configurações: a navegação lateral agora é da moldura (ConfigShell); a página usa a largura toda. */
 .settings-layout { grid-template-columns:minmax(0,1fr) !important; }
+
+/* Publicações: o resumo vira uma faixa no topo (e o filtro fica na lateral, só com os filtros). */
+.process-workbench { row-gap:16px; }
+@media(min-width:1024px) {
+  .process-workbench > .process-filter-rail { display:contents; }
+  .process-workbench .pub-resumo { grid-column:1 / -1; grid-row:1; }
+  .process-workbench .process-filter-rail > section { grid-column:1; grid-row:2; position:sticky; top:100px; }
+  .process-workbench > .process-results { grid-column:2; grid-row:2; }
+}
+.pub-resumo > div { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+@media(min-width:768px) { .pub-resumo > div { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media(min-width:1280px) { .pub-resumo > div { grid-template-columns:repeat(6,minmax(0,1fr)); } }
+.pub-resumo > div > button { display:flex; flex-direction:column; align-items:flex-start; gap:4px; padding:14px 16px; border-radius:18px; @apply border border-zinc-200 bg-white text-left shadow-sm transition hover:border-accent-400 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900; }
+.pub-resumo > div > button > span:first-child { display:flex; width:100%; align-items:flex-start; justify-content:space-between; gap:8px; line-height:1.25; min-height:30px; }
+.pub-resumo > div > button > strong { margin-top:0; font-size:26px; line-height:1; }

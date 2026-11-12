@@ -47,3 +47,7 @@
 - **Histórico de alterações** em cada lançamento (baixa parcial, nova data, valor, saldo criado), com quem fez.
 - **Excedente (3.10.1):** ao receber a mais, o usuário escolhe em qual parcela abater e quanto (nunca automático); as duas parcelas ganham o registro no histórico.
 - **Planejado:** integração com Asaas (boletos, PIX, cobrança e envio automáticos). O histórico por lançamento e o saldo/abatimento já guardam o que será conciliado.
+
+## Publicações (3.13.1)
+- Os seis contadores (na lista, não lidos, aguardando retorno, perícias sem laudo, prazos do escritório, processos parados) viraram uma **faixa no topo**, clicável; a lateral ficou só com os filtros.
+- Cartões mais enxutos: **Abrir processo** e **Registrar providência** em destaque, **Concluir** e **Marcar lida** lado a lado. O aviso da IA só aparece quando há algo pendente ou pausado.
