@@ -1,3 +1,4 @@
+import { formatPhoneDisplay } from "@/lib/phone";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { Menu, Search, MessageCircle } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
@@ -38,8 +39,9 @@ export function Layout({ children }: { children: ReactNode }) {
     "aguardando_qr",
     "pareando",
   ].includes(whatsapp.status);
+  const numeroEmUso = whatsapp.provedor === "deskcomm" && whatsapp.ativo ? formatPhoneDisplay(whatsapp.ativo.telefone) : "";
   const connectionLabel = !whatsapp.carregado ? "Verificando conexão do WhatsApp" : connected
-    ? "WhatsApp conectado"
+    ? (numeroEmUso ? `WhatsApp conectado · ${numeroEmUso}` : "WhatsApp conectado")
     : connecting
       ? "WhatsApp conectando"
       : "WhatsApp desconectado";

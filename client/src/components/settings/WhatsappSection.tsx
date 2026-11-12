@@ -1,3 +1,4 @@
+import { formatPhoneDisplay } from "@/lib/phone";
 import { useEffect, useState } from "react";
 import { CheckCircle2, Loader2, MessageCircle, QrCode, Square, Unplug, Wifi } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
@@ -91,7 +92,7 @@ export function WhatsappSection() {
             <ul className="divide-y divide-zinc-100 rounded-xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
               {numeros.map((n) => (
                 <li key={n.telefone + n.nome} className="flex items-center justify-between gap-3 px-4 py-2.5">
-                  <span className="min-w-0"><span className="block truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">{n.nome}</span><span className="text-xs text-zinc-500">{n.telefone}</span></span>
+                  <span className="min-w-0"><span className="block truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">{n.nome}</span><span className="text-xs text-zinc-500">{formatPhoneDisplay(n.telefone)}</span></span>
                   <Badge tone={n.pronto ? "success" : "neutral"}>{n.pronto ? "Conectado" : "Desconectado"}</Badge>
                 </li>
               ))}

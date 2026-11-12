@@ -162,3 +162,7 @@ Peças comuns em `components/ui/Settings.tsx` (cartão com situação, blocos, c
 - **Barra do topo e tela de WhatsApp** passam a mostrar a situação dos números do Deskcomm; a tela de WhatsApp lista os números e leva para as escolhas (a conexão por QR Code fica só no Deskcomm).
 - **Reversível:** o botão «Voltar ao WhatsApp deste sistema» desfaz. Com o Deskcomm ligado, o servidor **não restaura** a conexão própria ao iniciar.
 - Limites conhecidos: o telefone não é validado antes (o Deskcomm abre a conversa pelo número); com o WhatsApp do Deskcomm, ✓✓ e respostas dependem da conferência por minuto, não de evento instantâneo; reações (emoji) não resolvem a espera.
+
+## Correções após o primeiro teste do WhatsApp único (3.27.2)
+- **Número em uso à vista:** com o Deskcomm ligado, a barra do topo mostra «WhatsApp conectado · (13) 99711-5721» (o número escolhido, ou o primeiro conectado). Telefones das listas aparecem formatados.
+- **Menu ⋯ cortado:** o menu de ações (Histórico de envios, Aguardando resposta, Advogados acompanhados, Tarefas…) agora abre por cima da página, alinhado ao botão, e abre para cima quando falta espaço. Antes ficava escondido dentro de listas com cantos arredondados.

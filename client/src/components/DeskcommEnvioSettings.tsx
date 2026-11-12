@@ -1,3 +1,4 @@
+import { formatPhoneDisplay } from "@/lib/phone";
 import { useCallback, useEffect, useState } from "react";
 import { MessageCircle } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
@@ -100,7 +101,7 @@ export function DeskcommEnvioSettings() {
                       <span className="min-w-0 flex-1">
                         <span className="flex flex-wrap items-center gap-2"><span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{c.nome}</span>
                           {c.id && <Badge tone={c.pausado ? "neutral" : c.pronto ? "success" : "warning"}>{c.pausado ? "Pausado" : c.pronto ? "Conectado" : "Desconectado"}</Badge>}</span>
-                        <span className="block text-xs text-zinc-500 dark:text-zinc-400">{c.telefone}</span>
+                        <span className="block text-xs text-zinc-500 dark:text-zinc-400">{formatPhoneDisplay(c.telefone)}</span>
                       </span>
                     </label>
                   </li>

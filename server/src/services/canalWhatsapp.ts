@@ -49,7 +49,7 @@ export async function enviarTextoConfirmado(destino: string, texto: string, ctx:
   return { messageId: r.messageId, ack: r.ack };
 }
 
-export interface EstadoDoCanal { status: "conectado" | "desconectado" | "falha"; qrDataUrl: null; lastError: string | null; provedor: "deskcomm"; numeros: { nome: string; telefone: string; pronto: boolean }[] }
+export interface EstadoDoCanal { status: "conectado" | "desconectado" | "falha"; qrDataUrl: null; lastError: string | null; provedor: "deskcomm"; numeros: { nome: string; telefone: string; pronto: boolean }[]; ativo: { nome: string; telefone: string } | null }
 let cache: { em: number; estado: EstadoDoCanal } | null = null;
 /** Situação do WhatsApp do Deskcomm (números conectados), com cache curto para a barra do topo não sobrecarregar o atendimento. */
 export async function estadoDoCanalDeskcomm(): Promise<EstadoDoCanal> {
@@ -60,10 +60,11 @@ export async function estadoDoCanalDeskcomm(): Promise<EstadoDoCanal> {
     const escolhido = canalEscolhido();
     const alvo = escolhido ? canais.filter((c) => c.id === escolhido) : canais;
     const ok = alvo.some((c) => c.pronto);
-    estado = { status: ok ? "conectado" : "desconectado", qrDataUrl: null, provedor: "deskcomm", numeros: canais.map((c) => ({ nome: c.nome, telefone: c.telefone, pronto: c.pronto })),
+    const usado = alvo.find((c) => c.pronto) ?? null;
+    estado = { status: ok ? "conectado" : "desconectado", qrDataUrl: null, provedor: "deskcomm", ativo: usado ? { nome: usado.nome, telefone: usado.telefone } : null, numeros: canais.map((c) => ({ nome: c.nome, telefone: c.telefone, pronto: c.pronto })),
       lastError: ok ? null : canais.length ? "Nenhum número escolhido está conectado no Deskcomm." : "Nenhum número conectado no Deskcomm." };
   } catch (e) {
-    estado = { status: "falha", qrDataUrl: null, provedor: "deskcomm", numeros: [], lastError: e instanceof Error ? e.message : "Não consegui falar com o Deskcomm." };
+    estado = { status: "falha", qrDataUrl: null, provedor: "deskcomm", ativo: null, numeros: [], lastError: e instanceof Error ? e.message : "Não consegui falar com o Deskcomm." };
   }
   cache = { em: Date.now(), estado };
   return estado;

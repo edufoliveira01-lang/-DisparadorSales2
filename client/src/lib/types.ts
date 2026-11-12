@@ -110,6 +110,8 @@ export interface WhatsappState {
   /** "deskcomm": o envio usa o WhatsApp do Deskcomm (sem QR Code neste sistema). */
   provedor?: "deskcomm";
   numeros?: { nome: string; telefone: string; pronto: boolean }[];
+  /** Número do Deskcomm em uso agora (o escolhido, ou o primeiro conectado). */
+  ativo?: { nome: string; telefone: string } | null;
 }
 
 export interface Settings {
