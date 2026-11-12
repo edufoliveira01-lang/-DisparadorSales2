@@ -328,7 +328,7 @@
  .metric-orbit:hover { transform:translateY(-7px) rotate(-2deg); box-shadow:0 12px 28px #1678dc15; }
  .day-rail { @apply min-w-0 overflow-hidden rounded-[28px] border border-zinc-200/70 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900; }
  .day-rail-heading { @apply relative pr-10; }
- .day-rail-heading p { @apply mt-2 text-sm font-semibold capitalize; }
+ .day-rail-heading p { @apply mt-2 text-sm font-semibold first-letter:uppercase; }
  .day-rail-heading button { @apply absolute right-0 top-0 flex h-10 w-10 items-center justify-center rounded-full bg-accent-50 text-accent-600 dark:bg-accent-900/40 dark:text-accent-300; }
  .agenda-switch { @apply my-5 flex rounded-full bg-zinc-100 p-1 dark:bg-zinc-800; }
  .agenda-switch button { @apply flex-1 whitespace-nowrap rounded-full px-2 py-2 text-[10px] font-medium text-zinc-500 transition-all dark:text-zinc-400; }

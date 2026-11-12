@@ -111,3 +111,10 @@
 - **Cumprimento por consequência:** se depois da ordem o perito apresentou laudo ou esclarecimentos (ou há comprovante de depósito/pagamento dos honorários), a ordem de honorários sai da lista (a perícia só anda com os honorários tratados).
 - **Perícia concluída supera a fase anterior:** ordens de manifestação/contestação/réplica anteriores ao laudo vão para «Provavelmente superados» (motivo: «A perícia já andou…»). Ordens que já são sobre o laudo, esclarecimentos, cálculos ou recurso não são superadas por isso.
 - **Limites da regra de tempo** mais curtos: ordem com **120+ dias** e publicações posteriores até **60+ dias** depois dela passam para «Provavelmente superados» (antes 180 e 90).
+
+## Perícias e compromissos (3.22.0) — refeita por inteiro
+- **Novo título e descrição** (antes «Visão geral»); saíram o banner azul e o bloco de apresentação que ocupavam o topo.
+- **Painéis clicáveis que filtram de verdade:** Todos os avisos, Para enviar, Enviados, Com falha e Aguardando retorno (abre a tela de pendências).
+- **Barra compacta:** busca, tipo, modelo, «Marcar todos os exibidos» e «Enviar selecionados».
+- **Cartões compactos (metade da altura):** avatar, nome, selos de estado (contato, aviso enviado/falha, modo audiência, revisar dados), processo e telefone, uma linha por perícia com lápis de edição, último aviso; botões «Revisar e avisar», «Editar/Cadastrar contato» e «Ver detalhes».
+- A coluna «No seu radar» (Hoje / Próxima data / Depois) foi mantida. Nenhuma regra do servidor mudou.

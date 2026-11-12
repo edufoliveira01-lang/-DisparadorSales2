@@ -825,8 +825,8 @@ export function Dashboard() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Visão geral"
-        description="Sua rotina em um só lugar: compromissos, avisos e clientes aguardando retorno."
+        title="Perícias e compromissos"
+        description="A agenda do dia e os avisos aos clientes: confira os dados de cada compromisso e envie o aviso pelo WhatsApp."
         actions={<>
           <Badge tone={whatsapp.status === "conectado" ? "success" : "warning"} className="sm:hidden">
             {whatsapp.status === "conectado" ? (
@@ -849,34 +849,38 @@ export function Dashboard() {
       />
 
 
-          {can("pending.view") && <button type="button" className="return-bubble dashboard-return" onClick={()=>navigate("/pendentes")}><span className="return-bubble-icon"><MessageSquareReply className="h-6 w-6" /></span><span><strong>{visaoGeral.aguardandoResposta}</strong><span>clientes aguardando retorno</span></span><ArrowRight className="h-5 w-5" /></button>}
       <div className="overview-layout">
         <div className="overview-work">
-          <section className="work-intro">
-            <div><span className="eyebrow">Seu espaço de ação</span><h2>Avisos do dia<br /><span>para conferir e enviar.</span></h2><p>Revise os avisos abaixo e mantenha seus clientes por perto.</p></div>
-            <div className="work-metrics" aria-label="Situação dos avisos">
-              {[{label:"Para enviar",value:resumo.pendentes,icon:Clock3,filter:"pendentes"},{label:"Conferidos",value:resumo.prontos,icon:ShieldCheck,filter:"todos"},{label:"Enviados",value:resumo.enviados,icon:CheckCheck,filter:"enviados"}].map(({label,value,icon:Icon,filter}) => <button key={label} type="button" onClick={() => setFiltroStatus(filter as FiltroStatus)} className="metric-orbit"><Icon className="h-4 w-4" /><strong>{value}</strong><span>{label}</span></button>)}
-            </div>
-          </section>
       {erro ? <EmptyState icon={Inbox} title="Não foi possível carregar os cards" description={erro} action={can("integrations.manage") ? <Button variant="outline" onClick={() => navigate("/configuracoes")}>Ir para Configurações</Button> : undefined} /> : (
-        <WorkspacePanel title="Central de avisos" description="Revise os compromissos e prepare a mensagem de cada cliente."
-          aside={<span className="text-xs text-zinc-500 dark:text-zinc-400">{cardsFiltrados.length} de {cards?.length ?? 0} avisos</span>}
-          toolbar={<div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_190px_230px]">
-              <div className="relative sm:col-span-2 xl:col-span-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" /><Input aria-label="Buscar avisos" placeholder="Buscar cliente, processo ou perito…" className="pl-9" value={busca} onChange={e => setBusca(e.target.value)} /></div>
-              <Select aria-label="Tipo de compromisso" value={filtroTipo} onChange={e => setFiltroTipo(e.target.value as FiltroTipo)}><option value="todos">Todos os tipos</option><option value="medica">Perícia médica</option><option value="social">Perícia social</option><option value="audiencia">Audiência</option></Select>
+        <div className="min-w-0 space-y-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+            {([["todos", "Todos os avisos", cards?.length ?? 0, `${resumo.prontos} prontos para avisar`], ["nao_enviado", "Para enviar", resumo.pendentes, ""], ["enviado", "Enviados", resumo.enviados, ""], ["falhou", "Com falha", (cards ?? []).filter((c) => c.ultimoEnvio?.status === "falha").length, ""]] as [FiltroStatus, string, number, string][]).map(([k, rotulo, n, ajuda]) => (
+              <button key={k} type="button" onClick={() => setFiltroStatus(filtroStatus === k && k !== "todos" ? "todos" : k)} aria-pressed={filtroStatus === k}
+                className={`rounded-2xl border p-4 text-left transition ${filtroStatus === k ? "border-accent-500 bg-accent-50 dark:bg-accent-500/10" : "border-zinc-200 bg-white hover:border-accent-400 dark:border-zinc-800 dark:bg-zinc-900"} ${k === "falhou" && n > 0 && filtroStatus !== k ? "border-red-300 dark:border-red-800" : ""}`}>
+                <span className={`block text-2xl font-semibold leading-none ${k === "falhou" && n > 0 ? "text-red-600 dark:text-red-400" : ""}`}>{n}</span>
+                <span className="mt-1.5 block text-xs text-zinc-500">{rotulo}</span>
+                {ajuda && <span className="mt-0.5 block text-[11px] text-zinc-400">{ajuda}</span>}
+              </button>))}
+            {can("pending.view") && <button type="button" onClick={() => navigate("/pendentes")} className="rounded-2xl border border-accent-200 bg-accent-50 p-4 text-left transition hover:border-accent-500 dark:border-accent-800 dark:bg-accent-500/10">
+              <span className="block text-2xl font-semibold leading-none text-accent-700 dark:text-accent-200">{visaoGeral.aguardandoResposta}</span>
+              <span className="mt-1.5 flex items-center justify-between text-xs text-accent-800 dark:text-accent-200">Aguardando retorno <ArrowRight className="h-3.5 w-3.5" /></span>
+            </button>}
+          </div>
+
+          <div className="space-y-2 rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_170px_220px]">
+              <div className="relative sm:col-span-2 xl:col-span-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" /><Input aria-label="Buscar avisos" placeholder="Buscar cliente, processo ou perito…" className="pl-9" value={busca} onChange={e => setBusca(e.target.value)} /></div>
+              <Select aria-label="Tipo de compromisso" value={filtroTipo} onChange={e => setFiltroTipo(e.target.value as FiltroTipo)}>{[["todos", "Todos os tipos"], ["medica", "Perícia médica"], ["social", "Perícia social"], ["audiencia", "Audiência"]].map(([v, r]) => <option key={v} value={v}>{r}</option>)}</Select>
               <Select aria-label="Modelo de mensagem" value={templateId ?? ""} onChange={e => setTemplateId(Number(e.target.value))}>{templates.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}</Select>
             </div>
-            <FiltroRapido label="Situação" options={STATUS_OPTIONS} value={filtroStatus} onChange={value => setFiltroStatus(value as FiltroStatus)} />
-            {can("messages.send") && <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800">
-              <label className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300"><Checkbox checked={cardsFiltrados.length > 0 && cardsFiltrados.every(c => selecionados.has(c.cardId))} onChange={toggleSelecionarTodos} disabled={cardsFiltrados.length === 0 || Boolean(batchProgress)} />Selecionar todos <span className="text-zinc-400">· {selecionados.size} selecionados</span></label>
+            {can("messages.send") && <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 pt-2 dark:border-zinc-800">
+              <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300"><Checkbox checked={cardsFiltrados.length > 0 && cardsFiltrados.every(c => selecionados.has(c.cardId))} onChange={toggleSelecionarTodos} /> Marcar todos os {cardsFiltrados.length} exibidos{selecionados.size > 0 ? ` · ${selecionados.size} marcado(s)` : ""}</label>
               <Button size="sm" onClick={abrirConfirmBatch} disabled={selecionados.size === 0 || Boolean(batchProgress)}><Send className="h-3.5 w-3.5" /> Enviar selecionados ({selecionados.size})</Button>
             </div>}
-          </div>}
-          footer="Os avisos usam os dados do Trello e os contatos deste serviço. Confira as informações antes de confirmar o envio."
-        >
+          </div>
+
           {cards === null ? <div className="grid gap-4 p-4 lg:grid-cols-2">{Array.from({length: 4}).map((_, index) => <Skeleton key={index} className="h-64" />)}</div> : cardsFiltrados.length === 0 ? <EmptyState icon={Inbox} title={cards.length === 0 ? "Nenhum aviso para preparar" : "Nenhum aviso corresponde aos filtros"} description={cards.length === 0 ? "Confira a lista do Trello em Configurações." : "Tente ajustar a busca ou os filtros."} /> : (
-            <div className="dispatch-feed">
+            <div className="space-y-3">
               {cardsFiltrados.map((card) => (
                 <DispatchCard
                   key={card.cardId}
@@ -899,7 +903,8 @@ export function Dashboard() {
               ))}
             </div>
           )}
-        </WorkspacePanel>
+          <p className="text-right text-xs text-zinc-500">{cardsFiltrados.length} de {cards?.length ?? 0} avisos · usam os dados do Trello e os contatos deste serviço; confira antes de enviar.</p>
+        </div>
       )}
         </div><aside className="day-rail" aria-label="Sua agenda e retornos">
           <div className="day-rail-heading"><span className="eyebrow">No seu radar</span><p>{new Intl.DateTimeFormat("pt-BR",{weekday:"long",day:"numeric",month:"long",timeZone:"America/Sao_Paulo"}).format(new Date())}</p><button type="button" onClick={() => navigate("/calendario")} aria-label="Abrir calendário completo"><CalendarDays className="h-5 w-5" /></button></div>
