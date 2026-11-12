@@ -27,7 +27,7 @@ vi.mock('../src/services/periciasAgendadasService', () => ({ registrarPericiaAge
 import { db } from '../src/db';
 import { prazoDoAcompanhamento } from '../src/services/djen/followUpDeadline';
 import { identificarObrigacoesExternas } from '../src/services/djen/obligations';
-import { listarObrigacoesExternas, listarObrigacoesExternasAsync } from '../src/services/djen/externalFollowUp';
+import { listarObrigacoesExternas, listarObrigacoesExternasAsync, listarObrigacoesSuperadasAsync, motivoDeSuperada } from '../src/services/djen/externalFollowUp';
 import { listarPericiasSemLaudo } from '../src/services/djen/periciaIntegration';
 import { atividadesProcessos } from '../src/services/djen/activity';
 const pub = { tribunal:'TRF3',orgao:'Jundiai',data_disponibilizacao:'2026-10-01' };
@@ -124,3 +124,31 @@ describe('acompanhamentos cruzados por processo', () => {
   });
 });
 
+
+describe('ordens que o processo deixou para trás (tela Acompanhamentos)', () => {
+  beforeEach(() => { db.prepare('INSERT INTO djen_processos VALUES(?,?,NULL)').run('p','5001741-82.2021.4.03.6321'); });
+  it('fase posterior (RPV) tira a implantação do INSS da lista principal e explica o motivo', async () => {
+    inserir(10,'Intime-se o INSS para implantar o benefício no prazo de 30 dias.','2023-03-28');
+    expect(listarObrigacoesExternas().some((o) => o.tipo === 'inss_implantacao')).toBe(true);
+    inserir(11,'Expedida requisição de pagamento de pequeno valor (RPV) ao Tribunal.','2026-10-16');
+    expect(listarObrigacoesExternas().some((o) => o.tipo === 'inss_implantacao')).toBe(false);
+    const sup = await listarObrigacoesSuperadasAsync();
+    expect(sup).toHaveLength(1);
+    expect(sup[0]).toMatchObject({ tipo: 'inss_implantacao', ultimo_andamento_em: '2026-10-16' });
+    expect(sup[0]!.motivo_superada).toMatch(/fase posterior/);
+  });
+  it('andamento comum 90+ dias depois de uma ordem antiga também a supera; andamento próximo não', async () => {
+    inserir(10,'Intime-se o INSS para implantar o benefício no prazo de 30 dias.','2023-03-28');
+    inserir(11,'Conclusos para decisão.','2023-04-10');
+    expect(listarObrigacoesExternas().some((o) => o.tipo === 'inss_implantacao')).toBe(true);
+    inserir(12,'Intimação para ciência das partes.','2024-02-01');
+    expect(listarObrigacoesExternas().some((o) => o.tipo === 'inss_implantacao')).toBe(false);
+    expect((await listarObrigacoesSuperadasAsync())[0]!.motivo_superada).toMatch(/continuou andando/);
+  });
+  it('regra pura: sem andamento posterior vale; ordem recente não é superada só por andamento comum', () => {
+    expect(motivoDeSuperada('2023-03-28', 1300, [])).toBeNull();
+    expect(motivoDeSuperada('2026-09-01', 60, [{ texto: 'x', data: '2026-11-01' }])).toBeNull();
+    expect(motivoDeSuperada('2026-01-01', 300, [{ texto: 'x', data: '2026-02-01' }])).toBeNull();
+    expect(motivoDeSuperada('2026-01-01', 300, [{ texto: 'x', data: '2026-06-01' }])?.motivo).toMatch(/continuou andando/);
+  });
+});

@@ -13,8 +13,10 @@ const dia = (s: string) => s.slice(0, 10).split("-").reverse().join("/");
 const precisaAtencao = (i: AguardandoRetorno) => (i.dias_espera != null && i.dias_decorridos >= i.dias_espera) || Boolean(i.prazo_pendente) || Boolean(i.prazo_termino && i.prazo_termino < new Date().toISOString().slice(0, 10));
 const ORDENS = { antigos: "Mais antigos primeiro", recentes: "Mais recentes primeiro", cliente: "Cliente (A–Z)" } as const;
 
+export type Superado = AguardandoRetorno & { motivo_superada: string; ultimo_andamento_em: string | null };
 interface Props {
   itens: AguardandoRetorno[];
+  superados?: Superado[];
   tipos: Record<string, string>;
   diasPadrao: number;
   diagnostico: { publicacoes: number; ordens_externas: number } | null;
@@ -25,12 +27,13 @@ interface Props {
 }
 
 /** Acompanhamentos: o que o escritório está esperando de alguém (juízo, perito, INSS, outra parte), do que precisa de atenção para o que ainda está no prazo. */
-export function AcompanhamentosLista({ itens, tipos, diasPadrao, diagnostico, ocupado, onAbrir, onCobrado, onAtualizar }: Props) {
+export function AcompanhamentosLista({ itens, superados = [], tipos, diasPadrao, diagnostico, ocupado, onAbrir, onCobrado, onAtualizar }: Props) {
   const [tipo, setTipo] = useState("");
   const [busca, setBusca] = useState("");
   const [ordem, setOrdem] = useState<keyof typeof ORDENS>("antigos");
   const [abertos, setAbertos] = useState<Set<string>>(new Set());
   const [ajuda, setAjuda] = useState(false);
+  const [mostrarSuperados, setMostrarSuperados] = useState(false);
   const chave = (i: AguardandoRetorno) => `${i.publicacao_id}:${i.tipo}`;
   const contagem = useMemo(() => { const m: Record<string, number> = {}; for (const i of itens) m[i.tipo] = (m[i.tipo] ?? 0) + 1; return m; }, [itens]);
   const visiveis = useMemo(() => {
@@ -125,6 +128,24 @@ export function AcompanhamentosLista({ itens, tipos, diasPadrao, diagnostico, oc
           {secao("Precisa de atenção", "Passou do tempo de espera ou o prazo precisa ser conferido nos autos.", atencao, true)}
           {secao("Dentro do tempo de espera", "Ainda não chegou a hora de cobrar; ficam aqui só para você acompanhar.", noPrazo, false)}
         </>}
+
+      {superados.length > 0 && <section className="rounded-2xl border border-zinc-200 bg-zinc-50/60 dark:border-zinc-800 dark:bg-white/[0.03]" aria-label="Ordens provavelmente superadas">
+        <button type="button" onClick={() => setMostrarSuperados((v) => !v)} aria-expanded={mostrarSuperados} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
+          <span><span className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">Provavelmente superados <span className="ml-1 rounded-full bg-zinc-200 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200">{superados.length}</span></span><span className="block text-xs text-zinc-500">O processo andou depois da ordem (fase posterior ou movimento por meses). Ficam fora da lista acima; confira se quiser.</span></span>
+          <ChevronDown className={`h-4 w-4 shrink-0 text-zinc-500 transition ${mostrarSuperados ? "rotate-180" : ""}`} />
+        </button>
+        {mostrarSuperados && <ul className="divide-y divide-zinc-200 border-t border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+          {superados.map((i) => (
+            <li key={chave(i)} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-zinc-800 dark:text-zinc-100">{i.cliente_nome || "Cliente não vinculado"} <span className="ml-1 text-xs font-normal text-zinc-500">· {tipos[i.tipo] ?? i.tipo} · <span className="font-mono">{i.processo}</span></span></p>
+                <p className="mt-0.5 line-clamp-1 text-xs text-zinc-500" title={i.motivo}>Ordem de {dia(i.data_disponibilizacao)}: {i.motivo}</p>
+                <p className="mt-0.5 text-xs text-emerald-700 dark:text-emerald-300">{i.motivo_superada}</p>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => onAbrir(i.publicacao_id)}>Ver processo <ArrowRight className="h-3.5 w-3.5" /></Button>
+            </li>))}
+        </ul>}
+      </section>}
     </div>
   );
 }

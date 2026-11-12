@@ -6,7 +6,7 @@ import { registrarHistoricoDjen } from "./history";
 import { marcarEtapaParaRevisao } from "./kanbanRevisao";
 import { db } from "../../db";
 import { DjenInputError } from "./store";
-import { primeiroAndamentoPosterior, type PublicacaoParaAndamento } from "./andamentos";
+import { andamentoDaPublicacao, primeiroAndamentoPosterior, type PublicacaoParaAndamento } from "./andamentos";
 import { cumprimentoIdentificado, identificarObrigacoesExternas, TIPOS_OBRIGACAO, type TipoObrigacao } from "./obligations";
 
 import { hojeSaoPaulo } from "./cache";
@@ -22,8 +22,31 @@ export interface ObrigacaoExternaAcompanhamento extends PrazoAcompanhamento {
   acompanhamento_status: string; ultima_cobranca_em: string | null;
 }
 
+/** Ordem que o processo deixou para trás: o que veio depois mostra que a fase mudou (ou que o processo seguiu andando). */
+export interface ObrigacaoSuperada extends ObrigacaoExternaAcompanhamento { motivo_superada: string; ultimo_andamento_em: string | null }
+const FASES_POSTERIORES = ["rpv", "precatorio", "levantamento_valores", "cumprimento_sentenca", "extincao_execucao", "extincao_processo", "transito_julgado"];
+const DIAS_ORDEM_ANTIGA = 180, DIAS_ANDAMENTO_POSTERIOR = 90;
+const dataBr = (iso: string) => iso.slice(0, 10).split("-").reverse().join("/");
+/**
+ * A ordem ainda vale? Esta tela é dos processos PARADOS à espera de alguém. Se depois da ordem o processo entrou numa fase posterior
+ * (RPV, precatório, cumprimento, trânsito em julgado…) ou seguiu andando por meses, a ordem é considerada superada e sai da lista principal.
+ * `null` = continua valendo.
+ */
+export function motivoDeSuperada(ordemDisponibilizadaEm: string, diasDecorridos: number, posteriores: PublicacaoParaAndamento[]): { motivo: string; ultimo: string | null } | null {
+  if (!posteriores.length) return null;
+  const datas = posteriores.map((p) => (p.data || "").slice(0, 10)).filter(Boolean).sort();
+  const ultimo = datas.length ? datas[datas.length - 1]! : null;
+  const fase = posteriores.find((p) => (p.categorias || []).some((c) => FASES_POSTERIORES.includes(c)) || andamentoDaPublicacao(p)?.tipo === "requisicao_pagamento");
+  if (fase) return { motivo: `O processo já entrou em fase posterior (${(fase.categorias || []).find((c) => FASES_POSTERIORES.includes(c))?.replaceAll("_", " ") || "RPV / precatório"}${fase.data ? `, em ${dataBr(fase.data)}` : ""}).`, ultimo };
+  if (diasDecorridos >= DIAS_ORDEM_ANTIGA && ultimo) {
+    const folga = Math.floor((Date.parse(`${ultimo}T12:00:00Z`) - Date.parse(`${ordemDisponibilizadaEm.slice(0, 10)}T12:00:00Z`)) / 86_400_000);
+    if (folga >= DIAS_ANDAMENTO_POSTERIOR) return { motivo: `A ordem tem ${diasDecorridos} dias e o processo continuou andando (última publicação em ${dataBr(ultimo)}).`, ultimo };
+  }
+  return null;
+}
+
 /** Lembretes operacionais: a ausência de prova no DJEN não comprova descumprimento nos autos. */
-function* calcularObrigacoesExternas(): Generator<void, ObrigacaoExternaAcompanhamento[], void> {
+function* calcularObrigacoesExternas(): Generator<void, { ativas: ObrigacaoExternaAcompanhamento[]; superadas: ObrigacaoSuperada[] }, void> {
   const config = db.prepare("SELECT aguardo_dias FROM djen_config WHERE id=1").get() as { aguardo_dias: number };
   const rows = db.prepare(
     `SELECT p.id,p.captured_at,p.tribunal,p.orgao,p.processo_chave,p.data_disponibilizacao,p.texto,p.situacao,p.ia_json,
@@ -60,6 +83,7 @@ function* calcularObrigacoesExternas(): Generator<void, ObrigacaoExternaAcompanh
   const posterioresDetalhados = new Map<string, PublicacaoParaAndamento[]>();
   const acompanhados = new Set<string>();
   const saida: ObrigacaoExternaAcompanhamento[] = [];
+  const superadas: ObrigacaoSuperada[] = [];
   for (const row of rows) {
     const textosPosteriores = posteriores.get(row.processo_chave) || [];
     const detalhesPosteriores = posterioresDetalhados.get(row.processo_chave) || [];
@@ -91,7 +115,7 @@ function* calcularObrigacoesExternas(): Generator<void, ObrigacaoExternaAcompanh
         const ia = row.ia_json ? JSON.parse(row.ia_json) : null;
         if (typeof ia?.resumo === "string") resumo = ia.resumo;
       } catch { /* análise legada incompleta */ }
-      saida.push({
+      const item: ObrigacaoExternaAcompanhamento = {
         historico_djen: coberturas.get(row.processo_chave)!, captured_at: row.captured_at,
         publicacao_id: row.id, tipo: ordem.tipo, responsavel: ordem.responsavel,
         processo: row.processo, cliente_nome: row.cliente_nome,
@@ -100,7 +124,9 @@ function* calcularObrigacoesExternas(): Generator<void, ObrigacaoExternaAcompanh
         motivo: ordem.trecho, resumo,
         acompanhamento_status: estado?.status || "pendente",
         ultima_cobranca_em: estado?.ultima_cobranca_em || null,
-      });
+      };
+      const sup = estado?.status === "pendente" || !estado ? motivoDeSuperada(row.data_disponibilizacao, dias_decorridos, detalhesPosteriores) : null;
+      if (sup) superadas.push({ ...item, motivo_superada: sup.motivo, ultimo_andamento_em: sup.ultimo }); else saida.push(item);
     }
     textosPosteriores.push(row.texto);
     posteriores.set(row.processo_chave, textosPosteriores);
@@ -110,7 +136,7 @@ function* calcularObrigacoesExternas(): Generator<void, ObrigacaoExternaAcompanh
     posterioresDetalhados.set(row.processo_chave, detalhesPosteriores);
     yield;
   }
-  return saida.sort((a, b) => b.dias_decorridos - a.dias_decorridos);
+  return { ativas: saida.sort((a, b) => b.dias_decorridos - a.dias_decorridos), superadas: superadas.sort((a, b) => b.dias_decorridos - a.dias_decorridos) };
 }
 
 /** Compatibilidade para diagnósticos e consumidores síncronos existentes. */
@@ -118,16 +144,23 @@ export function listarObrigacoesExternas(): ObrigacaoExternaAcompanhamento[] {
   const iterator = calcularObrigacoesExternas();
   let step = iterator.next();
   while (!step.done) step = iterator.next();
-  return step.value;
+  return step.value.ativas;
 }
 
-let consultaEmAndamento: Promise<ObrigacaoExternaAcompanhamento[]> | null = null;
+let consultaEmAndamento: Promise<{ ativas: ObrigacaoExternaAcompanhamento[]; superadas: ObrigacaoSuperada[] }> | null = null;
 
 /**
  * As rotas compartilham a consulta em execução e cedem tempo ao event loop entre
  * lotes. O resultado não fica cacheado: mudanças de status/dados aparecem na próxima leitura.
  */
+let ativasEmAndamento: Promise<ObrigacaoExternaAcompanhamento[]> | null = null;
 export function listarObrigacoesExternasAsync(): Promise<ObrigacaoExternaAcompanhamento[]> {
+  // Chamadas simultâneas compartilham a mesma promessa (e a mesma varredura).
+  return (ativasEmAndamento ??= calcularAsync().then((r) => r.ativas).finally(() => { ativasEmAndamento = null; }));
+}
+/** As ordens que o processo deixou para trás (fase posterior ou andamento depois): ficam fora da lista principal, mas dá para conferir. */
+export const listarObrigacoesSuperadasAsync = (): Promise<ObrigacaoSuperada[]> => calcularAsync().then((r) => r.superadas);
+function calcularAsync() {
   if (consultaEmAndamento) return consultaEmAndamento;
   consultaEmAndamento = (async () => {
     const iterator = calcularObrigacoesExternas();

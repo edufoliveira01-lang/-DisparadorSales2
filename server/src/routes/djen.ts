@@ -69,7 +69,7 @@ import {
   atualizarAcompanhamentoPericia,
 } from "../services/djen/periciaIntegration";
 import { listarAguardandoMovimentacao, atualizarAguardandoMovimentacao } from "../services/djen/followUp";
-import { listarObrigacoesExternasAsync, atualizarObrigacaoExterna } from "../services/djen/externalFollowUp";
+import { listarObrigacoesExternasAsync, listarObrigacoesSuperadasAsync, atualizarObrigacaoExterna } from "../services/djen/externalFollowUp";
 import { concluirProcessosSelecionados } from "../services/djen/bulk";
 import { criarExemploClassificacao, excluirExemploClassificacao, listarExemplosClassificacao } from "../services/djen/teaching";
 import {
@@ -340,6 +340,7 @@ djenRouter.get(
   "/aguardando",
   wrap(async (_req, res) => res.json(await acompanhamentos())),
 );
+djenRouter.get("/aguardando/superados", wrap(async (_req, res) => res.json(await listarObrigacoesSuperadasAsync())));
 djenRouter.put(
   "/aguardando/:id",
   wrap((req, res) => {

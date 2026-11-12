@@ -516,6 +516,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
   const [carregandoAlerta, setCarregandoAlerta] = useState(false);
   const [diasParado, setDiasParado] = useState(60);
   const [aguardando, setAguardando] = useState<AguardandoRetorno[]>([]);
+  const [superados, setSuperados] = useState<(AguardandoRetorno & { motivo_superada: string; ultimo_andamento_em: string | null })[]>([]);
   const [selecionados, setSelecionados] = useState<number[]>([]);
   const [confirmarLote, setConfirmarLote] = useState(false);
   const [selecionandoTodos, setSelecionandoTodos] = useState(false);
@@ -593,6 +594,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
   }, []);
   const carregarAguardando = useCallback(async () => {
     void api.get<NonNullable<typeof diagnostico>>("/djen/acompanhamentos/diagnostico").then(setDiagnostico).catch(() => setDiagnostico(null));
+    void api.get<typeof superados>("/djen/aguardando/superados").then(setSuperados).catch(() => setSuperados([]));
     setAguardando(await api.get<AguardandoRetorno[]>("/djen/aguardando"));
   }, []);
   const carregarLista = useCallback(async () => {
@@ -897,7 +899,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
   }
   function fecharDetalhe() { if (!salvando) { detailSeq.current++; if (detalhe) prefetchRef.current.delete(detalhe.id); setDetalheAberto(false); setCarregandoDetalhe(false); setDetalhe(null); setPreviaDetalhe(null); onCloseDetail?.(); } }
   const conteudoAguardando = (
-    <AcompanhamentosLista itens={aguardando} tipos={tiposAguardando} diasPadrao={status?.config.aguardo_dias ?? 30} diagnostico={diagnostico ? { publicacoes: diagnostico.publicacoes, ordens_externas: diagnostico.ordens_externas } : null} ocupado={salvando}
+    <AcompanhamentosLista itens={aguardando} superados={superados} tipos={tiposAguardando} diasPadrao={status?.config.aguardo_dias ?? 30} diagnostico={diagnostico ? { publicacoes: diagnostico.publicacoes, ordens_externas: diagnostico.ordens_externas } : null} ocupado={salvando}
       onAbrir={(id) => void abrir(id)} onAtualizar={async () => { await carregarAguardando(); await carregarStatus(); }}
       onCobrado={(item) => void acao(async () => {
         await api.put(`/djen/aguardando/${item.publicacao_id}`, { tipo: item.tipo, status: "cobrado" });
