@@ -23,11 +23,9 @@ import {
   Send,
   CheckCheck,
   BriefcaseBusiness,
-  Settings2,
   AlertCircle,
   FolderOpen,
   Sparkles,
-  Trash2,
   Clock3,
   ArrowRight,
   ListFilter,
@@ -50,7 +48,9 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Pagination } from "@/components/ui/Pagination";
 import { useAuth } from "@/context/AuthContext";
-import { IATeaching } from "@/components/djen/IATeaching";
+import { MonitoramentoDjen } from "@/components/djen/DjenMonitoramento";
+import { AdvogadosAcompanhados } from "@/components/djen/DjenAdvogados";
+import { Callout, SettingRow } from "@/components/ui/Settings";
 
 const TIPOS = {
   sentenca: "Sentença de mérito",
@@ -98,7 +98,7 @@ const RESULTADOS = {
   parcial: "Parcialmente procedente",
 };
 type Resultado = keyof typeof RESULTADOS;
-interface Advogado {
+export interface Advogado {
   id: number;
   nome: string;
   numero_oab: string;
@@ -305,7 +305,7 @@ interface Busca {
   started_at: string;
   finished_at: string | null;
 }
-interface Status {
+export interface Status {
   historicos_djen?: { total: number; atualizados: number | null };
   ia: {
     executando: number | null;
@@ -489,10 +489,6 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     ia_modo: "economico" as "economico" | "equilibrado" | "precisao",
     aguardo_dias: 30,
   });
-  const [conexaoIA, setConexaoIA] = useState<{
-    conectado: boolean;
-    mensagem: string;
-  } | null>(null);
   const [revisaoAlterada, setRevisaoAlterada] = useState(false);
   const [situacao, setSituacao] = useState("");
   const [abaDetalhe, setAbaDetalhe] = useState<
@@ -928,26 +924,11 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
             : secao === "aguardando"
               ? "O que estamos esperando de alguém: juízo, peritos, INSS e a outra parte. Comece pelo que precisa de atenção."
             : secao === "advogados"
-              ? "Cadastre um ou mais advogados pelo nome completo, número da OAB e UF."
-              : "Consulte o DJEN por período e acompanhe a execução de cada busca."
+              ? "Quem o escritório acompanha no DJEN. Pause, edite ou consulte cada advogado pelo menu ⋯."
+              : "Situação da sincronização com o DJEN, busca automática e análise por IA."
         }
         actions={
-          secao === "advogados" ? (
-            <Button
-              onClick={() =>
-                setFormAdv({
-                  nome: "",
-                  numero_oab: "",
-                  uf_oab: "SP",
-                  modo_busca: "ambos",
-                  ativo: true,
-                })
-              }
-            >
-              <Plus className="h-4 w-4" />
-              Adicionar advogado
-            </Button>
-          ) : (
+          secao === "advogados" ? undefined : (
             <>
               <Button
                 variant="outline"
@@ -960,7 +941,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                 <RefreshCw className="h-4 w-4" />
                 Atualizar
               </Button>
-              {(secao === "publicacoes" || secao === "monitoramento") && (
+              {secao === "publicacoes" && (
                 <Button onClick={() => setConsultaAberta(true)}>
                   <Search className="h-4 w-4" /> Consultar DJEN
                 </Button>
@@ -1301,475 +1282,63 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
         </div></div>
       )}
       {secao === "advogados" && (
-        <section className="surface-panel overflow-hidden">
-          {!status?.advogados.length ? (
-            <EmptyState
-              icon={BriefcaseBusiness}
-              title="Nenhum advogado cadastrado"
-              description="Adicione os advogados cujas publicações o escritório vai acompanhar."
-            />
-          ) : (
-            status.advogados.map((a) => (
-              <article
-                key={a.id}
-                className="flex flex-col gap-3 border-b border-zinc-200 p-5 last:border-b-0 dark:border-zinc-800 sm:flex-row sm:items-start sm:justify-between"
-              >
-                <div className="min-w-0">
-                  <h2 className="break-words text-sm font-semibold">
-                    {a.nome}
-                  </h2>
-                  <p className="mt-1 text-xs text-zinc-500">
-                    OAB {a.uf_oab} {a.numero_oab} ·{" "}
-                    {a.modo_busca === "ambos"
-                      ? "Consulta por OAB e por nome"
-                      : a.modo_busca === "oab"
-                        ? "Consulta por OAB"
-                        : "Consulta por nome · conferir OAB"}
-                  </p>
-                  <p className="mt-2 text-[11px] text-zinc-500">
-                    Última captura concluída:{" "}
-                    {a.ultimo_sucesso_em
-                      ? dia(a.ultimo_sucesso_em)
-                      : "Ainda não realizada"}
-                  </p>
-                  {a.ultimo_erro && (
-                    <p className="mt-2 max-w-2xl break-words text-xs text-red-600 dark:text-red-300">
-                      {a.ultimo_erro}
-                    </p>
-                  )}
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <Badge tone={a.ativo ? "success" : "neutral"}>
-                    {a.ativo ? "Ativo" : "Pausado"}
-                  </Badge>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      setFormAdv({ ...a, ativo: Boolean(a.ativo) })
-                    }
-                  >
-                    Editar
-                  </Button>
-                </div>
-              </article>
-            ))
-          )}
-        </section>
+        <AdvogadosAcompanhados
+          advogados={status?.advogados}
+          carregando={!status && !falha}
+          ocupado={salvando}
+          onAdicionar={() => setFormAdv({ nome: "", numero_oab: "", uf_oab: "SP", modo_busca: "ambos", ativo: true })}
+          onEditar={(a) => setFormAdv({ ...a, ativo: Boolean(a.ativo) })}
+          onConsultar={(a) => { setConsulta((c) => ({ ...c, advogado_id: String(a.id) })); setConsultaAberta(true); }}
+          onAlternarAtivo={(a) => void acao(async () => {
+            await api.put(`/djen/advogados/${a.id}`, { ...a, ativo: !a.ativo });
+            await carregarStatus();
+            show(a.ativo ? "Consultas pausadas para este advogado." : "Consultas reativadas para este advogado.", "success");
+          })}
+        />
       )}
       {secao === "monitoramento" && (
-        <>
-
-          <section className="surface-panel p-5">
-            <h2 className="flex items-center gap-2 text-sm font-semibold">
-              <Settings2 className="h-4 w-4" />
-              Monitoramento automático
-            </h2>
-            <label className="mt-4 flex items-center gap-2 text-xs">
-              <Checkbox
-                checked={config.automatico}
-                onChange={(e) =>
-                  setConfig({ ...config, automatico: e.target.checked })
-                }
-              />
-              Consultar periodicamente os advogados ativos
-            </label>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div>
-                <Label htmlFor="djen-intervalo">Intervalo em minutos</Label>
-                <Input
-                  id="djen-intervalo"
-                  type="number"
-                  min={15}
-                  max={1440}
-                  value={config.intervalo_minutos}
-                  onChange={(e) =>
-                    setConfig({
-                      ...config,
-                      intervalo_minutos: Number(e.target.value),
-                    })
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="djen-janela">
-                  Dias na primeira captura automática
-                </Label>
-                <Input
-                  id="djen-janela"
-                  type="number"
-                  min={1}
-                  max={31}
-                  value={config.janela_inicial_dias}
-                  onChange={(e) =>
-                    setConfig({
-                      ...config,
-                      janela_inicial_dias: Number(e.target.value),
-                    })
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="djen-aguardo">Lembrete sem nova publicação</Label>
-                <Select id="djen-aguardo" value={config.aguardo_dias} onChange={(e) => setConfig({ ...config, aguardo_dias: Number(e.target.value) })}>
-                  {[15, 30, 60, 90].map((dias) => <option key={dias} value={dias}>{dias} dias (quando não indicado)</option>)}
-                </Select>
-              </div>
-              <Button
-                variant="outline"
-                className="self-end"
-                loading={salvando}
-                onClick={() =>
-                  void acao(async () => {
-                    await api.put("/djen/config", config);
-                    await carregarStatus();
-                    show("Monitoramento salvo.", "success");
-                  })
-                }
-              >
-                Salvar monitoramento
-              </Button>
-            </div>
-            <p className="mt-3 text-[11px] leading-relaxed text-zinc-500">
-              As buscas automáticas revisitam os últimos dias para captar
-              publicações disponibilizadas com atraso. Não há envio automático
-              de mensagens nem criação de eventos no calendário de perícias.
-            </p>
-          </section>
-          <section className="surface-panel space-y-4 p-5">
-            <h2 className="flex items-center gap-2 text-sm font-semibold">
-              <Sparkles className="h-4 w-4" /> Classificação e resumos com IA
-            </h2>
-            <p className="text-xs leading-relaxed text-zinc-500">
-              A IA lê o inteiro teor capturado usando o provedor e os modelos configurados. Publicações inconclusivas ficam em Outros para conferência.
-            </p>
-            <Link className="inline-flex text-xs font-medium text-violet-700 underline dark:text-violet-300" to="/configuracoes?ia=1">Configurar provedor e conexão da IA</Link>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                size="sm"
-                variant="outline"
-                loading={salvando}
-                onClick={() =>
-                  void acao(async () => {
-                    setConexaoIA(await api.get("/djen/ia/conexao"));
-                  })
-                }
-              >
-                Verificar conexão
-              </Button>
-              {conexaoIA && (
-                <span className="text-xs text-zinc-500">
-                  {conexaoIA.mensagem}
-                </span>
-              )}
-            </div>
-            <label className="flex items-center gap-2 text-xs">
-              <Checkbox
-                checked={config.ia_ativa}
-                onChange={(e) =>
-                  setConfig({ ...config, ia_ativa: e.target.checked })
-                }
-              />{" "}
-              Analisar automaticamente as publicações capturadas
-            </label>
-            <p className="text-xs text-zinc-500">
-              A primeira ativação analisa as publicações pendentes, incluindo as
-              antigas sem revisão. As revisões salvas são preservadas. O uso
-              está sujeito aos limites e créditos do provedor configurado.
-            </p>
-            <div className="max-w-md">
-              <Label htmlFor="ia-modo">Modo de análise</Label>
-              <Select
-                id="ia-modo"
-                value={config.ia_modo}
-                onChange={(e) =>
-                  setConfig({
-                    ...config,
-                    ia_modo: e.target.value as
-                      | "economico"
-                      | "equilibrado"
-                      | "precisao",
-                  })
-                }
-              >
-                <option value="economico">Econômico — lotes de até 8</option>
-                <option value="equilibrado">
-                  Equilibrado — lotes de até 4
-                </option>
-                <option value="precisao">
-                  Máxima precisão — análise individual
-                </option>
-              </Select>
-              <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">
-                No modo econômico, casos inconclusivos podem usar o modelo equilibrado configurado no mesmo provedor. Publicações extensas são analisadas integralmente em trechos.
-              </p>
-            </div>
-            <div className="max-w-xs">
-              <Label htmlFor="ia-paralelismo">Análises simultâneas</Label>
-              <Select
-                id="ia-paralelismo"
-                value={config.ia_paralelismo}
-                onChange={(e) =>
-                  setConfig({
-                    ...config,
-                    ia_paralelismo: Number(e.target.value),
-                  })
-                }
-              >
-                <option value={1}>1 por vez (menor pico de uso)</option>
-                <option value={2}>2 simultâneas</option>
-                <option value={3}>3 simultâneas</option>
-              </Select>
-              <p className="mt-1 text-[11px] text-zinc-500">
-                Cada execução pode conter um lote. Esta opção muda a velocidade,
-                não a quantidade total de texto analisado.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <Button
-                size="sm"
-                loading={salvando}
-                onClick={() =>
-                  void acao(async () => {
-                    await api.put("/djen/config", config);
-                    await carregarStatus();
-                    show("Configuração da IA salva.", "success");
-                  })
-                }
-              >
-                Salvar configuração da IA
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                loading={salvando}
-                disabled={
-                  !status?.config.ia_ativa || Boolean(status?.ia.executando)
-                }
-                onClick={() => {
-                  const quantidade = status?.ia.reanalisaveis ?? 0;
-                  if (
-                    !window.confirm(
-                      `Reanalisar ${quantidade} publicação(ões) sem revisão? Textos já analisados poderão usar o cache; os demais consumirão o limite da IA.`,
-                    )
-                  )
-                    return;
-                  void acao(async () => {
-                    const resposta = await api.post<{ enfileiradas: number }>(
-                      "/djen/ia/reanalisar",
-                      {},
-                    );
-                    await carregarStatus();
-                    show(
-                      `${resposta.enfileiradas} publicação(ões) adicionada(s) à fila.`,
-                      "success",
-                    );
-                  });
-                }}
-              >
-                Reanalisar publicações sem revisão
-              </Button>
-              {status?.ia.pausa && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  loading={salvando}
-                  disabled={!status.config.ia_ativa}
-                  onClick={() =>
-                    void acao(async () => {
-                      await api.post("/djen/ia/retomar", {});
-                      await carregarStatus();
-                    })
-                  }
-                >
-                  Retomar análises
-                </Button>
-              )}
-            </div>
-            {status?.ia.pausa && (
-              <p
-                role="alert"
-                className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
-              >
-                {status.ia.pausa}
-              </p>
-            )}
-            <p className="text-xs text-zinc-500">
-              {status?.ia.pendentes ?? 0} na fila ·{" "}
-              {status?.ia.falhas ?? 0} com falha
-              {status?.ia.executando ? " · análise em andamento" : ""}
-            </p>
-            {status && (
-              <div className="grid gap-2 sm:grid-cols-3">
-                <div className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/60">
-                  <p className="text-[11px] text-zinc-500">
-                    Execuções em 30 dias
-                  </p>
-                  <p className="mt-1 text-lg font-semibold">
-                    {status.ia.uso_30_dias.chamadas}
-                  </p>
-                </div>
-                <div className="rounded-lg bg-emerald-50 p-3 dark:bg-emerald-950/30">
-                  <p className="text-[11px] text-emerald-700 dark:text-emerald-300">
-                    Execuções evitadas
-                  </p>
-                  <p className="mt-1 text-lg font-semibold text-emerald-800 dark:text-emerald-200">
-                    {status.ia.uso_30_dias.execucoes_evitadas}
-                  </p>
-                </div>
-                <div className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/60">
-                  <p className="text-[11px] text-zinc-500">
-                    Reaproveitadas do cache
-                  </p>
-                  <p className="mt-1 text-lg font-semibold">
-                    {status.ia.uso_30_dias.cache_hits}
-                  </p>
-                </div>
-              </div>
-            )}
-          </section>
-          {user.role === "administrador" && <IATeaching />}
-          <section className="surface-panel p-5">
-            <h2 className="text-sm font-semibold">
-              Últimas consultas (5 mais recentes)
-            </h2>
-            {!status?.ultimas.length ? (
-              <p className="mt-3 text-xs text-zinc-500">
-                Nenhuma consulta executada.
-              </p>
-            ) : (
-              status.ultimas.map((b) => (
-                <article
-                  key={b.id}
-                  className="mt-4 border-t border-zinc-200 pt-4 dark:border-zinc-800"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs">
-                      {dia(b.inicio)} a {dia(b.fim)} · {b.novas} novas
-                      publicações · {b.consultas} consultas à API
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={salvando || b.status === "executando"}
-                        aria-label={`Excluir registro da consulta ${b.id}`}
-                        onClick={() =>
-                          void acao(async () => {
-                            await api.delete(`/djen/buscas/${b.id}`);
-                            await carregarStatus();
-                            show(
-                              "Registro da consulta excluído. As publicações foram preservadas.",
-                              "success",
-                            );
-                          })
-                        }
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                      <Badge
-                        tone={
-                          b.status === "concluida"
-                            ? "success"
-                            : b.status === "executando"
-                              ? "info"
-                              : "warning"
-                        }
-                      >
-                        {(
-                          {
-                            concluida: "Concluída",
-                            executando: "Em andamento",
-                            falha: "Falha",
-                            parcial: "Parcial · precisa completar",
-                            interrompida: "Interrompida",
-                          } as Record<string, string>
-                        )[b.status] || b.status}
-                      </Badge>
-                    </div>
-                  </div>
-                  {(
-                    JSON.parse(b.erros_json || "[]") as {
-                      advogado: string;
-                      erro: string;
-                    }[]
-                  ).map((e, i) => (
-                    <p
-                      key={i}
-                      className="mt-2 break-words text-xs text-red-600 dark:text-red-300"
-                    >
-                      {e.advogado}: {e.erro}
-                    </p>
-                  ))}
-                </article>
-              ))
-            )}
-          </section>
-        </>
+        <MonitoramentoDjen
+          status={status}
+          config={config}
+          setConfig={setConfig}
+          salvando={salvando}
+          acao={acao}
+          atualizarStatus={carregarStatus}
+          mostrar={show}
+          administrador={user.role === "administrador"}
+          onConsultar={() => setConsultaAberta(true)}
+        />
       )}
       </div>
-      <Modal open={consultaAberta} onClose={() => setConsultaAberta(false)} title="Consultar DJEN" description="Busque novas publicações sem sair da sua área de trabalho." maxWidth="max-w-2xl">
-          <section className="surface-panel p-5">
-            <h2 className="text-sm font-semibold">Consultar publicações</h2>
-            <p className="mt-1 text-xs text-zinc-500">
-              Consulte até 31 dias por execução. Resultados repetidos não criam
-              publicações duplicadas.
-            </p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-2">
-              <div>
-                <Label htmlFor="djen-inicio">Disponibilização inicial</Label>
-                <Input
-                  id="djen-inicio"
-                  type="date"
-                  value={consulta.inicio}
-                  max={consulta.fim}
-                  onChange={(e) =>
-                    setConsulta({ ...consulta, inicio: e.target.value })
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="djen-fim">Disponibilização final</Label>
-                <Input
-                  id="djen-fim"
-                  type="date"
-                  value={consulta.fim}
-                  max={hoje()}
-                  onChange={(e) =>
-                    setConsulta({ ...consulta, fim: e.target.value })
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="djen-adv">Advogados</Label>
-                <Select
-                  id="djen-adv"
-                  value={consulta.advogado_id}
-                  onChange={(e) =>
-                    setConsulta({ ...consulta, advogado_id: e.target.value })
-                  }
-                >
-                  <option value="">Todos os ativos</option>
-                  {status?.advogados
-                    .filter((a) => a.ativo)
-                    .map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.nome}
-                      </option>
-                    ))}
-                </Select>
-              </div>
-              <Button
-                className="self-end"
-                onClick={() => void consultar()}
-                loading={consultando || Boolean(status?.executando)}
-                disabled={!status?.advogados.some((a) => a.ativo)}
-              >
-                <Search className="h-4 w-4" />
-                Buscar publicações
-              </Button>
+      <Modal open={consultaAberta} onClose={() => setConsultaAberta(false)} title="Consultar DJEN" description="Busque novas publicações por período. Resultados repetidos não criam duplicatas." maxWidth="max-w-xl"
+        footer={<>
+          <Button variant="outline" onClick={() => setConsultaAberta(false)}>Fechar</Button>
+          <Button onClick={() => void consultar()} loading={consultando || Boolean(status?.executando)} disabled={!status?.advogados.some((a) => a.ativo)}>
+            <Search className="h-4 w-4" />
+            Buscar publicações
+          </Button>
+        </>}>
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="djen-inicio">De</Label>
+              <Input id="djen-inicio" type="date" value={consulta.inicio} max={consulta.fim} onChange={(e) => setConsulta({ ...consulta, inicio: e.target.value })} />
             </div>
-          </section>
+            <div>
+              <Label htmlFor="djen-fim">Até</Label>
+              <Input id="djen-fim" type="date" value={consulta.fim} max={hoje()} onChange={(e) => setConsulta({ ...consulta, fim: e.target.value })} />
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="djen-adv">Advogado</Label>
+            <Select id="djen-adv" value={consulta.advogado_id} onChange={(e) => setConsulta({ ...consulta, advogado_id: e.target.value })}>
+              <option value="">Todos os ativos</option>
+              {status?.advogados.filter((a) => a.ativo).map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}
+            </Select>
+          </div>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">Período de até 31 dias por consulta.</p>
+          {!status?.advogados.some((a) => a.ativo) && <Callout tone="aviso">Cadastre ao menos um advogado ativo para consultar.</Callout>}
+        </div>
       </Modal>
       <Modal open={alertaAberto === "prazos"} onClose={() => setAlertaAberto(null)} title="Prazos do escritório vencidos ou a vencer" maxWidth="max-w-4xl"
         footer={<Button variant="outline" onClick={() => setAlertaAberto(null)}>Fechar</Button>}>
@@ -1867,76 +1436,37 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
           <div className="space-y-4">
             <div>
               <Label htmlFor="adv-nome">Nome completo</Label>
-              <Input
-                id="adv-nome"
-                autoFocus
-                value={formAdv.nome}
-                onChange={(e) =>
-                  setFormAdv({ ...formAdv, nome: e.target.value })
-                }
-              />
+              <Input id="adv-nome" autoFocus value={formAdv.nome} onChange={(e) => setFormAdv({ ...formAdv, nome: e.target.value })} />
             </div>
             <div className="grid grid-cols-[1fr_90px] gap-3">
               <div>
                 <Label htmlFor="adv-oab">Número da OAB</Label>
-                <Input
-                  id="adv-oab"
-                  disabled={Boolean(formAdv.id)}
-                  value={formAdv.numero_oab}
-                  placeholder="123456"
-                  onChange={(e) =>
-                    setFormAdv({ ...formAdv, numero_oab: e.target.value })
-                  }
-                />
+                <Input id="adv-oab" disabled={Boolean(formAdv.id)} value={formAdv.numero_oab} placeholder="123456" onChange={(e) => setFormAdv({ ...formAdv, numero_oab: e.target.value })} />
               </div>
               <div>
                 <Label htmlFor="adv-uf">UF</Label>
-                <Select
-                  id="adv-uf"
-                  disabled={Boolean(formAdv.id)}
-                  value={formAdv.uf_oab}
-                  onChange={(e) =>
-                    setFormAdv({ ...formAdv, uf_oab: e.target.value })
-                  }
-                >
-                  {UFS.map((uf) => (
-                    <option key={uf}>{uf}</option>
-                  ))}
+                <Select id="adv-uf" disabled={Boolean(formAdv.id)} value={formAdv.uf_oab} onChange={(e) => setFormAdv({ ...formAdv, uf_oab: e.target.value })}>
+                  {UFS.map((uf) => <option key={uf}>{uf}</option>)}
                 </Select>
               </div>
             </div>
-            <div>
-              <Label htmlFor="adv-modo">Como buscar</Label>
-              <Select
-                id="adv-modo"
-                value={formAdv.modo_busca}
-                onChange={(e) =>
-                  setFormAdv({
-                    ...formAdv,
-                    modo_busca: e.target.value as Advogado["modo_busca"],
-                  })
-                }
-              >
-                <option value="ambos">
-                  OAB e nome · duas buscas complementares
-                </option>
-                <option value="oab">Somente OAB e UF</option>
-                <option value="nome">Somente nome · exige conferir OAB</option>
-              </Select>
-            </div>
-            <label className="flex items-center gap-2 text-xs">
-              <Checkbox
-                checked={formAdv.ativo}
-                onChange={(e) =>
-                  setFormAdv({ ...formAdv, ativo: e.target.checked })
-                }
-              />
-              Advogado ativo nas consultas
-            </label>
-            <p className="text-xs leading-relaxed text-zinc-500">
-              A OAB diferencia homônimos. Resultados encontrados apenas pelo
-              nome precisam de conferência antes de avisar o cliente.
-            </p>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">A OAB diferencia homônimos. {formAdv.id ? "OAB e UF não podem ser alteradas." : ""}</p>
+            <details className="group rounded-xl border border-zinc-200 dark:border-zinc-800" open={Boolean(formAdv.id) || undefined}>
+              <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">Opções avançadas</summary>
+              <div className="space-y-4 border-t border-zinc-200 px-4 py-4 dark:border-zinc-800">
+                <SettingRow label="Como buscar" htmlFor="adv-modo" hint="Resultados achados só pelo nome precisam de conferência antes de avisar o cliente.">
+                  <Select id="adv-modo" value={formAdv.modo_busca} onChange={(e) => setFormAdv({ ...formAdv, modo_busca: e.target.value as Advogado["modo_busca"] })}>
+                    <option value="ambos">OAB e nome · duas buscas complementares</option>
+                    <option value="oab">Somente OAB e UF</option>
+                    <option value="nome">Somente nome · exige conferir OAB</option>
+                  </Select>
+                </SettingRow>
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox checked={formAdv.ativo} onChange={(e) => setFormAdv({ ...formAdv, ativo: e.target.checked })} />
+                  Advogado ativo nas consultas
+                </label>
+              </div>
+            </details>
           </div>
         )}
       </Modal>
