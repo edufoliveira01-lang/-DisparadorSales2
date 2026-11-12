@@ -234,22 +234,24 @@ function NovoDocumento({ aoCriar, aoCancelar }: { aoCriar: (id: string) => Promi
     finally { setSalvando(false); }
   };
   return (
-    <div className="space-y-4 rounded-2xl border border-accent-300 bg-white p-5 dark:border-accent-700 dark:bg-zinc-900">
-      <div><h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Novo documento do escritório</h2><p className="mt-1 text-sm text-zinc-500">Ele sai com o cabeçalho, o rodapé e as assinaturas do escritório, igual aos demais, e aparece no botão Gerar documentos do cliente.</p></div>
-      <Campo rotulo="Nome do documento"><Input value={nome} onChange={(e) => setNome(e.target.value)} className="mt-1.5" placeholder="Ex.: Termo de renúncia" autoFocus /></Campo>
-      <div className="rounded-xl border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
-        <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-accent-700 dark:text-accent-300">
+    <SettingsPanel icon={<Plus />} title="Novo documento do escritório" description="Sai com o cabeçalho, o rodapé e as assinaturas do escritório e aparece em Gerar documentos, no cliente.">
+      <SettingsBlock step={1} title="Dê um nome">
+        <Input aria-label="Nome do documento" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Termo de renúncia" autoFocus />
+      </SettingsBlock>
+      <SettingsBlock step={2} title="Importe um modelo (opcional)" description="Envie o seu .docx pronto: texto, títulos, negrito, tabelas e figuras vêm para cá, e campos como [NOME], [CPF] ou {{ENDEREÇO}} viram os dados do cliente. Cabeçalho, rodapé e assinatura continuam os do escritório.">
+        <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-zinc-300 px-3 py-2 text-sm font-medium text-accent-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-accent-300 dark:hover:bg-zinc-800">
           <FileUp className="h-4 w-4" /> {importando ? "Lendo o arquivo…" : "Importar de um arquivo do Word (.docx)"}
           <input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="sr-only" disabled={importando} onChange={(e) => { void importar(e.target.files?.[0]); e.target.value = ""; }} />
         </label>
-        <p className="mt-1 text-[13px] text-zinc-500">Envie o seu modelo pronto: o texto, os títulos, o negrito, o itálico, as tabelas e as figuras vêm para cá, e campos como [NOME], [CPF] ou {"{{ENDEREÇO}}"} viram os dados do cliente. O cabeçalho, o rodapé e a assinatura continuam os do escritório.</p>
-        {imagens.length > 0 && <p className="mt-2 text-[13px] text-zinc-600 dark:text-zinc-300">{imagens.length} figura(s) vão junto com o documento: <code>{imagens.map((_, i) => `[[imagem:${i + 1}]]`).join(" ")}</code> no texto marca onde cada uma aparece.</p>}
-        {avisos.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5 text-[13px] text-amber-700 dark:text-amber-300">{avisos.map((a) => <li key={a}>{a}</li>)}</ul>}
-      </div>
-      <Campo rotulo="Texto"><Textarea rows={14} value={texto} onChange={(e) => setTexto(e.target.value)} className="mt-1.5 font-mono text-[14px] leading-relaxed" /></Campo>
-      <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300"><input type="checkbox" checked={assinatura} onChange={(e) => setAssinatura(e.target.checked)} /> Incluir data e assinatura (do cliente, a rogo ou do representante, conforme o tipo escolhido ao gerar)</label>
-      <div className="flex justify-end gap-2"><Button variant="outline" onClick={aoCancelar}>Cancelar</Button><Button loading={salvando} onClick={() => void criar()}><Plus className="h-4 w-4" /> Criar documento</Button></div>
-    </div>
+        {imagens.length > 0 && <Callout tone="info">{imagens.length} figura(s) vão junto com o documento: <code>{imagens.map((_, i) => `[[imagem:${i + 1}]]`).join(" ")}</code> no texto marca onde cada uma aparece.</Callout>}
+        {avisos.length > 0 && <Callout tone="aviso"><ul className="list-disc space-y-1 pl-4">{avisos.map((a) => <li key={a}>{a}</li>)}</ul></Callout>}
+      </SettingsBlock>
+      <SettingsBlock step={3} title="Escreva ou confira o texto">
+        <Textarea aria-label="Texto" rows={14} value={texto} onChange={(e) => setTexto(e.target.value)} className="font-mono text-[13px] leading-relaxed" />
+        <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300"><Checkbox checked={assinatura} onChange={(e) => setAssinatura(e.target.checked)} /> Incluir data e assinatura (do cliente, a rogo ou do representante, conforme o tipo escolhido ao gerar)</label>
+      </SettingsBlock>
+      <SettingsFooter><Button variant="outline" onClick={aoCancelar}>Cancelar</Button><Button loading={salvando} onClick={() => void criar()}><Plus className="h-4 w-4" /> Criar documento</Button></SettingsFooter>
+    </SettingsPanel>
   );
 }
 
@@ -261,6 +263,7 @@ function EditorProprio({ doc, gerir, aoMudar, versao }: { doc: { id: string; nom
   const [pt, setPt] = useState(doc.pt);
   const [assinatura, setAssinatura] = useState(doc.assinatura);
   const [salvando, setSalvando] = useState(false);
+  const [confirma, setConfirma] = useState(false);
   const sujo = nome !== doc.nome || texto !== doc.texto || pt !== doc.pt || assinatura !== doc.assinatura;
   const salvar = async () => {
     setSalvando(true);
@@ -269,26 +272,35 @@ function EditorProprio({ doc, gerir, aoMudar, versao }: { doc: { id: string; nom
     finally { setSalvando(false); }
   };
   const excluir = async () => {
-    if (!window.confirm(`Excluir o documento "${doc.nome}"? Esta ação não pode ser desfeita.`)) return;
+    setConfirma(false);
     try { await api.delete(`/gestao/documentos/proprios/${doc.id}`); show("Documento excluído.", "success"); await aoMudar(true); }
     catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível excluir.", "error"); }
   };
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-      <fieldset disabled={!gerir} className="space-y-4">
-        <Campo rotulo="Nome do documento"><Input value={nome} onChange={(e) => setNome(e.target.value)} className="mt-1.5" /></Campo>
-        <Campo rotulo="Texto"><Textarea rows={24} value={texto} onChange={(e) => setTexto(e.target.value)} className="mt-1.5 font-mono text-[14px] leading-relaxed" /></Campo>
-        {(doc.imagens?.length ?? 0) > 0 && <p className="text-[13px] text-zinc-600 dark:text-zinc-300">Figuras deste documento: <code>{doc.imagens!.map((_, i) => `[[imagem:${i + 1}]]`).join(" ")}</code>. A linha com o código marca onde a figura aparece; apague a linha para tirá-la do texto.</p>}
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <Campo rotulo="Tamanho da letra (pt)"><Input type="number" min={7} max={18} step={0.5} value={pt} onChange={(e) => setPt(Number(e.target.value))} className="mt-1.5 w-28" /></Campo>
-          <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300"><input type="checkbox" checked={assinatura} onChange={(e) => setAssinatura(e.target.checked)} /> Incluir data e assinatura</label>
-        </div>
-        {gerir && <div className="flex flex-wrap justify-between gap-2"><Button type="button" variant="ghost" onClick={() => void excluir()}><Trash2 className="h-4 w-4" /> Excluir documento</Button><Button loading={salvando} disabled={!sujo} onClick={() => void salvar()}><Save className="h-4 w-4" /> Salvar documento</Button></div>}
-      </fieldset>
-      <div className="min-w-0">
-        <p className="mb-2 text-sm text-zinc-500">Prévia com dados de exemplo{sujo ? " (salve para atualizar)" : ""}.</p>
-        <iframe key={`${doc.id}-${versao}`} title="Prévia do documento" src={`/api/gestao/documentos/previa?doc=${doc.id}&variante=comum&v=${versao}`} className="h-[820px] w-full rounded-2xl border border-zinc-200 bg-zinc-200 dark:border-zinc-800" />
-      </div>
+    <div className="grid gap-5 2xl:grid-cols-2">
+      <SettingsPanel className="min-w-0" icon={<FileText />} title={doc.nome || "Documento próprio"} description="Documento criado pelo escritório. Sai com o cabeçalho, o rodapé e as assinaturas do escritório." status={<Badge tone="info">Próprio</Badge>}>
+        <fieldset disabled={!gerir} className="min-w-0 divide-y divide-zinc-100 dark:divide-zinc-800">
+          <SettingsBlock>
+            <SettingRow label="Nome do documento" htmlFor="dp-nome"><Input id="dp-nome" value={nome} onChange={(e) => setNome(e.target.value)} /></SettingRow>
+            <div><label htmlFor="dp-texto" className="mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-300">Texto</label><Textarea id="dp-texto" rows={22} value={texto} onChange={(e) => setTexto(e.target.value)} className="font-mono text-[13px] leading-relaxed" /></div>
+            {(doc.imagens?.length ?? 0) > 0 && <Callout tone="info">Figuras deste documento: <code>{doc.imagens!.map((_, i) => `[[imagem:${i + 1}]]`).join(" ")}</code>. A linha com o código marca onde a figura aparece; apague a linha para tirá-la do texto.</Callout>}
+          </SettingsBlock>
+          <SettingsBlock>
+            <SettingRow label="Tamanho da letra" hint="Em pontos (7 a 18)." htmlFor="dp-pt"><Input id="dp-pt" type="number" min={7} max={18} step={0.5} value={pt} onChange={(e) => setPt(Number(e.target.value))} className="w-28" /></SettingRow>
+            <SettingRow label="Data e assinatura"><label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300"><Checkbox checked={assinatura} onChange={(e) => setAssinatura(e.target.checked)} /> Incluir ao final do documento</label></SettingRow>
+          </SettingsBlock>
+        </fieldset>
+        {gerir && (
+          <SettingsFooter left={sujo ? <span className="font-medium text-amber-700 dark:text-amber-300">Há alterações não salvas.</span> : "Tudo salvo."}>
+            <Button type="button" variant="ghost" onClick={() => setConfirma(true)}><Trash2 className="h-4 w-4" /> Excluir documento</Button>
+            <Button loading={salvando} disabled={!sujo} onClick={() => void salvar()}><Save className="h-4 w-4" /> Salvar documento</Button>
+          </SettingsFooter>
+        )}
+      </SettingsPanel>
+      <SettingsPanel className="min-w-0 self-start 2xl:sticky 2xl:top-4" title="Prévia" description={`Com dados de exemplo${sujo ? " (salve para atualizar)" : ""}.`} status={sujo ? <Badge tone="warning">Desatualizada</Badge> : undefined}>
+        <div className="p-4"><iframe key={`${doc.id}-${versao}`} title="Prévia do documento" src={`/api/gestao/documentos/previa?doc=${doc.id}&variante=comum&v=${versao}`} className="h-[820px] w-full rounded-xl border border-zinc-200 bg-zinc-200 dark:border-zinc-800" /></div>
+      </SettingsPanel>
+      <ConfirmDialog open={confirma} title="Excluir documento?" message={`Excluir o documento "${doc.nome}"? Esta ação não pode ser desfeita.`} confirmLabel="Excluir" onConfirm={() => void excluir()} onCancel={() => setConfirma(false)} />
     </div>
   );
 }
