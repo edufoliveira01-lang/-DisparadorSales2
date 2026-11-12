@@ -19,8 +19,16 @@ export interface ReguaConfig {
   horario: string; // HH:MM (Brasília) a partir do qual os avisos do dia saem
   gerar_cobranca: boolean; // gera boleto/PIX no Asaas antes de avisar (se o Asaas estiver configurado)
   tipo: TipoCobranca;
+  modelos: Modelos; // textos dos avisos (editáveis)
 }
-export const REGUA_PADRAO: ReguaConfig = { ativa: false, antes_dias: [3], no_dia: true, depois_dias: [3], horario: "09:00", gerar_cobranca: true, tipo: "boleto_pix" };
+export interface Modelos { antes: string; hoje: string; depois: string }
+/** Variáveis: {nome} (primeiro nome), {descricao}, {valor}, {vencimento}, {quando} e {link} (link de pagamento; o PIX copia e cola vai em mensagem separada). */
+export const MODELOS_PADRAO: Modelos = {
+  antes: "Olá, {nome}! Tudo bem? Aqui é do escritório. Passando para lembrar que a parcela \"{descricao}\", no valor de {valor}, vence {quando}.\n\n{link}\n\nSe já pagou, é só nos avisar e desconsidere esta mensagem. 🙏",
+  hoje: "Olá, {nome}! Tudo bem? Aqui é do escritório. Passando para lembrar que a parcela \"{descricao}\", no valor de {valor}, vence hoje.\n\n{link}\n\nSe já pagou, é só nos avisar e desconsidere esta mensagem. 🙏",
+  depois: "Olá, {nome}! Tudo bem? Aqui é do escritório. Notamos que a parcela \"{descricao}\", no valor de {valor}, com vencimento em {vencimento}, ainda consta em aberto. Podemos ajudar a regularizar?\n\n{link}\n\nSe já pagou, é só nos avisar e desconsidere esta mensagem. 🙏",
+};
+export const REGUA_PADRAO: ReguaConfig = { ativa: false, antes_dias: [3], no_dia: true, depois_dias: [3], horario: "09:00", gerar_cobranca: true, tipo: "boleto_pix", modelos: { ...MODELOS_PADRAO } };
 
 const dias = (v: unknown): number[] => [...new Set((Array.isArray(v) ? v : []).map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 90))].sort((a, b) => a - b).slice(0, 5);
 export function lerRegua(): ReguaConfig {
@@ -29,10 +37,14 @@ export function lerRegua(): ReguaConfig {
     return normalizarRegua({ ...REGUA_PADRAO, ...j });
   } catch { return { ...REGUA_PADRAO }; }
 }
+function normalizarModelos(m: Partial<Modelos> | undefined): Modelos {
+  const t = (v: unknown, padrao: string) => { const x = typeof v === "string" ? v.replace(/\r\n/g, "\n").trim().slice(0, 1500) : ""; return x || padrao; };
+  return { antes: t(m?.antes, MODELOS_PADRAO.antes), hoje: t(m?.hoje, MODELOS_PADRAO.hoje), depois: t(m?.depois, MODELOS_PADRAO.depois) };
+}
 function normalizarRegua(d: Partial<ReguaConfig>): ReguaConfig {
   const horario = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(d.horario)) ? String(d.horario) : REGUA_PADRAO.horario;
   const tipo = d.tipo === "pix" || d.tipo === "boleto" ? d.tipo : "boleto_pix";
-  return { ativa: Boolean(d.ativa), antes_dias: dias(d.antes_dias), no_dia: Boolean(d.no_dia), depois_dias: dias(d.depois_dias), horario, gerar_cobranca: Boolean(d.gerar_cobranca), tipo };
+  return { ativa: Boolean(d.ativa), antes_dias: dias(d.antes_dias), no_dia: Boolean(d.no_dia), depois_dias: dias(d.depois_dias), horario, gerar_cobranca: Boolean(d.gerar_cobranca), tipo, modelos: normalizarModelos(d.modelos) };
 }
 export function salvarRegua(d: Partial<ReguaConfig>): ReguaConfig {
   const c = normalizarRegua({ ...lerRegua(), ...d });
@@ -56,23 +68,40 @@ export function regraDe(vencimento: string, hoje: string): string {
   return d > 0 ? `antes:${d}` : d === 0 ? "hoje" : `depois:${-d}`;
 }
 
-/** O texto do aviso conforme o momento (antes, no dia ou depois do vencimento). Nunca inclui juros ou ameaças. */
-export function mensagemDoAviso(p: { nome: string; descricao: string; valor_centavos: number; vencimento: string }, hoje: string, link?: { url?: string; pix?: string; linha?: string } | null): string {
-  const primeiro = p.nome.trim().split(/\s+/)[0] || "";
-  const oi = primeiro ? `Olá, ${primeiro}! Tudo bem?` : "Olá! Tudo bem?";
+type DadosAviso = { nome: string; descricao: string; valor_centavos: number; vencimento: string };
+/** Texto do modelo certo para o momento, com as variáveis preenchidas; o marcador {link} fica para ser resolvido no envio. */
+export function textoDoModelo(p: DadosAviso, hoje: string, modelos: Modelos = lerRegua().modelos): string {
   const d = diffDias(hoje, p.vencimento);
-  const item = `"${p.descricao}", no valor de ${moeda(p.valor_centavos)}`;
-  let corpo: string;
-  if (d > 0) corpo = `Passando para lembrar que a parcela ${item}, vence ${d === 1 ? "amanhã" : `em ${dataBr(p.vencimento)}`}.`;
-  else if (d === 0) corpo = `Passando para lembrar que a parcela ${item}, vence hoje.`;
-  else corpo = `Notamos que a parcela ${item}, com vencimento em ${dataBr(p.vencimento)}, ainda consta em aberto. Podemos ajudar a regularizar?`;
-  let extra = "";
+  const modelo = d > 0 ? modelos.antes : d === 0 ? modelos.hoje : modelos.depois;
+  const quando = d === 1 ? "amanhã" : `em ${dataBr(p.vencimento)}`;
+  const primeiro = p.nome.trim().split(/\s+/)[0] || "";
+  return modelo.replace(/\{nome\}/g, primeiro).replace(/\{descricao\}/g, p.descricao).replace(/\{valor\}/g, moeda(p.valor_centavos)).replace(/\{vencimento\}/g, dataBr(p.vencimento)).replace(/\{quando\}/g, quando)
+    .replace(/,\s*([!?.])/g, "$1").replace(/Olá,?\s+!/g, "Olá!");
+}
+/** Resolve {link}: com cobrança vira o link de pagamento; sem ela o marcador some. O PIX e a linha digitável vão em mensagens separadas (código sozinho, fácil de copiar). */
+export function aplicarLink(texto: string, link?: { url?: string; pix?: string; linha?: string } | null): { texto: string; partes: string[] } {
+  const partes: string[] = [];
+  let bloco = "";
   if (link?.url) {
-    extra = `\n\nPara pagar por boleto ou PIX, use este link: ${link.url}`;
-    if (link.pix) extra += `\n\nPIX copia e cola:\n${link.pix}`;
-    if (link.linha) extra += `\n\nLinha digitável do boleto:\n${link.linha}`;
+    bloco = `Para pagar por boleto ou PIX, use este link: ${link.url}`;
+    const seguem = [link.pix ? "o código PIX copia e cola" : "", link.linha ? "a linha digitável do boleto" : ""].filter(Boolean).join(" e ");
+    if (seguem) bloco += `\n\nEm seguida, envio ${seguem}.`;
+    if (link.pix) partes.push(link.pix);
+    if (link.linha) partes.push(link.linha);
   }
-  return `${oi} Aqui é do escritório. ${corpo}${extra}\n\nSe já pagou, é só nos avisar e desconsidere esta mensagem. 🙏`;
+  const t = texto.replace(/\{link\}/g, bloco).replace(/\n{3,}/g, "\n\n").trim();
+  return { texto: t, partes };
+}
+/** O aviso pronto (texto principal + mensagens seguintes), sem juros ou ameaças. */
+export function mensagemDoAviso(p: DadosAviso, hoje: string, link?: { url?: string; pix?: string; linha?: string } | null): string {
+  return aplicarLink(textoDoModelo(p, hoje), link).texto;
+}
+/** Prévia editável para uma parcela (o marcador {link} indica onde entra o pagamento). */
+export function previaDoAviso(lancamentoId: number) {
+  const [p] = parcelasEmAberto([lancamentoId]);
+  if (!p) throw new ErroGestao("Parcela não está em aberto.", 409);
+  const c = cobrancaDoLancamento(lancamentoId);
+  return { texto: textoDoModelo(p, hojeSaoPaulo()), cobranca_ativa: Boolean(c && !["DELETED", "CANCELADA", "REFUNDED"].includes(c.status)) };
 }
 
 const SEM_CANAL = "O envio pelo Deskcomm ainda não foi ligado. Cadastre o token em Configurações → Atendimento (envio de mensagens).";
@@ -92,7 +121,7 @@ export function pausarAvisos(pessoaId: number, pausar: boolean) {
 export interface ResultadoEnvio { lancamento_id: number; status: "enviado" | "falhou" | "ignorado"; motivo?: string }
 
 /** Envia o aviso de UMA parcela pelo Deskcomm e registra. `regra` define a chave de não-duplicidade ("manual" pode repetir). */
-export async function enviarAviso(lancamentoId: number, opts: { regra?: string; origem: "manual" | "lote" | "automatico"; gerar?: TipoCobranca | false; quem?: Quem; http?: typeof fetch } ): Promise<ResultadoEnvio> {
+export async function enviarAviso(lancamentoId: number, opts: { regra?: string; origem: "manual" | "lote" | "automatico"; gerar?: TipoCobranca | false; quem?: Quem; http?: typeof fetch; mensagem?: string } ): Promise<ResultadoEnvio> {
   const hoje = hojeSaoPaulo();
   const [p] = parcelasEmAberto([lancamentoId]);
   if (!p) return { lancamento_id: lancamentoId, status: "ignorado", motivo: "Parcela não está em aberto." };
@@ -108,10 +137,11 @@ export async function enviarAviso(lancamentoId: number, opts: { regra?: string; 
   if (!link && opts.gerar && chaveDoAsaas() && p.vencimento >= hoje) {
     try { link = await gerarCobranca(lancamentoId, opts.gerar, opts.quem, opts.http); } catch { link = null; /* segue só com o lembrete, sem link */ }
   }
-  const texto = mensagemDoAviso(p, hoje, link ? { url: link.invoice_url || link.bank_slip_url, pix: link.pix_payload, linha: link.linha_digitavel } : null);
+  const base = opts.mensagem?.trim() ? opts.mensagem.trim().slice(0, 3000) : textoDoModelo(p, hoje);
+  const { texto, partes } = aplicarLink(base, link ? { url: link.invoice_url || link.bank_slip_url, pix: link.pix_payload, linha: link.linha_digitavel } : null);
   try {
     if (!envioPeloDeskcommLigado()) throw new ErroDeskcomm(SEM_CANAL, 409);
-    await enviarPeloDeskcomm(p.telefone, p.nome, texto, opts.http);
+    await enviarPeloDeskcomm(p.telefone, p.nome, texto, opts.http, partes);
     registro("enviado", texto, null);
     registrar(lancamentoId, "aviso_cobranca", `Aviso de cobrança enviado pelo WhatsApp (${opts.origem === "automatico" ? "automático" : opts.origem === "lote" ? "em lote" : "manual"}).`, opts.quem);
     return { lancamento_id: lancamentoId, status: "enviado" };

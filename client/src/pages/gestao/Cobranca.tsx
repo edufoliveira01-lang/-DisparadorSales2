@@ -4,7 +4,7 @@ import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { Input } from "@/components/ui/Input";
+import { Input, Textarea } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { dataBr, dinheiro } from "./comum";
@@ -21,10 +21,20 @@ export function AvisoLoteModal({ itens, aoFechar, aoConcluir }: { itens: ItemAvi
   const [tipo, setTipo] = useState<Tipo>("");
   const [enviando, setEnviando] = useState(false);
   const [r, setR] = useState<RespLote | null>(null);
+  const unico = itens.length === 1 ? itens[0]! : null;
+  const [texto, setTexto] = useState("");
+  const [original, setOriginal] = useState("");
+  const [carregandoTexto, setCarregandoTexto] = useState(Boolean(unico));
+  useEffect(() => { if (!unico) return; api.get<{ texto: string }>(`/gestao/financeiro/lancamentos/${unico.id}/aviso-previa`, { fresh: true } as never).then((x) => { setTexto(x.texto); setOriginal(x.texto); }).catch(() => show("Não foi possível montar o texto.", "error")).finally(() => setCarregandoTexto(false)); }, [unico?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { api.get<{ asaas: boolean }>("/gestao/financeiro/regua").then((x) => setAsaas(x.asaas)).catch(() => undefined); }, []);
   const enviar = async () => {
     setEnviando(true);
-    try { const x = await api.post<RespLote>("/gestao/financeiro/avisos/lote", { ids: itens.map((i) => i.id), gerar: tipo || false }); setR(x); aoConcluir(); if (!x.falhas) show(`${x.enviados} aviso(s) enviado(s).`, "success"); }
+    try {
+      if (unico) {
+        await api.post(`/gestao/financeiro/lancamentos/${unico.id}/cobranca/enviar`, { gerar: tipo || false, mensagem: texto });
+        const x: RespLote = { resultados: [{ lancamento_id: unico.id, status: "enviado" }], enviados: 1, falhas: 0, ignorados: 0 }; setR(x); aoConcluir(); show("Aviso enviado.", "success"); return;
+      }
+      const x = await api.post<RespLote>("/gestao/financeiro/avisos/lote", { ids: itens.map((i) => i.id), gerar: tipo || false }); setR(x); aoConcluir(); if (!x.falhas) show(`${x.enviados} aviso(s) enviado(s).`, "success"); }
     catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível enviar.", "error"); }
     finally { setEnviando(false); }
   };
@@ -35,6 +45,11 @@ export function AvisoLoteModal({ itens, aoFechar, aoConcluir }: { itens: ItemAvi
       {!r ? (
         <div className="space-y-4 text-sm">
           <ul className="max-h-40 divide-y divide-zinc-100 overflow-auto rounded-lg border border-zinc-200 dark:divide-white/10 dark:border-white/10">{itens.map((i) => <li key={i.id} className="px-3 py-1.5 text-zinc-700 dark:text-zinc-200">{i.rotulo}</li>)}</ul>
+          {unico ? (
+            <div><div className="mb-1 flex items-center justify-between"><span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Mensagem (você pode editar)</span>{texto !== original && <button className="text-xs text-accent-700 underline dark:text-accent-300" onClick={() => setTexto(original)}>Voltar ao texto padrão</button>}</div>
+              <Textarea rows={9} value={texto} disabled={carregandoTexto} onChange={(e) => setTexto(e.target.value)} />
+              <p className="mt-1 text-xs text-zinc-500">O trecho <code>{"{link}"}</code> vira o link de pagamento e, em seguida, o código PIX e a linha digitável seguem em mensagens separadas (para copiar inteiros). Apague o <code>{"{link}"}</code> para não enviar o pagamento. Para mudar o texto padrão de todos os avisos: Financeiro → Cobrança automática.</p></div>
+          ) : <p className="text-xs text-zinc-500">Cada cliente recebe o texto padrão dos avisos (edite em <b>Financeiro → Cobrança automática</b>).</p>}
           <label className="block"><span className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">Link de pagamento na mensagem</span>
             <select className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm dark:border-white/10 dark:bg-zinc-900" value={tipo} onChange={(e) => setTipo(e.target.value as Tipo)} disabled={!asaas}>
               <option value="">Só o aviso (sem boleto/PIX)</option><option value="boleto_pix">Gerar e enviar boleto e PIX</option><option value="pix">Gerar e enviar só PIX</option><option value="boleto">Gerar e enviar só boleto</option>
@@ -51,7 +66,8 @@ export function AvisoLoteModal({ itens, aoFechar, aoConcluir }: { itens: ItemAvi
   );
 }
 
-interface Config { ativa: boolean; antes_dias: number[]; no_dia: boolean; depois_dias: number[]; horario: string; gerar_cobranca: boolean; tipo: "boleto_pix" | "pix" | "boleto" }
+interface Modelos { antes: string; hoje: string; depois: string }
+interface Config { modelos: Modelos; ativa: boolean; antes_dias: number[]; no_dia: boolean; depois_dias: number[]; horario: string; gerar_cobranca: boolean; tipo: "boleto_pix" | "pix" | "boleto" }
 interface Pendente { lancamento_id: number; pessoa_id: number; nome: string; descricao: string; valor_centavos: number; vencimento: string; regra: string; telefone_ok: boolean }
 interface Hist { id: number; regra: string; origem: string; status: string; erro: string | null; atualizado_em: string; pessoa_nome: string | null; descricao: string; valor_centavos: number }
 const lista = (t: string) => t.split(/[,\s;]+/).map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 90);
@@ -103,6 +119,12 @@ export function ReguaAutomatica() {
           {c.gerar_cobranca && asaas && <select className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-sm dark:border-white/10 dark:bg-zinc-900" value={c.tipo} disabled={!gerir} onChange={(e) => setC({ ...c, tipo: e.target.value as Config["tipo"] })}><option value="boleto_pix">Boleto e PIX</option><option value="pix">Só PIX</option><option value="boleto">Só boleto</option></select>}
         </div>
         <p className="text-xs text-zinc-500">Clientes com avisos pausados (botão na ficha do cliente) e parcelas sem telefone válido são ignorados. Sem o token do Deskcomm (Configurações → Envio pelo Deskcomm), nada é enviado.</p>
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Textos dos avisos</h3>
+          <p className="text-xs text-zinc-500">Variáveis: <code>{"{nome}"}</code> (primeiro nome), <code>{"{descricao}"}</code>, <code>{"{valor}"}</code>, <code>{"{vencimento}"}</code>, <code>{"{quando}"}</code> e <code>{"{link}"}</code> (link de pagamento; o código PIX vai em mensagem separada). Campo vazio volta ao texto padrão.</p>
+          {([["antes", "Antes do vencimento"], ["hoje", "No dia do vencimento"], ["depois", "Depois do vencimento (atraso)"]] as const).map(([k, rot]) => (
+            <label key={k} className="block text-sm"><span className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">{rot}</span><Textarea rows={5} disabled={!gerir} value={c.modelos[k]} onChange={(e) => setC({ ...c, modelos: { ...c.modelos, [k]: e.target.value } })} /></label>))}
+        </div>
         {gerir && <div className="flex justify-end"><Button loading={salvando} onClick={() => void salvar()}>Salvar</Button></div>}
       </section>
       <section className="surface-panel p-5">

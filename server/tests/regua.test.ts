@@ -15,7 +15,7 @@ const http = (async (url: string, init: RequestInit) => {
 }) as unknown as typeof fetch;
 
 import { db } from "../src/db";
-import { enviarAviso, enviarEmLote, executarRegua, lerRegua, mensagemDoAviso, pausarAvisos, pendentesDaRegua, regraDe, salvarRegua } from "../src/services/gestao/regua";
+import { aplicarLink, previaDoAviso, textoDoModelo, enviarAviso, enviarEmLote, executarRegua, lerRegua, mensagemDoAviso, pausarAvisos, pendentesDaRegua, regraDe, salvarRegua } from "../src/services/gestao/regua";
 import { salvarTokenDoDeskcomm } from "../src/services/gestao/deskcomm";
 import { hojeSaoPaulo } from "../src/services/djen/cache";
 
@@ -67,6 +67,29 @@ describe("Cobrança pelo WhatsApp", () => {
     salvarTokenDoDeskcomm("");
     await expect(enviarEmLote(ids, { semPausa: true, http })).rejects.toThrow(/não foi ligado/);
     await expect(enviarEmLote([], { http })).rejects.toThrow(/ao menos uma/);
+  });
+});
+
+describe("Texto editável e PIX separado", () => {
+  it("o PIX copia e cola e a linha digitável vão em mensagens separadas, inteiros", () => {
+    const pix = "00020101021226820014br.gov.bcb.pix2560pix-h.asaas.com/qr/cobv/f9ad467f-e3a2-479a-a73e-e6ccb47f0d065204000053039865802BR5924Eduardo Freitas Oliveira6011Sao Vicente61081134001062070503***6304F3E1";
+    const r = aplicarLink("Oi!\n\n{link}\n\nTchau", { url: "https://asaas/i/1", pix, linha: "23793.38128 60000.000003" });
+    expect(r.partes).toEqual([pix, "23793.38128 60000.000003"]);
+    expect(r.texto).toContain("https://asaas/i/1"); expect(r.texto).not.toContain("00020101"); expect(r.texto).toContain("Em seguida, envio o código PIX copia e cola e a linha digitável do boleto.");
+    expect(aplicarLink("Oi\n\n{link}\n\nTchau", null)).toEqual({ texto: "Oi\n\nTchau", partes: [] });
+  });
+  it("modelos editáveis: variáveis, nome vazio e modelo vazio volta ao padrão", () => {
+    const p = { nome: "Maria Souza", descricao: "Parcela 1/3", valor_centavos: 50000, vencimento: somar(hoje, 2) };
+    salvarRegua({ modelos: { antes: "Oi {nome}, {descricao} de {valor} vence {quando} ({vencimento}). {link}", hoje: "", depois: "x" } });
+    expect(textoDoModelo(p, hoje)).toMatch(/^Oi Maria, Parcela 1\/3 de R\$\s?500,00 vence em \d\d\/\d\d\/\d{4} \(\d\d\/\d\d\/\d{4}\)\. \{link\}$/);
+    expect(lerRegua().modelos.hoje).toContain("vence hoje");
+    expect(textoDoModelo({ ...p, nome: "" }, hoje, { antes: "Olá, {nome}! Oi", hoje: "", depois: "" })).toBe("Olá! Oi");
+  });
+  it("mensagem editada vai como está, com {link} resolvido, e o PIX segue sozinho", async () => {
+    const id = lanc(pessoa(), somar(hoje, 5));
+    expect(previaDoAviso(id).texto).toContain("{link}");
+    const r = await enviarAviso(id, { origem: "manual", http, mensagem: "Texto meu, {valor}? {link}" });
+    expect(r.status).toBe("enviado"); expect(enviadas[0]!.texto).toBe("Texto meu, {valor}?");
   });
 });
 

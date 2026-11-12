@@ -349,12 +349,8 @@ export function CobrancaModal({ lanc, aoFechar, aoMudar }: { lanc: Lanc; aoFecha
   const copiar = async (t: string, rot: string) => { try { await navigator.clipboard.writeText(t); show(`${rot} copiado.`, "success"); } catch { show("Não consegui copiar. Selecione e copie à mão.", "info"); } };
   const ativa = c && !["CANCELADA", "DELETED", "REFUNDED"].includes(c.status);
   const link: LinkDePagamento | undefined = ativa && c.invoice_url ? { url: c.invoice_url, pix: c.pix_payload || undefined, linha: c.linha_digitavel || undefined } : undefined;
-  const enviar = async () => {
-    setOcupado("enviar");
-    try { await api.post(`/gestao/financeiro/lancamentos/${lanc.id}/cobranca/enviar`, {}); show("Mensagem com o link de pagamento enviada pelo Deskcomm.", "success"); aoMudar(); }
-    catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível enviar.", "error"); }
-    finally { setOcupado(""); }
-  };
+  const [avisando, setAvisando] = useState(false);
+  const enviar = () => setAvisando(true);
   const abrirConversa = async () => {
     const ok = await cobrarPeloAtendimento(lanc.pessoa_telefone ?? "", mensagemDeCobranca(lanc.pessoa_nome ?? "", [lanc], link));
     show(ok ? "Texto copiado. Cole na conversa que abriu." : "Conversa aberta (não consegui copiar o texto).", ok ? "success" : "info");
@@ -383,13 +379,14 @@ export function CobrancaModal({ lanc, aoFechar, aoMudar }: { lanc: Lanc; aoFecha
           {c.pix_payload && <div><p className="mb-1 text-xs font-medium text-zinc-600 dark:text-zinc-300">PIX copia e cola</p><div className="flex gap-2"><Input readOnly value={c.pix_payload} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} /><Button variant="outline" onClick={() => void copiar(c.pix_payload, "PIX")}><Copy className="h-4 w-4" /></Button></div></div>}
           {c.linha_digitavel && <div><p className="mb-1 text-xs font-medium text-zinc-600 dark:text-zinc-300">Linha digitável do boleto</p><div className="flex gap-2"><Input readOnly value={c.linha_digitavel} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} /><Button variant="outline" onClick={() => void copiar(c.linha_digitavel, "Linha digitável")}><Copy className="h-4 w-4" /></Button>{c.bank_slip_url && <a href={c.bank_slip_url} target="_blank" rel="noopener noreferrer" className="inline-flex"><Button variant="outline" type="button"><FileText className="h-4 w-4" /></Button></a>}</div></div>}
           <div className="flex flex-wrap gap-2 border-t border-zinc-100 pt-3 dark:border-white/10">
-            {lanc.pessoa_telefone && link && !c.pago_em && <Button loading={ocupado === "enviar"} onClick={() => void enviar()}><MessageCircle className="h-4 w-4" /> Enviar pelo WhatsApp</Button>}
+            {lanc.pessoa_telefone && link && !c.pago_em && <Button onClick={enviar}><MessageCircle className="h-4 w-4" /> Enviar pelo WhatsApp</Button>}
             {atendimento && lanc.pessoa_telefone && link && !c.pago_em && <Button variant="outline" onClick={() => void abrirConversa()}>Abrir conversa</Button>}
             <Button variant="outline" loading={ocupado === "consultar"} onClick={() => void rodar("consultar", () => api.post(`/gestao/financeiro/lancamentos/${lanc.id}/cobranca/consultar`, {}), "Situação atualizada.")}>Atualizar situação</Button>
             {!c.pago_em && <Button variant="ghost" loading={ocupado === "cancelar"} onClick={() => void rodar("cancelar", () => api.post(`/gestao/financeiro/lancamentos/${lanc.id}/cobranca/cancelar`, {}), "Cobrança cancelada.")}>Cancelar cobrança</Button>}
           </div>
         </div>
       )}
+      {avisando && <AvisoLoteModal itens={[{ id: lanc.id, rotulo: `${lanc.pessoa_nome ?? "Cliente"} · ${lanc.descricao} · ${dinheiro(lanc.valor_centavos)}` }]} aoFechar={() => setAvisando(false)} aoConcluir={() => aoMudar()} />}
     </Modal>
   );
 }

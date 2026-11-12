@@ -43,13 +43,16 @@ async function chamar<T>(metodo: string, caminho: string, corpo: unknown, http: 
 }
 
 /** Abre (ou acha) a conversa do telefone e envia o texto pelo canal do atendimento. Devolve o id da mensagem. */
-export async function enviarPeloDeskcomm(telefone: string, nome: string, texto: string, http: Http = fetch): Promise<{ conversation_id: string; message_id: string | null }> {
+export async function enviarPeloDeskcomm(telefone: string, nome: string, texto: string, http: Http = fetch, seguintes: string[] = []): Promise<{ conversation_id: string; message_id: string | null }> {
   const d = telefone.replace(/\D/g, "");
   if (d.length < 10) throw new ErroDeskcomm("Telefone inválido.", 422);
   const fone = `+${d.startsWith("55") ? d : `55${d}`}`;
   const c = await chamar<{ conversation_id: string }>("POST", "/api/v1/conversations/open-with-contact", { phone_number: fone, name: nome.slice(0, 200) || undefined }, http);
   if (!c?.conversation_id) throw new ErroDeskcomm("O Deskcomm não abriu a conversa deste telefone.", 502);
-  const m = await chamar<{ id?: string }>("POST", "/api/v1/messages", { conversation_id: c.conversation_id, type: "text", body: texto.slice(0, 4096) }, http, { "Idempotency-Key": crypto.randomUUID() });
+  const enviar = (corpo: string) => chamar<{ id?: string }>("POST", "/api/v1/messages", { conversation_id: c.conversation_id, type: "text", body: corpo.slice(0, 4096) }, http, { "Idempotency-Key": crypto.randomUUID() });
+  const m = await enviar(texto);
+  // Códigos (PIX copia e cola, linha digitável) vão sozinhos, em mensagens separadas: ficam inteiros e fáceis de copiar.
+  for (const parte of seguintes) { await new Promise((r) => setTimeout(r, 1200)); await enviar(parte); }
   return { conversation_id: c.conversation_id, message_id: m?.id ?? null };
 }
 
