@@ -204,7 +204,7 @@ export function TemplatesPericia() {
                 />
 
                 <VariaveisInseriveis
-                  variaveis={aba === "2" && !separadas ? VARIAVEIS : VARIAVEIS}
+                  variaveis={VARIAVEIS}
                   onInsert={(v) => inserirVariavel(campoVariavel, v)}
                   fixo={aba === "2" && !separadas ? <span className="rounded-md bg-zinc-100 px-2 py-1 font-mono text-xs text-zinc-500 dark:bg-zinc-800">{"{{#each PERICIAS}} ... {{/each}}"}</span> : undefined}
                 />
