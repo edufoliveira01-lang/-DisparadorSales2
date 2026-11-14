@@ -1,3 +1,4 @@
+import { cobrancaParaOAtendimento } from "../services/gestao/cobrancaPeloAtendimento";
 import { Router, type Request } from "express";
 import { verificarRequisicao } from "../atendimento/assinatura";
 import { atendimentoDaInstancia } from "../atendimento/instancia";
@@ -108,6 +109,18 @@ integracaoContratosRouter.post("/cadastro", (req, res) => {
   try {
     const r = atualizarCadastroPeloAtendimento(req.body ?? {});
     auditAccess("cadastro_pelo_atendimento", null, null, { alterados: r.alterados.join(","), ignorados: r.ignorados.join(",") });
+    res.status(200).json(r);
+  } catch (e) {
+    if (e instanceof ErroGestao) return void res.status(e.status).json({ error: e.message });
+    erro(res, e);
+  }
+});
+
+/** O agente de atendimento pede o boleto/PIX de uma parcela do PRÓPRIO cliente da conversa (achado pelo telefone). */
+integracaoContratosRouter.post("/cobranca", async (req, res) => {
+  try {
+    const r = await cobrancaParaOAtendimento(req.body ?? {});
+    auditAccess("cobranca_pelo_atendimento", null, null, { lancamento: r.lancamento_id });
     res.status(200).json(r);
   } catch (e) {
     if (e instanceof ErroGestao) return void res.status(e.status).json({ error: e.message });
