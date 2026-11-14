@@ -26,7 +26,7 @@ function urlDoAsaas(u: string): URL | null {
  * Devolve o PDF do boleto da parcela: o que já foi guardado ou, se ainda não houver, baixa do Asaas e guarda.
  * `null` quando a cobrança não tem boleto (só PIX), já foi paga/cancelada ou o Asaas ainda não liberou o PDF.
  */
-export async function boletoEmPdf(lancamentoId: number, opts: { quem?: Quem; http?: Http; copiarParaDrive?: boolean; motivo?: { texto: string } } = {}): Promise<BoletoPdf | null> {
+export async function boletoEmPdf(lancamentoId: number, opts: { quem?: Quem; http?: Http; copiarParaDrive?: boolean; motivo?: { texto: string }; limiteMs?: number } = {}): Promise<BoletoPdf | null> {
   const sem = (t: string) => { if (opts.motivo) opts.motivo.texto = t; return null; };
   const c = cobrancaDoLancamento(lancamentoId);
   if (!c) return sem("não há cobrança gerada");
@@ -39,7 +39,7 @@ export async function boletoEmPdf(lancamentoId: number, opts: { quem?: Quem; htt
   const url = urlDoAsaas(c.bank_slip_url) ?? urlDoAsaas(derivada);
   if (!url) return sem("o Asaas não devolveu o endereço do boleto");
   let r: Response;
-  try { r = await (opts.http ?? fetch)(url.toString(), { signal: AbortSignal.timeout(25_000), redirect: "follow", headers: { Accept: "application/pdf,*/*" } }); } catch { return sem("não consegui baixar o boleto do Asaas (rede ou demora)"); }
+  try { r = await (opts.http ?? fetch)(url.toString(), { signal: AbortSignal.timeout(opts.limiteMs ?? 25_000), redirect: "follow", headers: { Accept: "application/pdf,*/*" } }); } catch { return sem("não consegui baixar o boleto do Asaas (rede ou demora)"); }
   if (!r.ok) return sem(`o Asaas respondeu ${r.status} ao baixar o boleto`);
   const conteudo = Buffer.from(await r.arrayBuffer());
   if (conteudo.length > MAX) return sem("o PDF do boleto é grande demais");

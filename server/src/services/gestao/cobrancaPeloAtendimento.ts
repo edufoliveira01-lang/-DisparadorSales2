@@ -25,7 +25,7 @@ export function parcelasEmAbertoDoCliente(pessoaId: number): Aberta[] {
   return db.prepare("SELECT id,descricao,valor_centavos,vencimento FROM gestao_lancamentos WHERE pessoa_id=? AND tipo='receber' AND cancelado=0 AND pago_em IS NULL ORDER BY vencimento, id").all(pessoaId) as Aberta[];
 }
 
-export async function cobrancaParaOAtendimento(d: { telefone?: unknown; cpf?: unknown; lancamento_id?: unknown }, http: typeof fetch = fetch, deps: { esperaMs?: number } = {}): Promise<CobrancaParaOAtendimento> {
+export async function cobrancaParaOAtendimento(d: { telefone?: unknown; cpf?: unknown; lancamento_id?: unknown }, http: typeof fetch = fetch, deps: { esperaMs?: number; limiteTotalMs?: number; limiteDosDetalhesMs?: number } = {}): Promise<CobrancaParaOAtendimento> {
   // O mesmo critério tolerante da anotação (com ou sem 55 e o 9º dígito); o do documento recusa telefone repetido e formato diferente.
   // SÓ o telefone da conversa identifica o cliente: o CPF que veio do atendimento é dado digitado por quem escreve e NUNCA escolhe de quem é a cobrança.
   const pessoaId = pessoaDoDocumento("", String(d.telefone ?? "")) ?? pessoaPorTelefone(d.telefone)?.id ?? null;
@@ -40,16 +40,26 @@ export async function cobrancaParaOAtendimento(d: { telefone?: unknown; cpf?: un
   const jaTem = cobrancaDoLancamento(alvo.id);
   if (!jaTem && alvo.vencimento < hojeSaoPaulo()) throw new ErroGestao("A parcela está vencida: a equipe precisa definir uma nova data antes de gerar o boleto.", 422);
   let c;
-  try { c = await gerarCobranca(alvo.id, "boleto_pix", { id: null, nome: "Assistente virtual (atendimento)" }, http); }
+  try { c = await gerarCobranca(alvo.id, "boleto_pix", { id: null, nome: "Assistente virtual (atendimento)" }, http, deps.limiteDosDetalhesMs ?? 8_000); }
   catch (e) { if (e instanceof ErroAsaas) throw new ErroGestao(e.message, e.status === 401 ? 502 : e.status); throw e; }
-  // O PIX e o endereço do boleto podem demorar uns instantes para existir no Asaas: uma segunda consulta antes de desistir.
-  try {
-    c = (await completarDetalhesDaCobranca(alvo.id, http)) ?? c;
-    if (!c.pix_payload) { await new Promise((r) => setTimeout(r, deps.esperaMs ?? 1500)); c = (await completarDetalhesDaCobranca(alvo.id, http)) ?? c; }
-  } catch { /* o que já veio basta */ }
+  // Quem pediu está esperando no chat (e o servidor corta a resposta em ~60 s): o que falta é buscado com tempo CURTO e, no total, no máximo ~20 s.
+  // O link de pagamento já existe; PIX e PDF que não vierem a tempo seguem como motivo escrito, nunca como erro.
   const motivo = { texto: "" };
-  let pdf: Awaited<ReturnType<typeof boletoEmPdf>> = null;
-  try { pdf = await boletoEmPdf(alvo.id, { http, motivo }); } catch (e) { motivo.texto = e instanceof Error ? e.message : "falha ao baixar o boleto"; }
+  const achado: { pdf: Awaited<ReturnType<typeof boletoEmPdf>>; cobranca: typeof c } = { pdf: null, cobranca: c };
+  const complemento = (async () => {
+    try {
+      achado.cobranca = (await completarDetalhesDaCobranca(alvo.id, http, 6_000)) ?? achado.cobranca;
+      if (!achado.cobranca.pix_payload) { await new Promise((r) => setTimeout(r, deps.esperaMs ?? 1500)); achado.cobranca = (await completarDetalhesDaCobranca(alvo.id, http, 6_000)) ?? achado.cobranca; }
+    } catch { /* o que já veio basta */ }
+    try { achado.pdf = await boletoEmPdf(alvo.id, { http, motivo, limiteMs: 8_000 }); } catch (e) { motivo.texto = e instanceof Error ? e.message : "falha ao baixar o boleto"; }
+  })();
+  let acabou = false;
+  let relogio: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([complemento.then(() => { acabou = true; }), new Promise((r) => { relogio = setTimeout(r, deps.limiteTotalMs ?? 20_000); })]);
+  if (relogio) clearTimeout(relogio);
+  if (!acabou && !motivo.texto) motivo.texto = "o Asaas demorou para liberar o boleto em PDF";
+  c = achado.cobranca;
+  const pdf = achado.pdf;
   registrar(alvo.id, "cobranca_pelo_atendimento", "Cobrança enviada ao cliente pelo atendimento (assistente virtual).", undefined);
   return {
     lancamento_id: alvo.id, descricao: alvo.descricao, valor_centavos: alvo.valor_centavos, vencimento: alvo.vencimento,

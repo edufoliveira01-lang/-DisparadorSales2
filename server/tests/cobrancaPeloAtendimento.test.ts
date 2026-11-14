@@ -113,4 +113,22 @@ describe("cobrança pedida pelo atendimento", () => {
     expect(r.boleto_pdf_base64).toBeNull();
     expect(r.boleto_pdf_motivo).toMatch(/não devolveu um PDF/);
   });
+  it("Asaas lento: não passa de ~20 s no total — devolve o link e diz o motivo, em vez de estourar o limite do servidor", async () => {
+    const a = pessoa("EDUARDO", "(13) 97404-5973"); lanc(a);
+    const http = (async (url: string, init?: RequestInit) => {
+      const u = String(url), m = String(init?.method ?? "GET");
+      const j = (o: unknown) => new Response(JSON.stringify(o), { status: 200 });
+      if (u.includes("/customers") && m === "GET") return j({ data: [] });
+      if (u.includes("/customers")) return j({ id: "cus_1" });
+      if (u.endsWith("/payments") && m === "POST") return j({ id: "pay_1", status: "PENDING", invoiceUrl: "https://sandbox.asaas.com/i/abc123", billingType: "UNDEFINED" });
+      if (u.includes("pixQrCode") || u.includes("identificationField") || u.includes("/b/pdf/") || /\/payments\/pay_1$/.test(u)) return new Promise<Response>((_, rej) => { init?.signal?.addEventListener("abort", () => rej(new Error("abortado"))); /* nunca responde: só o tempo limite encerra, como num fetch de verdade */ });
+      return j({});
+    }) as unknown as typeof fetch;
+    const t0 = Date.now();
+    const r = await cobrancaParaOAtendimento({ telefone: "5513974045973" }, http, { esperaMs: 0, limiteTotalMs: 300, limiteDosDetalhesMs: 100 });
+    expect(Date.now() - t0).toBeLessThan(3000);
+    expect(r.link).toBe("https://sandbox.asaas.com/i/abc123");
+    expect(r.boleto_pdf_base64).toBeNull();
+    expect(r.boleto_pdf_motivo).toMatch(/demorou/);
+  });
 });

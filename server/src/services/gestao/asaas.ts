@@ -38,14 +38,14 @@ export function salvarConfigAsaas(d: { chave?: unknown; ambiente?: unknown }) {
 export const mascara = (c: string) => (c ? `…${c.slice(-4)}` : "");
 
 type Http = typeof fetch;
-async function chamar<T>(metodo: "GET" | "POST" | "PUT" | "DELETE", caminho: string, corpo?: unknown, http: Http = fetch): Promise<T> {
+async function chamar<T>(metodo: "GET" | "POST" | "PUT" | "DELETE", caminho: string, corpo?: unknown, http: Http = fetch, limiteMs = 25_000): Promise<T> {
   const chave = chaveDoAsaas();
   if (!chave) throw new ErroAsaas("O Asaas ainda não foi configurado. Cole a chave de API em Configurações → Asaas.", 409);
   let r: Response;
   try {
     r = await http(`${BASES[ambienteDoAsaas()]}${caminho}`, {
       method: metodo, headers: { access_token: chave, "Content-Type": "application/json", "User-Agent": "DisparaZap" },
-      body: corpo === undefined ? undefined : JSON.stringify(corpo), signal: AbortSignal.timeout(25_000),
+      body: corpo === undefined ? undefined : JSON.stringify(corpo), signal: AbortSignal.timeout(limiteMs),
     });
   } catch { throw new ErroAsaas("Não foi possível acessar o Asaas (rede ou demora)."); }
   const texto = await r.text();
@@ -92,10 +92,12 @@ export interface Cobranca { lancamento_id: number; payment_id: string; billing_t
 export const cobrancaDoLancamento = (id: number) => (db.prepare("SELECT * FROM gestao_asaas_cobrancas WHERE lancamento_id=?").get(id) as Cobranca | undefined) ?? null;
 const ENCERRADAS = ["DELETED", "CANCELADA", "REFUNDED", "RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"];
 
-async function detalhes(paymentId: string, tipo: string, http: Http) {
-  let pix = "", linha = "";
-  if (tipo !== "BOLETO") { try { pix = (await chamar<{ payload?: string }>("GET", `/payments/${paymentId}/pixQrCode`, undefined, http)).payload ?? ""; } catch { /* ainda sem QR */ } }
-  if (tipo !== "PIX") { try { linha = (await chamar<{ identificationField?: string }>("GET", `/payments/${paymentId}/identificationField`, undefined, http)).identificationField ?? ""; } catch { /* boleto ainda não registrado */ } }
+/** O PIX e a linha digitável, consultados JUNTOS (em paralelo). `limiteMs` curto quando há alguém esperando a resposta (atendimento). */
+async function detalhes(paymentId: string, tipo: string, http: Http, limiteMs = 25_000) {
+  const [pix, linha] = await Promise.all([
+    tipo !== "BOLETO" ? chamar<{ payload?: string }>("GET", `/payments/${paymentId}/pixQrCode`, undefined, http, limiteMs).then((r) => r.payload ?? "").catch(() => "") : Promise.resolve(""), // ainda sem QR
+    tipo !== "PIX" ? chamar<{ identificationField?: string }>("GET", `/payments/${paymentId}/identificationField`, undefined, http, limiteMs).then((r) => r.identificationField ?? "").catch(() => "") : Promise.resolve(""), // boleto ainda não registrado
+  ]);
   return { pix, linha };
 }
 
@@ -103,18 +105,18 @@ async function detalhes(paymentId: string, tipo: string, http: Http) {
  * Completa o que ficou faltando na cobrança já criada: o PIX copia e cola e a linha digitável nem sempre estão prontos no instante da criação
  * (e o endereço do boleto, em cobrança «boleto ou PIX»). Consulta de novo ao Asaas e grava o que veio. Nunca apaga o que já existe.
  */
-export async function completarDetalhesDaCobranca(lancamentoId: number, http: Http = fetch): Promise<Cobranca | null> {
+export async function completarDetalhesDaCobranca(lancamentoId: number, http: Http = fetch, limiteMs = 8_000): Promise<Cobranca | null> {
   const c = cobrancaDoLancamento(lancamentoId);
   if (!c) return null;
   const tipo = c.billing_type === "BOLETO" || c.billing_type === "PIX" ? c.billing_type : "UNDEFINED";
   if (!c.pix_payload || !c.linha_digitavel) {
-    const d = await detalhes(c.payment_id, tipo, http);
+    const d = await detalhes(c.payment_id, tipo, http, limiteMs);
     if ((d.pix && !c.pix_payload) || (d.linha && !c.linha_digitavel))
       db.prepare("UPDATE gestao_asaas_cobrancas SET pix_payload=?, linha_digitavel=?, atualizado_em=CURRENT_TIMESTAMP WHERE lancamento_id=?").run(c.pix_payload || d.pix, c.linha_digitavel || d.linha, lancamentoId);
   }
   if (!c.bank_slip_url) {
     try {
-      const p = await chamar<{ bankSlipUrl?: string; invoiceUrl?: string }>("GET", `/payments/${c.payment_id}`, undefined, http);
+      const p = await chamar<{ bankSlipUrl?: string; invoiceUrl?: string }>("GET", `/payments/${c.payment_id}`, undefined, http, limiteMs);
       if (p.bankSlipUrl || (!c.invoice_url && p.invoiceUrl)) db.prepare("UPDATE gestao_asaas_cobrancas SET bank_slip_url=COALESCE(NULLIF(?,''),bank_slip_url), invoice_url=COALESCE(NULLIF(?,''),invoice_url) WHERE lancamento_id=?").run(p.bankSlipUrl ?? "", p.invoiceUrl ?? "", lancamentoId);
     } catch { /* o link e o PDF derivado bastam */ }
   }
@@ -122,7 +124,7 @@ export async function completarDetalhesDaCobranca(lancamentoId: number, http: Ht
 }
 
 /** Gera boleto/PIX para uma parcela a receber em aberto (se já houver cobrança ativa, devolve a mesma). */
-export async function gerarCobranca(lancamentoId: number, tipo: TipoCobranca = "boleto_pix", quem?: Quem, http: Http = fetch): Promise<Cobranca> {
+export async function gerarCobranca(lancamentoId: number, tipo: TipoCobranca = "boleto_pix", quem?: Quem, http: Http = fetch, limiteDosDetalhesMs = 25_000): Promise<Cobranca> {
   const l = obterLancamento(lancamentoId);
   if (l.tipo !== "receber") throw new ErroAsaas("Só parcelas a receber geram cobrança.", 422);
   if (l.cancelado || l.pago_em) throw new ErroAsaas("A parcela precisa estar em aberto.", 409);
@@ -134,7 +136,7 @@ export async function gerarCobranca(lancamentoId: number, tipo: TipoCobranca = "
   const cliente = await garantirCliente(l.pessoa_id, http);
   const tipoAsaas = TIPO_ASAAS[tipo] ?? "UNDEFINED";
   const p = await chamar<Pagamento>("POST", "/payments", { customer: cliente, billingType: tipoAsaas, value: reais(l.valor_centavos), dueDate: l.vencimento, description: String(l.descricao).slice(0, 500), externalReference: `lanc_${lancamentoId}` }, http);
-  const d = await detalhes(p.id, tipoAsaas, http);
+  const d = await detalhes(p.id, tipoAsaas, http, limiteDosDetalhesMs);
   db.prepare(`INSERT OR REPLACE INTO gestao_asaas_cobrancas(lancamento_id,payment_id,billing_type,status,invoice_url,bank_slip_url,linha_digitavel,pix_payload,valor_centavos,vencimento,criado_em,atualizado_em)
     VALUES (?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`).run(lancamentoId, p.id, p.billingType || tipoAsaas, p.status || "PENDING", p.invoiceUrl ?? "", p.bankSlipUrl ?? "", d.linha, d.pix, l.valor_centavos, l.vencimento);
   if (p.value !== undefined && p.netValue !== undefined) db.prepare("UPDATE gestao_asaas_cobrancas SET taxa_prevista_centavos=? WHERE lancamento_id=?").run(Math.max(0, centavos(p.value) - centavos(p.netValue)), lancamentoId);
