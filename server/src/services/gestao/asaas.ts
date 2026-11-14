@@ -92,11 +92,12 @@ export interface Cobranca { lancamento_id: number; payment_id: string; billing_t
 export const cobrancaDoLancamento = (id: number) => (db.prepare("SELECT * FROM gestao_asaas_cobrancas WHERE lancamento_id=?").get(id) as Cobranca | undefined) ?? null;
 const ENCERRADAS = ["DELETED", "CANCELADA", "REFUNDED", "RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"];
 
-/** O PIX e a linha digitável, consultados JUNTOS (em paralelo). `limiteMs` curto quando há alguém esperando a resposta (atendimento). */
-async function detalhes(paymentId: string, tipo: string, http: Http, limiteMs = 25_000) {
+/** O PIX e a linha digitável, consultados JUNTOS (em paralelo). `limiteMs` curto quando há alguém esperando a resposta (atendimento). `motivos` recebe, em frase, por que algum não veio. */
+async function detalhes(paymentId: string, tipo: string, http: Http, limiteMs = 25_000, motivos?: { pix?: string; linha?: string }) {
+  const frase = (e: unknown) => (e instanceof Error ? e.message : String(e)).slice(0, 160);
   const [pix, linha] = await Promise.all([
-    tipo !== "BOLETO" ? chamar<{ payload?: string }>("GET", `/payments/${paymentId}/pixQrCode`, undefined, http, limiteMs).then((r) => r.payload ?? "").catch(() => "") : Promise.resolve(""), // ainda sem QR
-    tipo !== "PIX" ? chamar<{ identificationField?: string }>("GET", `/payments/${paymentId}/identificationField`, undefined, http, limiteMs).then((r) => r.identificationField ?? "").catch(() => "") : Promise.resolve(""), // boleto ainda não registrado
+    tipo !== "BOLETO" ? chamar<{ payload?: string }>("GET", `/payments/${paymentId}/pixQrCode`, undefined, http, limiteMs).then((r) => r.payload ?? "").catch((e) => { if (motivos) motivos.pix = frase(e); return ""; }) : Promise.resolve(""), // ainda sem QR
+    tipo !== "PIX" ? chamar<{ identificationField?: string }>("GET", `/payments/${paymentId}/identificationField`, undefined, http, limiteMs).then((r) => r.identificationField ?? "").catch((e) => { if (motivos) motivos.linha = frase(e); return ""; }) : Promise.resolve(""), // boleto ainda não registrado
   ]);
   return { pix, linha };
 }
@@ -105,12 +106,12 @@ async function detalhes(paymentId: string, tipo: string, http: Http, limiteMs = 
  * Completa o que ficou faltando na cobrança já criada: o PIX copia e cola e a linha digitável nem sempre estão prontos no instante da criação
  * (e o endereço do boleto, em cobrança «boleto ou PIX»). Consulta de novo ao Asaas e grava o que veio. Nunca apaga o que já existe.
  */
-export async function completarDetalhesDaCobranca(lancamentoId: number, http: Http = fetch, limiteMs = 8_000): Promise<Cobranca | null> {
+export async function completarDetalhesDaCobranca(lancamentoId: number, http: Http = fetch, limiteMs = 8_000, motivos?: { pix?: string; linha?: string }): Promise<Cobranca | null> {
   const c = cobrancaDoLancamento(lancamentoId);
   if (!c) return null;
   const tipo = c.billing_type === "BOLETO" || c.billing_type === "PIX" ? c.billing_type : "UNDEFINED";
   if (!c.pix_payload || !c.linha_digitavel) {
-    const d = await detalhes(c.payment_id, tipo, http, limiteMs);
+    const d = await detalhes(c.payment_id, tipo, http, limiteMs, motivos);
     if ((d.pix && !c.pix_payload) || (d.linha && !c.linha_digitavel))
       db.prepare("UPDATE gestao_asaas_cobrancas SET pix_payload=?, linha_digitavel=?, atualizado_em=CURRENT_TIMESTAMP WHERE lancamento_id=?").run(c.pix_payload || d.pix, c.linha_digitavel || d.linha, lancamentoId);
   }

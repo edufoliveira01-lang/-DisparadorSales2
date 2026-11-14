@@ -125,10 +125,30 @@ describe("cobrança pedida pelo atendimento", () => {
       return j({});
     }) as unknown as typeof fetch;
     const t0 = Date.now();
-    const r = await cobrancaParaOAtendimento({ telefone: "5513974045973" }, http, { esperaMs: 0, limiteTotalMs: 300, limiteDosDetalhesMs: 100 });
+    const r = await cobrancaParaOAtendimento({ telefone: "5513974045973" }, http, { esperaMs: 0, limiteTotalMs: 300, limiteDosDetalhesMs: 100, limitePorConsultaMs: 100 });
     expect(Date.now() - t0).toBeLessThan(3000);
     expect(r.link).toBe("https://sandbox.asaas.com/i/abc123");
     expect(r.boleto_pdf_base64).toBeNull();
-    expect(r.boleto_pdf_motivo).toMatch(/demorou/);
+    expect(r.boleto_pdf_motivo).toMatch(/demorou|não consegui baixar/);
+    expect(r.pix_motivo).toMatch(/Asaas/);
+  });
+  it("PIX recusado pelo Asaas (conta sem chave PIX): o motivo do Asaas vem escrito, e o PDF sai mesmo assim (buscas em paralelo)", async () => {
+    const a = pessoa("EDUARDO", "(13) 97404-5973"); lanc(a);
+    const http = (async (url: string, init?: RequestInit) => {
+      const u = String(url), m = String(init?.method ?? "GET");
+      const j = (o: unknown) => new Response(JSON.stringify(o), { status: 200 });
+      if (u.includes("/customers") && m === "GET") return j({ data: [] });
+      if (u.includes("/customers")) return j({ id: "cus_1" });
+      if (u.endsWith("/payments") && m === "POST") return j({ id: "pay_1", status: "PENDING", invoiceUrl: "https://sandbox.asaas.com/i/abc123", bankSlipUrl: "https://sandbox.asaas.com/b/pdf/abc123", billingType: "UNDEFINED" });
+      if (/\/payments\/pay_1$/.test(u)) return j({ id: "pay_1" });
+      if (u.includes("pixQrCode")) return new Response(JSON.stringify({ errors: [{ description: "Você não possui uma chave Pix cadastrada." }] }), { status: 400 });
+      if (u.includes("identificationField")) return j({ identificationField: "23793" });
+      if (u.includes("/b/pdf/")) return new Response(PDF, { status: 200 });
+      return j({});
+    }) as unknown as typeof fetch;
+    const r = await cobrancaParaOAtendimento({ telefone: "5513974045973" }, http, { esperaMs: 0 });
+    expect(r.pix).toBe("");
+    expect(r.pix_motivo).toMatch(/chave Pix/);
+    expect(r.boleto_pdf_base64).toBeTruthy();
   });
 });
