@@ -80,10 +80,14 @@ export function clienteParaAnotar(telefone: unknown): ClienteParaAnotar {
   const recentes = anotacoesDaPessoa(p.id).slice(0, 3).map((a) => ({ autor: a.autor, texto: a.texto.slice(0, 300), criado_em: a.criado_em, onde: a.processo_rotulo ?? "Cadastro" }));
   return { encontrado: true, pessoa: p, processos, recentes };
 }
-/** Grava a anotação do atendente. Quando o e-mail dele é de um usuário do Sales, a anotação fica no nome dele e ele pode apagá-la lá. */
-export function anotarPeloAtendimento(d: { pessoa_id?: unknown; processo_id?: unknown; texto?: unknown; autor_nome?: unknown; autor_email?: unknown }) {
+/** Quem é o autor de uma ação do atendimento: o usuário do Sales (pelo e-mail) ou "Nome (atendimento)". */
+export function autorDoAtendimento(d: { autor_nome?: unknown; autor_email?: unknown }): Quem {
   const email = String(d.autor_email ?? "").trim().toLowerCase();
   const u = email ? db.prepare("SELECT id, COALESCE(NULLIF(display_name,''), username) AS nome FROM users WHERE lower(email)=? AND active=1").get(email) as { id: number; nome: string } | undefined : undefined;
   const nome = (u?.nome || String(d.autor_nome ?? "").trim() || "Atendimento").slice(0, 80);
-  return anotacaoRapida({ pessoa_id: d.pessoa_id, processo_id: d.processo_id, texto: d.texto }, { id: u?.id ?? null, nome: u ? nome : `${nome} (atendimento)` });
+  return { id: u?.id ?? null, nome: u ? nome : `${nome} (atendimento)` };
+}
+/** Grava a anotação do atendente. Quando o e-mail dele é de um usuário do Sales, a anotação fica no nome dele e ele pode apagá-la lá. */
+export function anotarPeloAtendimento(d: { pessoa_id?: unknown; processo_id?: unknown; texto?: unknown; autor_nome?: unknown; autor_email?: unknown }) {
+  return anotacaoRapida({ pessoa_id: d.pessoa_id, processo_id: d.processo_id, texto: d.texto }, autorDoAtendimento(d));
 }
