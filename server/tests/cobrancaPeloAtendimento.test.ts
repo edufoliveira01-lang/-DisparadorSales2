@@ -51,4 +51,10 @@ describe("cobrança pedida pelo atendimento", () => {
     pessoa("EDUARDO", "(13) 97404-5973");
     await expect(cobrancaParaOAtendimento({ telefone: "5513974045973" }, falso())).rejects.toThrow(/não está configurada/);
   });
+  it("acha o cliente mesmo com telefone gravado sem o 55 e sem o 9º dígito, e com dois cadastros de mesmo número", async () => {
+    pessoa("EDUARDO", "(13) 7404-5973"); const b = pessoa("EDUARDO DUPLICADO", "(13) 97404-5973");
+    const id = lanc(b);
+    const r = await cobrancaParaOAtendimento({ telefone: "+5513974045973" }, falso());
+    expect(r.lancamento_id).toBe(id);
+  });
 });

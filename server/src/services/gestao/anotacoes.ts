@@ -103,7 +103,7 @@ export interface ClienteParaAnotar {
   pendencias?: { id: number; origem: "cadastro" | "processo"; autor: string; texto: string; criado_em: string; onde: string }[];
 }
 /** A pessoa do cadastro que tem este telefone (principal ou segundo), preferindo cliente. */
-function pessoaPorTelefone(telefone: unknown): { id: number; nome: string } | null {
+export function pessoaPorTelefone(telefone: unknown): { id: number; nome: string } | null {
   const vars = variantesDoTelefone(String(telefone ?? ""));
   if (vars.length === 0) return null;
   const limpa = (c: string) => `REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(${c},' ',''),'-',''),'(',''),')',''),'+','')`;

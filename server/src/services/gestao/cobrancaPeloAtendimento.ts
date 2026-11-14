@@ -1,5 +1,6 @@
 import { db } from "../../db";
 import { pessoaDoDocumento } from "../../armazenamento/chat";
+import { pessoaPorTelefone } from "./anotacoes";
 import { ErroGestao } from "./erro";
 import { ErroAsaas, gerarCobranca, cobrancaDoLancamento, chaveDoAsaas } from "./asaas";
 import { boletoEmPdf } from "./boleto";
@@ -24,7 +25,8 @@ export function parcelasEmAbertoDoCliente(pessoaId: number): Aberta[] {
 }
 
 export async function cobrancaParaOAtendimento(d: { telefone?: unknown; cpf?: unknown; lancamento_id?: unknown }, http: typeof fetch = fetch): Promise<CobrancaParaOAtendimento> {
-  const pessoaId = pessoaDoDocumento(String(d.cpf ?? ""), String(d.telefone ?? ""));
+  // O mesmo critério tolerante da anotação (com ou sem 55 e o 9º dígito); o do documento recusa telefone repetido e formato diferente.
+  const pessoaId = pessoaDoDocumento(String(d.cpf ?? ""), String(d.telefone ?? "")) ?? pessoaPorTelefone(d.telefone)?.id ?? null;
   if (pessoaId === null) throw new ErroGestao("Este telefone não está no cadastro de clientes.", 404);
   if (!chaveDoAsaas()) throw new ErroGestao("A cobrança automática (Asaas) não está configurada neste escritório.", 409);
   const abertas = parcelasEmAbertoDoCliente(pessoaId);
