@@ -18,7 +18,7 @@ import { AREAS, FONTES_PADRAO, lerFontes, MOTIVOS, obterNegocio, pendentesDePree
 import { hasPermission } from "../services/accessService";
 import { consultarCep } from "../services/gestao/cep";
 import { adicionarCamposPrevidenciarios, atualizarCampo, criarCampo, excluirCampo, listarCampos, revelarSenha, TIPOS_CAMPO } from "../services/gestao/campos";
-import { anotacaoRapida, anotacoesDaPessoa, anotarNaPessoa, removerAnotacaoDaPessoa } from "../services/gestao/anotacoes";
+import { anotacaoRapida, anotacoesDaPessoa, anotarNaPessoa, cumprirPendencia, marcarComoImportante, pendenciasDaPessoa, removerAnotacaoDaPessoa } from "../services/gestao/anotacoes";
 import { fichaDeCadastroHtml, fichaDeExemplo } from "../services/gestao/ficha";
 import { PADRAO as FICHA_PADRAO, ROTULO_SECAO, apagarFoto, apagarImagem, apagarLogo, fotoDaPessoa, imagemAtual, lerConfig, logoAtual, nomeDeImagemValido, salvarConfig, salvarFoto, salvarImagem, salvarLogo } from "../services/gestao/fichaConfig";
 import { AREAS_PRONTAS, lerAtendimentoIa, montarPromptDoAgente, pendenciasDoAtendimentoIa, salvarAtendimentoIa } from "../services/gestao/atendimentoIa";
@@ -117,11 +117,15 @@ gestaoRouter.delete("/processos/:id", rota((req) => { const r = excluirProcesso(
 gestaoRouter.get("/processos/:id/linha-do-tempo", rota((req) => linhaDoTempo(id(req))));
 gestaoRouter.post("/processos/:id/partes", rota((req) => adicionarParte(id(req), req.body || {})));
 gestaoRouter.delete("/processos/:id/partes/:pessoaId/:papel", rota((req) => removerParte(id(req), id(req, "pessoaId"), String(req.params.papel))));
-gestaoRouter.post("/processos/:id/anotacoes", rota((req, res) => { const u = usuario(req); res.status(201); return adicionarAnotacao(id(req), req.body?.texto, { id: u.id, nome: nomeDe(u) }); }));
+gestaoRouter.post("/processos/:id/anotacoes", rota((req, res) => { const u = usuario(req); res.status(201); return adicionarAnotacao(id(req), req.body?.texto, { id: u.id, nome: nomeDe(u) }, req.body?.importante === true); }));
 gestaoRouter.delete("/processos/:id/anotacoes/:anotacaoId", rota((req) => { const u = usuario(req); return removerAnotacao(id(req), id(req, "anotacaoId"), { id: u.id, admin: u.role === "administrador" }); }));
 // anotações no cadastro da pessoa e atalho "anotação rápida" (cliente + processo opcional)
 gestaoRouter.get("/pessoas/:id/anotacoes", rota((req) => ({ itens: anotacoesDaPessoa(id(req)) })));
-gestaoRouter.post("/pessoas/:id/anotacoes", rota((req, res) => { const u = usuario(req); res.status(201); return anotarNaPessoa(id(req), req.body?.texto, { id: u.id, nome: nomeDe(u) }); }));
+gestaoRouter.post("/pessoas/:id/anotacoes", rota((req, res) => { const u = usuario(req); res.status(201); return anotarNaPessoa(id(req), req.body?.texto, { id: u.id, nome: nomeDe(u) }, req.body?.importante); }));
+gestaoRouter.get("/pessoas/:id/pendencias", rota((req) => ({ itens: pendenciasDaPessoa(id(req)) })));
+const origemDaAnotacao = (v: unknown): "cadastro" | "processo" => (v === "processo" ? "processo" : "cadastro");
+gestaoRouter.post("/anotacoes/:origem/:anotacaoId/cumprir", rota((req) => { const u = usuario(req); return cumprirPendencia(origemDaAnotacao(req.params.origem), id(req, "anotacaoId"), { id: u.id, nome: nomeDe(u) }, req.body?.cumprida !== false); }));
+gestaoRouter.post("/anotacoes/:origem/:anotacaoId/importante", rota((req) => marcarComoImportante(origemDaAnotacao(req.params.origem), id(req, "anotacaoId"), req.body?.importante !== false)));
 gestaoRouter.delete("/pessoas/:id/anotacoes/:anotacaoId", rota((req) => { const u = usuario(req); return removerAnotacaoDaPessoa(id(req), id(req, "anotacaoId"), { id: u.id, admin: u.role === "administrador" }); }));
 gestaoRouter.post("/anotacao-rapida", rota((req, res) => { const u = usuario(req); res.status(201); return anotacaoRapida(req.body || {}, { id: u.id, nome: nomeDe(u) }); }));
 

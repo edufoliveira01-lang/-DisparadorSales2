@@ -20,7 +20,7 @@ export function criarRotaContratos(cfg: ConfigRotaContratos, agora: () => number
   const http = cfg.http ?? fetch;
   r.use(express.raw({ type: () => true, limit: "128kb" }));
 
-  r.all(/^\/v1\/offices\/([a-z0-9-]{2,42})\/(?:contratos(?:\/(?:\d{1,12}|opcoes))?|agente\/prompt|documentos|indicadores|anotacoes(?:\/buscar)?|cadastro|armazenamento\/saude)$/, async (req: Request, res: Response) => {
+  r.all(/^\/v1\/offices\/([a-z0-9-]{2,42})\/(?:contratos(?:\/(?:\d{1,12}|opcoes))?|agente\/prompt|documentos|indicadores|anotacoes(?:\/(?:buscar|pendencias|cumprir))?|cadastro|armazenamento\/saude)$/, async (req: Request, res: Response) => {
     res.set("Cache-Control", "no-store");
     try {
       const metodo = req.method.toUpperCase();
@@ -33,7 +33,7 @@ export function criarRotaContratos(cfg: ConfigRotaContratos, agora: () => number
       const documentos = /^\/v1\/offices\/([a-z0-9-]+)\/documentos$/.exec(req.path);
       const saude = /^\/v1\/offices\/([a-z0-9-]+)\/armazenamento\/saude$/.exec(req.path);
       const indicadores = /^\/v1\/offices\/([a-z0-9-]+)\/indicadores$/.exec(req.path);
-      const anotacoes = /^\/v1\/offices\/([a-z0-9-]+)\/anotacoes(\/buscar)?$/.exec(req.path);
+      const anotacoes = /^\/v1\/offices\/([a-z0-9-]+)\/anotacoes(\/(?:buscar|pendencias|cumprir))?$/.exec(req.path);
       const cadastro = /^\/v1\/offices\/([a-z0-9-]+)\/cadastro$/.exec(req.path);
       const m = agente ?? documentos ?? saude ?? indicadores ?? anotacoes ?? cadastro ?? /^\/v1\/offices\/([a-z0-9-]+)\/contratos(?:\/(\d+|opcoes))?$/.exec(req.path)!;
       const slug = m[1], id = agente || documentos || saude || indicadores || anotacoes || cadastro ? undefined : m[2];

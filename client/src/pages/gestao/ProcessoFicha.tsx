@@ -172,13 +172,14 @@ function Historico({ ficha, gerir }: { ficha: Ficha; gerir: boolean }) {
   const { user } = useAuth();
   const [eventos, setEventos] = useState<Evento[] | null>(null);
   const [texto, setTexto] = useState("");
+  const [importante, setImportante] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [filtro, setFiltro] = useState("");
   const carregar = useCallback(async () => { try { setEventos(await api.get<Evento[]>(`/gestao/processos/${ficha.id}/linha-do-tempo`)); } catch { show("Não foi possível carregar o histórico.", "error"); } }, [ficha.id, show]);
   useEffect(() => { void carregar(); }, [carregar]);
   const anotar = async (e: React.FormEvent) => {
     e.preventDefault(); setSalvando(true);
-    try { await api.post(`/gestao/processos/${ficha.id}/anotacoes`, { texto }); setTexto(""); await carregar(); }
+    try { await api.post(`/gestao/processos/${ficha.id}/anotacoes`, { texto, importante }); setTexto(""); setImportante(false); await carregar(); }
     catch (err) { show(err instanceof ApiError ? err.message : "Não foi possível anotar.", "error"); }
     finally { setSalvando(false); }
   };
@@ -192,7 +193,7 @@ function Historico({ ficha, gerir }: { ficha: Ficha; gerir: boolean }) {
       {gerir && (
         <form onSubmit={anotar} className="space-y-2 surface-panel p-4">
           <Campo rotulo="Nova anotação"><Textarea rows={3} value={texto} onChange={(e) => setTexto(e.target.value)} className="mt-1.5" placeholder="Ligação com o cliente, combinado com o perito, lembrete interno…" /></Campo>
-          <div className="flex justify-end"><Button type="submit" loading={salvando} disabled={texto.trim().length < 2}>Anotar</Button></div>
+          <div className="flex flex-wrap items-center justify-between gap-3"><label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200"><input type="checkbox" className="h-4 w-4 accent-amber-600" checked={importante} onChange={(e) => setImportante(e.target.checked)} /> <span><b>Importante</b> — avisar quem abrir o cliente, até cumprir</span></label><Button type="submit" loading={salvando} disabled={texto.trim().length < 2}>Anotar</Button></div>
         </form>
       )}
       <div className="flex gap-2 text-xs">

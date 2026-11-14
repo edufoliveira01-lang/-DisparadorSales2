@@ -163,6 +163,13 @@ export function runGestaoMigrations(db: Database.Database) {
   // Ficha de cadastro: escolaridade, PIS/NIT, nome da mãe e filiação (colunas acrescentadas sem tocar nas existentes).
   const colunas = (db.prepare("PRAGMA table_info(gestao_pessoas)").all() as { name: string }[]).map((c) => c.name);
   for (const nome of ["escolaridade", "pis", "nome_mae", "filiacao", "nacionalidade", "sexo"]) if (!colunas.includes(nome)) db.exec(`ALTER TABLE gestao_pessoas ADD COLUMN ${nome} TEXT NOT NULL DEFAULT ''`);
+  // Anotação IMPORTANTE (pendência): fica em destaque no cadastro do cliente até alguém marcar como cumprida.
+  for (const tabela of ["gestao_anotacoes", "gestao_anotacoes_pessoa"]) {
+    const cols = (db.prepare(`PRAGMA table_info(${tabela})`).all() as { name: string }[]).map((c) => c.name);
+    if (!cols.includes("importante")) db.exec(`ALTER TABLE ${tabela} ADD COLUMN importante INTEGER NOT NULL DEFAULT 0`);
+    if (!cols.includes("cumprida_em")) db.exec(`ALTER TABLE ${tabela} ADD COLUMN cumprida_em TEXT`);
+    if (!cols.includes("cumprida_por")) db.exec(`ALTER TABLE ${tabela} ADD COLUMN cumprida_por TEXT`);
+  }
   // Aditamentos do financeiro: o saldo de um pagamento parcial aponta para o lançamento de origem; cada alteração fica no histórico.
   const colsLanc = (db.prepare("PRAGMA table_info(gestao_lancamentos)").all() as { name: string }[]).map((c) => c.name);
   if (!colsLanc.includes("origem_lancamento_id")) db.exec("ALTER TABLE gestao_lancamentos ADD COLUMN origem_lancamento_id INTEGER");

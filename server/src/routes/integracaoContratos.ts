@@ -12,7 +12,7 @@ import { receberDocumentoDoChat } from "../armazenamento/chat";
 import { saudeDoArmazenamento } from "../armazenamento/fila";
 import { guardarRetrato } from "../atendimento/indicadores";
 import { ErroAsaas, processarWebhook } from "../services/gestao/asaas";
-import { anotarPeloAtendimento, clienteParaAnotar } from "../services/gestao/anotacoes";
+import { anotarPeloAtendimento, clienteParaAnotar, cumprirPeloAtendimento, pendenciasPorTelefone } from "../services/gestao/anotacoes";
 import { atualizarCadastroPeloAtendimento } from "../services/gestao/cadastroPeloAtendimento";
 import { ErroGestao } from "../services/gestao/erro";
 
@@ -77,6 +77,20 @@ integracaoContratosRouter.post("/indicadores", (req, res) => {
 /** Anotação rápida feita no atendimento: o atendente aperta Alt+N na conversa; aqui achamos o cliente pelo telefone e gravamos no cadastro ou no processo. */
 integracaoContratosRouter.post("/anotacoes/buscar", (req, res) => {
   try { res.json(clienteParaAnotar((req.body ?? {}).telefone)); } catch (e) { erro(res, e); }
+});
+/** As pendências (anotações importantes ainda não cumpridas) do cliente desta conversa: o aviso que fica no chat. */
+integracaoContratosRouter.post("/anotacoes/pendencias", (req, res) => {
+  try { res.json(pendenciasPorTelefone((req.body ?? {}).telefone)); } catch (e) { erro(res, e); }
+});
+integracaoContratosRouter.post("/anotacoes/cumprir", (req, res) => {
+  try {
+    const r = cumprirPeloAtendimento(req.body ?? {});
+    auditAccess("pendencia_cumprida_pelo_atendimento", null, null, {});
+    res.json(r);
+  } catch (e) {
+    if (e instanceof ErroGestao) return void res.status(e.status).json({ error: e.message });
+    erro(res, e);
+  }
 });
 integracaoContratosRouter.post("/anotacoes", (req, res) => {
   try {

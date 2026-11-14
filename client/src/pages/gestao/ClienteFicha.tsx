@@ -16,6 +16,7 @@ import { CamposPersonalizados, type CampoValor } from "./Campos";
 import { FinanceiroPessoa } from "./FinanceiroPessoa";
 import { GerarDocumentos } from "./GerarDocumentos";
 import { AnotacoesPessoa } from "./AnotacoesPessoa";
+import { AvisoDePendencias, FaixaDePendencias, SeloDePendencias, usePendencias } from "./PendenciasDoCliente";
 import { NegocioDaPessoa } from "./NegocioDaPessoa";
 import { AvatarPessoa, linkWhatsApp, useAtendimentoLiberado } from "./AvatarPessoa";
 import { NovoProcesso, type Responsavel } from "./Processos";
@@ -59,6 +60,7 @@ export function ClienteFicha() {
   const [buscandoCep, setBuscandoCep] = useState(false);
   const [msgCep, setMsgCep] = useState("");
   const [apagar, setApagar] = useState(false);
+  const pend = usePendencias(novo ? null : id);
   const numeroRef = useRef<HTMLInputElement>(null);
   const fotoRef = useRef<HTMLInputElement>(null);
   const [fotoVersao, setFotoVersao] = useState(0);
@@ -131,7 +133,7 @@ export function ClienteFicha() {
             <h1 className="truncate text-xl font-semibold text-zinc-900 dark:text-zinc-50">{novo ? "Novo cadastro" : pessoa.nome || "Cadastro"}</h1>
             {novo ? <p className="text-sm text-zinc-500">Preencha o que souber; só o nome é obrigatório. O endereço completa sozinho pelo CEP.</p> : (
               <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500">
-                <Badge tone={pessoa.tipo === "cliente" ? "accent" : "neutral"}>{TIPOS[pessoa.tipo]}</Badge>{!pessoa.ativo && <Badge tone="warning">Inativo</Badge>}
+                <Badge tone={pessoa.tipo === "cliente" ? "accent" : "neutral"}>{TIPOS[pessoa.tipo]}</Badge>{!pessoa.ativo && <Badge tone="warning">Inativo</Badge>}<SeloDePendencias total={pend.itens.length} />
                 {pessoa.documento_formatado && <span>{pessoa.documento_formatado}</span>}
                 {pessoa.telefone && (atendimento && linkWhatsApp(pessoa.telefone) ? <a href={linkWhatsApp(pessoa.telefone)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-emerald-700 hover:underline dark:text-emerald-400"><MessageCircle className="h-3.5 w-3.5" /> {pessoa.telefone} · abrir conversa</a> : <span>{pessoa.telefone}</span>)}
                 {pessoa.email && <span className="truncate">{pessoa.email}</span>}
@@ -144,6 +146,8 @@ export function ClienteFicha() {
           {gerir && <Button loading={salvando} onClick={() => void salvar()} disabled={!sujo && !novo}><Save className="h-4 w-4" /> Salvar</Button>}
         </div>
       </div>
+      {!novo && <FaixaDePendencias itens={pend.itens} aoCumprir={(p) => void pend.cumprir(p)} />}
+      {!novo && <AvisoDePendencias pessoaId={id} nome={pessoa.nome} itens={pend.itens} aoCumprir={(p) => void pend.cumprir(p)} />}
       {!novo && (
         <div role="tablist" className="page-tabs">
           {ABAS.filter(([k]) => k !== "financeiro" || can("financeiro.view")).map(([k, r]) => <button key={k} role="tab" aria-selected={aba === k} onClick={() => setAba(k)} className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium transition ${aba === k ? "bg-accent-50 text-accent-700 dark:bg-accent-500/15 dark:text-accent-200" : "text-zinc-500 hover:bg-zinc-50 dark:hover:bg-white/5"}`}>{r}{k === "processos" && pessoa.processos?.length ? ` (${pessoa.processos.length})` : ""}</button>)}

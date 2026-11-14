@@ -29,7 +29,8 @@ export const dataBr = (iso?: string | null) => (iso ? iso.slice(0, 10).split("-"
 export const dinheiro = (centavos: number | null | undefined) => (centavos == null ? "—" : (centavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
 
 /** Busca e escolhe uma pessoa já cadastrada (autocompletar). */
-export function SeletorPessoa({ aoEscolher, tipo, rotulo = "Pessoa" }: { aoEscolher: (p: PessoaResumo) => void; tipo?: string; rotulo?: string }) {
+/** `emLinha`: a lista de resultados ocupa lugar na tela (empurra o que vem abaixo) em vez de flutuar. É o que um pop-up com rolagem precisa: senão o resultado fica escondido embaixo do campo. */
+export function SeletorPessoa({ aoEscolher, tipo, rotulo = "Pessoa", emLinha = false }: { aoEscolher: (p: PessoaResumo) => void; tipo?: string; rotulo?: string; emLinha?: boolean }) {
   const [busca, setBusca] = useState("");
   const termo = useAtraso(busca);
   const [itens, setItens] = useState<PessoaResumo[]>([]);
@@ -47,7 +48,7 @@ export function SeletorPessoa({ aoEscolher, tipo, rotulo = "Pessoa" }: { aoEscol
         <Input className="pl-9" placeholder="Digite nome, CPF/CNPJ ou telefone…" value={busca} onChange={(e) => setBusca(e.target.value)} />
       </div>
       {itens.length > 0 && (
-        <ul className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-xl border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+        <ul className={`${emLinha ? "" : "absolute z-20 "}mt-1 max-h-56 w-full overflow-auto rounded-xl border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900`}>
           {itens.map((p) => (
             <li key={p.id}>
               <button type="button" className="flex w-full flex-col px-3.5 py-2 text-left text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800" onClick={() => { aoEscolher(p); setBusca(""); setItens([]); }}>
