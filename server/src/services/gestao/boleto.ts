@@ -36,7 +36,8 @@ export async function boletoEmPdf(lancamentoId: number, opts: { quem?: Quem; htt
   if (ja) { try { const a = obterArquivo(ja); return { arquivoId: ja, nome: a.nome, conteudo: fs.readFileSync(a.caminho) }; } catch { /* apagado: baixa de novo */ } }
   // Cobrança «boleto ou PIX» nem sempre devolve `bankSlipUrl`: o PDF do mesmo código fica em /b/pdf/<código>, ao lado da página /i/<código>.
   const derivada = c.invoice_url ? c.invoice_url.replace(/\/i\/([^/?#]+)/, "/b/pdf/$1") : "";
-  const url = urlDoAsaas(c.bank_slip_url) ?? urlDoAsaas(derivada);
+  // O endereço derivado só entra quando o do boleto veio VAZIO; endereço presente e de fora do Asaas é recusado, nunca "consertado".
+  const url = c.bank_slip_url ? urlDoAsaas(c.bank_slip_url) : urlDoAsaas(derivada);
   if (!url) return sem("o Asaas não devolveu o endereço do boleto");
   let r: Response;
   try { r = await (opts.http ?? fetch)(url.toString(), { signal: AbortSignal.timeout(opts.limiteMs ?? 25_000), redirect: "follow", headers: { Accept: "application/pdf,*/*" } }); } catch { return sem("não consegui baixar o boleto do Asaas (rede ou demora)"); }
