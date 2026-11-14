@@ -57,4 +57,22 @@ describe("cobrança pedida pelo atendimento", () => {
     const r = await cobrancaParaOAtendimento({ telefone: "+5513974045973" }, falso());
     expect(r.lancamento_id).toBe(id);
   });
+  it("cliente sem CPF no cadastro: usa o CPF que ele informou no atendimento (se válido e livre) e gera a cobrança", async () => {
+    const a = Number(db.prepare("INSERT INTO gestao_pessoas(nome,tipo,documento,telefone,email) VALUES ('EDUARDO','cliente','','(13) 97404-5973','a@x.com')").run().lastInsertRowid);
+    lanc(a);
+    await expect(cobrancaParaOAtendimento({ telefone: "5513974045973" }, falso())).rejects.toThrow(/CPF ou CNPJ/);
+    const r = await cobrancaParaOAtendimento({ telefone: "5513974045973", cpf: "529.982.247-25" }, falso());
+    expect(r.link).toBe("https://asaas/i/1");
+    expect((db.prepare("SELECT documento FROM gestao_pessoas WHERE id=?").get(a) as { documento: string }).documento).toBe("52998224725");
+  });
+  it("não troca um CPF que já existe nem aceita CPF de outro cadastro ou inválido", async () => {
+    const a = pessoa("COM CPF", "(13) 97404-5973");
+    lanc(a);
+    await cobrancaParaOAtendimento({ telefone: "5513974045973", cpf: "111.444.777-35" }, falso());
+    expect((db.prepare("SELECT documento FROM gestao_pessoas WHERE id=?").get(a) as { documento: string }).documento).toBe("52998224725");
+    const b = Number(db.prepare("INSERT INTO gestao_pessoas(nome,tipo,documento,telefone,email) VALUES ('SEM','cliente','','(11) 98888-0000','b@x.com')").run().lastInsertRowid);
+    lanc(b);
+    await expect(cobrancaParaOAtendimento({ telefone: "5511988880000", cpf: "52998224725" }, falso())).rejects.toThrow(/outro cadastro/);
+    await expect(cobrancaParaOAtendimento({ telefone: "5511988880000", cpf: "123" }, falso())).rejects.toThrow(/CPF ou CNPJ/);
+  });
 });
