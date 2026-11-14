@@ -107,4 +107,11 @@ describe("painel — repasse dos indicadores do atendimento", () => {
     expect((await m.chamar("GET", "/v1/offices/alfa/anotacoes")).status).toBe(405);
     await m.fechar();
   });
+  it("repassa POST /cadastro (correção do cadastro pelo atendimento) para o escritório; GET é recusado", async () => {
+    const m = await montar(3411, { status: 200, corpo: { ok: true, alterados: ["email"] } });
+    expect((await m.chamar("POST", "/v1/offices/alfa/cadastro", JSON.stringify({ pessoa_id: 1, campos: { email: "a@b.com" } }))).status).toBe(200);
+    expect(m.vistos[0]!.url).toBe("http://127.0.0.1:3411/api/integracao/cadastro");
+    expect((await m.chamar("GET", "/v1/offices/alfa/cadastro")).status).toBe(405);
+    await m.fechar();
+  });
 });

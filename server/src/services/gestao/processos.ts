@@ -158,11 +158,11 @@ export function removerParte(processoId: number, pessoaId: number, papel: string
   return obterProcesso(processoId);
 }
 
-export function adicionarAnotacao(processoId: number, texto: unknown, user: { id: number | null; nome: string }) {
+export function adicionarAnotacao(processoId: number, texto: unknown, user: { id: number | null; nome: string }, importante = false) {
   obterProcesso(processoId);
   const t = txt(texto, 4000);
   if (t.length < 2) throw new ErroGestao("Escreva a anotação.");
-  db.prepare("INSERT INTO gestao_anotacoes(processo_id,user_id,autor,texto) VALUES (?,?,?,?)").run(processoId, user.id, user.nome, t);
+  db.prepare("INSERT INTO gestao_anotacoes(processo_id,user_id,autor,texto,importante) VALUES (?,?,?,?,?)").run(processoId, user.id, user.nome, t, importante ? 1 : 0);
   db.prepare("UPDATE gestao_processos SET atualizado_em=CURRENT_TIMESTAMP WHERE id=?").run(processoId);
   return { ok: true };
 }

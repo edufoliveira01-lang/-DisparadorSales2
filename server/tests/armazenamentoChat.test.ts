@@ -9,7 +9,7 @@ import { salvarCredenciais, salvarConexao } from "../src/armazenamento/banco";
 import { problemaDoArmazenamento, processarFila, saudeDoArmazenamento, situacaoDaFila } from "../src/armazenamento/fila";
 import { diasDoMaisAntigoEsperando, limparEsperaVencida } from "../src/armazenamento/limpeza";
 import {
-  clienteJaAssinou, documentosEsperandoAssinatura, liberarEsperaDaPessoa, pessoaDoDocumento, receberDocumentoDoChat, urlDeDownloadPermitida,
+  clienteJaAssinou, contratoForaDoSistema, documentosEsperandoAssinatura, marcarContratoFora, marcarContratoForaEmLote, liberarEsperaDaPessoa, pessoaDoDocumento, receberDocumentoDoChat, urlDeDownloadPermitida,
 } from "../src/armazenamento/chat";
 import { ErroArmazenamento } from "../src/armazenamento/pastas";
 import { driveFalso } from "./helpers/driveFalso";
@@ -30,7 +30,7 @@ const doc = (extra: Record<string, unknown> = {}) => ({
 const fila = () => db.prepare("SELECT * FROM armazenamento_fila ORDER BY id").all() as Array<Record<string, unknown>>;
 
 beforeEach(() => {
-  db.exec("DELETE FROM armazenamento_fila; DELETE FROM armazenamento_espera; DELETE FROM armazenamento_pastas; DELETE FROM armazenamento_config; DELETE FROM zapsign_documentos; DELETE FROM zapsign_contratos; DELETE FROM gestao_pessoas;");
+  db.exec("DELETE FROM armazenamento_fila; DELETE FROM armazenamento_espera; DELETE FROM armazenamento_pastas; DELETE FROM armazenamento_config; DELETE FROM zapsign_documentos; DELETE FROM zapsign_contratos; DELETE FROM gestao_contrato_externo; DELETE FROM gestao_pessoas;");
   salvarCredenciais({ appKey: "appkey1234", appSecret: "segredo-do-app-123456" });
   salvarConexao({ refreshToken: "r", conta: { nome: "E", email: "e@x.com", tipo: "pro", raizDeNomes: "" } });
 });
@@ -165,5 +165,40 @@ describe("saúde do armazenamento (o que a equipe é avisada)", () => {
     expect(a.texto).toMatch(/1 envio\(s\).*falharam.*reconecte o Dropbox/i);
     item("erro", "outra falha");
     expect(problemaDoArmazenamento().chave).not.toBe(a.chave);
+  });
+});
+
+describe("contrato assinado fora do sistema (cliente migrado)", () => {
+  const eu = { id: 1, nome: "Equipe" };
+  it("com a marca, o documento do chat vai direto para a fila, sem ZapSign", async () => {
+    const a = novaPessoa("ANA LIMA", "225.188.548-00", "(13) 97404-5973");
+    expect(clienteJaAssinou(a)).toBe(false);
+    marcarContratoFora(a, true, eu, { processar: false });
+    expect(clienteJaAssinou(a)).toBe(true);
+    expect(contratoForaDoSistema(a)).toMatchObject({ marcado: true, por: "Equipe" });
+    const r = await receberDocumentoDoChat(doc(), { http: httpFalso(), processar: false });
+    expect(r.situacao).toBe("enfileirado");
+    expect(fila()).toHaveLength(1);
+  });
+  it("ligar a marca libera o que já esperava; desligar volta a exigir a assinatura", async () => {
+    const a = novaPessoa("ANA LIMA", "225.188.548-00", "(13) 97404-5973");
+    expect((await receberDocumentoDoChat(doc(), { http: httpFalso(), processar: false })).situacao).toBe("aguardando_assinatura");
+    expect(documentosEsperandoAssinatura()).toBe(1);
+    const r = marcarContratoFora(a, true, eu, { processar: false });
+    expect(r.liberados).toBe(1);
+    expect(documentosEsperandoAssinatura()).toBe(0);
+    expect(fila()).toHaveLength(1);
+    marcarContratoFora(a, false, eu);
+    expect(clienteJaAssinou(a)).toBe(false);
+    expect((await receberDocumentoDoChat(doc({ origemRef: "msg-2" }), { http: httpFalso(), processar: false })).situacao).toBe("aguardando_assinatura");
+  });
+  it("em lote: marca só clientes que existem e conta o que liberou", () => {
+    const a = novaPessoa("ANA LIMA"), b = novaPessoa("BETO SOUZA");
+    const r = marcarContratoForaEmLote([a, b, a, 99999, -3], eu);
+    expect(r.marcados).toBe(2);
+    expect(clienteJaAssinou(b)).toBe(true);
+  });
+  it("recusa marcar quem não é cliente", () => {
+    expect(() => marcarContratoFora(424242, true, eu)).toThrow(ErroArmazenamento);
   });
 });

@@ -158,4 +158,12 @@ describe("Atendimento com IA — cadastro e prompt do agente", () => {
     expect(faq).toContain("**Pergunta:** Como funciona o contrato e a assinatura?");
     expect(roteiro).not.toContain("=== REGRAS ===");
   });
+  it("tem a conferência de qualidade antes do resumo e a regra de que o agente não marca atendimentos", () => {
+    const p = montarPromptDoAgente();
+    expect(p).toContain("5. **Conferência de qualidade (antes do resumo):**");
+    expect(p).toContain("nunca desqualifique por suposição");
+    expect(p).toContain("6. **Resumo do caso e convite");
+    expect(p).toContain("**não marca** atendimentos novos");
+    expect(p).toContain("crm_anotar_no_sales");
+  });
 });

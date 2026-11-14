@@ -20,6 +20,38 @@ const VAZIO: Negocio = { pessoa_id: 0, fonte: "", fonte_detalhe: "", tipo_atendi
 export const TOM_DA_QUALIFICACAO: Record<string, "success" | "warning" | "danger" | "neutral"> = { qualificado: "success", aguardando: "warning", nao_qualificado: "danger", nao_informada: "neutral" };
 
 /** A aba «Negócio» da ficha do cliente: de onde veio, quem fechou, como foi atendido e se o caso foi qualificado. Qualquer funcionário preenche. */
+function ContratoForaDoSistema({ pessoaId }: { pessoaId: number }) {
+  const { show } = useToast();
+  const [c, setC] = useState<{ marcado: boolean; em: string | null; por: string | null } | null>(null);
+  const [salvando, setSalvando] = useState(false);
+  useEffect(() => { setC(null); api.get<{ marcado: boolean; em: string | null; por: string | null }>(`/gestao/pessoas/${pessoaId}/contrato-fora`).then(setC).catch(() => undefined); }, [pessoaId]);
+  async function alternar() {
+    if (!c) return;
+    setSalvando(true);
+    try {
+      const r = await api.put<{ marcado: boolean; em: string | null; por: string | null; liberados: number }>(`/gestao/pessoas/${pessoaId}/contrato-fora`, { marcado: !c.marcado });
+      setC(r);
+      show(r.marcado ? (r.liberados > 0 ? `Marcado. ${r.liberados} documento(s) que esperavam seguiram para o drive.` : "Marcado como contrato assinado fora do sistema.") : "Marca removida: os documentos do atendimento voltam a esperar a assinatura.", "success");
+    } catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível alterar.", "error"); }
+    finally { setSalvando(false); }
+  }
+  return (
+    <div className="surface-panel p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="max-w-2xl">
+          <h2 className="text-[15px] font-semibold text-zinc-900 dark:text-white">Contrato assinado fora do sistema</h2>
+          <p className="mt-1 text-xs text-zinc-500">Para quem já assinou o contrato por outro meio, antes de usar o Sales. Com a marca, os documentos que o cliente enviar pelo atendimento seguem direto para a pasta dele no drive, sem esperar uma assinatura no ZapSign. Os que já estavam esperando são liberados agora.</p>
+          {c?.marcado && <p className="mt-2 text-xs text-zinc-500">Marcado{c.por ? <> por <strong>{c.por}</strong></> : ""}{c.em ? ` em ${new Date(c.em.replace(" ", "T") + "Z").toLocaleDateString("pt-BR")}` : ""}.</p>}
+        </div>
+        <div className="flex items-center gap-3">
+          {c?.marcado && <Badge tone="success">Assinado fora do sistema</Badge>}
+          <Button variant={c?.marcado ? "outline" : "primary"} onClick={() => void alternar()} loading={salvando} disabled={!c}>{c?.marcado ? "Remover a marca" : "Marcar como assinado"}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function NegocioDaPessoa({ pessoaId }: { pessoaId: number }) {
   const { show } = useToast();
   const [n, setN] = useState<Negocio>(VAZIO);
@@ -84,6 +116,8 @@ export function NegocioDaPessoa({ pessoaId }: { pessoaId: number }) {
         {n.qualificado_por && <p className="mt-3 text-xs text-zinc-500">Decidido por <strong>{n.qualificado_por}</strong>{n.qualificado_em ? ` em ${new Date(n.qualificado_em).toLocaleDateString("pt-BR")}` : ""}.</p>}
         <div className="mt-4"><Campo rotulo="Observações"><Textarea rows={3} maxLength={1000} value={n.observacoes} onChange={(e) => muda({ observacoes: e.target.value })} /></Campo></div>
       </div>
+
+      <ContratoForaDoSistema pessoaId={pessoaId} />
 
       <div className="flex justify-end"><Button onClick={() => void salvar()} loading={salvando} disabled={!sujo}><Save className="h-4 w-4" /> Salvar negócio</Button></div>
     </div>

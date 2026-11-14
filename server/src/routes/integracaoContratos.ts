@@ -1,3 +1,4 @@
+import { cobrancaParaOAtendimento } from "../services/gestao/cobrancaPeloAtendimento";
 import { Router, type Request } from "express";
 import { verificarRequisicao } from "../atendimento/assinatura";
 import { atendimentoDaInstancia } from "../atendimento/instancia";
@@ -12,7 +13,8 @@ import { receberDocumentoDoChat } from "../armazenamento/chat";
 import { saudeDoArmazenamento } from "../armazenamento/fila";
 import { guardarRetrato } from "../atendimento/indicadores";
 import { ErroAsaas, processarWebhook } from "../services/gestao/asaas";
-import { anotarPeloAtendimento, clienteParaAnotar } from "../services/gestao/anotacoes";
+import { anotarPeloAtendimento, clienteParaAnotar, cumprirPeloAtendimento, pendenciasPorTelefone } from "../services/gestao/anotacoes";
+import { atualizarCadastroPeloAtendimento } from "../services/gestao/cadastroPeloAtendimento";
 import { ErroGestao } from "../services/gestao/erro";
 
 /**
@@ -77,11 +79,49 @@ integracaoContratosRouter.post("/indicadores", (req, res) => {
 integracaoContratosRouter.post("/anotacoes/buscar", (req, res) => {
   try { res.json(clienteParaAnotar((req.body ?? {}).telefone)); } catch (e) { erro(res, e); }
 });
+/** As pendências (anotações importantes ainda não cumpridas) do cliente desta conversa: o aviso que fica no chat. */
+integracaoContratosRouter.post("/anotacoes/pendencias", (req, res) => {
+  try { res.json(pendenciasPorTelefone((req.body ?? {}).telefone)); } catch (e) { erro(res, e); }
+});
+integracaoContratosRouter.post("/anotacoes/cumprir", (req, res) => {
+  try {
+    const r = cumprirPeloAtendimento(req.body ?? {});
+    auditAccess("pendencia_cumprida_pelo_atendimento", null, null, {});
+    res.json(r);
+  } catch (e) {
+    if (e instanceof ErroGestao) return void res.status(e.status).json({ error: e.message });
+    erro(res, e);
+  }
+});
 integracaoContratosRouter.post("/anotacoes", (req, res) => {
   try {
     const r = anotarPeloAtendimento(req.body ?? {});
     auditAccess("anotacao_pelo_atendimento", null, null, { destino: r.destino });
     res.status(201).json(r);
+  } catch (e) {
+    if (e instanceof ErroGestao) return void res.status(e.status).json({ error: e.message });
+    erro(res, e);
+  }
+});
+
+/** O atendimento (Deskcomm) corrige dados do cadastro do cliente que o próprio cliente informou na conversa: só os campos liberados, com histórico. */
+integracaoContratosRouter.post("/cadastro", (req, res) => {
+  try {
+    const r = atualizarCadastroPeloAtendimento(req.body ?? {});
+    auditAccess("cadastro_pelo_atendimento", null, null, { alterados: r.alterados.join(","), ignorados: r.ignorados.join(",") });
+    res.status(200).json(r);
+  } catch (e) {
+    if (e instanceof ErroGestao) return void res.status(e.status).json({ error: e.message });
+    erro(res, e);
+  }
+});
+
+/** O agente de atendimento pede o boleto/PIX de uma parcela do PRÓPRIO cliente da conversa (achado pelo telefone). */
+integracaoContratosRouter.post("/cobranca", async (req, res) => {
+  try {
+    const r = await cobrancaParaOAtendimento(req.body ?? {});
+    auditAccess("cobranca_pelo_atendimento", null, null, { lancamento: r.lancamento_id });
+    res.status(200).json(r);
   } catch (e) {
     if (e instanceof ErroGestao) return void res.status(e.status).json({ error: e.message });
     erro(res, e);
