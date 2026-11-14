@@ -20,6 +20,7 @@ import { consultarCep } from "../services/gestao/cep";
 import { adicionarCamposPrevidenciarios, atualizarCampo, criarCampo, excluirCampo, listarCampos, revelarSenha, TIPOS_CAMPO } from "../services/gestao/campos";
 import { anotacaoRapida, anotacoesDaPessoa, anotarNaPessoa, cumprirPendencia, marcarComoImportante, pendenciasDaPessoa, removerAnotacaoDaPessoa } from "../services/gestao/anotacoes";
 import { fichaDeCadastroHtml, fichaDeExemplo } from "../services/gestao/ficha";
+import { contratoForaDoSistema, marcarContratoFora, marcarContratoForaEmLote } from "../armazenamento/chat";
 import { PADRAO as FICHA_PADRAO, ROTULO_SECAO, apagarFoto, apagarImagem, apagarLogo, fotoDaPessoa, imagemAtual, lerConfig, logoAtual, nomeDeImagemValido, salvarConfig, salvarFoto, salvarImagem, salvarLogo } from "../services/gestao/fichaConfig";
 import { AREAS_PRONTAS, lerAtendimentoIa, montarPromptDoAgente, pendenciasDoAtendimentoIa, salvarAtendimentoIa } from "../services/gestao/atendimentoIa";
 import { docxParaModelo } from "../services/gestao/importarDocx";
@@ -250,6 +251,18 @@ gestaoRouter.post("/financeiro/contratos/:id/cancelar", rota((req) => { const r 
 // ---------- negócio do cliente e captação ----------
 const opcoesDoNegocio = () => ({ fontes: lerFontes(), motivos: MOTIVOS, areas: AREAS, qualificacoes: QUALIFICACOES, fontes_padrao: FONTES_PADRAO.map((f) => f.chave) });
 gestaoRouter.get("/pessoas/:id/negocio", rota((req) => ({ negocio: obterNegocio(id(req)), ...opcoesDoNegocio() })));
+gestaoRouter.get("/pessoas/:id/contrato-fora", rota((req) => contratoForaDoSistema(id(req))));
+gestaoRouter.put("/pessoas/:id/contrato-fora", rota((req) => {
+  const r = marcarContratoFora(id(req), req.body?.marcado === true, quem(req));
+  auditAccess("contrato_fora_do_sistema", usuario(req).id, null, { pessoa: id(req), marcado: r.marcado, liberados: r.liberados });
+  return r;
+}));
+gestaoRouter.post("/pessoas/contrato-fora-em-lote", rota((req) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number) : [];
+  const r = marcarContratoForaEmLote(ids, quem(req));
+  auditAccess("contrato_fora_do_sistema_em_lote", usuario(req).id, null, r);
+  return r;
+}));
 gestaoRouter.put("/pessoas/:id/negocio", rota((req) => {
   const n = salvarNegocio(id(req), req.body || {}, usuario(req).id);
   auditAccess("negocio_do_cliente_salvo", usuario(req).id, null, { pessoa: id(req), qualificacao: n.qualificacao });

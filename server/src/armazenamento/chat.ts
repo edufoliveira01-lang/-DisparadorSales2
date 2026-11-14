@@ -90,10 +90,45 @@ export function pessoaDoDocumento(cpf: string, telefone: string): number | null 
   return null;
 }
 
-/** O cliente já assinou algum contrato? (os documentos do chat só seguem depois disso.) */
+/** O cliente já assinou algum contrato? (os documentos do chat só seguem depois disso.) Vale o do ZapSign ou a marca «assinado fora do sistema». */
 export function clienteJaAssinou(pessoaId: number): boolean {
+  if (contratoForaDoSistema(pessoaId).marcado) return true;
   try { return Boolean(db.prepare("SELECT 1 FROM zapsign_contratos WHERE pessoa_id=? AND status='assinado' LIMIT 1").get(pessoaId)); }
   catch { return false; } // escritório sem ZapSign
+}
+
+export interface ContratoFora { marcado: boolean; em: string | null; por: string | null }
+
+/** A marca «contrato assinado fora do sistema» do cliente (migração: assinou por outro meio antes de usar o Sales). */
+export function contratoForaDoSistema(pessoaId: number): ContratoFora {
+  try {
+    const r = db.prepare("SELECT marcado_em, marcado_por FROM gestao_contrato_externo WHERE pessoa_id=?").get(pessoaId) as { marcado_em: string; marcado_por: string } | undefined;
+    return r ? { marcado: true, em: r.marcado_em, por: r.marcado_por || null } : { marcado: false, em: null, por: null };
+  } catch { return { marcado: false, em: null, por: null }; }
+}
+
+/** Liga ou desliga a marca. Ao ligar, os documentos do cliente que esperavam a assinatura entram na fila de envio na hora. */
+export function marcarContratoFora(pessoaId: number, marcado: boolean, quem: { id: number; nome: string }, opcoes: { processar?: boolean } = {}): ContratoFora & { liberados: number } {
+  const existe = db.prepare("SELECT 1 FROM gestao_pessoas WHERE id=? AND tipo='cliente'").get(pessoaId);
+  if (!existe) throw new ErroArmazenamento("Cliente não encontrado.", 404);
+  let liberados = 0;
+  if (marcado) {
+    db.prepare("INSERT OR IGNORE INTO gestao_contrato_externo(pessoa_id, marcado_por_id, marcado_por) VALUES (?,?,?)").run(pessoaId, quem.id, quem.nome);
+    liberados = liberarEsperaDaPessoa(pessoaId, opcoes);
+  } else {
+    db.prepare("DELETE FROM gestao_contrato_externo WHERE pessoa_id=?").run(pessoaId);
+  }
+  return { ...contratoForaDoSistema(pessoaId), liberados };
+}
+
+/** Marca vários clientes de uma vez (migração). Ignora quem não é cliente. */
+export function marcarContratoForaEmLote(ids: number[], quem: { id: number; nome: string }): { marcados: number; liberados: number } {
+  let marcados = 0, liberados = 0;
+  for (const id of Array.from(new Set(ids)).filter((n) => Number.isSafeInteger(n) && n > 0).slice(0, 5000)) {
+    try { const r = marcarContratoFora(id, true, quem, { processar: false }); marcados++; liberados += r.liberados; } catch { /* não é cliente */ }
+  }
+  if (liberados > 0) void processarFila().catch(() => undefined);
+  return { marcados, liberados };
 }
 
 function proximoIdDeChat(): number {

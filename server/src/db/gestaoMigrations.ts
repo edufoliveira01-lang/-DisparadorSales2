@@ -163,6 +163,13 @@ export function runGestaoMigrations(db: Database.Database) {
   // Ficha de cadastro: escolaridade, PIS/NIT, nome da mãe e filiação (colunas acrescentadas sem tocar nas existentes).
   const colunas = (db.prepare("PRAGMA table_info(gestao_pessoas)").all() as { name: string }[]).map((c) => c.name);
   for (const nome of ["escolaridade", "pis", "nome_mae", "filiacao", "nacionalidade", "sexo"]) if (!colunas.includes(nome)) db.exec(`ALTER TABLE gestao_pessoas ADD COLUMN ${nome} TEXT NOT NULL DEFAULT ''`);
+  // Contrato assinado FORA do sistema (cliente migrado): conta como assinado para liberar os documentos do atendimento ao drive.
+  db.exec(`CREATE TABLE IF NOT EXISTS gestao_contrato_externo (
+    pessoa_id INTEGER PRIMARY KEY REFERENCES gestao_pessoas(id) ON DELETE CASCADE,
+    marcado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    marcado_por_id INTEGER,
+    marcado_por TEXT NOT NULL DEFAULT ''
+  )`);
   // Anotação IMPORTANTE (pendência): fica em destaque no cadastro do cliente até alguém marcar como cumprida.
   for (const tabela of ["gestao_anotacoes", "gestao_anotacoes_pessoa"]) {
     const cols = (db.prepare(`PRAGMA table_info(${tabela})`).all() as { name: string }[]).map((c) => c.name);
