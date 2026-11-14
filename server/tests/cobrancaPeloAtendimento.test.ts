@@ -4,8 +4,9 @@ process.env.ENCRYPTION_KEY = "chave-somente-para-testes-0123456789abcdef";
 
 import { db } from "../src/db";
 import { salvarConfigAsaas } from "../src/services/gestao/asaas";
-import { cobrancaParaOAtendimento } from "../src/services/gestao/cobrancaPeloAtendimento";
+import { cobrancaParaOAtendimento, complementoDaCobranca } from "../src/services/gestao/cobrancaPeloAtendimento";
 import { ErroGestao } from "../src/services/gestao/erro";
+import { descreverFalhaDeRede } from "../src/services/gestao/asaas";
 
 const pessoa = (nome: string, tel: string) => Number(db.prepare("INSERT INTO gestao_pessoas(nome,tipo,documento,telefone,email) VALUES (?,'cliente','52998224725',?,'a@x.com')").run(nome, tel).lastInsertRowid);
 const lanc = (p: number, venc = "2999-12-10", valor = 5000) => Number(db.prepare("INSERT INTO gestao_lancamentos(tipo,categoria,descricao,valor_centavos,vencimento,pessoa_id) VALUES ('receber','honorarios','Honorários 1/3',?,?,?)").run(valor, venc, p).lastInsertRowid);
@@ -93,25 +94,37 @@ describe("cobrança pedida pelo atendimento", () => {
     expect(r.boleto_pdf_base64).toBeTruthy();
     expect(r.boleto_pdf_motivo).toBeNull();
   });
-  it("PDF indisponível: devolve o motivo em frase; PIX que não veio na criação é buscado de novo", async () => {
+  it("modo rápido devolve o link na hora e marca `pendente` quando falta PIX/PDF; o modo paciente completa depois, sem criar outra cobrança", async () => {
     const a = pessoa("EDUARDO", "(13) 97404-5973"); lanc(a);
-    let pixCalls = 0;
+    let pronto = false; let pagamentos = 0;
     const http = (async (url: string, init?: RequestInit) => {
       const u = String(url), m = String(init?.method ?? "GET");
       const j = (o: unknown) => new Response(JSON.stringify(o), { status: 200 });
       if (u.includes("/customers") && m === "GET") return j({ data: [] });
       if (u.includes("/customers")) return j({ id: "cus_1" });
-      if (u.endsWith("/payments") && m === "POST") return j({ id: "pay_1", status: "PENDING", invoiceUrl: "https://sandbox.asaas.com/i/abc123", bankSlipUrl: "https://sandbox.asaas.com/b/pdf/abc123", billingType: "UNDEFINED" });
+      if (u.endsWith("/payments") && m === "POST") { pagamentos++; return j({ id: "pay_1", status: "PENDING", invoiceUrl: "https://sandbox.asaas.com/i/abc123", bankSlipUrl: "https://sandbox.asaas.com/b/pdf/abc123", billingType: "UNDEFINED" }); }
       if (/\/payments\/pay_1$/.test(u)) return j({ id: "pay_1" });
-      if (u.includes("pixQrCode")) { pixCalls++; return pixCalls < 3 ? new Response("{}", { status: 404 }) : j({ payload: "000201PIX" }); }
+      if (u.includes("pixQrCode")) return pronto ? j({ payload: "000201PIX" }) : new Response("{}", { status: 404 });
       if (u.includes("identificationField")) return j({ identificationField: "23793" });
-      if (u.includes("/b/pdf/")) return new Response("<html>aguarde</html>", { status: 200 });
+      if (u.includes("/b/pdf/")) return pronto ? new Response(PDF, { status: 200 }) : new Response("<html>aguarde</html>", { status: 200 });
       return j({});
     }) as unknown as typeof fetch;
-    const r = await cobrancaParaOAtendimento({ telefone: "5513974045973" }, http, { esperaMs: 0 });
-    expect(r.pix).toBe("000201PIX");
-    expect(r.boleto_pdf_base64).toBeNull();
-    expect(r.boleto_pdf_motivo).toMatch(/não devolveu um PDF/);
+    const r1 = await cobrancaParaOAtendimento({ telefone: "5513974045973" }, http, { esperaMs: 0 });
+    expect(r1).toMatchObject({ link: "https://sandbox.asaas.com/i/abc123", linha_digitavel: "23793", pix: "", pendente: true });
+    expect(r1.boleto_pdf_base64).toBeNull();
+    expect(r1.boleto_pdf_motivo).toMatch(/não devolveu um PDF/);
+    pronto = true;
+    const r2 = await complementoDaCobranca({ telefone: "5513974045973" }, http, { esperaMs: 0 });
+    expect(r2).toMatchObject({ pix: "000201PIX", pendente: false });
+    expect(r2.boleto_pdf_base64).toBeTruthy();
+    expect(pagamentos).toBe(1); // a cobrança é a MESMA: o complemento não cria outra
+  });
+  it("o complemento só atende o cliente do telefone e só de cobrança já gerada", async () => {
+    const a = pessoa("EDUARDO", "(13) 97404-5973"), b = Number(db.prepare("INSERT INTO gestao_pessoas(nome,tipo,documento,telefone,email) VALUES ('OUTRO','cliente','11144477735','(11) 98888-0000','b@x.com')").run().lastInsertRowid);
+    lanc(a); const dele = lanc(b);
+    await expect(complementoDaCobranca({ telefone: "5513974045973" }, falso())).rejects.toThrow(/ainda não tem cobrança/);
+    await expect(complementoDaCobranca({ telefone: "5513974045973", lancamento_id: dele }, falso())).rejects.toThrow(/não é deste cliente/);
+    await expect(complementoDaCobranca({ telefone: "5599900000000" }, falso())).rejects.toBeInstanceOf(ErroGestao);
   });
   it("Asaas lento: não passa de ~20 s no total — devolve o link e diz o motivo, em vez de estourar o limite do servidor", async () => {
     const a = pessoa("EDUARDO", "(13) 97404-5973"); lanc(a);
@@ -150,5 +163,10 @@ describe("cobrança pedida pelo atendimento", () => {
     expect(r.pix).toBe("");
     expect(r.pix_motivo).toMatch(/chave Pix/);
     expect(r.boleto_pdf_base64).toBeTruthy();
+  });
+  it("a falha de rede diz a causa: tempo esgotado, código do sistema ou a mensagem", () => {
+    expect(descreverFalhaDeRede(Object.assign(new Error("x"), { name: "TimeoutError" }), 10_000)).toBe("sem resposta em 10 s");
+    expect(descreverFalhaDeRede(Object.assign(new Error("fetch failed"), { cause: { code: "ENOTFOUND" } }))).toBe("ENOTFOUND");
+    expect(descreverFalhaDeRede(new Error("boom"))).toBe("boom");
   });
 });

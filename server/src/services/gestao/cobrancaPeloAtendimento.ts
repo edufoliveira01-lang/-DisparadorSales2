@@ -16,6 +16,8 @@ import { documentoValido, soDigitos } from "./validacao";
 export interface CobrancaParaOAtendimento {
   lancamento_id: number; descricao: string; valor_centavos: number; vencimento: string;
   link: string; linha_digitavel: string; pix: string; boleto_pdf_base64: string | null; boleto_pdf_nome: string | null; boleto_pdf_motivo: string | null; pix_motivo: string | null;
+  /** Falta o PIX ou o PDF: quem chamou completa depois, sem pressa, com `complementoDaCobranca`. */
+  pendente: boolean;
   outras_em_aberto: number;
 }
 
@@ -25,53 +27,97 @@ export function parcelasEmAbertoDoCliente(pessoaId: number): Aberta[] {
   return db.prepare("SELECT id,descricao,valor_centavos,vencimento FROM gestao_lancamentos WHERE pessoa_id=? AND tipo='receber' AND cancelado=0 AND pago_em IS NULL ORDER BY vencimento, id").all(pessoaId) as Aberta[];
 }
 
-export async function cobrancaParaOAtendimento(d: { telefone?: unknown; cpf?: unknown; lancamento_id?: unknown }, http: typeof fetch = fetch, deps: { esperaMs?: number; limiteTotalMs?: number; limiteDosDetalhesMs?: number; limitePorConsultaMs?: number } = {}): Promise<CobrancaParaOAtendimento> {
-  // O mesmo critério tolerante da anotação (com ou sem 55 e o 9º dígito); o do documento recusa telefone repetido e formato diferente.
-  // SÓ o telefone da conversa identifica o cliente: o CPF que veio do atendimento é dado digitado por quem escreve e NUNCA escolhe de quem é a cobrança.
-  const pessoaId = pessoaDoDocumento("", String(d.telefone ?? "")) ?? pessoaPorTelefone(d.telefone)?.id ?? null;
-  if (pessoaId === null) throw new ErroGestao("Este telefone não está no cadastro de clientes.", 404);
-  if (!chaveDoAsaas()) throw new ErroGestao("A cobrança automática (Asaas) não está configurada neste escritório.", 409);
-  completarDocumentoSeFalta(pessoaId, d.cpf);
+interface Complemento { cobranca: Awaited<ReturnType<typeof gerarCobranca>>; pdf: Awaited<ReturnType<typeof boletoEmPdf>>; pdfMotivo: string; pixMotivo: string | null; acabou: boolean }
+
+/**
+ * Busca no Asaas o que a cobrança ainda não tem: o PIX copia e cola (e a linha digitável) e o PDF do boleto. As duas buscas correm JUNTAS, cada uma com o
+ * seu tempo limite, e o conjunto tem um teto (`totalMs`). O que não vier fica como MOTIVO escrito — nunca como erro: o link de pagamento já existe.
+ */
+async function buscarComplemento(lancamentoId: number, atual: Complemento["cobranca"], http: typeof fetch, o: { porConsultaMs: number; totalMs: number; esperaMs: number; repetirPix: boolean }): Promise<Complemento> {
+  const motivo = { texto: "" };
+  const motivosDoPix: { pix?: string; linha?: string } = {};
+  const achado: { pdf: Complemento["pdf"]; cobranca: Complemento["cobranca"] } = { pdf: null, cobranca: atual };
+  const buscarPix = (async () => {
+    try {
+      achado.cobranca = (await completarDetalhesDaCobranca(lancamentoId, http, o.porConsultaMs, motivosDoPix)) ?? achado.cobranca;
+      if (o.repetirPix && !achado.cobranca.pix_payload) { await new Promise((r) => setTimeout(r, o.esperaMs)); achado.cobranca = (await completarDetalhesDaCobranca(lancamentoId, http, o.porConsultaMs, motivosDoPix)) ?? achado.cobranca; }
+    } catch { /* o que já veio basta */ }
+  })();
+  const buscarPdf = (async () => {
+    try { achado.pdf = await boletoEmPdf(lancamentoId, { http, motivo, limiteMs: o.porConsultaMs }); } catch (e) { motivo.texto = e instanceof Error ? e.message : "falha ao baixar o boleto"; }
+  })();
+  let acabou = false;
+  let relogio: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([Promise.all([buscarPix, buscarPdf]).then(() => { acabou = true; }), new Promise((r) => { relogio = setTimeout(r, o.totalMs); })]);
+  if (relogio) clearTimeout(relogio);
+  const c = achado.cobranca;
+  const pixMotivo = c.pix_payload ? null : (motivosDoPix.pix ?? (acabou ? "o Asaas não devolveu o código do PIX (a conta pode não ter chave PIX cadastrada)" : "o Asaas demorou para devolver o código do PIX"));
+  return { cobranca: c, pdf: achado.pdf, pdfMotivo: achado.pdf ? "" : (motivo.texto || (acabou ? "o boleto em PDF não está disponível" : "o Asaas demorou para liberar o boleto em PDF")), pixMotivo, acabou };
+}
+
+function montarResposta(alvo: Aberta, x: Complemento, outras: number): CobrancaParaOAtendimento {
+  const c = x.cobranca;
+  const pdfOk = Boolean(x.pdf && x.pdf.conteudo.length <= 3_000_000);
+  return {
+    lancamento_id: alvo.id, descricao: alvo.descricao, valor_centavos: alvo.valor_centavos, vencimento: alvo.vencimento,
+    link: c.invoice_url || c.bank_slip_url || "", linha_digitavel: c.linha_digitavel || "", pix: c.pix_payload || "",
+    boleto_pdf_base64: pdfOk ? x.pdf!.conteudo.toString("base64") : null, boleto_pdf_nome: pdfOk ? x.pdf!.nome : null,
+    pix_motivo: pdfOk && c.pix_payload ? null : x.pixMotivo, boleto_pdf_motivo: pdfOk ? null : (x.pdfMotivo || "o boleto em PDF não está disponível"),
+    pendente: !pdfOk || !c.pix_payload,
+    outras_em_aberto: outras,
+  };
+}
+
+type Deps = { esperaMs?: number; limiteTotalMs?: number; limiteDosDetalhesMs?: number; limitePorConsultaMs?: number };
+
+/** A parcela pedida (ou a mais antiga) em aberto do cliente do telefone; recusa o que não é DELE. */
+function parcelaDoCliente(pessoaId: number, lancamentoId: unknown): { alvo: Aberta; outras: number } {
   const abertas = parcelasEmAbertoDoCliente(pessoaId);
   if (abertas.length === 0) throw new ErroGestao("O cliente não tem parcela em aberto.", 404);
-  const pedido = Number(d.lancamento_id);
+  const pedido = Number(lancamentoId);
   const alvo = Number.isSafeInteger(pedido) && pedido > 0 ? abertas.find((a) => a.id === pedido) : abertas[0];
   if (!alvo) throw new ErroGestao("Essa parcela não é deste cliente ou já não está em aberto.", 404);
+  return { alvo, outras: abertas.length - 1 };
+}
+
+function clienteDoTelefone(telefone: unknown): number {
+  // O mesmo critério tolerante da anotação (com ou sem 55 e o 9º dígito); o do documento recusa telefone repetido e formato diferente.
+  // SÓ o telefone da conversa identifica o cliente: o CPF que veio do atendimento é dado digitado por quem escreve e NUNCA escolhe de quem é a cobrança.
+  const pessoaId = pessoaDoDocumento("", String(telefone ?? "")) ?? pessoaPorTelefone(telefone)?.id ?? null;
+  if (pessoaId === null) throw new ErroGestao("Este telefone não está no cadastro de clientes.", 404);
+  if (!chaveDoAsaas()) throw new ErroGestao("A cobrança automática (Asaas) não está configurada neste escritório.", 409);
+  return pessoaId;
+}
+
+/**
+ * MODO RÁPIDO (a resposta do chat espera por ele): gera a cobrança (ou reaproveita) e tenta o PIX e o PDF por POUCO tempo. Devolve o link e a linha
+ * digitável na hora; `pendente` diz que falta PIX ou PDF — quem chamou completa depois com `complementoDaCobranca`, sem ninguém esperando.
+ */
+export async function cobrancaParaOAtendimento(d: { telefone?: unknown; cpf?: unknown; lancamento_id?: unknown }, http: typeof fetch = fetch, deps: Deps = {}): Promise<CobrancaParaOAtendimento> {
+  const pessoaId = clienteDoTelefone(d.telefone);
+  completarDocumentoSeFalta(pessoaId, d.cpf);
+  const { alvo, outras } = parcelaDoCliente(pessoaId, d.lancamento_id);
   const jaTem = cobrancaDoLancamento(alvo.id);
   if (!jaTem && alvo.vencimento < hojeSaoPaulo()) throw new ErroGestao("A parcela está vencida: a equipe precisa definir uma nova data antes de gerar o boleto.", 422);
   let c;
   try { c = await gerarCobranca(alvo.id, "boleto_pix", { id: null, nome: "Assistente virtual (atendimento)" }, http, deps.limiteDosDetalhesMs ?? 8_000); }
   catch (e) { if (e instanceof ErroAsaas) throw new ErroGestao(e.message, e.status === 401 ? 502 : e.status); throw e; }
-  // Quem pediu está esperando no chat (e o servidor corta a resposta em ~60 s): o que falta é buscado com tempo CURTO e no máximo ~30 s no total.
-  // O PIX (com uma repetição) e o PDF do boleto são buscados AO MESMO TEMPO — em série, o PDF nunca chegava a tempo. O link de pagamento já existe;
-  // o que não vier segue como motivo escrito, nunca como erro.
-  const motivo = { texto: "" };
-  const motivosDoPix: { pix?: string; linha?: string } = {};
-  const achado: { pdf: Awaited<ReturnType<typeof boletoEmPdf>>; cobranca: typeof c } = { pdf: null, cobranca: c };
-  const buscarPix = (async () => {
-    try {
-      achado.cobranca = (await completarDetalhesDaCobranca(alvo.id, http, deps.limitePorConsultaMs ?? 10_000, motivosDoPix)) ?? achado.cobranca;
-      if (!achado.cobranca.pix_payload) { await new Promise((r) => setTimeout(r, deps.esperaMs ?? 1500)); achado.cobranca = (await completarDetalhesDaCobranca(alvo.id, http, deps.limitePorConsultaMs ?? 10_000, motivosDoPix)) ?? achado.cobranca; }
-    } catch { /* o que já veio basta */ }
-  })();
-  const buscarPdf = (async () => {
-    try { achado.pdf = await boletoEmPdf(alvo.id, { http, motivo, limiteMs: deps.limitePorConsultaMs ?? 10_000 }); } catch (e) { motivo.texto = e instanceof Error ? e.message : "falha ao baixar o boleto"; }
-  })();
-  let acabou = false;
-  let relogio: ReturnType<typeof setTimeout> | undefined;
-  await Promise.race([Promise.all([buscarPix, buscarPdf]).then(() => { acabou = true; }), new Promise((r) => { relogio = setTimeout(r, deps.limiteTotalMs ?? 30_000); })]);
-  if (relogio) clearTimeout(relogio);
-  if (!acabou && !motivo.texto) motivo.texto = "o Asaas demorou para liberar o boleto em PDF";
-  c = achado.cobranca;
-  const pdf = achado.pdf;
-  const pixMotivo = c.pix_payload ? null : (motivosDoPix.pix ?? (acabou ? "o Asaas não devolveu o código do PIX (a conta pode não ter chave PIX cadastrada)" : "o Asaas demorou para devolver o código do PIX"));
+  const x = await buscarComplemento(alvo.id, c, http, { porConsultaMs: deps.limitePorConsultaMs ?? 8_000, totalMs: deps.limiteTotalMs ?? 12_000, esperaMs: deps.esperaMs ?? 1_000, repetirPix: false });
   registrar(alvo.id, "cobranca_pelo_atendimento", "Cobrança enviada ao cliente pelo atendimento (assistente virtual).", undefined);
-  return {
-    lancamento_id: alvo.id, descricao: alvo.descricao, valor_centavos: alvo.valor_centavos, vencimento: alvo.vencimento,
-    link: c.invoice_url || c.bank_slip_url || "", linha_digitavel: c.linha_digitavel || "", pix: c.pix_payload || "",
-    boleto_pdf_base64: pdf && pdf.conteudo.length <= 3_000_000 ? pdf.conteudo.toString("base64") : null, boleto_pdf_nome: pdf?.nome ?? null, pix_motivo: pixMotivo, boleto_pdf_motivo: pdf ? null : (motivo.texto || "o boleto em PDF não está disponível"),
-    outras_em_aberto: abertas.length - 1,
-  };
+  return montarResposta(alvo, x, outras);
+}
+
+/**
+ * MODO PACIENTE (ninguém espera na tela): completa o PIX e o PDF de uma cobrança JÁ gerada, com até 40 s por consulta. O atendimento chama de novo, a
+ * intervalos, até conseguir (o Asaas de testes costuma demorar). Não cria cobrança: só a do próprio cliente do telefone, em aberto.
+ */
+export async function complementoDaCobranca(d: { telefone?: unknown; lancamento_id?: unknown }, http: typeof fetch = fetch, deps: Deps = {}): Promise<CobrancaParaOAtendimento> {
+  const pessoaId = clienteDoTelefone(d.telefone);
+  const { alvo, outras } = parcelaDoCliente(pessoaId, d.lancamento_id);
+  const c = cobrancaDoLancamento(alvo.id);
+  if (!c) throw new ErroGestao("Essa parcela ainda não tem cobrança gerada.", 404);
+  const x = await buscarComplemento(alvo.id, c, http, { porConsultaMs: deps.limitePorConsultaMs ?? 40_000, totalMs: deps.limiteTotalMs ?? 45_000, esperaMs: deps.esperaMs ?? 2_000, repetirPix: true });
+  return montarResposta(alvo, x, outras);
 }
 
 /**

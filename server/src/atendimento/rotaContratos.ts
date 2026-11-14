@@ -20,7 +20,7 @@ export function criarRotaContratos(cfg: ConfigRotaContratos, agora: () => number
   const http = cfg.http ?? fetch;
   r.use(express.raw({ type: () => true, limit: "128kb" }));
 
-  r.all(/^\/v1\/offices\/([a-z0-9-]{2,42})\/(?:contratos(?:\/(?:\d{1,12}|opcoes))?|agente\/prompt|documentos|indicadores|anotacoes(?:\/(?:buscar|pendencias|cumprir))?|cadastro|cobranca|armazenamento\/saude)$/, async (req: Request, res: Response) => {
+  r.all(/^\/v1\/offices\/([a-z0-9-]{2,42})\/(?:contratos(?:\/(?:\d{1,12}|opcoes))?|agente\/prompt|documentos|indicadores|anotacoes(?:\/(?:buscar|pendencias|cumprir))?|cadastro|cobranca(?:\/complemento)?|armazenamento\/saude)$/, async (req: Request, res: Response) => {
     res.set("Cache-Control", "no-store");
     try {
       const metodo = req.method.toUpperCase();
@@ -35,14 +35,14 @@ export function criarRotaContratos(cfg: ConfigRotaContratos, agora: () => number
       const indicadores = /^\/v1\/offices\/([a-z0-9-]+)\/indicadores$/.exec(req.path);
       const anotacoes = /^\/v1\/offices\/([a-z0-9-]+)\/anotacoes(\/(?:buscar|pendencias|cumprir))?$/.exec(req.path);
       const cadastro = /^\/v1\/offices\/([a-z0-9-]+)\/cadastro$/.exec(req.path);
-      const cobranca = /^\/v1\/offices\/([a-z0-9-]+)\/cobranca$/.exec(req.path);
+      const cobranca = /^\/v1\/offices\/([a-z0-9-]+)\/cobranca(\/complemento)?$/.exec(req.path);
       const m = agente ?? documentos ?? saude ?? indicadores ?? anotacoes ?? cadastro ?? cobranca ?? /^\/v1\/offices\/([a-z0-9-]+)\/contratos(?:\/(\d+|opcoes))?$/.exec(req.path)!;
       const slug = m[1], id = agente || documentos || saude || indicadores || anotacoes || cadastro || cobranca ? undefined : m[2];
       if (agente || saude ? metodo !== "GET" : documentos || indicadores || anotacoes || cadastro || cobranca ? metodo !== "POST" : !((metodo === "POST" && !id) || (metodo === "GET" && id))) return void res.status(405).json({ error: "Método não permitido." });
       const porta = cfg.porta(slug);
       if (!porta) return void res.status(404).json({ error: "Escritório sem instância neste servidor." });
 
-      const destino = cobranca ? "/api/integracao/cobranca" : cadastro ? "/api/integracao/cadastro" : anotacoes ? `/api/integracao/anotacoes${anotacoes[2] ?? ""}` : agente ? "/api/integracao/agente/prompt" : indicadores ? "/api/integracao/indicadores" : saude ? "/api/integracao/armazenamento/saude" : documentos ? "/api/integracao/documentos" : `/api/integracao/contratos${id ? `/${id}` : ""}`;
+      const destino = cobranca ? `/api/integracao/cobranca${cobranca[2] ?? ""}` : cadastro ? "/api/integracao/cadastro" : anotacoes ? `/api/integracao/anotacoes${anotacoes[2] ?? ""}` : agente ? "/api/integracao/agente/prompt" : indicadores ? "/api/integracao/indicadores" : saude ? "/api/integracao/armazenamento/saude" : documentos ? "/api/integracao/documentos" : `/api/integracao/contratos${id ? `/${id}` : ""}`;
       const ts = agora();
       const resp = await http(`http://127.0.0.1:${porta}${destino}`, {
         method: metodo,

@@ -1,4 +1,4 @@
-import { cobrancaParaOAtendimento } from "../services/gestao/cobrancaPeloAtendimento";
+import { cobrancaParaOAtendimento, complementoDaCobranca } from "../services/gestao/cobrancaPeloAtendimento";
 import { Router, type Request } from "express";
 import { verificarRequisicao } from "../atendimento/assinatura";
 import { atendimentoDaInstancia } from "../atendimento/instancia";
@@ -123,6 +123,15 @@ integracaoContratosRouter.post("/cobranca", async (req, res) => {
     auditAccess("cobranca_pelo_atendimento", null, null, { lancamento: r.lancamento_id });
     res.status(200).json(r);
   } catch (e) {
+    if (e instanceof ErroGestao) return void res.status(e.status).json({ error: e.message });
+    erro(res, e);
+  }
+});
+
+/** Completa, sem pressa, o PIX e o PDF de uma cobrança já gerada (o atendimento chama de novo até conseguir). */
+integracaoContratosRouter.post("/cobranca/complemento", async (req, res) => {
+  try { res.status(200).json(await complementoDaCobranca(req.body ?? {})); }
+  catch (e) {
     if (e instanceof ErroGestao) return void res.status(e.status).json({ error: e.message });
     erro(res, e);
   }

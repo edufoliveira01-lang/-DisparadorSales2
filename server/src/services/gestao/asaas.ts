@@ -38,6 +38,14 @@ export function salvarConfigAsaas(d: { chave?: unknown; ambiente?: unknown }) {
 export const mascara = (c: string) => (c ? `…${c.slice(-4)}` : "");
 
 type Http = typeof fetch;
+/** A causa REAL de uma falha de rede, em frase curta (tempo esgotado, nome do erro do sistema, ou a mensagem): "rede ou demora" não diz o que consertar. */
+export function descreverFalhaDeRede(e: unknown, limiteMs?: number): string {
+  const nome = (e as { name?: string } | null)?.name;
+  if (nome === "TimeoutError" || nome === "AbortError") return `sem resposta em ${Math.round((limiteMs ?? 0) / 1000)} s`;
+  const causa = (e as { cause?: { code?: string; message?: string } } | null)?.cause;
+  return String(causa?.code ?? causa?.message ?? (e instanceof Error ? e.message : "erro de rede")).slice(0, 120);
+}
+
 async function chamar<T>(metodo: "GET" | "POST" | "PUT" | "DELETE", caminho: string, corpo?: unknown, http: Http = fetch, limiteMs = 25_000): Promise<T> {
   const chave = chaveDoAsaas();
   if (!chave) throw new ErroAsaas("O Asaas ainda não foi configurado. Cole a chave de API em Configurações → Asaas.", 409);
@@ -47,7 +55,7 @@ async function chamar<T>(metodo: "GET" | "POST" | "PUT" | "DELETE", caminho: str
       method: metodo, headers: { access_token: chave, "Content-Type": "application/json", "User-Agent": "DisparaZap" },
       body: corpo === undefined ? undefined : JSON.stringify(corpo), signal: AbortSignal.timeout(limiteMs),
     });
-  } catch { throw new ErroAsaas("Não foi possível acessar o Asaas (rede ou demora)."); }
+  } catch (e) { throw new ErroAsaas(`Não foi possível acessar o Asaas (${descreverFalhaDeRede(e, limiteMs)}).`); }
   const texto = await r.text();
   let json: unknown = {};
   try { json = texto ? JSON.parse(texto) : {}; } catch { /* corpo não-JSON */ }
