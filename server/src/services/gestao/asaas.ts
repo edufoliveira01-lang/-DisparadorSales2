@@ -99,6 +99,28 @@ async function detalhes(paymentId: string, tipo: string, http: Http) {
   return { pix, linha };
 }
 
+/**
+ * Completa o que ficou faltando na cobrança já criada: o PIX copia e cola e a linha digitável nem sempre estão prontos no instante da criação
+ * (e o endereço do boleto, em cobrança «boleto ou PIX»). Consulta de novo ao Asaas e grava o que veio. Nunca apaga o que já existe.
+ */
+export async function completarDetalhesDaCobranca(lancamentoId: number, http: Http = fetch): Promise<Cobranca | null> {
+  const c = cobrancaDoLancamento(lancamentoId);
+  if (!c) return null;
+  const tipo = c.billing_type === "BOLETO" || c.billing_type === "PIX" ? c.billing_type : "UNDEFINED";
+  if (!c.pix_payload || !c.linha_digitavel) {
+    const d = await detalhes(c.payment_id, tipo, http);
+    if ((d.pix && !c.pix_payload) || (d.linha && !c.linha_digitavel))
+      db.prepare("UPDATE gestao_asaas_cobrancas SET pix_payload=?, linha_digitavel=?, atualizado_em=CURRENT_TIMESTAMP WHERE lancamento_id=?").run(c.pix_payload || d.pix, c.linha_digitavel || d.linha, lancamentoId);
+  }
+  if (!c.bank_slip_url) {
+    try {
+      const p = await chamar<{ bankSlipUrl?: string; invoiceUrl?: string }>("GET", `/payments/${c.payment_id}`, undefined, http);
+      if (p.bankSlipUrl || (!c.invoice_url && p.invoiceUrl)) db.prepare("UPDATE gestao_asaas_cobrancas SET bank_slip_url=COALESCE(NULLIF(?,''),bank_slip_url), invoice_url=COALESCE(NULLIF(?,''),invoice_url) WHERE lancamento_id=?").run(p.bankSlipUrl ?? "", p.invoiceUrl ?? "", lancamentoId);
+    } catch { /* o link e o PDF derivado bastam */ }
+  }
+  return cobrancaDoLancamento(lancamentoId);
+}
+
 /** Gera boleto/PIX para uma parcela a receber em aberto (se já houver cobrança ativa, devolve a mesma). */
 export async function gerarCobranca(lancamentoId: number, tipo: TipoCobranca = "boleto_pix", quem?: Quem, http: Http = fetch): Promise<Cobranca> {
   const l = obterLancamento(lancamentoId);

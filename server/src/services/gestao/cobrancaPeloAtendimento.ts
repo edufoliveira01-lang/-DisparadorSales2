@@ -2,7 +2,7 @@ import { db } from "../../db";
 import { pessoaDoDocumento } from "../../armazenamento/chat";
 import { pessoaPorTelefone } from "./anotacoes";
 import { ErroGestao } from "./erro";
-import { ErroAsaas, gerarCobranca, cobrancaDoLancamento, chaveDoAsaas } from "./asaas";
+import { ErroAsaas, gerarCobranca, cobrancaDoLancamento, chaveDoAsaas, completarDetalhesDaCobranca } from "./asaas";
 import { boletoEmPdf } from "./boleto";
 import { hojeSaoPaulo } from "../djen/cache";
 import { registrar } from "./financeiro";
@@ -15,7 +15,7 @@ import { documentoValido, soDigitos } from "./validacao";
  */
 export interface CobrancaParaOAtendimento {
   lancamento_id: number; descricao: string; valor_centavos: number; vencimento: string;
-  link: string; linha_digitavel: string; pix: string; boleto_pdf_base64: string | null; boleto_pdf_nome: string | null;
+  link: string; linha_digitavel: string; pix: string; boleto_pdf_base64: string | null; boleto_pdf_nome: string | null; boleto_pdf_motivo: string | null;
   outras_em_aberto: number;
 }
 
@@ -25,7 +25,7 @@ export function parcelasEmAbertoDoCliente(pessoaId: number): Aberta[] {
   return db.prepare("SELECT id,descricao,valor_centavos,vencimento FROM gestao_lancamentos WHERE pessoa_id=? AND tipo='receber' AND cancelado=0 AND pago_em IS NULL ORDER BY vencimento, id").all(pessoaId) as Aberta[];
 }
 
-export async function cobrancaParaOAtendimento(d: { telefone?: unknown; cpf?: unknown; lancamento_id?: unknown }, http: typeof fetch = fetch): Promise<CobrancaParaOAtendimento> {
+export async function cobrancaParaOAtendimento(d: { telefone?: unknown; cpf?: unknown; lancamento_id?: unknown }, http: typeof fetch = fetch, deps: { esperaMs?: number } = {}): Promise<CobrancaParaOAtendimento> {
   // O mesmo critério tolerante da anotação (com ou sem 55 e o 9º dígito); o do documento recusa telefone repetido e formato diferente.
   // SÓ o telefone da conversa identifica o cliente: o CPF que veio do atendimento é dado digitado por quem escreve e NUNCA escolhe de quem é a cobrança.
   const pessoaId = pessoaDoDocumento("", String(d.telefone ?? "")) ?? pessoaPorTelefone(d.telefone)?.id ?? null;
@@ -42,13 +42,19 @@ export async function cobrancaParaOAtendimento(d: { telefone?: unknown; cpf?: un
   let c;
   try { c = await gerarCobranca(alvo.id, "boleto_pix", { id: null, nome: "Assistente virtual (atendimento)" }, http); }
   catch (e) { if (e instanceof ErroAsaas) throw new ErroGestao(e.message, e.status === 401 ? 502 : e.status); throw e; }
+  // O PIX e o endereço do boleto podem demorar uns instantes para existir no Asaas: uma segunda consulta antes de desistir.
+  try {
+    c = (await completarDetalhesDaCobranca(alvo.id, http)) ?? c;
+    if (!c.pix_payload) { await new Promise((r) => setTimeout(r, deps.esperaMs ?? 1500)); c = (await completarDetalhesDaCobranca(alvo.id, http)) ?? c; }
+  } catch { /* o que já veio basta */ }
+  const motivo = { texto: "" };
   let pdf: Awaited<ReturnType<typeof boletoEmPdf>> = null;
-  try { pdf = await boletoEmPdf(alvo.id, { http }); } catch { /* o link e o PIX bastam */ }
+  try { pdf = await boletoEmPdf(alvo.id, { http, motivo }); } catch (e) { motivo.texto = e instanceof Error ? e.message : "falha ao baixar o boleto"; }
   registrar(alvo.id, "cobranca_pelo_atendimento", "Cobrança enviada ao cliente pelo atendimento (assistente virtual).", undefined);
   return {
     lancamento_id: alvo.id, descricao: alvo.descricao, valor_centavos: alvo.valor_centavos, vencimento: alvo.vencimento,
     link: c.invoice_url || c.bank_slip_url || "", linha_digitavel: c.linha_digitavel || "", pix: c.pix_payload || "",
-    boleto_pdf_base64: pdf && pdf.conteudo.length <= 3_000_000 ? pdf.conteudo.toString("base64") : null, boleto_pdf_nome: pdf?.nome ?? null,
+    boleto_pdf_base64: pdf && pdf.conteudo.length <= 3_000_000 ? pdf.conteudo.toString("base64") : null, boleto_pdf_nome: pdf?.nome ?? null, boleto_pdf_motivo: pdf ? null : (motivo.texto || "o boleto em PDF não está disponível"),
     outras_em_aberto: abertas.length - 1,
   };
 }
