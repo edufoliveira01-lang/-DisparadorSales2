@@ -32,12 +32,41 @@ beforeEach(() => {
 });
 
 describe("cobrança pedida pelo atendimento", () => {
-  it("acha o cliente pelo telefone, gera boleto+PIX da parcela mais antiga e devolve link, PIX, linha e PDF", async () => {
+  it("acha o cliente pelo telefone e gera boleto+PIX da parcela PEDIDA (aqui, pelo vencimento), devolvendo link, PIX, linha e PDF", async () => {
     const a = pessoa("EDUARDO", "(13) 97404-5973");
-    const id = lanc(a, "2999-12-10"); lanc(a, "2999-12-20");
-    const r = await cobrancaParaOAtendimento({ telefone: "5513974045973" }, falso());
-    expect(r).toMatchObject({ lancamento_id: id, valor_centavos: 5000, link: "https://asaas/i/1", pix: "000201PIX", linha_digitavel: "23793.38128 60000.000003", outras_em_aberto: 1 });
+    lanc(a, "2999-12-10"); const segunda = lanc(a, "2999-12-20");
+    const r = await cobrancaParaOAtendimento({ telefone: "5513974045973", vencimento: "2999-12-20" }, falso());
+    expect(r).toMatchObject({ lancamento_id: segunda, valor_centavos: 5000, link: "https://asaas/i/1", pix: "000201PIX", linha_digitavel: "23793.38128 60000.000003", outras_em_aberto: 1 });
     expect(r.boleto_pdf_base64).toBeTruthy();
+  });
+  it("com mais de uma parcela em aberto e sem dizer qual, NÃO escolhe: lista as opções para o atendimento perguntar (e nada é gerado)", async () => {
+    const a = pessoa("EDUARDO", "(13) 97404-5973");
+    lanc(a, "2999-12-10", 5000); lanc(a, "2999-12-20", 1000);
+    await expect(cobrancaParaOAtendimento({ telefone: "5513974045973" }, falso())).rejects.toThrow(/2 parcelas em aberto: R\$\s?50,00 \(venc\. 10\/12\/2999\); R\$\s?10,00 \(venc\. 20\/12\/2999\)\. Pergunte/);
+    expect(Number((db.prepare("SELECT COUNT(*) n FROM gestao_asaas_cobrancas").get() as { n: number }).n)).toBe(0);
+  });
+  it("o cliente pediu a de R$ 10: gera ESSA e não a de R$ 50 (o caso da conversa de teste)", async () => {
+    const a = pessoa("EDUARDO", "(13) 97404-5973");
+    lanc(a, "2020-01-10", 5000); const dez = lanc(a, "2999-12-20", 1000);
+    db.prepare("INSERT INTO gestao_asaas_cobrancas(lancamento_id,payment_id,billing_type,status,invoice_url,valor_centavos,vencimento) VALUES (1,'pay_velha','UNDEFINED','OVERDUE','https://sandbox.asaas.com/i/velha',5000,'2020-01-10')").run();
+    const r = await cobrancaParaOAtendimento({ telefone: "5513974045973", valor_centavos: 1000 }, falso());
+    expect(r.lancamento_id).toBe(dez);
+    expect(r.valor_centavos).toBe(1000);
+  });
+  it("valor ou data que não batem com nenhuma parcela: recusa listando o que existe; data inválida também", async () => {
+    const a = pessoa("EDUARDO", "(13) 97404-5973");
+    lanc(a, "2999-12-10", 5000); lanc(a, "2999-12-20", 1000);
+    await expect(cobrancaParaOAtendimento({ telefone: "5513974045973", valor_centavos: 7777 }, falso())).rejects.toThrow(/Não achei parcela.*Em aberto: R\$\s?50,00/);
+    await expect(cobrancaParaOAtendimento({ telefone: "5513974045973", vencimento: "amanhã" }, falso())).rejects.toThrow(/inválida/);
+  });
+  it("duas parcelas do mesmo valor: pede o vencimento; com o vencimento (dd/mm) resolve", async () => {
+    const a = pessoa("EDUARDO", "(13) 97404-5973");
+    const ano = new Date().getFullYear() + 1; // vencimento futuro, para poder gerar
+    const v1 = `${ano}-03-10`, v2 = `${ano}-04-10`;
+    lanc(a, v1, 5000); const segunda = lanc(a, v2, 5000);
+    await expect(cobrancaParaOAtendimento({ telefone: "5513974045973", valor_centavos: 5000 }, falso())).rejects.toThrow(/Mais de uma parcela combina/);
+    const r = await cobrancaParaOAtendimento({ telefone: "5513974045973", valor_centavos: 5000, vencimento: `10/04/${ano}` }, falso());
+    expect(r.lancamento_id).toBe(segunda);
   });
   it("não gera cobrança para parcela de outro cliente nem sem cadastro; vencida pede a equipe", async () => {
     const a = pessoa("EDUARDO", "(13) 97404-5973"), b = pessoa("OUTRO", "(11) 98888-0000");

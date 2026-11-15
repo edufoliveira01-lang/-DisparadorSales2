@@ -70,14 +70,50 @@ function montarResposta(alvo: Aberta, x: Complemento, outras: number): CobrancaP
 
 type Deps = { esperaMs?: number; limiteTotalMs?: number; limiteDosDetalhesMs?: number; limitePorConsultaMs?: number };
 
-/** A parcela pedida (ou a mais antiga) em aberto do cliente do telefone; recusa o que não é DELE. */
-function parcelaDoCliente(pessoaId: number, lancamentoId: unknown): { alvo: Aberta; outras: number } {
+const brl = (c: number) => (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const dataBr = (iso: string) => iso.split("-").reverse().join("/");
+
+/** Aceita 2026-11-15, 15/11/2026 e 15/11 (este ano ou o próximo, o que ainda faça sentido); devolve AAAA-MM-DD ou null. */
+function dataIso(v: unknown): string | null {
+  const t = String(v ?? "").trim();
+  let m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t);
+  if (m) return t;
+  m = /^(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?$/.exec(t);
+  if (!m) return null;
+  const ano = m[3] ?? hojeSaoPaulo().slice(0, 4);
+  return `${ano}-${m[2]!.padStart(2, "0")}-${m[1]!.padStart(2, "0")}`;
+}
+
+export interface SeletorDeParcela { lancamento_id?: unknown; valor_centavos?: unknown; vencimento?: unknown }
+
+/**
+ * A parcela que o CLIENTE pediu, entre as em aberto DELE. Nunca escolhe sozinha quando há mais de uma: boleto de outra parcela chega ao cliente como
+ * cobrança certa e ele paga o valor errado. Sem seletor e com mais de uma em aberto, recusa listando as opções para o atendimento perguntar.
+ */
+function parcelaDoCliente(pessoaId: number, sel: SeletorDeParcela): { alvo: Aberta; outras: number } {
   const abertas = parcelasEmAbertoDoCliente(pessoaId);
   if (abertas.length === 0) throw new ErroGestao("O cliente não tem parcela em aberto.", 404);
-  const pedido = Number(lancamentoId);
-  const alvo = Number.isSafeInteger(pedido) && pedido > 0 ? abertas.find((a) => a.id === pedido) : abertas[0];
-  if (!alvo) throw new ErroGestao("Essa parcela não é deste cliente ou já não está em aberto.", 404);
-  return { alvo, outras: abertas.length - 1 };
+  const hoje = hojeSaoPaulo();
+  const lista = abertas.map((a) => `${brl(a.valor_centavos)} (venc. ${dataBr(a.vencimento)}${a.vencimento < hoje ? ", vencida" : ""})`).join("; ");
+  const outras = (a: Aberta) => abertas.length - 1 + (a ? 0 : 0);
+  const id = Number(sel.lancamento_id);
+  if (Number.isSafeInteger(id) && id > 0) {
+    const a = abertas.find((x) => x.id === id);
+    if (!a) throw new ErroGestao("Essa parcela não é deste cliente ou já não está em aberto.", 404);
+    return { alvo: a, outras: outras(a) };
+  }
+  const valor = Math.round(Number(sel.valor_centavos));
+  const venc = sel.vencimento === undefined || sel.vencimento === null || String(sel.vencimento).trim() === "" ? null : dataIso(sel.vencimento);
+  if (sel.vencimento !== undefined && sel.vencimento !== null && String(sel.vencimento).trim() !== "" && venc === null) throw new ErroGestao("Data de vencimento inválida: use dia/mês (ex.: 15/11).", 422);
+  const temValor = Number.isFinite(valor) && valor > 0;
+  if (!temValor && !venc) {
+    if (abertas.length === 1) return { alvo: abertas[0]!, outras: 0 };
+    throw new ErroGestao(`O cliente tem ${abertas.length} parcelas em aberto: ${lista}. Pergunte de qual delas ele precisa e informe o valor (e o vencimento, se houver duas do mesmo valor).`, 409);
+  }
+  const achadas = abertas.filter((a) => (!temValor || a.valor_centavos === valor) && (!venc || a.vencimento === venc));
+  if (achadas.length === 0) throw new ErroGestao(`Não achei parcela em aberto com esse valor${venc ? " e vencimento" : ""}. Em aberto: ${lista}. Confirme com o cliente qual é a parcela.`, 404);
+  if (achadas.length > 1) throw new ErroGestao(`Mais de uma parcela combina: ${achadas.map((a) => `${brl(a.valor_centavos)} (venc. ${dataBr(a.vencimento)})`).join("; ")}. Informe também o vencimento.`, 409);
+  return { alvo: achadas[0]!, outras: outras(achadas[0]!) };
 }
 
 function clienteDoTelefone(telefone: unknown): number {
@@ -93,10 +129,10 @@ function clienteDoTelefone(telefone: unknown): number {
  * MODO RÁPIDO (a resposta do chat espera por ele): gera a cobrança (ou reaproveita) e tenta o PIX e o PDF por POUCO tempo. Devolve o link e a linha
  * digitável na hora; `pendente` diz que falta PIX ou PDF — quem chamou completa depois com `complementoDaCobranca`, sem ninguém esperando.
  */
-export async function cobrancaParaOAtendimento(d: { telefone?: unknown; cpf?: unknown; lancamento_id?: unknown }, http: typeof fetch = fetch, deps: Deps = {}): Promise<CobrancaParaOAtendimento> {
+export async function cobrancaParaOAtendimento(d: { telefone?: unknown; cpf?: unknown } & SeletorDeParcela, http: typeof fetch = fetch, deps: Deps = {}): Promise<CobrancaParaOAtendimento> {
   const pessoaId = clienteDoTelefone(d.telefone);
   completarDocumentoSeFalta(pessoaId, d.cpf);
-  const { alvo, outras } = parcelaDoCliente(pessoaId, d.lancamento_id);
+  const { alvo, outras } = parcelaDoCliente(pessoaId, d);
   const jaTem = cobrancaDoLancamento(alvo.id);
   if (!jaTem && alvo.vencimento < hojeSaoPaulo()) throw new ErroGestao("A parcela está vencida: a equipe precisa definir uma nova data antes de gerar o boleto.", 422);
   let c;
@@ -111,9 +147,9 @@ export async function cobrancaParaOAtendimento(d: { telefone?: unknown; cpf?: un
  * MODO PACIENTE (ninguém espera na tela): completa o PIX e o PDF de uma cobrança JÁ gerada, com até 40 s por consulta. O atendimento chama de novo, a
  * intervalos, até conseguir (o Asaas de testes costuma demorar). Não cria cobrança: só a do próprio cliente do telefone, em aberto.
  */
-export async function complementoDaCobranca(d: { telefone?: unknown; lancamento_id?: unknown }, http: typeof fetch = fetch, deps: Deps = {}): Promise<CobrancaParaOAtendimento> {
+export async function complementoDaCobranca(d: { telefone?: unknown } & SeletorDeParcela, http: typeof fetch = fetch, deps: Deps = {}): Promise<CobrancaParaOAtendimento> {
   const pessoaId = clienteDoTelefone(d.telefone);
-  const { alvo, outras } = parcelaDoCliente(pessoaId, d.lancamento_id);
+  const { alvo, outras } = parcelaDoCliente(pessoaId, d);
   const c = cobrancaDoLancamento(alvo.id);
   if (!c) throw new ErroGestao("Essa parcela ainda não tem cobrança gerada.", 404);
   const x = await buscarComplemento(alvo.id, c, http, { porConsultaMs: deps.limitePorConsultaMs ?? 40_000, totalMs: deps.limiteTotalMs ?? 45_000, esperaMs: deps.esperaMs ?? 2_000, repetirPix: true });
