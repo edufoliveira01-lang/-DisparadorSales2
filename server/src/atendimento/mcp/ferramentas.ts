@@ -30,6 +30,7 @@ function comCliente(telefone: string, f: (c: ClienteAchado) => ResultadoFerramen
 
 const processosDo = (pessoaId: number) => db.prepare(`SELECT pr.id,pr.numero,pr.pasta,pr.tribunal,pr.orgao,pr.area,pr.assunto,pr.fase,pr.status,pr.atualizado_em,COALESCE(MAX(g.papel),'vinculado') AS papel
   FROM gestao_processos pr LEFT JOIN gestao_partes g ON g.processo_id=pr.id AND g.pessoa_id=? WHERE pr.id IN (SELECT value FROM json_each(?)) GROUP BY pr.id ORDER BY (pr.status='ativo') DESC, pr.atualizado_em DESC LIMIT 30`).all(pessoaId, JSON.stringify(processosDaPessoa(pessoaId))) as { id: number; numero: string; pasta: string; tribunal: string; orgao: string; area: string; assunto: string; fase: string; status: string; atualizado_em: string; papel: string }[];
+const AVISO_DE_TITULAR = "ATENÇÃO: o nome que aparece na publicação ou no processo pode ser diferente do cadastro desta pessoa (sucessor, herdeiro, familiar ou representante). Isso NÃO é motivo para recusar nem para chamar a equipe: o escritório já vinculou este processo a ela. Informe o andamento normalmente.";
 const processoView = (p: ReturnType<typeof processosDo>[number]) => ({ numero: p.numero, pasta: p.pasta, tribunal: p.tribunal, orgao: p.orgao, area: p.area, assunto: p.assunto, fase: p.fase, situacao: p.status });
 
 function compromissosDe(pessoaId: number, dias: number) {
@@ -75,7 +76,7 @@ export const FERRAMENTAS: readonly Ferramenta[] = [
       const dados = { encontrado: true, cliente: { nome: c.nome, cidade: c.cidade, uf: c.uf, cliente_desde: dia(c.criado_em) }, processos, contratos: contratos.map((x) => ({ situacao: x.status === "assinado" ? "assinado" : "aguardando assinatura", enviado_em: dia(x.criado_em), assinado_em: dia(x.assinado_em) })), compromissos_proximos: compromissos, documentos_recentes: docs, honorarios: { parcelas: fin.total_de_parcelas, pagas: fin.pagas, em_atraso: fin.em_atraso.length, proximo_vencimento: fin.a_vencer[0]?.vencimento ?? null } };
       const linhas = [
         `Cliente: ${c.nome}${c.cidade ? ` (${c.cidade}${c.uf ? `/${c.uf}` : ""})` : ""}.`,
-        processos.length ? `Processos (${processos.length}): ${processos.slice(0, 5).map((p) => `${p.numero}${p.area ? ` — ${p.area}` : ""}${p.fase ? `, fase: ${p.fase}` : ""}, ${p.situacao}`).join("; ")}.` : "Nenhum processo cadastrado ainda.",
+        processos.length ? `Processos (${processos.length}): ${processos.slice(0, 5).map((p) => `${p.numero}${p.area ? ` — ${p.area}` : ""}${p.fase ? `, fase: ${p.fase}` : ""}, ${p.situacao}`).join("; ")}. Estes processos estão vinculados a esta pessoa no escritório (ainda que o nome na publicação seja outro: sucessor/herdeiro/familiar); informe-os normalmente.` : "Nenhum processo cadastrado ainda.",
         compromissos.length ? `Próximos compromissos: ${compromissos.slice(0, 4).map((x) => `${x.tipo} em ${x.data}${x.horario ? ` às ${x.horario}` : ""}${x.local ? ` (${x.local})` : ""}`).join("; ")}.` : "Nenhuma perícia ou audiência agendada nos próximos 120 dias.",
         contratos.length ? `Contrato: ${dados.contratos[0]!.situacao}.` : "Sem contrato registrado pelo sistema.",
         fin.total_de_parcelas ? `Honorários: ${fin.pagas}/${fin.total_de_parcelas} parcelas pagas${fin.em_atraso.length ? `, ${fin.em_atraso.length} em atraso` : ""}.` : "Sem parcelas de honorários lançadas.",
@@ -113,6 +114,7 @@ export const FERRAMENTAS: readonly Ferramenta[] = [
         dados.ultimas_publicacoes.length ? `Últimas publicações: ${dados.ultimas_publicacoes.slice(0, 3).map((x) => `${x.data} (${x.tipo}): ${x.resumo}`).join(" | ")}` : "Nenhuma publicação do tribunal registrada ainda.",
         dados.prazos_abertos.length ? `Prazos abertos: ${dados.prazos_abertos.map((x) => `${x.descricao} até ${x.termino}`).join("; ")}.` : "",
         dados.pericias_e_audiencias.length ? `Agendado: ${dados.pericias_e_audiencias.map((x) => `${x.tipo} em ${x.data}${x.horario ? ` às ${x.horario}` : ""}`).join("; ")}.` : "",
+        AVISO_DE_TITULAR,
       ].filter(Boolean);
       return { texto: partes.join("\n"), dados };
     }),

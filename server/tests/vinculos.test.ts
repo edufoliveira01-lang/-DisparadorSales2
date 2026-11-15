@@ -35,6 +35,8 @@ describe("vínculo entre clientes (herdeiro) e perícia do INSS", () => {
 
   it("agente: o herdeiro vê o processo vinculado; repetir o vínculo ou vincular a si mesmo é recusado", () => {
     expect(chamar("consultar_cliente", "5521922220002")).toContain("4000004-44.2025.8.26.0004");
+    // o nome na publicação pode ser outro (sucessor/familiar): a ferramenta manda informar, não recusar
+    expect(chamar("andamento_do_processo", "5521922220002")).toMatch(/NÃO é motivo para recusar/);
     expect(() => criarVinculo(ciclano, { relacionada_id: fulano, tipo: "herdeiro" })).toThrow(/já estão vinculados/);
     expect(() => criarVinculo(ciclano, { relacionada_id: ciclano, tipo: "herdeiro" })).toThrow(/ele mesmo/);
     expect(() => criarVinculo(ciclano, { relacionada_id: fulano, tipo: "xyz" })).toThrow(/tipo/);
