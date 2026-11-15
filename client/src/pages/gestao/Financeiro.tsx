@@ -346,6 +346,17 @@ export function CobrancaModal({ lanc, aoFechar, aoMudar }: { lanc: Lanc; aoFecha
     catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível concluir.", "error"); }
     finally { setOcupado(""); }
   };
+  const buscarPix = async () => {
+    setOcupado("pix");
+    try {
+      const r = await api.post<{ pix: string; motivo: string | null; ambiente: string; chaves: Array<{ tipo: string; status: string }>; chaves_erro: string | null; cobranca: CobrancaAsaas | null }>(`/gestao/financeiro/lancamentos/${lanc.id}/cobranca/pix`, {});
+      if (r.cobranca) setC(r.cobranca);
+      if (r.pix) { show("Código PIX obtido.", "success"); aoMudar(); return; }
+      const chaves = r.chaves.length ? ` Chaves PIX da conta (${r.ambiente === "producao" ? "produção" : "testes"}): ${r.chaves.map((k) => `${k.tipo} ${k.status}`).join(", ")}.` : r.chaves_erro ? ` Não consegui listar as chaves PIX: ${r.chaves_erro}` : "";
+      show(`${r.motivo ?? "O Asaas não devolveu o código PIX."}${chaves}`, "error");
+    } catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível buscar o código PIX.", "error"); }
+    finally { setOcupado(""); }
+  };
   const copiar = async (t: string, rot: string) => { try { await navigator.clipboard.writeText(t); show(`${rot} copiado.`, "success"); } catch { show("Não consegui copiar. Selecione e copie à mão.", "info"); } };
   const ativa = c && !["CANCELADA", "DELETED", "REFUNDED"].includes(c.status);
   const link: LinkDePagamento | undefined = ativa && c.invoice_url ? { url: c.invoice_url, pix: c.pix_payload || undefined, linha: c.linha_digitavel || undefined } : undefined;
@@ -376,6 +387,13 @@ export function CobrancaModal({ lanc, aoFechar, aoMudar }: { lanc: Lanc; aoFecha
           <div className="flex flex-wrap items-center gap-2">{st && <Badge tone={st.tom}>{st.rotulo}</Badge>}{c.pago_em && <span className="text-xs text-zinc-500">paga em {dataBr(c.pago_em)}{c.taxa_centavos ? ` · tarifa ${dinheiro(c.taxa_centavos)}` : ""}</span>}</div>
           {c.erro && <p className="text-xs text-amber-700 dark:text-amber-300">Aviso: {c.erro}</p>}
           {c.invoice_url && <div className="flex gap-2"><Input readOnly value={c.invoice_url} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} /><Button variant="outline" onClick={() => void copiar(c.invoice_url, "Link")}><Copy className="h-4 w-4" /></Button><a href={c.invoice_url} target="_blank" rel="noopener noreferrer" className="inline-flex"><Button variant="outline" type="button"><ExternalLink className="h-4 w-4" /></Button></a></div>}
+          {ativa && !c.pix_payload && c.billing_type !== "BOLETO" && (
+            <div className="rounded-xl border border-dashed border-zinc-300 p-3 dark:border-white/15">
+              <p className="text-xs font-medium text-zinc-600 dark:text-zinc-300">PIX copia e cola</p>
+              <p className="mt-1 text-xs text-zinc-500">O código PIX ainda não veio do Asaas. Busque de novo: se não vier, a mensagem diz o motivo (por exemplo, falta de chave PIX na conta).</p>
+              <Button className="mt-2" variant="outline" loading={ocupado === "pix"} onClick={() => void buscarPix()}><QrCode className="h-4 w-4" /> Buscar código PIX</Button>
+            </div>
+          )}
           {c.pix_payload && <div><p className="mb-1 text-xs font-medium text-zinc-600 dark:text-zinc-300">PIX copia e cola</p><div className="flex gap-2"><Input readOnly value={c.pix_payload} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} /><Button variant="outline" onClick={() => void copiar(c.pix_payload, "PIX")}><Copy className="h-4 w-4" /></Button></div></div>}
           {c.linha_digitavel && <div><p className="mb-1 text-xs font-medium text-zinc-600 dark:text-zinc-300">Linha digitável do boleto</p><div className="flex gap-2"><Input readOnly value={c.linha_digitavel} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} /><Button variant="outline" onClick={() => void copiar(c.linha_digitavel, "Linha digitável")}><Copy className="h-4 w-4" /></Button>{c.bank_slip_url && <a href={c.bank_slip_url} target="_blank" rel="noopener noreferrer" className="inline-flex"><Button variant="outline" type="button"><FileText className="h-4 w-4" /></Button></a>}</div></div>}
           <div className="flex flex-wrap gap-2 border-t border-zinc-100 pt-3 dark:border-white/10">

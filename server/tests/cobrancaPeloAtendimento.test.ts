@@ -6,7 +6,7 @@ import { db } from "../src/db";
 import { salvarConfigAsaas } from "../src/services/gestao/asaas";
 import { cobrancaParaOAtendimento, complementoDaCobranca } from "../src/services/gestao/cobrancaPeloAtendimento";
 import { ErroGestao } from "../src/services/gestao/erro";
-import { descreverFalhaDeRede } from "../src/services/gestao/asaas";
+import { buscarPixDaCobranca, chavesPixDaConta, descreverFalhaDeRede } from "../src/services/gestao/asaas";
 import { nomeDoBoleto } from "../src/services/gestao/boleto";
 import { salvarConexao, salvarCredenciais } from "../src/armazenamento/banco";
 
@@ -239,5 +239,49 @@ describe("cobrança pedida pelo atendimento", () => {
     expect(r2.boleto_pdf_nome).toBe("Boleto - Honorários 1-3 - R$ 10,00 - venc 20-12-2999.pdf");
     expect((db.prepare("SELECT nome FROM gestao_arquivos WHERE pessoa_id=?").get(a) as { nome: string }).nome).toBe("Boleto - Honorários 1-3 - R$ 10,00 - venc 20-12-2999.pdf");
     void id;
+  });
+  const httpDoPix = (opcoes: { pix: "ok" | "erro"; chaves: Array<{ type: string; status: string }> }) => (async (url: string, init?: RequestInit) => {
+    const u = String(url), m = String(init?.method ?? "GET");
+    const j = (o: unknown, st = 200) => new Response(JSON.stringify(o), { status: st });
+    if (u.includes("/customers") && m === "GET") return j({ data: [] });
+    if (u.includes("/customers")) return j({ id: "cus_1" });
+    if (u.endsWith("/payments") && m === "POST") return j({ id: "pay_1", status: "PENDING", invoiceUrl: "https://sandbox.asaas.com/i/abc123", bankSlipUrl: "https://sandbox.asaas.com/b/pdf/abc123", billingType: "UNDEFINED" });
+    if (/\/payments\/pay_1$/.test(u)) return j({ id: "pay_1" });
+    if (u.includes("pixQrCode")) return opcoes.pix === "ok" ? j({ payload: "000201PIX" }) : j({ errors: [{ description: "Ocorreu um erro desconhecido. Por favor, tente novamente." }] }, 400);
+    if (u.includes("identificationField")) return j({ identificationField: "23793" });
+    if (u.includes("/pix/addressKeys")) return j({ data: opcoes.chaves });
+    if (u.includes("/b/pdf/")) return new Response(PDF, { status: 200 });
+    return j({});
+  }) as unknown as typeof fetch;
+  it("«Buscar código PIX»: quando o Asaas libera, o código é guardado e devolvido", async () => {
+    const a = pessoa("EDUARDO", "(13) 97404-5973"); const id = lanc(a);
+    await cobrancaParaOAtendimento({ telefone: "5513974045973" }, httpDoPix({ pix: "erro", chaves: [] }), { esperaMs: 0 });
+    const r = await buscarPixDaCobranca(id, httpDoPix({ pix: "ok", chaves: [{ type: "EVP", status: "ACTIVE" }] }));
+    expect(r.pix).toBe("000201PIX");
+    expect(r.motivo).toBeNull();
+    expect((db.prepare("SELECT pix_payload FROM gestao_asaas_cobrancas WHERE lancamento_id=?").get(id) as { pix_payload: string }).pix_payload).toBe("000201PIX");
+  });
+  it("«Buscar código PIX» sem chave PIX na conta do ambiente: o motivo diz que a chave da conta real não vale no ambiente de testes", async () => {
+    const a = pessoa("EDUARDO", "(13) 97404-5973"); const id = lanc(a);
+    await cobrancaParaOAtendimento({ telefone: "5513974045973" }, httpDoPix({ pix: "erro", chaves: [] }), { esperaMs: 0 });
+    const r = await buscarPixDaCobranca(id, httpDoPix({ pix: "erro", chaves: [] }));
+    expect(r.pix).toBe("");
+    expect(r.chaves).toEqual([]);
+    expect(r.motivo).toMatch(/não tem nenhuma chave PIX.*não vale para a conta de testes/);
+  });
+  it("«Buscar código PIX» com chave existente mas o Asaas recusando: devolve a frase DO ASAAS e as chaves com o status", async () => {
+    const a = pessoa("EDUARDO", "(13) 97404-5973"); const id = lanc(a);
+    await cobrancaParaOAtendimento({ telefone: "5513974045973" }, httpDoPix({ pix: "erro", chaves: [] }), { esperaMs: 0 });
+    const r = await buscarPixDaCobranca(id, httpDoPix({ pix: "erro", chaves: [{ type: "EVP", status: "AWAITING_ACTIVATION" }] }));
+    expect(r.motivo).toBe("Ocorreu um erro desconhecido. Por favor, tente novamente.");
+    expect(r.chaves).toEqual([{ tipo: "EVP", status: "AWAITING_ACTIVATION" }]);
+    expect((await chavesPixDaConta(httpDoPix({ pix: "ok", chaves: [{ type: "EVP", status: "ACTIVE" }] }))).chaves[0]).toEqual({ tipo: "EVP", status: "ACTIVE" });
+  });
+  it("«Buscar código PIX» recusa cobrança só boleto e parcela sem cobrança", async () => {
+    const a = pessoa("EDUARDO", "(13) 97404-5973"); const id = lanc(a);
+    await expect(buscarPixDaCobranca(id, httpDoPix({ pix: "ok", chaves: [] }))).rejects.toThrow(/ainda não tem cobrança/);
+    await cobrancaParaOAtendimento({ telefone: "5513974045973" }, httpDoPix({ pix: "ok", chaves: [] }), { esperaMs: 0 });
+    db.prepare("UPDATE gestao_asaas_cobrancas SET billing_type='BOLETO', pix_payload='' WHERE lancamento_id=?").run(id);
+    await expect(buscarPixDaCobranca(id, httpDoPix({ pix: "ok", chaves: [] }))).rejects.toThrow(/só boleto/);
   });
 });

@@ -38,7 +38,7 @@ import { agendarReconciliacao, contatosSemCadastro, importarArquivoComoClientes,
 import { boletoEmPdf } from "../services/gestao/boleto";
 import { avisosDaParcela, enviarAviso, enviarEmLote, historicoDeAvisos, lerRegua, pausarAvisos, pendentesDaRegua, pessoaPausada, salvarRegua } from "../services/gestao/regua";
 import { getSetting, setSetting } from "../services/settingsService";
-import { agendarSincronizacaoAsaas, ambienteDoAsaas, cancelarCobranca, chaveDoAsaas, cobrancaDoLancamento, consultarCobranca, ErroAsaas, gerarCobranca, mascara as mascaraAsaas, salvarConfigAsaas, sincronizarCobrancasAlteradas, sincronizarExtrato, taxasDoAsaas, testarAsaas, tokenDoWebhook } from "../services/gestao/asaas";
+import { agendarSincronizacaoAsaas, ambienteDoAsaas, buscarPixDaCobranca, cancelarCobranca, chaveDoAsaas, cobrancaDoLancamento, consultarCobranca, ErroAsaas, gerarCobranca, mascara as mascaraAsaas, salvarConfigAsaas, sincronizarCobrancasAlteradas, sincronizarExtrato, taxasDoAsaas, testarAsaas, tokenDoWebhook } from "../services/gestao/asaas";
 import { atualizarDoDataJud, chaveDoDataJud, ErroDataJud, mascararChave, salvarChaveDoDataJud } from "../services/djen/datajud";
 import { processarHistoricos } from "../services/djen/processHistory";
 import { licencaPermiteOperar } from "../licenca/cliente";
@@ -207,6 +207,7 @@ const configAsaas = () => ({ configurado: Boolean(chaveDoAsaas()), final: mascar
 const depoisDeMudar = () => { void sincronizarCobrancasAlteradas().catch(() => undefined); };
 gestaoRouter.get("/asaas/config", rota((req) => { gerirIntegracoes(req); return configAsaas(); }));
 gestaoRouter.put("/asaas/config", rota((req) => { gerirIntegracoes(req); try { salvarConfigAsaas(req.body || {}); } catch (e) { erroAsaas(e); } auditAccess("asaas_config_salva", usuario(req).id, null, {}); return configAsaas(); }));
+gestaoRouter.post("/financeiro/lancamentos/:id/cobranca/pix", rota(async (req) => { gerirFinanceiro(req); try { const r = await buscarPixDaCobranca(id(req)); if (r.pix) agendarSincronizacaoAsaas(); return { ...r, cobranca: cobrancaDoLancamento(id(req)) }; } catch (e) { return erroAsaas(e); } }));
 gestaoRouter.post("/asaas/testar", rota(async (req) => { gerirIntegracoes(req); try { return await testarAsaas(); } catch (e) { return erroAsaas(e); } }));
 gestaoRouter.get("/financeiro/lancamentos/:id/cobranca", rota((req) => ({ cobranca: cobrancaDoLancamento(id(req)), configurado: Boolean(chaveDoAsaas()) })));
 gestaoRouter.post("/financeiro/lancamentos/:id/cobranca", rota(async (req, res) => { gerirFinanceiro(req); try { const c = await gerarCobranca(id(req), req.body?.tipo, quem(req)); if (lerRegua().salvar_boleto_dropbox) void boletoEmPdf(id(req), { quem: quem(req), copiarParaDrive: true }).catch(() => undefined); auditAccess("asaas_cobranca_gerada", usuario(req).id, null, { lancamento: id(req) }); res.status(201); return { cobranca: c }; } catch (e) { return erroAsaas(e); } }));

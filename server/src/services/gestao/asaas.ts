@@ -74,7 +74,8 @@ const digitos = (v: unknown) => String(v ?? "").replace(/\D/g, "");
 /** Testa a chave: devolve o saldo da conta. */
 export async function testarAsaas(http: Http = fetch) {
   const r = await chamar<{ balance?: number }>("GET", "/finance/balance", undefined, http);
-  return { ok: true, saldo_centavos: centavos(r.balance), ambiente: ambienteDoAsaas() };
+  const { chaves } = await chavesPixDaConta(http, 10_000);
+  return { ok: true, saldo_centavos: centavos(r.balance), ambiente: ambienteDoAsaas(), chaves_pix: chaves };
 }
 
 export async function garantirCliente(pessoaId: number, http: Http = fetch): Promise<string> {
@@ -130,6 +131,32 @@ export async function completarDetalhesDaCobranca(lancamentoId: number, http: Ht
     } catch { /* o link e o PDF derivado bastam */ }
   }
   return cobrancaDoLancamento(lancamentoId);
+}
+
+export interface ChavePixDaConta { tipo: string; status: string }
+
+/** As chaves PIX da conta do Asaas NO AMBIENTE da chave de API (testes e produção são contas separadas: chave de um não existe no outro). */
+export async function chavesPixDaConta(http: Http = fetch, limiteMs = 15_000): Promise<{ chaves: ChavePixDaConta[]; erro: string | null }> {
+  try {
+    const r = await chamar<{ data?: Array<{ type?: string; status?: string }> }>("GET", "/pix/addressKeys?limit=50", undefined, http, limiteMs);
+    return { chaves: (r.data ?? []).map((k) => ({ tipo: String(k.type ?? "?"), status: String(k.status ?? "?") })), erro: null };
+  } catch (e) { return { chaves: [], erro: e instanceof Error ? e.message : "falha ao consultar as chaves PIX" }; }
+}
+
+/**
+ * «Buscar código PIX» da tela: tenta de novo, com tempo folgado, e devolve o que o Asaas respondeu DE VERDADE (a frase dele) e as chaves PIX da conta.
+ * Serve para o código aparecer e, quando não aparece, para a equipe saber por quê (chave inexistente no ambiente, ainda inativa, ou erro do Asaas).
+ */
+export async function buscarPixDaCobranca(lancamentoId: number, http: Http = fetch): Promise<{ pix: string; motivo: string | null; ambiente: Ambiente; chaves: ChavePixDaConta[]; chaves_erro: string | null }> {
+  const c = cobrancaDoLancamento(lancamentoId);
+  if (!c) throw new ErroAsaas("Essa parcela ainda não tem cobrança gerada.", 404);
+  if (c.billing_type === "BOLETO") throw new ErroAsaas("Essa cobrança é só boleto: não tem PIX. Gere uma cobrança «Boleto e PIX» ou «Só PIX».", 422);
+  const motivos: { pix?: string; linha?: string } = {};
+  const atualizada = await completarDetalhesDaCobranca(lancamentoId, http, 20_000, motivos);
+  const { chaves, erro } = await chavesPixDaConta(http);
+  const pix = atualizada?.pix_payload ?? "";
+  const semChave = chaves.length === 0 && !erro ? `A conta do Asaas no ambiente de ${ambienteDoAsaas() === "producao" ? "produção" : "testes"} não tem nenhuma chave PIX. A chave cadastrada na conta real não vale para a conta de testes: cadastre uma chave aleatória também no painel de testes do Asaas.` : null;
+  return { pix, motivo: pix ? null : (semChave ?? motivos.pix ?? "o Asaas não devolveu o código do PIX"), ambiente: ambienteDoAsaas(), chaves, chaves_erro: erro };
 }
 
 /** Gera boleto/PIX para uma parcela a receber em aberto (se já houver cobrança ativa, devolve a mesma). */

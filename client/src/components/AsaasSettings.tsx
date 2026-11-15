@@ -31,7 +31,7 @@ export function AsaasSettings() {
   };
   const testar = async () => {
     setTestando(true); setResultado(null);
-    try { const r = await api.post<{ saldo_centavos: number; ambiente: string }>("/gestao/asaas/testar", {}); setResultado({ ok: true, texto: `Funcionou. Ambiente: ${r.ambiente === "producao" ? "produção" : "testes"} · saldo da conta: ${(r.saldo_centavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}.` }); }
+    try { const r = await api.post<{ saldo_centavos: number; ambiente: string; chaves_pix?: Array<{ tipo: string; status: string }> }>("/gestao/asaas/testar", {}); const pix = r.chaves_pix ? (r.chaves_pix.length ? ` · chaves PIX: ${r.chaves_pix.map((k) => `${k.tipo} (${k.status})`).join(", ")}` : " · nenhuma chave PIX nesta conta: o código PIX copia e cola não será gerado") : ""; setResultado({ ok: true, texto: `Funcionou. Ambiente: ${r.ambiente === "producao" ? "produção" : "testes"} · saldo da conta: ${(r.saldo_centavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}${pix}.` }); }
     catch (err) { setResultado({ ok: false, texto: err instanceof ApiError ? err.message : "Não foi possível testar." }); }
     finally { setTestando(false); }
   };
