@@ -79,7 +79,8 @@ export async function testarAsaas(http: Http = fetch) {
 }
 
 export async function garantirCliente(pessoaId: number, http: Http = fetch): Promise<string> {
-  const ja = db.prepare("SELECT customer_id FROM gestao_asaas_clientes WHERE pessoa_id=?").get(pessoaId) as { customer_id: string } | undefined;
+  // O cadastro do cliente no Asaas vale SÓ no ambiente em que foi criado (testes e produção são contas diferentes): em outro ambiente, procura/cria de novo.
+  const ja = db.prepare("SELECT customer_id FROM gestao_asaas_clientes WHERE pessoa_id=? AND ambiente=?").get(pessoaId, ambienteDoAsaas()) as { customer_id: string } | undefined;
   if (ja) return ja.customer_id;
   const p = db.prepare("SELECT nome,documento,email,telefone FROM gestao_pessoas WHERE id=?").get(pessoaId) as { nome: string; documento: string; email: string; telefone: string } | undefined;
   if (!p) throw new ErroAsaas("Cliente não encontrado.", 404);
@@ -92,13 +93,14 @@ export async function garantirCliente(pessoaId: number, http: Http = fetch): Pro
     const novo = await chamar<{ id: string }>("POST", "/customers", { name: p.nome, cpfCnpj: doc, email: p.email || undefined, mobilePhone: tel.length >= 10 ? tel : undefined, externalReference: `pessoa_${pessoaId}`, notificationDisabled: true }, http);
     id = novo.id;
   }
-  db.prepare("INSERT OR REPLACE INTO gestao_asaas_clientes(pessoa_id,customer_id) VALUES (?,?)").run(pessoaId, id);
+  db.prepare("INSERT OR REPLACE INTO gestao_asaas_clientes(pessoa_id,customer_id,ambiente) VALUES (?,?,?)").run(pessoaId, id, ambienteDoAsaas());
   return id;
 }
 
 interface Pagamento { id: string; status?: string; value?: number; netValue?: number; dueDate?: string; billingType?: string; invoiceUrl?: string; bankSlipUrl?: string; paymentDate?: string; confirmedDate?: string; clientPaymentDate?: string; externalReference?: string; deleted?: boolean }
 export interface Cobranca { lancamento_id: number; payment_id: string; billing_type: string; status: string; invoice_url: string; bank_slip_url: string; linha_digitavel: string; pix_payload: string; valor_centavos: number; vencimento: string; taxa_centavos: number | null; taxa_prevista_centavos?: number | null; liquido_centavos: number | null; pago_em: string | null; forma_paga: string; erro: string | null; criado_em: string }
-export const cobrancaDoLancamento = (id: number) => (db.prepare("SELECT * FROM gestao_asaas_cobrancas WHERE lancamento_id=?").get(id) as Cobranca | undefined) ?? null;
+/** A cobrança da parcela NO AMBIENTE ATUAL do Asaas: a criada em outro ambiente (testes × produção) não vale aqui — o link dela é de outra conta. */
+export const cobrancaDoLancamento = (id: number) => (db.prepare("SELECT * FROM gestao_asaas_cobrancas WHERE lancamento_id=? AND ambiente=?").get(id, ambienteDoAsaas()) as Cobranca | undefined) ?? null;
 const ENCERRADAS = ["DELETED", "CANCELADA", "REFUNDED", "RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"];
 
 /** O PIX e a linha digitável, consultados JUNTOS (em paralelo). `limiteMs` curto quando há alguém esperando a resposta (atendimento). `motivos` recebe, em frase, por que algum não veio. */
@@ -177,8 +179,8 @@ export async function gerarCobranca(lancamentoId: number, tipo: TipoCobranca = "
   const tipoAsaas = TIPO_ASAAS[tipo] ?? "UNDEFINED";
   const p = await chamar<Pagamento>("POST", "/payments", { customer: cliente, billingType: tipoAsaas, value: reais(l.valor_centavos), dueDate: l.vencimento, description: String(l.descricao).slice(0, 500), externalReference: `lanc_${lancamentoId}` }, http);
   const d = await detalhes(p.id, tipoAsaas, http, limiteDosDetalhesMs);
-  db.prepare(`INSERT OR REPLACE INTO gestao_asaas_cobrancas(lancamento_id,payment_id,billing_type,status,invoice_url,bank_slip_url,linha_digitavel,pix_payload,valor_centavos,vencimento,criado_em,atualizado_em)
-    VALUES (?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`).run(lancamentoId, p.id, p.billingType || tipoAsaas, p.status || "PENDING", p.invoiceUrl ?? "", p.bankSlipUrl ?? "", d.linha, d.pix, l.valor_centavos, l.vencimento);
+  db.prepare(`INSERT OR REPLACE INTO gestao_asaas_cobrancas(lancamento_id,payment_id,billing_type,status,invoice_url,bank_slip_url,linha_digitavel,pix_payload,valor_centavos,vencimento,ambiente,criado_em,atualizado_em)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`).run(lancamentoId, p.id, p.billingType || tipoAsaas, p.status || "PENDING", p.invoiceUrl ?? "", p.bankSlipUrl ?? "", d.linha, d.pix, l.valor_centavos, l.vencimento, ambienteDoAsaas());
   if (p.value !== undefined && p.netValue !== undefined) db.prepare("UPDATE gestao_asaas_cobrancas SET taxa_prevista_centavos=? WHERE lancamento_id=?").run(Math.max(0, centavos(p.value) - centavos(p.netValue)), lancamentoId);
   agendarSincronizacaoAsaas();
   registrar(lancamentoId, "cobranca_gerada", `Cobrança gerada no Asaas (${tipo === "pix" ? "PIX" : tipo === "boleto" ? "boleto" : "boleto e PIX"}), vencimento ${l.vencimento.split("-").reverse().join("/")}.`, quem);
@@ -232,7 +234,7 @@ export async function cancelarCobranca(lancamentoId: number, quem?: Quem, http: 
 export async function sincronizarCobrancasAlteradas(http: Http = fetch): Promise<number> {
   if (!chaveDoAsaas()) return 0;
   const abertas = db.prepare(`SELECT c.*, l.valor_centavos AS l_valor, l.vencimento AS l_venc, l.cancelado AS l_cancelado, l.pago_em AS l_pago FROM gestao_asaas_cobrancas c JOIN gestao_lancamentos l ON l.id=c.lancamento_id
-    WHERE c.status IN ('PENDING','OVERDUE','AWAITING_RISK_ANALYSIS')`).all() as (Cobranca & { l_valor: number; l_venc: string; l_cancelado: number; l_pago: string | null })[];
+    WHERE c.status IN ('PENDING','OVERDUE','AWAITING_RISK_ANALYSIS') AND c.ambiente=?`).all(ambienteDoAsaas()) as (Cobranca & { l_valor: number; l_venc: string; l_cancelado: number; l_pago: string | null })[];
   let n = 0;
   for (const c of abertas) {
     try {
@@ -289,14 +291,14 @@ export async function sincronizarExtrato(de: string, ate: string, http: Http = f
 
 /** Quanto o escritório gastou com o Asaas no período, e com quê. */
 export function taxasDoAsaas(de: string, ate: string) {
-  const cobr = db.prepare(`SELECT forma_paga AS forma, COUNT(*) AS pagas, COALESCE(SUM(valor_centavos),0) AS recebido, COALESCE(SUM(taxa_centavos),0) AS taxa FROM gestao_asaas_cobrancas WHERE pago_em>=? AND pago_em<=? AND taxa_centavos IS NOT NULL GROUP BY forma_paga ORDER BY taxa DESC`).all(de, ate) as { forma: string; pagas: number; recebido: number; taxa: number }[];
+  const cobr = db.prepare(`SELECT forma_paga AS forma, COUNT(*) AS pagas, COALESCE(SUM(valor_centavos),0) AS recebido, COALESCE(SUM(taxa_centavos),0) AS taxa FROM gestao_asaas_cobrancas WHERE pago_em>=? AND pago_em<=? AND taxa_centavos IS NOT NULL AND ambiente=? GROUP BY forma_paga ORDER BY taxa DESC`).all(de, ate, ambienteDoAsaas()) as { forma: string; pagas: number; recebido: number; taxa: number }[];
   const extrato = db.prepare(`SELECT tipo, COUNT(*) AS linhas, COALESCE(SUM(ABS(valor_centavos)),0) AS total FROM gestao_asaas_extrato WHERE data>=? AND data<=? AND tipo LIKE '%FEE%' GROUP BY tipo ORDER BY total DESC`).all(de, ate) as { tipo: string; linhas: number; total: number }[];
   const linhas = db.prepare(`SELECT data,tipo,descricao,ABS(valor_centavos) AS valor_centavos,payment_id FROM gestao_asaas_extrato WHERE data>=? AND data<=? AND tipo LIKE '%FEE%' ORDER BY data DESC,id DESC LIMIT 200`).all(de, ate) as { data: string; tipo: string; descricao: string; valor_centavos: number; payment_id: string }[];
   const meses = db.prepare(`SELECT substr(data,1,7) AS mes, COALESCE(SUM(ABS(valor_centavos)),0) AS taxa FROM gestao_asaas_extrato WHERE tipo LIKE '%FEE%' GROUP BY substr(data,1,7) ORDER BY mes DESC LIMIT 12`).all() as { mes: string; taxa: number }[];
   const recebido = cobr.reduce((s, c) => s + c.recebido, 0), taxaCobr = cobr.reduce((s, c) => s + c.taxa, 0), pagas = cobr.reduce((s, c) => s + c.pagas, 0);
   const totalExtrato = extrato.reduce((s, e) => s + e.total, 0);
   const ultima = db.prepare("SELECT MAX(data) AS d FROM gestao_asaas_extrato").get() as { d: string | null };
-  const prev = db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(taxa_prevista_centavos),0) AS taxa FROM gestao_asaas_cobrancas WHERE status IN ('PENDING','OVERDUE','AWAITING_RISK_ANALYSIS') AND taxa_prevista_centavos IS NOT NULL").get() as { n: number; taxa: number };
+  const prev = db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(taxa_prevista_centavos),0) AS taxa FROM gestao_asaas_cobrancas WHERE status IN ('PENDING','OVERDUE','AWAITING_RISK_ANALYSIS') AND taxa_prevista_centavos IS NOT NULL AND ambiente=?").get(ambienteDoAsaas()) as { n: number; taxa: number };
   return {
     de, ate, extrato_sincronizado_ate: ultima.d, sincronizado_em: getSetting("asaas_extrato_sync_em") || null, sincronizacao_erro: getSetting("asaas_extrato_sync_erro") || null,
     previstas: { cobrancas: prev.n, taxa_centavos: prev.taxa },
@@ -340,7 +342,7 @@ export function agendarSincronizacaoAsaas(atrasoMs = 4000): void {
 /** Confere no Asaas as cobranças ainda abertas (pega pagamento mesmo sem o aviso de pagamento configurado) e atualiza a tarifa prevista. */
 export async function conferirCobrancasAbertas(http: Http = fetch, limite = 30): Promise<number> {
   if (!chaveDoAsaas()) return 0;
-  const abertas = db.prepare("SELECT lancamento_id, payment_id FROM gestao_asaas_cobrancas WHERE status IN ('PENDING','OVERDUE','AWAITING_RISK_ANALYSIS') ORDER BY atualizado_em ASC LIMIT ?").all(limite) as { lancamento_id: number; payment_id: string }[];
+  const abertas = db.prepare("SELECT lancamento_id, payment_id FROM gestao_asaas_cobrancas WHERE status IN ('PENDING','OVERDUE','AWAITING_RISK_ANALYSIS') AND ambiente=? ORDER BY atualizado_em ASC LIMIT ?").all(ambienteDoAsaas(), limite) as { lancamento_id: number; payment_id: string }[];
   let mudou = 0;
   for (const c of abertas) {
     try {

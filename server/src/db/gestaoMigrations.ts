@@ -220,6 +220,13 @@ export function runGestaoMigrations(db: Database.Database) {
   const colsCob = (db.prepare("PRAGMA table_info(gestao_asaas_cobrancas)").all() as { name: string }[]).map((c) => c.name);
   if (!colsCob.includes("taxa_prevista_centavos")) db.exec("ALTER TABLE gestao_asaas_cobrancas ADD COLUMN taxa_prevista_centavos INTEGER");
   if (!colsCob.includes("boleto_arquivo_id")) db.exec("ALTER TABLE gestao_asaas_cobrancas ADD COLUMN boleto_arquivo_id INTEGER");
+  // Testes e produção do Asaas são CONTAS separadas: cliente e cobrança criados numa não existem na outra. Cada linha lembra em que ambiente nasceu;
+  // o que já existia fica no ambiente configurado AGORA (é onde foi criado), então ninguém que já está em produção perde nada.
+  let ambienteAtual: "producao" | "sandbox" = "sandbox";
+  try { ambienteAtual = (db.prepare("SELECT valor FROM settings WHERE chave='asaas_ambiente'").get() as { valor: string } | undefined)?.valor === "producao" ? "producao" : "sandbox"; } catch { /* banco novo: ainda sem configurações */ }
+  if (!colsCob.includes("ambiente")) { db.exec("ALTER TABLE gestao_asaas_cobrancas ADD COLUMN ambiente TEXT NOT NULL DEFAULT 'sandbox'"); db.prepare("UPDATE gestao_asaas_cobrancas SET ambiente=?").run(ambienteAtual); }
+  const colsCli = (db.prepare("PRAGMA table_info(gestao_asaas_clientes)").all() as { name: string }[]).map((c) => c.name);
+  if (!colsCli.includes("ambiente")) { db.exec("ALTER TABLE gestao_asaas_clientes ADD COLUMN ambiente TEXT NOT NULL DEFAULT 'sandbox'"); db.prepare("UPDATE gestao_asaas_clientes SET ambiente=?").run(ambienteAtual); }
   // Contatos espelhados dos clientes (os avisos continuam lendo a tabela contacts; quem cadastra é o Cliente).
   const colsContatos = (db.prepare("PRAGMA table_info(contacts)").all() as { name: string }[]).map((c) => c.name);
   if (!colsContatos.includes("pessoa_id")) db.exec("ALTER TABLE contacts ADD COLUMN pessoa_id INTEGER");

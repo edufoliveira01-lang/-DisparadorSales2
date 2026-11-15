@@ -157,3 +157,37 @@ describe("Asaas — atualização automática das taxas", () => {
     expect(taxasDoAsaas("2026-11-01", "2026-11-30").sincronizacao_erro).toBeTruthy();
   });
 });
+
+describe("Asaas — testes e produção são contas diferentes", () => {
+  const nomeDoAmbiente = (a: "sandbox" | "producao") => salvarConfigAsaas({ chave: "$aact_chave_de_teste_1234567890abcdef", ambiente: a });
+  it("trocar de ambiente NÃO reaproveita o cliente nem a cobrança criados no outro (o «Customer inválido» da conta real)", async () => {
+    nomeDoAmbiente("sandbox");
+    const id = lanc(pessoa());
+    const f1 = falso(padrao());
+    const c1 = await gerarCobranca(id, "boleto_pix", undefined, f1.http);
+    expect(c1.payment_id).toBe("pay_1");
+    expect(f1.chamadas.some((x) => x.metodo === "POST" && x.url === "/customers")).toBe(true);
+
+    // vira para a conta real: o cliente e a cobrança dos testes não valem
+    nomeDoAmbiente("producao");
+    expect(cobrancaDoLancamento(id)).toBeNull();
+    const f2 = falso(padrao({ "POST /customers": { id: "cus_real" }, "POST /payments": { id: "pay_real", status: "PENDING", invoiceUrl: "https://www.asaas.com/i/real", bankSlipUrl: "https://www.asaas.com/b/pdf/real", billingType: "UNDEFINED" }, "GET /payments/pay_real/pixQrCode": { payload: "000201REAL" }, "GET /payments/pay_real/identificationField": { identificationField: "REAL" } }));
+    const c2 = await gerarCobranca(id, "boleto_pix", undefined, f2.http);
+    expect(c2.payment_id).toBe("pay_real");
+    expect(f2.chamadas.find((x) => x.metodo === "POST" && x.url === "/payments")!.corpo).toMatchObject({ customer: "cus_real" });
+    expect(f2.chamadas.some((x) => x.url.startsWith("/customers"))).toBe(true); // procurou/criou o cliente NA conta real
+
+    // e a conta de testes não enxerga a cobrança real (cada ambiente vê só a sua)
+    nomeDoAmbiente("sandbox");
+    expect(cobrancaDoLancamento(id)).toBeNull();
+  });
+  it("a sincronização só olha cobranças do ambiente atual (não consulta na conta real um pagamento dos testes)", async () => {
+    nomeDoAmbiente("sandbox");
+    const id = lanc(pessoa());
+    await gerarCobranca(id, "boleto_pix", undefined, falso(padrao()).http);
+    nomeDoAmbiente("producao");
+    const f = falso({});
+    expect(await conferirCobrancasAbertas(f.http)).toBe(0);
+    expect(f.chamadas).toHaveLength(0);
+  });
+});
