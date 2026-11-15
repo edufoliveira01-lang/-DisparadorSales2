@@ -5,6 +5,7 @@ import { ErroGestao } from "./erro";
 import { ErroAsaas, gerarCobranca, cobrancaDoLancamento, chaveDoAsaas, completarDetalhesDaCobranca } from "./asaas";
 import { boletoEmPdf } from "./boleto";
 import { lerRegua } from "./regua";
+import { pixSemEspacos } from "./pix";
 import { hojeSaoPaulo } from "../djen/cache";
 import { registrar } from "./financeiro";
 import { documentoValido, soDigitos } from "./validacao";
@@ -62,7 +63,7 @@ function montarResposta(alvo: Aberta, x: Complemento, outras: number): CobrancaP
   const pdfOk = Boolean(x.pdf && x.pdf.conteudo.length <= 3_000_000);
   return {
     lancamento_id: alvo.id, descricao: alvo.descricao, valor_centavos: alvo.valor_centavos, vencimento: alvo.vencimento,
-    link: c.invoice_url || c.bank_slip_url || "", linha_digitavel: c.linha_digitavel || "", pix: c.pix_payload || "",
+    link: c.invoice_url || c.bank_slip_url || "", linha_digitavel: c.linha_digitavel || "", pix: pixSemEspacos(c.pix_payload || ""),
     boleto_pdf_base64: pdfOk ? x.pdf!.conteudo.toString("base64") : null, boleto_pdf_nome: pdfOk ? x.pdf!.nome : null,
     pix_motivo: pdfOk && c.pix_payload ? null : x.pixMotivo, boleto_pdf_motivo: pdfOk ? null : (x.pdfMotivo || "o boleto em PDF não está disponível"),
     pendente: !pdfOk || !c.pix_payload,

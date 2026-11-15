@@ -8,6 +8,7 @@ import { cobrancaParaOAtendimento, complementoDaCobranca } from "../src/services
 import { ErroGestao } from "../src/services/gestao/erro";
 import { buscarPixDaCobranca, chavesPixDaConta, descreverFalhaDeRede } from "../src/services/gestao/asaas";
 import { nomeDoBoleto } from "../src/services/gestao/boleto";
+import { crc16, pixSemEspacos } from "../src/services/gestao/pix";
 import { salvarConexao, salvarCredenciais } from "../src/armazenamento/banco";
 
 const pessoa = (nome: string, tel: string) => Number(db.prepare("INSERT INTO gestao_pessoas(nome,tipo,documento,telefone,email) VALUES (?,'cliente','52998224725',?,'a@x.com')").run(nome, tel).lastInsertRowid);
@@ -283,5 +284,25 @@ describe("cobrança pedida pelo atendimento", () => {
     await cobrancaParaOAtendimento({ telefone: "5513974045973" }, httpDoPix({ pix: "ok", chaves: [] }), { esperaMs: 0 });
     db.prepare("UPDATE gestao_asaas_cobrancas SET billing_type='BOLETO', pix_payload='' WHERE lancamento_id=?").run(id);
     await expect(buscarPixDaCobranca(id, httpDoPix({ pix: "ok", chaves: [] }))).rejects.toThrow(/só boleto/);
+  });
+  const PIX_DO_ASAAS = "00020101021226800014br.gov.bcb.pix2558pix.asaas.com/qr/cobv/dc3d5887-6f03-4022-a8fd-9a66f95aa6c75204000053039865802BR5924Eduardo Freitas Oliveira6011Sao Vicente61081134001062070503***63049C7F";
+  it("o PIX copia e cola sai SEM espaços e continua válido (tamanhos dos campos e CRC refeitos)", () => {
+    expect(PIX_DO_ASAAS.includes(" ")).toBe(true);
+    const novo = pixSemEspacos(PIX_DO_ASAAS);
+    expect(novo.includes(" ")).toBe(false);
+    expect(novo).toContain("5922EduardoFreitasOliveira");
+    expect(novo).toContain("6010SaoVicente");
+    // o CRC dos 4 últimos caracteres confere com o resto do código
+    expect(novo.slice(-4)).toBe(crc16(novo.slice(0, -4)));
+    // e os tamanhos de todos os campos batem com o texto
+    let i = 0; const corpo = novo.slice(0, -8);
+    while (i < corpo.length) { const n = Number(corpo.slice(i + 2, i + 4)); expect(Number.isInteger(n)).toBe(true); i += 4 + n; }
+    expect(i).toBe(corpo.length);
+    // o código original do Asaas já era válido: a conta de partida confere
+    expect(PIX_DO_ASAAS.slice(-4)).toBe(crc16(PIX_DO_ASAAS.slice(0, -4)));
+  });
+  it("código que não confere (CRC errado) volta como veio — nunca estraga um PIX", () => {
+    const quebrado = PIX_DO_ASAAS.replace("9C7F", "0000");
+    expect(pixSemEspacos(quebrado)).toBe(quebrado);
   });
 });

@@ -10,6 +10,7 @@ import { getSetting, setSetting } from "../settingsService";
 import { baixarLancamento, obterLancamento, registrar, type Quem } from "./financeiro";
 import { hojeSaoPaulo } from "../djen/cache";
 import { documentoValido } from "./validacao";
+import { pixSemEspacos } from "./pix";
 
 const BASES = { sandbox: "https://api-sandbox.asaas.com/v3", producao: "https://api.asaas.com/v3" } as const;
 export type Ambiente = keyof typeof BASES;
@@ -107,7 +108,7 @@ const ENCERRADAS = ["DELETED", "CANCELADA", "REFUNDED", "RECEIVED", "CONFIRMED",
 async function detalhes(paymentId: string, tipo: string, http: Http, limiteMs = 25_000, motivos?: { pix?: string; linha?: string }) {
   const frase = (e: unknown) => (e instanceof Error ? e.message : String(e)).slice(0, 160);
   const [pix, linha] = await Promise.all([
-    tipo !== "BOLETO" ? chamar<{ payload?: string }>("GET", `/payments/${paymentId}/pixQrCode`, undefined, http, limiteMs).then((r) => r.payload ?? "").catch((e) => { if (motivos) motivos.pix = frase(e); return ""; }) : Promise.resolve(""), // ainda sem QR
+    tipo !== "BOLETO" ? chamar<{ payload?: string }>("GET", `/payments/${paymentId}/pixQrCode`, undefined, http, limiteMs).then((r) => pixSemEspacos(r.payload ?? "")).catch((e) => { if (motivos) motivos.pix = frase(e); return ""; }) : Promise.resolve(""), // ainda sem QR
     tipo !== "PIX" ? chamar<{ identificationField?: string }>("GET", `/payments/${paymentId}/identificationField`, undefined, http, limiteMs).then((r) => r.identificationField ?? "").catch((e) => { if (motivos) motivos.linha = frase(e); return ""; }) : Promise.resolve(""), // boleto ainda não registrado
   ]);
   return { pix, linha };
