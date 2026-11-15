@@ -51,7 +51,8 @@ async function buscarComplemento(lancamentoId: number, atual: Complemento["cobra
   await Promise.race([Promise.all([buscarPix, buscarPdf]).then(() => { acabou = true; }), new Promise((r) => { relogio = setTimeout(r, o.totalMs); })]);
   if (relogio) clearTimeout(relogio);
   const c = achado.cobranca;
-  const pixMotivo = c.pix_payload ? null : (motivosDoPix.pix ?? (acabou ? "o Asaas não devolveu o código do PIX (a conta pode não ter chave PIX cadastrada)" : "o Asaas demorou para devolver o código do PIX"));
+  const dicaDoPix = (m: string) => (/erro desconhecido|chave pix/i.test(m) ? `${m} (costuma indicar que a conta do Asaas não tem chave PIX cadastrada)` : m);
+  const pixMotivo = c.pix_payload ? null : (motivosDoPix.pix ? dicaDoPix(motivosDoPix.pix) : (acabou ? "o Asaas não devolveu o código do PIX (a conta pode não ter chave PIX cadastrada)" : "o Asaas demorou para devolver o código do PIX")));
   return { cobranca: c, pdf: achado.pdf, pdfMotivo: achado.pdf ? "" : (motivo.texto || (acabou ? "o boleto em PDF não está disponível" : "o Asaas demorou para liberar o boleto em PDF")), pixMotivo, acabou };
 }
 

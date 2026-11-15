@@ -193,6 +193,24 @@ describe("cobrança pedida pelo atendimento", () => {
     expect(r.pix_motivo).toMatch(/chave Pix/);
     expect(r.boleto_pdf_base64).toBeTruthy();
   });
+  it("PIX com \"erro desconhecido\" do Asaas: o motivo vem com a dica da chave PIX", async () => {
+    const a = pessoa("EDUARDO", "(13) 97404-5973"); lanc(a);
+    const http = (async (url: string, init?: RequestInit) => {
+      const u = String(url), m = String(init?.method ?? "GET");
+      const j = (o: unknown) => new Response(JSON.stringify(o), { status: 200 });
+      if (u.includes("/customers") && m === "GET") return j({ data: [] });
+      if (u.includes("/customers")) return j({ id: "cus_1" });
+      if (u.endsWith("/payments") && m === "POST") return j({ id: "pay_1", status: "PENDING", invoiceUrl: "https://sandbox.asaas.com/i/abc123", bankSlipUrl: "https://sandbox.asaas.com/b/pdf/abc123", billingType: "UNDEFINED" });
+      if (/\/payments\/pay_1$/.test(u)) return j({ id: "pay_1" });
+      if (u.includes("pixQrCode")) return new Response(JSON.stringify({ errors: [{ description: "Ocorreu um erro desconhecido. Por favor, tente novamente." }] }), { status: 400 });
+      if (u.includes("identificationField")) return j({ identificationField: "23793" });
+      if (u.includes("/b/pdf/")) return new Response(PDF, { status: 200 });
+      return j({});
+    }) as unknown as typeof fetch;
+    const r = await cobrancaParaOAtendimento({ telefone: "5513974045973" }, http, { esperaMs: 0 });
+    expect(r.pix_motivo).toMatch(/erro desconhecido.*chave PIX cadastrada/);
+    expect(r.boleto_pdf_base64).toBeTruthy();
+  });
   it("a falha de rede diz a causa: tempo esgotado, código do sistema ou a mensagem", () => {
     expect(descreverFalhaDeRede(Object.assign(new Error("x"), { name: "TimeoutError" }), 10_000)).toBe("sem resposta em 10 s");
     expect(descreverFalhaDeRede(Object.assign(new Error("fetch failed"), { cause: { code: "ENOTFOUND" } }))).toBe("ENOTFOUND");
