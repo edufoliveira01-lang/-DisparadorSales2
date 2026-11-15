@@ -114,7 +114,7 @@ describe("Boleto em PDF", () => {
     const feitos: string[] = [];
     const http2 = (async (url: string, init: RequestInit) => {
       if (String(url).startsWith("https://www.asaas.com/b/pdf")) { feitos.push("pdf"); return new Response(PDF, { status: 200 }); }
-      if (String(url).includes("/media")) { feitos.push("upload"); expect((init.body as FormData).get("nome_arquivo")).toMatch(/^Boleto - Parcela 1-3 - venc \d\d-\d\d-\d{4}\.pdf$/); return new Response(JSON.stringify({ data: { storage_path: "o/c/out-1/Boleto.pdf", media_mime: "application/pdf", media_size_bytes: PDF.length } }), { status: 201 }); }
+      if (String(url).includes("/media")) { feitos.push("upload"); expect((init.body as FormData).get("nome_arquivo")).toMatch(/^Boleto - Parcela 1-3 - R\$ 500,00 - venc \d\d-\d\d-\d{4}\.pdf$/); return new Response(JSON.stringify({ data: { storage_path: "o/c/out-1/Boleto.pdf", media_mime: "application/pdf", media_size_bytes: PDF.length } }), { status: 201 }); }
       const corpo = JSON.parse(String(init.body ?? "{}"));
       if (String(url).endsWith("/messages")) feitos.push(corpo.type === "document" ? "msg-documento" : "msg-texto");
       return http(url, init);

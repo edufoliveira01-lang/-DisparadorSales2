@@ -4,6 +4,7 @@ import { pessoaPorTelefone } from "./anotacoes";
 import { ErroGestao } from "./erro";
 import { ErroAsaas, gerarCobranca, cobrancaDoLancamento, chaveDoAsaas, completarDetalhesDaCobranca } from "./asaas";
 import { boletoEmPdf } from "./boleto";
+import { lerRegua } from "./regua";
 import { hojeSaoPaulo } from "../djen/cache";
 import { registrar } from "./financeiro";
 import { documentoValido, soDigitos } from "./validacao";
@@ -44,7 +45,7 @@ async function buscarComplemento(lancamentoId: number, atual: Complemento["cobra
     } catch { /* o que já veio basta */ }
   })();
   const buscarPdf = (async () => {
-    try { achado.pdf = await boletoEmPdf(lancamentoId, { http, motivo, limiteMs: o.porConsultaMs }); } catch (e) { motivo.texto = e instanceof Error ? e.message : "falha ao baixar o boleto"; }
+    try { achado.pdf = await boletoEmPdf(lancamentoId, { http, motivo, limiteMs: o.porConsultaMs, copiarParaDrive: lerRegua().salvar_boleto_dropbox }); } catch (e) { motivo.texto = e instanceof Error ? e.message : "falha ao baixar o boleto"; }
   })();
   let acabou = false;
   let relogio: ReturnType<typeof setTimeout> | undefined;

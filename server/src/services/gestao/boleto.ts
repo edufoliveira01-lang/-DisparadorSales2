@@ -14,6 +14,16 @@ export interface BoletoPdf { arquivoId: number; nome: string; conteudo: Buffer }
 
 const dataBr = (iso: string) => iso.slice(0, 10).split("-").reverse().join("-");
 const MAX = 5 * 1024 * 1024;
+/**
+ * O nome do boleto, para o cadastro, o Dropbox e o cliente: `Boleto - Honorários 1-3 - R$ 10,00 - venc 15-11-2026.pdf`. Diz o que é, de qual parcela,
+ * quanto e quando vence — e não depende de código interno nem de data de geração.
+ */
+export function nomeDoBoleto(descricao: unknown, valorCentavos: number, vencimento: string, comExtensao = true): string {
+  const valor = (valorCentavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }).replace(/\u00a0/g, " ");
+  const base = `Boleto - ${String(descricao ?? "").replace(/[\\/]+/g, "-").replace(/\s+/g, " ").trim().slice(0, 60) || "Parcela"} - ${valor} - venc ${dataBr(vencimento)}`;
+  return comExtensao ? `${base}.pdf` : base;
+}
+
 /** Descrição da parcela sem barras («Parcela 1/3»), que quebrariam o nome do arquivo. */
 const limpa = (t: unknown, n: number) => String(t).replace(/[\\/]+/g, "-").slice(0, n);
 
@@ -33,7 +43,19 @@ export async function boletoEmPdf(lancamentoId: number, opts: { quem?: Quem; htt
   if (c.billing_type === "PIX") return sem("a cobrança é só PIX");
   if (["DELETED", "CANCELADA", "REFUNDED", "RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"].includes(c.status)) return sem("a cobrança já foi paga ou cancelada");
   const ja = (db.prepare("SELECT boleto_arquivo_id AS id FROM gestao_asaas_cobrancas WHERE lancamento_id=?").get(lancamentoId) as { id: number | null } | undefined)?.id;
-  if (ja) { try { const a = obterArquivo(ja); return { arquivoId: ja, nome: a.nome, conteudo: fs.readFileSync(a.caminho) }; } catch { /* apagado: baixa de novo */ } }
+  if (ja) {
+    try {
+      const a = obterArquivo(ja);
+      const l0 = obterLancamento(lancamentoId);
+      const nomeCerto = nomeDoBoleto(l0.descricao, c.valor_centavos, c.vencimento);
+      // Boleto guardado antes do nome novo: renomeia no cadastro (o arquivo em disco não muda) para tudo sair com o mesmo nome.
+      if (a.nome !== nomeCerto) db.prepare("UPDATE gestao_arquivos SET nome=? WHERE id=?").run(nomeCerto, ja);
+      if (opts.copiarParaDrive && l0.pessoa_id) {
+        try { enfileirarCopia({ pessoaId: l0.pessoa_id, arquivoId: ja, tipoPasta: "BOLETOS E COBRANÇAS", titulo: nomeDoBoleto(l0.descricao, c.valor_centavos, c.vencimento, false), extensao: "pdf" }); } catch { /* o drive não é requisito para cobrar */ }
+      }
+      return { arquivoId: ja, nome: nomeCerto, conteudo: fs.readFileSync(a.caminho) };
+    } catch { /* apagado: baixa de novo */ }
+  }
   // Cobrança «boleto ou PIX» nem sempre devolve `bankSlipUrl`: o PDF do mesmo código fica em /b/pdf/<código>, ao lado da página /i/<código>.
   const derivada = c.invoice_url ? c.invoice_url.replace(/\/i\/([^/?#]+)/, "/b/pdf/$1") : "";
   // O endereço derivado só entra quando o do boleto veio VAZIO; endereço presente e de fora do Asaas é recusado, nunca "consertado".
@@ -47,13 +69,13 @@ export async function boletoEmPdf(lancamentoId: number, opts: { quem?: Quem; htt
   if (conteudo.length < 200 || conteudo.subarray(0, 5).toString("latin1") !== "%PDF-") return sem("o endereço do boleto não devolveu um PDF (o Asaas ainda não liberou)");
   const l = obterLancamento(lancamentoId);
   if (!l.pessoa_id) return sem("a parcela não tem cliente vinculado");
-  const nome = `Boleto - ${limpa(l.descricao, 80)} - venc ${dataBr(c.vencimento)}.pdf`;
+  const nome = nomeDoBoleto(l.descricao, c.valor_centavos, c.vencimento);
   const arq = salvarArquivo({ pessoaId: l.pessoa_id }, nome, conteudo, { categoria: "Financeiro", descricao: "Boleto gerado pelo Asaas" }, { id: opts.quem?.id ?? null, nome: opts.quem?.nome ?? "Sistema" });
   db.prepare("UPDATE gestao_asaas_cobrancas SET boleto_arquivo_id=? WHERE lancamento_id=?").run(arq.id, lancamentoId);
   registrar(lancamentoId, "boleto_pdf", "Boleto em PDF guardado no cadastro do cliente.", opts.quem);
   if (opts.copiarParaDrive) {
     try {
-      if (enfileirarCopia({ pessoaId: l.pessoa_id, arquivoId: arq.id, tipoPasta: "BOLETOS E COBRANÇAS", titulo: `Boleto - ${limpa(l.descricao, 60)} (venc ${dataBr(c.vencimento)})`, extensao: "pdf" }))
+      if (enfileirarCopia({ pessoaId: l.pessoa_id, arquivoId: arq.id, tipoPasta: "BOLETOS E COBRANÇAS", titulo: nomeDoBoleto(l.descricao, c.valor_centavos, c.vencimento, false), extensao: "pdf" }))
         registrar(lancamentoId, "boleto_dropbox", "Boleto enviado para a fila de cópia ao Dropbox.", opts.quem);
     } catch { /* o drive não é requisito para cobrar */ }
   }

@@ -7,6 +7,8 @@ import { salvarConfigAsaas } from "../src/services/gestao/asaas";
 import { cobrancaParaOAtendimento, complementoDaCobranca } from "../src/services/gestao/cobrancaPeloAtendimento";
 import { ErroGestao } from "../src/services/gestao/erro";
 import { descreverFalhaDeRede } from "../src/services/gestao/asaas";
+import { nomeDoBoleto } from "../src/services/gestao/boleto";
+import { salvarConexao, salvarCredenciais } from "../src/armazenamento/banco";
 
 const pessoa = (nome: string, tel: string) => Number(db.prepare("INSERT INTO gestao_pessoas(nome,tipo,documento,telefone,email) VALUES (?,'cliente','52998224725',?,'a@x.com')").run(nome, tel).lastInsertRowid);
 const lanc = (p: number, venc = "2999-12-10", valor = 5000) => Number(db.prepare("INSERT INTO gestao_lancamentos(tipo,categoria,descricao,valor_centavos,vencimento,pessoa_id) VALUES ('receber','honorarios','Honorários 1/3',?,?,?)").run(valor, venc, p).lastInsertRowid);
@@ -215,5 +217,27 @@ describe("cobrança pedida pelo atendimento", () => {
     expect(descreverFalhaDeRede(Object.assign(new Error("x"), { name: "TimeoutError" }), 10_000)).toBe("sem resposta em 10 s");
     expect(descreverFalhaDeRede(Object.assign(new Error("fetch failed"), { cause: { code: "ENOTFOUND" } }))).toBe("ENOTFOUND");
     expect(descreverFalhaDeRede(new Error("boom"))).toBe("boom");
+  });
+  it("o nome do boleto diz o que é, a parcela, o valor e o vencimento (sem código interno nem barras)", () => {
+    expect(nomeDoBoleto("Honorários 1/3", 1000, "2026-11-15")).toBe("Boleto - Honorários 1-3 - R$ 10,00 - venc 15-11-2026.pdf");
+    expect(nomeDoBoleto("", 123456, "2026-12-01", false)).toBe("Boleto - Parcela - R$ 1.234,56 - venc 01-12-2026");
+  });
+  it("o PDF do atendimento sai com o nome novo e entra na fila do Dropbox (pasta BOLETOS E COBRANÇAS); boleto antigo é renomeado", async () => {
+    salvarCredenciais({ appKey: "appkey1234", appSecret: "segredo-do-app-123456" });
+    salvarConexao({ refreshToken: "r", conta: { nome: "E", email: "e@x.com", tipo: "pro", raizDeNomes: "" } });
+    db.exec("DELETE FROM armazenamento_fila;");
+    const a = pessoa("EDUARDO", "(13) 97404-5973"); const id = lanc(a, "2999-12-20", 1000);
+    const r = await cobrancaParaOAtendimento({ telefone: "5513974045973" }, falso(), { esperaMs: 0 });
+    const fila = db.prepare("SELECT tipo_pasta, titulo FROM armazenamento_fila WHERE pessoa_id=?").all(a) as Array<{ tipo_pasta: string; titulo: string }>;
+    expect(fila).toEqual([{ tipo_pasta: "BOLETOS E COBRANÇAS", titulo: "Boleto - Honorários 1-3 - R$ 10,00 - venc 20-12-2999" }]);
+    expect(r.boleto_pdf_nome).toBe("Boleto - Honorários 1/3 - R$ 10,00 - venc 20-12-2999.pdf".replace("1/3", "1-3"));
+    const arq = db.prepare("SELECT nome FROM gestao_arquivos WHERE pessoa_id=?").get(a) as { nome: string };
+    expect(arq.nome).toBe(r.boleto_pdf_nome);
+    // um boleto guardado antes do nome novo é renomeado ao ser reaproveitado
+    db.prepare("UPDATE gestao_arquivos SET nome='Boleto - Parcela 1-3 - venc 20-12-2999.pdf' WHERE pessoa_id=?").run(a);
+    const r2 = await complementoDaCobranca({ telefone: "5513974045973" }, falso(), { esperaMs: 0 });
+    expect(r2.boleto_pdf_nome).toBe("Boleto - Honorários 1-3 - R$ 10,00 - venc 20-12-2999.pdf");
+    expect((db.prepare("SELECT nome FROM gestao_arquivos WHERE pessoa_id=?").get(a) as { nome: string }).nome).toBe("Boleto - Honorários 1-3 - R$ 10,00 - venc 20-12-2999.pdf");
+    void id;
   });
 });
