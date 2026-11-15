@@ -147,16 +147,20 @@ export async function chavesPixDaConta(http: Http = fetch, limiteMs = 15_000): P
  * «Buscar código PIX» da tela: tenta de novo, com tempo folgado, e devolve o que o Asaas respondeu DE VERDADE (a frase dele) e as chaves PIX da conta.
  * Serve para o código aparecer e, quando não aparece, para a equipe saber por quê (chave inexistente no ambiente, ainda inativa, ou erro do Asaas).
  */
-export async function buscarPixDaCobranca(lancamentoId: number, http: Http = fetch): Promise<{ pix: string; motivo: string | null; ambiente: Ambiente; chaves: ChavePixDaConta[]; chaves_erro: string | null }> {
+export async function buscarPixDaCobranca(lancamentoId: number, http: Http = fetch): Promise<{ pix: string; motivo: string | null; ambiente: Ambiente; chaves: ChavePixDaConta[]; chaves_erro: string | null; cobranca_no_asaas: { tipo: string; situacao: string; vencimento: string } | null }> {
   const c = cobrancaDoLancamento(lancamentoId);
   if (!c) throw new ErroAsaas("Essa parcela ainda não tem cobrança gerada.", 404);
   if (c.billing_type === "BOLETO") throw new ErroAsaas("Essa cobrança é só boleto: não tem PIX. Gere uma cobrança «Boleto e PIX» ou «Só PIX».", 422);
   const motivos: { pix?: string; linha?: string } = {};
-  const atualizada = await completarDetalhesDaCobranca(lancamentoId, http, 20_000, motivos);
-  const { chaves, erro } = await chavesPixDaConta(http);
+  // Tempo folgado (o Asaas de testes às vezes demora a gerar o código), mas abaixo do corte de ~60 s do servidor: a consulta das chaves roda JUNTO.
+  const [atualizada, { chaves, erro }, situacao] = await Promise.all([
+    completarDetalhesDaCobranca(lancamentoId, http, 45_000, motivos),
+    chavesPixDaConta(http, 15_000),
+    chamar<{ billingType?: string; status?: string; dueDate?: string }>("GET", `/payments/${c.payment_id}`, undefined, http, 15_000).catch(() => null),
+  ]);
   const pix = atualizada?.pix_payload ?? "";
   const semChave = chaves.length === 0 && !erro ? `A conta do Asaas no ambiente de ${ambienteDoAsaas() === "producao" ? "produção" : "testes"} não tem nenhuma chave PIX. A chave cadastrada na conta real não vale para a conta de testes: cadastre uma chave aleatória também no painel de testes do Asaas.` : null;
-  return { pix, motivo: pix ? null : (semChave ?? motivos.pix ?? "o Asaas não devolveu o código do PIX"), ambiente: ambienteDoAsaas(), chaves, chaves_erro: erro };
+  return { pix, motivo: pix ? null : (semChave ?? motivos.pix ?? "o Asaas não devolveu o código do PIX"), ambiente: ambienteDoAsaas(), chaves, chaves_erro: erro, cobranca_no_asaas: situacao ? { tipo: String(situacao.billingType ?? "?"), situacao: String(situacao.status ?? "?"), vencimento: String(situacao.dueDate ?? "?") } : null };
 }
 
 /** Gera boleto/PIX para uma parcela a receber em aberto (se já houver cobrança ativa, devolve a mesma). */

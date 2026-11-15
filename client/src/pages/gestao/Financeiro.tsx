@@ -349,11 +349,12 @@ export function CobrancaModal({ lanc, aoFechar, aoMudar }: { lanc: Lanc; aoFecha
   const buscarPix = async () => {
     setOcupado("pix");
     try {
-      const r = await api.post<{ pix: string; motivo: string | null; ambiente: string; chaves: Array<{ tipo: string; status: string }>; chaves_erro: string | null; cobranca: CobrancaAsaas | null }>(`/gestao/financeiro/lancamentos/${lanc.id}/cobranca/pix`, {});
+      const r = await api.post<{ pix: string; motivo: string | null; ambiente: string; chaves: Array<{ tipo: string; status: string }>; chaves_erro: string | null; cobranca_no_asaas: { tipo: string; situacao: string; vencimento: string } | null; cobranca: CobrancaAsaas | null }>(`/gestao/financeiro/lancamentos/${lanc.id}/cobranca/pix`, {});
       if (r.cobranca) setC(r.cobranca);
       if (r.pix) { show("Código PIX obtido.", "success"); aoMudar(); return; }
       const chaves = r.chaves.length ? ` Chaves PIX da conta (${r.ambiente === "producao" ? "produção" : "testes"}): ${r.chaves.map((k) => `${k.tipo} ${k.status}`).join(", ")}.` : r.chaves_erro ? ` Não consegui listar as chaves PIX: ${r.chaves_erro}` : "";
-      show(`${r.motivo ?? "O Asaas não devolveu o código PIX."}${chaves}`, "error");
+      const no = r.cobranca_no_asaas ? ` Cobrança no Asaas: ${r.cobranca_no_asaas.tipo}, ${r.cobranca_no_asaas.situacao}, vence ${r.cobranca_no_asaas.vencimento}.` : "";
+      show(`${r.motivo ?? "O Asaas não devolveu o código PIX."}${chaves}${no}`, "error");
     } catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível buscar o código PIX.", "error"); }
     finally { setOcupado(""); }
   };
