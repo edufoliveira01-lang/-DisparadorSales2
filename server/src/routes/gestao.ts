@@ -20,6 +20,7 @@ import { consultarCep } from "../services/gestao/cep";
 import { adicionarCamposPrevidenciarios, atualizarCampo, criarCampo, excluirCampo, listarCampos, revelarSenha, TIPOS_CAMPO } from "../services/gestao/campos";
 import { anotacaoRapida, anotacoesDaPessoa, anotarNaPessoa, cumprirPendencia, marcarComoImportante, pendenciasDaPessoa, removerAnotacaoDaPessoa } from "../services/gestao/anotacoes";
 import { fichaDeCadastroHtml, fichaDeExemplo } from "../services/gestao/ficha";
+import { vinculosDaPessoa, criarVinculo, removerVinculo, periciasInssDaPessoa, listarPericiasInss, criarPericiaInss, atualizarPericiaInss, excluirPericiaInss, TIPOS_DE_VINCULO, TIPOS_PERICIA_INSS, STATUS_PERICIA_INSS, RESULTADOS_PERICIA_INSS } from "../services/gestao/vinculos";
 import { contratoForaDoSistema, marcarContratoFora, marcarContratoForaEmLote } from "../armazenamento/chat";
 import { PADRAO as FICHA_PADRAO, ROTULO_SECAO, apagarFoto, apagarImagem, apagarLogo, fotoDaPessoa, imagemAtual, lerConfig, logoAtual, nomeDeImagemValido, salvarConfig, salvarFoto, salvarImagem, salvarLogo } from "../services/gestao/fichaConfig";
 import { AREAS_PRONTAS, lerAtendimentoIa, montarPromptDoAgente, pendenciasDoAtendimentoIa, salvarAtendimentoIa } from "../services/gestao/atendimentoIa";
@@ -242,16 +243,47 @@ gestaoRouter.get("/financeiro/lancamentos/:id/historico", rota((req) => ({ itens
 gestaoRouter.post("/financeiro/lancamentos/:id/reprogramar", rota((req) => { const r = reprogramarVencimento(id(req), req.body || {}, quem(req)); auditAccess("financeiro_reprogramado", usuario(req).id, null, { lancamento: id(req), parcelas: r.parcelas_movidas }); depoisDeMudar(); return r; }));
 gestaoRouter.post("/financeiro/lancamentos/:id/baixar", rota((req) => { const r = baixarLancamento(id(req), req.body || {}, quem(req)); auditAccess("financeiro_baixa", usuario(req).id, null, { lancamento: r.id }); return r; }));
 gestaoRouter.post("/financeiro/lancamentos/:id/estornar", rota((req) => { const r = estornarLancamento(id(req)); auditAccess("financeiro_estorno", usuario(req).id, null, { lancamento: r.id }); return r; }));
-gestaoRouter.post("/financeiro/lancamentos/:id/cancelar", rota((req) => { const r = cancelarLancamento(id(req), req.body?.cancelar !== false); depoisDeMudar(); return r; }));
+/** Cancelar um lançamento também cancela a cobrança (boleto/PIX) dele no Asaas. Se o Asaas recusar, o lançamento fica cancelado aqui e o aviso diz o que sobrou. */
+async function cancelarNoAsaas(ids: number[], quem: { id: number; nome: string } | undefined): Promise<string[]> {
+  const avisos: string[] = [];
+  for (const lid of ids) {
+    try { await cancelarCobranca(lid, quem); }
+    catch (e) { avisos.push(`Parcela ${lid}: ${e instanceof Error ? e.message : "o Asaas não confirmou o cancelamento"}`); }
+  }
+  return avisos;
+}
+gestaoRouter.post("/financeiro/lancamentos/:id/cancelar", rota(async (req) => {
+  const cancelar = req.body?.cancelar !== false;
+  const r = cancelarLancamento(id(req), cancelar);
+  const avisos = cancelar ? await cancelarNoAsaas([id(req)], quem(req)) : [];
+  depoisDeMudar();
+  return { ...r, asaas_avisos: avisos };
+}));
 gestaoRouter.delete("/financeiro/lancamentos/:id", rota((req) => { const r = excluirLancamento(id(req)); auditAccess("financeiro_lancamento_excluido", usuario(req).id, null, { lancamento: id(req) }); return r; }));
 gestaoRouter.get("/financeiro/contratos", rota((req) => listarContratos(q(req))));
 gestaoRouter.post("/financeiro/contratos", rota((req, res) => { const r = criarContrato(req.body || {}, usuario(req).id); res.status(201); auditAccess("financeiro_contrato_criado", usuario(req).id, null, { contrato: r.id }); return r; }));
 gestaoRouter.get("/financeiro/contratos/:id", rota((req) => obterContrato(id(req))));
-gestaoRouter.post("/financeiro/contratos/:id/cancelar", rota((req) => { const r = cancelarContrato(id(req)); auditAccess("financeiro_contrato_cancelado", usuario(req).id, null, { contrato: id(req) }); return r; }));
+gestaoRouter.post("/financeiro/contratos/:id/cancelar", rota(async (req) => {
+  const r = cancelarContrato(id(req));
+  const ids = (db.prepare("SELECT l.id FROM gestao_lancamentos l JOIN gestao_asaas_cobrancas c ON c.lancamento_id=l.id WHERE l.contrato_id=? AND l.pago_em IS NULL").all(id(req)) as { id: number }[]).map((x) => x.id);
+  const avisos = await cancelarNoAsaas(ids, quem(req));
+  auditAccess("financeiro_contrato_cancelado", usuario(req).id, null, { contrato: id(req), cobrancas_asaas: ids.length, avisos: avisos.length });
+  return { ...r, asaas_avisos: avisos };
+}));
 
 // ---------- negócio do cliente e captação ----------
 const opcoesDoNegocio = () => ({ fontes: lerFontes(), motivos: MOTIVOS, areas: AREAS, qualificacoes: QUALIFICACOES, fontes_padrao: FONTES_PADRAO.map((f) => f.chave) });
 gestaoRouter.get("/pessoas/:id/negocio", rota((req) => ({ negocio: obterNegocio(id(req)), ...opcoesDoNegocio() })));
+gestaoRouter.get("/vinculos/tipos", rota(() => ({ tipos: Object.entries(TIPOS_DE_VINCULO).map(([chave, t]) => ({ chave, rotulo: t.direto, herda: t.herda })) })));
+gestaoRouter.get("/pessoas/:id/vinculos", rota((req) => ({ vinculos: vinculosDaPessoa(id(req)) })));
+gestaoRouter.post("/pessoas/:id/vinculos", rota((req, res) => { const v = criarVinculo(id(req), req.body || {}, usuario(req)); res.status(201); auditAccess("gestao_vinculo_criado", usuario(req).id, null, { pessoa: id(req), tipo: req.body?.tipo, com: req.body?.relacionada_id }); return { vinculos: v }; }));
+gestaoRouter.delete("/pessoas/:id/vinculos/:vid", rota((req) => { const v = removerVinculo(id(req), id(req, "vid")); auditAccess("gestao_vinculo_removido", usuario(req).id, null, { pessoa: id(req), vinculo: id(req, "vid") }); return { vinculos: v }; }));
+gestaoRouter.get("/pericias-inss/opcoes", rota(() => ({ tipos: TIPOS_PERICIA_INSS, status: STATUS_PERICIA_INSS, resultados: RESULTADOS_PERICIA_INSS })));
+gestaoRouter.get("/pericias-inss", rota((req) => ({ itens: listarPericiasInss({ situacao: String(req.query.situacao ?? ""), dias: Number(req.query.dias) || undefined }) })));
+gestaoRouter.get("/pessoas/:id/pericias-inss", rota((req) => ({ itens: periciasInssDaPessoa(id(req)) })));
+gestaoRouter.post("/pessoas/:id/pericias-inss", rota((req, res) => { const v = criarPericiaInss(id(req), req.body || {}, usuario(req)); res.status(201); return { itens: v }; }));
+gestaoRouter.put("/pessoas/:id/pericias-inss/:pid", rota((req) => ({ itens: atualizarPericiaInss(id(req), id(req, "pid"), req.body || {}) })));
+gestaoRouter.delete("/pessoas/:id/pericias-inss/:pid", rota((req) => ({ itens: excluirPericiaInss(id(req), id(req, "pid")) })));
 gestaoRouter.get("/pessoas/:id/contrato-fora", rota((req) => contratoForaDoSistema(id(req))));
 gestaoRouter.put("/pessoas/:id/contrato-fora", rota((req) => {
   const r = marcarContratoFora(id(req), req.body?.marcado === true, quem(req));

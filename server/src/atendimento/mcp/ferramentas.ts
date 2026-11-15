@@ -1,4 +1,5 @@
 import { db } from "../../db";
+import { periciasInssDaPessoa } from "../../services/gestao/vinculos";
 import { agendaDaPessoa, processosDaPessoa, andamentoDoProcesso } from "../../services/gestao/integracao";
 import { clientePeloTelefone, type ClienteAchado } from "./telefone";
 
@@ -27,19 +28,20 @@ function comCliente(telefone: string, f: (c: ClienteAchado) => ResultadoFerramen
   return f(b.cliente);
 }
 
-const processosDo = (pessoaId: number) => db.prepare(`SELECT pr.id,pr.numero,pr.pasta,pr.tribunal,pr.orgao,pr.area,pr.assunto,pr.fase,pr.status,pr.atualizado_em,COALESCE(MAX(g.papel),'autor') AS papel
+const processosDo = (pessoaId: number) => db.prepare(`SELECT pr.id,pr.numero,pr.pasta,pr.tribunal,pr.orgao,pr.area,pr.assunto,pr.fase,pr.status,pr.atualizado_em,COALESCE(MAX(g.papel),'vinculado') AS papel
   FROM gestao_processos pr LEFT JOIN gestao_partes g ON g.processo_id=pr.id AND g.pessoa_id=? WHERE pr.id IN (SELECT value FROM json_each(?)) GROUP BY pr.id ORDER BY (pr.status='ativo') DESC, pr.atualizado_em DESC LIMIT 30`).all(pessoaId, JSON.stringify(processosDaPessoa(pessoaId))) as { id: number; numero: string; pasta: string; tribunal: string; orgao: string; area: string; assunto: string; fase: string; status: string; atualizado_em: string; papel: string }[];
 const processoView = (p: ReturnType<typeof processosDo>[number]) => ({ numero: p.numero, pasta: p.pasta, tribunal: p.tribunal, orgao: p.orgao, area: p.area, assunto: p.assunto, fase: p.fase, situacao: p.status });
 
 function compromissosDe(pessoaId: number, dias: number) {
   const h = hoje(), limite = new Date(Date.parse(`${h}T12:00:00Z`) + dias * 86_400_000).toISOString().slice(0, 10);
-  return agendaDaPessoa(pessoaId).pericias
+  const inss = periciasInssDaPessoa(pessoaId).filter((x) => !x.passada && ["agendada", "remarcada"].includes(x.status) && x.data >= h && x.data <= limite)
+    .map((x) => ({ iso: x.data, tipo: "Perícia administrativa (INSS)", horario: x.horario || "", local: x.agencia || "", perito: "", processo: x.protocolo ? `protocolo ${x.protocolo}` : "" }));
+  const judiciais = agendaDaPessoa(pessoaId).pericias
     .filter((x) => !x.passada && x.data >= h && x.data <= limite)
-    .sort((a, b) => a.data.localeCompare(b.data) || String(a.horario ?? "").localeCompare(String(b.horario ?? "")))
-    .map((x) => ({
-      tipo: /audi[eê]ncia/i.test(`${x.tipo}`) ? "Audiência" : x.tipo || "Perícia", data: dia(x.data), horario: x.horario || "", local: x.local || "",
-      perito: x.profissional_perito || "", processo: x.processo || "",
-    }));
+    .map((x) => ({ iso: x.data, tipo: /audi[eê]ncia/i.test(`${x.tipo}`) ? "Audiência" : x.tipo || "Perícia", horario: x.horario || "", local: x.local || "", perito: x.profissional_perito || "", processo: x.processo || "" }));
+  return [...judiciais, ...inss]
+    .sort((a, b) => a.iso.localeCompare(b.iso) || a.horario.localeCompare(b.horario))
+    .map(({ iso, ...x }) => ({ tipo: x.tipo, data: dia(iso), horario: x.horario, local: x.local, perito: x.perito, processo: x.processo }));
 }
 
 function financeiroDe(pessoaId: number) {

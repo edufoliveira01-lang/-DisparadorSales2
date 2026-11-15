@@ -144,6 +144,15 @@ function Lancamentos({ gerir, contrato, aoLimparContrato }: { gerir: boolean; co
   const [sel, setSel] = useState<Map<number, string>>(new Map());
   const [avisando, setAvisando] = useState<ItemAviso[] | null>(null);
   const [apagar, setApagar] = useState<Lanc | null>(null);
+  const [cancelando, setCancelando] = useState<Lanc | null>(null);
+  const cancelarParcela = async () => {
+    const l = cancelando; if (!l) return; setCancelando(null);
+    try {
+      const r = await api.post<{ asaas_avisos?: string[] }>(`/gestao/financeiro/lancamentos/${l.id}/cancelar`, {});
+      show(r.asaas_avisos?.length ? `Lançamento cancelado, mas o Asaas não confirmou: ${r.asaas_avisos.join(" ")}` : l.cobranca_status ? "Lançamento e cobrança no Asaas cancelados." : "Lançamento cancelado.", r.asaas_avisos?.length ? "error" : "success");
+      await carregar();
+    } catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível cancelar.", "error"); }
+  };
   const [resp, setResp] = useState<Responsavel[]>([]);
   const carregar = useCallback(async () => {
     try { setDados(await api.get(`/gestao/financeiro/lancamentos?limite=30&pagina=${pagina + 1}&tipo=${tipo}&status=${status}&de=${de}&ate=${ate}&busca=${encodeURIComponent(termo)}${contrato ? `&contrato=${contrato}` : ""}`)); }
@@ -200,7 +209,7 @@ function Lancamentos({ gerir, contrato, aoLimparContrato }: { gerir: boolean; co
                 {gerir && l.tipo === "receber" && (l.status === "aberto" || l.status === "atrasado") && l.pessoa_id && <Button size="sm" variant="outline" onClick={() => setCobrando(l)}><QrCode className="h-4 w-4" /> Boleto/PIX</Button>}
                 {gerir && avisavel(l) && <Button size="sm" variant="outline" onClick={() => setAvisando([{ id: l.id, rotulo: rotulo(l) }])}><MessageCircle className="h-4 w-4" /> {l.status === "atrasado" ? "Cobrar" : "Avisar"}</Button>}
                 {l.cobranca_status && l.status !== "pago" && <Badge tone="info">{l.cobranca_status === "PENDING" ? "Boleto/PIX gerado" : l.cobranca_status === "OVERDUE" ? "Boleto vencido" : l.cobranca_status}</Badge>}
-                {gerir && (l.status === "aberto" || l.status === "atrasado") && <><Button size="sm" onClick={() => setBaixando(l)}>{l.tipo === "receber" ? "Receber" : "Pagar"}</Button><Button size="sm" variant="ghost" onClick={() => setReprog(l)}>Nova data</Button><Button size="sm" variant="ghost" onClick={() => setEditando(l)}>Editar</Button><Button size="sm" variant="ghost" onClick={() => void acao(() => api.post(`/gestao/financeiro/lancamentos/${l.id}/cancelar`, {}), "Lançamento cancelado.")}>Cancelar</Button></>}
+                {gerir && (l.status === "aberto" || l.status === "atrasado") && <><Button size="sm" onClick={() => setBaixando(l)}>{l.tipo === "receber" ? "Receber" : "Pagar"}</Button><Button size="sm" variant="ghost" onClick={() => setReprog(l)}>Nova data</Button><Button size="sm" variant="ghost" onClick={() => setEditando(l)}>Editar</Button><Button size="sm" variant="ghost" onClick={() => setCancelando(l)}>Cancelar</Button></>}
                 {gerir && l.status === "pago" && <Button size="sm" variant="ghost" onClick={() => void acao(() => api.post(`/gestao/financeiro/lancamentos/${l.id}/estornar`, {}), "Baixa estornada.")}>Estornar</Button>}
                 {gerir && l.status === "cancelado" && <><Button size="sm" variant="ghost" onClick={() => void acao(() => api.post(`/gestao/financeiro/lancamentos/${l.id}/cancelar`, { cancelar: false }), "Lançamento reativado.")}>Reativar</Button><Button size="sm" variant="ghost" onClick={() => setApagar(l)}>Excluir</Button></>}
               </div>
@@ -214,6 +223,7 @@ function Lancamentos({ gerir, contrato, aoLimparContrato }: { gerir: boolean; co
       {cobrando && <CobrancaModal lanc={cobrando} aoFechar={() => setCobrando(null)} aoMudar={() => void carregar()} />}
       {reprog && <ReprogramarModal lanc={reprog} aoFechar={() => setReprog(null)} aoSalvar={() => { setReprog(null); void carregar(); }} />}
       {baixando && <BaixaModal lanc={baixando} aoFechar={() => setBaixando(null)} aoSalvar={() => { setBaixando(null); void carregar(); }} />}
+      <ConfirmDialog open={Boolean(cancelando)} title="Cancelar lançamento" message={`Cancelar "${cancelando?.descricao}"?${cancelando?.cobranca_status ? " O boleto/PIX gerado no Asaas também será cancelado e deixa de poder ser pago." : ""} Dá para reativar depois (uma nova cobrança será gerada).`} confirmLabel="Cancelar lançamento" onConfirm={() => void cancelarParcela()} onCancel={() => setCancelando(null)} />
       <ConfirmDialog open={Boolean(apagar)} title="Excluir lançamento" message={`Excluir "${apagar?.descricao}"? Não pode ser desfeito.`} confirmLabel="Excluir" onConfirm={() => { const l = apagar!; setApagar(null); void acao(() => api.delete(`/gestao/financeiro/lancamentos/${l.id}`), "Lançamento excluído."); }} onCancel={() => setApagar(null)} />
     </div>
   );
@@ -528,7 +538,7 @@ function Contratos({ gerir, aoVerParcelas }: { gerir: boolean; aoVerParcelas: (i
   useEffect(() => { void carregar(); }, [carregar]);
   const cancelarContrato = async () => {
     if (!cancelar) return;
-    try { await api.post(`/gestao/financeiro/contratos/${cancelar.id}/cancelar`, {}); show("Contrato cancelado; parcelas em aberto foram canceladas.", "success"); setCancelar(null); await carregar(); }
+    try { const r = await api.post<{ asaas_avisos?: string[] }>(`/gestao/financeiro/contratos/${cancelar.id}/cancelar`, {}); if (r.asaas_avisos?.length) show(`Contrato cancelado, mas o Asaas não confirmou: ${r.asaas_avisos.join(" ")}`, "error"); else show("Contrato cancelado; parcelas em aberto e cobranças no Asaas canceladas.", "success"); setCancelar(null); await carregar(); }
     catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível cancelar.", "error"); setCancelar(null); }
   };
   return (
@@ -547,7 +557,7 @@ function Contratos({ gerir, aoVerParcelas }: { gerir: boolean; aoVerParcelas: (i
         </ul>
       )}
       {novo && <ContratoModal aoFechar={() => setNovo(false)} aoSalvar={() => { setNovo(false); void carregar(); }} />}
-      <ConfirmDialog open={Boolean(cancelar)} title="Cancelar contrato" message="As parcelas ainda não pagas serão canceladas. Os valores já recebidos continuam registrados." confirmLabel="Cancelar contrato" onConfirm={() => void cancelarContrato()} onCancel={() => setCancelar(null)} />
+      <ConfirmDialog open={Boolean(cancelar)} title="Cancelar contrato" message="As parcelas ainda não pagas serão canceladas e os boletos/PIX delas no Asaas também. Os valores já recebidos continuam registrados." confirmLabel="Cancelar contrato" onConfirm={() => void cancelarContrato()} onCancel={() => setCancelar(null)} />
     </div>
   );
 }

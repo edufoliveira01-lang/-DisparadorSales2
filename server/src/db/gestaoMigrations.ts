@@ -170,6 +170,26 @@ export function runGestaoMigrations(db: Database.Database) {
     marcado_por_id INTEGER,
     marcado_por TEXT NOT NULL DEFAULT ''
   )`);
+  // Vínculos entre clientes (herdeiro, representante, cônjuge…) e perícia administrativa (INSS).
+  db.exec(`CREATE TABLE IF NOT EXISTS gestao_pessoa_vinculos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pessoa_id INTEGER NOT NULL REFERENCES gestao_pessoas(id) ON DELETE CASCADE,
+    relacionada_id INTEGER NOT NULL REFERENCES gestao_pessoas(id) ON DELETE CASCADE,
+    tipo TEXT NOT NULL, observacao TEXT NOT NULL DEFAULT '',
+    criado_por INTEGER, criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK(pessoa_id<>relacionada_id)
+  );
+  CREATE INDEX IF NOT EXISTS ix_gestao_vinculos_a ON gestao_pessoa_vinculos(pessoa_id);
+  CREATE INDEX IF NOT EXISTS ix_gestao_vinculos_b ON gestao_pessoa_vinculos(relacionada_id);
+  CREATE TABLE IF NOT EXISTS gestao_pericias_inss (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pessoa_id INTEGER NOT NULL REFERENCES gestao_pessoas(id) ON DELETE CASCADE,
+    tipo TEXT NOT NULL DEFAULT 'medica', data TEXT NOT NULL, horario TEXT NOT NULL DEFAULT '',
+    agencia TEXT NOT NULL DEFAULT '', protocolo TEXT NOT NULL DEFAULT '', beneficio TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'agendada', resultado TEXT NOT NULL DEFAULT '', observacoes TEXT NOT NULL DEFAULT '',
+    criado_por INTEGER, criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS ix_gestao_pericias_inss_pessoa ON gestao_pericias_inss(pessoa_id,data)`);
   // Anotação IMPORTANTE (pendência): fica em destaque no cadastro do cliente até alguém marcar como cumprida.
   for (const tabela of ["gestao_anotacoes", "gestao_anotacoes_pessoa"]) {
     const cols = (db.prepare(`PRAGMA table_info(${tabela})`).all() as { name: string }[]).map((c) => c.name);

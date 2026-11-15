@@ -1,4 +1,5 @@
 import { db } from "../../db";
+import { pessoasDeQuemHerda } from "./vinculos";
 import { hojeSaoPaulo } from "../djen/cache";
 import { listarPrazosEscritorio } from "../djen/prazosEscritorio";
 import { ErroGestao } from "./erro";
@@ -33,7 +34,9 @@ export function andamentoDoProcesso(id: number) {
 /** Processos do cliente por DOIS caminhos: o vínculo do cadastro (partes) e o vínculo do Acompanhamento (DJEN → contato do cliente). */
 export function processosDaPessoa(pessoaId: number): number[] {
   const ids = new Set<number>();
-  for (const r of db.prepare("SELECT processo_id AS id FROM gestao_partes WHERE pessoa_id=?").all(pessoaId) as { id: number }[]) ids.add(r.id);
+  // Os próprios + os de quem ela herda/representa («Ciclano é herdeiro de Fulano»: Ciclano acompanha o caso de Fulano).
+  const donos = [pessoaId, ...pessoasDeQuemHerda(pessoaId)];
+  for (const r of db.prepare(`SELECT processo_id AS id FROM gestao_partes WHERE pessoa_id IN (${donos.map(() => "?").join(",")})`).all(...donos) as { id: number }[]) ids.add(r.id);
   const contatos = db.prepare(`SELECT contact_id AS id FROM gestao_pessoas WHERE id=? AND contact_id IS NOT NULL UNION SELECT id FROM contacts WHERE pessoa_id=?`).all(pessoaId, pessoaId) as { id: number }[];
   if (contatos.length) {
     const marcas = contatos.map(() => "?").join(",");

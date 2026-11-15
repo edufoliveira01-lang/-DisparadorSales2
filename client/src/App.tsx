@@ -56,6 +56,7 @@ const Configuracoes = lazy(() =>
 const Login = lazy(() =>
   import("@/pages/Login").then((module) => ({ default: module.Login })),
 );
+const GestaoPericiasInss = lazy(() => import("@/pages/gestao/PericiasInss").then((m) => ({ default: m.PericiasInss })));
 const GestaoInicio = lazy(() => import("@/pages/gestao/GestaoInicio").then((m) => ({ default: m.GestaoInicio })));
 const GestaoClientes = lazy(() => import("@/pages/gestao/CadastroHub").then((m) => ({ default: m.CadastroHub })));
 const GestaoClienteFicha = lazy(() => import("@/pages/gestao/ClienteFicha").then((m) => ({ default: m.ClienteFicha })));
@@ -141,6 +142,7 @@ function AuthenticatedApp() {
             <Suspense fallback={<PageLoading />}>
               <Routes>
                 <Route path="/gestao" element={<AccessRoute permission="gestao.view"><GestaoInicio /></AccessRoute>} />
+                <Route path="/gestao/pericias-inss" element={<AccessRoute permission="gestao.view"><GestaoPericiasInss /></AccessRoute>} />
                 <Route path="/gestao/tarefas" element={<AccessRoute permission="gestao.view"><GestaoTarefas /></AccessRoute>} />
                 <Route path="/atendimento" element={<AccessRoute permission="atendimento.use"><Atendimento /></AccessRoute>} />
                 <Route path="/gestao/ficha" element={<AccessRoute permission="gestao.view"><Cfg><GestaoFicha /></Cfg></AccessRoute>} />

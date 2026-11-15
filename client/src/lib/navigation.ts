@@ -25,6 +25,7 @@ import {
   Building2,
   Headset,
   TrendingUp,
+  Landmark,
 } from "lucide-react";
 import type { Permission } from "@/context/AuthContext";
 export const navigation = [
@@ -35,6 +36,13 @@ export const navigation = [
     icon: LayoutDashboard,
     group: "agenda",
     end: true,
+  },
+  {
+    to: "/gestao/pericias-inss",
+    label: "Perícias do INSS",
+    description: "Perícias e avaliações administrativas no INSS",
+    icon: Landmark,
+    group: "agenda",
   },
   {
     to: "/calendario",
