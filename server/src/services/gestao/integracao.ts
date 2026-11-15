@@ -30,12 +30,25 @@ export function andamentoDoProcesso(id: number) {
   };
 }
 
+/** Processos do cliente por DOIS caminhos: o vínculo do cadastro (partes) e o vínculo do Acompanhamento (DJEN → contato do cliente). */
+export function processosDaPessoa(pessoaId: number): number[] {
+  const ids = new Set<number>();
+  for (const r of db.prepare("SELECT processo_id AS id FROM gestao_partes WHERE pessoa_id=?").all(pessoaId) as { id: number }[]) ids.add(r.id);
+  const contatos = db.prepare(`SELECT contact_id AS id FROM gestao_pessoas WHERE id=? AND contact_id IS NOT NULL UNION SELECT id FROM contacts WHERE pessoa_id=?`).all(pessoaId, pessoaId) as { id: number }[];
+  if (contatos.length) {
+    const marcas = contatos.map(() => "?").join(",");
+    for (const r of db.prepare(`SELECT pr.id FROM gestao_processos pr JOIN djen_processos d ON d.chave=pr.chave OR d.chave=pr.djen_chave WHERE d.cliente_id IN (${marcas})`).all(...contatos.map((c) => c.id)) as { id: number }[]) ids.add(r.id);
+  }
+  return [...ids];
+}
+
 /** Perícias/audiências do cliente (pelos processos dele ou pelo telefone) e suas tarefas abertas. */
 export function agendaDaPessoa(pessoaId: number) {
   const p = db.prepare("SELECT telefone,telefone2 FROM gestao_pessoas WHERE id=?").get(pessoaId) as { telefone: string; telefone2: string } | undefined;
   if (!p) throw new ErroGestao("Pessoa não encontrada.", 404);
   const hoje = hojeSaoPaulo();
-  const chaves = (db.prepare("SELECT DISTINCT pr.chave,pr.djen_chave FROM gestao_partes g JOIN gestao_processos pr ON pr.id=g.processo_id WHERE g.pessoa_id=?").all(pessoaId) as { chave: string; djen_chave: string | null }[]).flatMap((r) => [r.chave, r.djen_chave]).filter((c): c is string => Boolean(c));
+  const idsProc = processosDaPessoa(pessoaId);
+  const chaves = ((idsProc.length ? db.prepare(`SELECT DISTINCT chave,djen_chave FROM gestao_processos WHERE id IN (${idsProc.map(() => "?").join(",")})`).all(...idsProc) : []) as { chave: string; djen_chave: string | null }[]).flatMap((r) => [r.chave, r.djen_chave]).filter((c): c is string => Boolean(c));
   const fones = [...new Set([p.telefone, p.telefone2].map((t) => normalizePhone(t)).filter((t) => t.length >= 8))];
   const onde: string[] = []; const par: unknown[] = [];
   if (chaves.length) { onde.push(`processo_chave IN (${chaves.map(() => "?").join(",")})`); par.push(...chaves); }

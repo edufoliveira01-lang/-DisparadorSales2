@@ -1,5 +1,5 @@
 import { db } from "../../db";
-import { agendaDaPessoa, andamentoDoProcesso } from "../../services/gestao/integracao";
+import { agendaDaPessoa, processosDaPessoa, andamentoDoProcesso } from "../../services/gestao/integracao";
 import { clientePeloTelefone, type ClienteAchado } from "./telefone";
 
 /**
@@ -27,8 +27,8 @@ function comCliente(telefone: string, f: (c: ClienteAchado) => ResultadoFerramen
   return f(b.cliente);
 }
 
-const processosDo = (pessoaId: number) => db.prepare(`SELECT pr.id,pr.numero,pr.pasta,pr.tribunal,pr.orgao,pr.area,pr.assunto,pr.fase,pr.status,pr.atualizado_em,g.papel
-  FROM gestao_partes g JOIN gestao_processos pr ON pr.id=g.processo_id WHERE g.pessoa_id=? ORDER BY (pr.status='ativo') DESC, pr.atualizado_em DESC LIMIT 30`).all(pessoaId) as { id: number; numero: string; pasta: string; tribunal: string; orgao: string; area: string; assunto: string; fase: string; status: string; atualizado_em: string; papel: string }[];
+const processosDo = (pessoaId: number) => db.prepare(`SELECT pr.id,pr.numero,pr.pasta,pr.tribunal,pr.orgao,pr.area,pr.assunto,pr.fase,pr.status,pr.atualizado_em,COALESCE(MAX(g.papel),'autor') AS papel
+  FROM gestao_processos pr LEFT JOIN gestao_partes g ON g.processo_id=pr.id AND g.pessoa_id=? WHERE pr.id IN (SELECT value FROM json_each(?)) GROUP BY pr.id ORDER BY (pr.status='ativo') DESC, pr.atualizado_em DESC LIMIT 30`).all(pessoaId, JSON.stringify(processosDaPessoa(pessoaId))) as { id: number; numero: string; pasta: string; tribunal: string; orgao: string; area: string; assunto: string; fase: string; status: string; atualizado_em: string; papel: string }[];
 const processoView = (p: ReturnType<typeof processosDo>[number]) => ({ numero: p.numero, pasta: p.pasta, tribunal: p.tribunal, orgao: p.orgao, area: p.area, assunto: p.assunto, fase: p.fase, situacao: p.status });
 
 function compromissosDe(pessoaId: number, dias: number) {

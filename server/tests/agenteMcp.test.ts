@@ -80,6 +80,22 @@ describe("servidor de ferramentas do agente (MCP) — o cliente é achado só pe
     expect(chamar("andamento_do_processo", {}, "5547991234567").texto).toContain("2000002-22.2025.8.26.0001");
   });
 
+  it("processo vinculado só pelo Acompanhamento (DJEN → contato do cliente) também aparece, com a perícia dele", () => {
+    const ins = (sql: string, ...p: unknown[]) => Number(db.prepare(sql).run(...p).lastInsertRowid);
+    const contato = ins("INSERT INTO contacts(nome,telefone) VALUES ('Caio Vinculo','(11) 97777-1234')");
+    ins("INSERT INTO gestao_pessoas(tipo,nome,telefone,contact_id) VALUES ('cliente','Caio Vinculo','(11) 97777-1234',?)", contato);
+    ins("INSERT INTO gestao_processos(numero,chave,pasta,titulo,fase,status) VALUES ('3000003-33.2025.8.26.0003','30000033320258260003','P-9003','Caio','Perícia','ativo')");
+    db.prepare("INSERT INTO djen_processos(chave,numero,cliente_id) VALUES ('30000033320258260003','3000003-33.2025.8.26.0003',?)").run(contato);
+    try {
+      expect(chamar("consultar_cliente", {}, "5511977771234").texto).toContain("3000003-33.2025.8.26.0003");
+      expect(chamar("andamento_do_processo", {}, "5511977771234").texto).toContain("Fase: Perícia");
+    } finally {
+      db.prepare("DELETE FROM djen_processos WHERE chave='30000033320258260003'").run();
+      db.prepare("DELETE FROM gestao_processos WHERE pasta='P-9003'").run();
+      db.prepare("DELETE FROM gestao_pessoas WHERE nome='Caio Vinculo'").run();
+      db.prepare("DELETE FROM contacts WHERE nome='Caio Vinculo'").run();
+    }
+  });
   it("financeiro mostra a parcela em atraso e a próxima; sem cadastro, o agente é orientado a tratar como lead", () => {
     const f = chamar("financeiro_do_cliente", {}, "5531981239087");
     expect(f.dados.em_atraso).toHaveLength(1);
