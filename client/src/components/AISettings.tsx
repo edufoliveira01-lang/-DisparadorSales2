@@ -134,6 +134,7 @@ export function AISettings() {
               {chat?.connection.conectado && <Button size="sm" variant="ghost" disabled={busy || authorizing} onClick={() => setConfirm("chat")}><Unplug className="h-4 w-4" /> Desconectar</Button>}
             </div>
             {config.chatgpt_login_message && <p className="text-xs text-zinc-500 dark:text-zinc-400">{config.chatgpt_login_message}</p>}
+            {!config.chatgpt_login_available && <div className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200 bg-white p-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"><span className="text-zinc-600 dark:text-zinc-300">Neste modo a conexão é feita com uma chave de API (a forma mais simples e sem limites de uso interno).</span><Button size="sm" variant="outline" onClick={() => choose("openai")}>Usar chave da OpenAI</Button></div>}
             {chat?.login.state === "waiting" && <div role="status" className="space-y-3 rounded-xl border border-accent-200 bg-accent-50 p-4 dark:border-accent-900 dark:bg-accent-900/20">
               <p className="text-sm">Abra a página oficial e informe este código:</p>
               <code className="block break-all text-xl font-semibold tracking-wider">{chat.login.user_code}</code>
