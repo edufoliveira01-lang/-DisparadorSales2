@@ -65,23 +65,44 @@ export function normalizarDataJud(resposta: unknown): DadosDataJud | null {
   };
 }
 
+// A chave pública do CNJ é COMPARTILHADA por todo mundo, e o DataJud limita as consultas (HTTP 429). Duas defesas: um espaço mínimo entre consultas e,
+// ao receber 429, uma pausa em TODAS as consultas (inclusive as do ciclo automático), em vez de continuar batendo e piorar o bloqueio.
+const ESPACO_MINIMO_MS = 1_500;
+let pausadoAte = 0, ultimaConsulta = 0, fila: Promise<unknown> = Promise.resolve();
+export const pausaDoDataJudMs = () => Math.max(0, pausadoAte - Date.now());
+export const reiniciarPausaDoDataJud = () => { pausadoAte = 0; ultimaConsulta = 0; };
+function esperarVez(): Promise<void> {
+  const vez = fila.then(async () => { const falta = ESPACO_MINIMO_MS - (Date.now() - ultimaConsulta); if (falta > 0) await new Promise((ok) => setTimeout(ok, falta)); ultimaConsulta = Date.now(); });
+  fila = vez.catch(() => undefined);
+  return vez;
+}
+const frasePausa = () => `O DataJud limitou as consultas (HTTP 429): a chave pública do CNJ é compartilhada e tem limite de uso. O sistema tenta de novo sozinho em ${Math.max(1, Math.ceil(pausaDoDataJudMs() / 60_000))} min.`;
+
 export async function buscarNoDataJud(chave: string, apiKey: string, http: typeof fetch = fetch): Promise<DadosDataJud | null> {
   const alias = aliasDoTribunal(chave);
   if (!alias) throw new ErroDataJud("O DataJud não cobre o tribunal deste número.", 422);
+  if (pausaDoDataJudMs() > 0) throw new ErroDataJud(frasePausa(), 429);
   // O DataJud é lento e instável em horários de pico: 60 s por tentativa e, se estourar o tempo ou der erro de rede/5xx, mais uma tentativa.
   const LIMITE_MS = 60_000;
   let r: Response | null = null; let causa = "";
   for (let tentativa = 1; tentativa <= 2 && !r; tentativa++) {
     try {
+      await esperarVez();
       const resp = await http(`${BASE}/api_publica_${alias}/_search`, {
         method: "POST",
         headers: { Authorization: `APIKey ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({ size: 5, query: { match: { numeroProcesso: chave } } }),
         signal: AbortSignal.timeout(LIMITE_MS),
       });
+      if (resp.status === 429) {
+        const ra = Number(resp.headers.get("retry-after"));
+        pausadoAte = Date.now() + Math.min(15 * 60_000, Math.max(60_000, Number.isFinite(ra) && ra > 0 ? ra * 1000 : 5 * 60_000));
+        await resp.body?.cancel();
+        throw new ErroDataJud(frasePausa(), 429);
+      }
       if (resp.status >= 500 && tentativa === 1) { causa = `o DataJud respondeu HTTP ${resp.status}`; await resp.body?.cancel(); continue; }
       r = resp;
-    } catch (e) { causa = descreverFalhaDeRede(e, LIMITE_MS); }
+    } catch (e) { if (e instanceof ErroDataJud) throw e; causa = descreverFalhaDeRede(e, LIMITE_MS); }
   }
   if (!r) throw new ErroDataJud(`Não foi possível acessar o DataJud (${causa}). O serviço do CNJ costuma ficar lento: tente de novo em alguns minutos.`);
   if (r.status === 401 || r.status === 403) throw new ErroDataJud("O DataJud recusou a chave. Confira, em Configurações → DataJud, se ela é a chave pública vigente do CNJ.", 401);

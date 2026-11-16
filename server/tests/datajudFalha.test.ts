@@ -22,3 +22,17 @@ describe("DataJud: falha de rede diz a causa e tenta de novo", () => {
     expect(n).toBe(1);
   });
 });
+
+import { pausaDoDataJudMs, reiniciarPausaDoDataJud } from "../src/services/djen/datajud";
+describe("DataJud: limite de consultas (HTTP 429)", () => {
+  it("429 pausa as consultas, avisa em português e não bate na API enquanto durar a pausa", async () => {
+    reiniciarPausaDoDataJud();
+    let n = 0;
+    const http = (async () => { n++; return new Response("x", { status: 429, headers: { "retry-after": "120" } }); }) as unknown as typeof fetch;
+    await expect(buscarNoDataJud(CNJ, "chave-de-teste-1234567890", http)).rejects.toThrow(/limitou as consultas/);
+    expect(pausaDoDataJudMs()).toBeGreaterThan(100_000);
+    await expect(buscarNoDataJud(CNJ, "chave-de-teste-1234567890", http)).rejects.toThrow(/limitou as consultas/);
+    expect(n).toBe(1); // a segunda nem chegou à API
+    reiniciarPausaDoDataJud();
+  });
+});
