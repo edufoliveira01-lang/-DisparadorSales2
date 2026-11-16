@@ -19,6 +19,7 @@ import { AnotacoesPessoa } from "./AnotacoesPessoa";
 import { AvisoDePendencias, FaixaDePendencias, SeloDePendencias, usePendencias } from "./PendenciasDoCliente";
 import { NegocioDaPessoa } from "./NegocioDaPessoa";
 import { Vinculos } from "./Vinculos";
+import { CopiarTexto, AbrirNoTribunal } from "@/components/CopiarTexto";
 import { FaixaDeCompromissos, SeloDeCompromissos, useCompromissos } from "./AvisoDeCompromissos";
 import { PericiaInssDaPessoa } from "./PericiaInss";
 import { AvatarPessoa, linkWhatsApp, useAtendimentoLiberado } from "./AvatarPessoa";
@@ -134,7 +135,12 @@ export function ClienteFicha() {
         <div className="flex min-w-0 items-center gap-4">
           {novo ? <span aria-hidden className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-accent-100 text-accent-700 dark:bg-white/10"><User className="h-6 w-6" /></span> : <AvatarPessoa key={fotoVersao} id={id} nome={pessoa.nome} temFoto={pessoa.tem_foto} tamanho={56} />}
           <div className="min-w-0">
-            <h1 className="truncate text-xl font-semibold text-zinc-900 dark:text-zinc-50">{novo ? "Novo cadastro" : pessoa.nome || "Cadastro"}</h1>
+            <h1 className="flex items-center gap-2 text-xl font-semibold text-zinc-900 dark:text-zinc-50"><span className="truncate">{novo ? "Novo cadastro" : pessoa.nome || "Cadastro"}</span>{!novo && pessoa.nome && <CopiarTexto texto={pessoa.nome} rotulo="Nome do cliente" />}</h1>
+            {!novo && (pessoa.processos?.length ?? 0) > 0 && (
+              <ul className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
+                {pessoa.processos!.slice(0, 3).map((p) => <li key={`${p.id}-${p.papel}`} className="flex items-center gap-1.5 text-sm text-zinc-600 dark:text-zinc-300"><Link to={`/gestao/processos/${p.id}`} className="font-medium hover:underline">{p.numero}</Link><CopiarTexto texto={p.numero} rotulo="Número do processo" /><AbrirNoTribunal numero={p.numero} compacto /></li>)}
+                {pessoa.processos!.length > 3 && <li className="text-xs text-zinc-500"><button type="button" className="underline" onClick={() => setAba("processos")}>+{pessoa.processos!.length - 3} processo(s)</button></li>}
+              </ul>)}
             {novo ? <p className="text-sm text-zinc-500">Preencha o que souber; só o nome é obrigatório. O endereço completa sozinho pelo CEP.</p> : (
               <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500">
                 <Badge tone={pessoa.tipo === "cliente" ? "accent" : "neutral"}>{TIPOS[pessoa.tipo]}</Badge>{!pessoa.ativo && <Badge tone="warning">Inativo</Badge>}<SeloDePendencias total={pend.itens.length} /><SeloDeCompromissos total={compromissos.length} />

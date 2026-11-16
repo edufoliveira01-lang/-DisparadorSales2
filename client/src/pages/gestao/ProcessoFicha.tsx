@@ -1,3 +1,4 @@
+import { CopiarTexto, AbrirNoTribunal } from "@/components/CopiarTexto";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Trash2, Scale, CalendarClock, StickyNote, FolderOpen, X } from "lucide-react";
@@ -61,7 +62,7 @@ export function ProcessoFicha() {
         <div className="flex min-w-0 items-center gap-4">
           <span aria-hidden className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-accent-50 text-accent-700 dark:bg-white/10 dark:text-accent-200"><FolderOpen className="h-6 w-6" /></span>
           <div className="min-w-0">
-            <h1 className="truncate text-xl font-semibold text-zinc-900 dark:text-zinc-50">{ficha.numero_formatado || ficha.numero}</h1>
+            <h1 className="flex items-center gap-2 text-xl font-semibold text-zinc-900 dark:text-zinc-50"><span className="truncate">{ficha.numero_formatado || ficha.numero}</span><CopiarTexto texto={ficha.numero_formatado || ficha.numero} rotulo="Número do processo" /><AbrirNoTribunal numero={ficha.numero} compacto /></h1>
             <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500"><Badge tone="accent">Pasta {ficha.pasta}</Badge><Badge tone={STATUS_TOM[ficha.status] || "neutral"}>{STATUS[ficha.status] || ficha.status}</Badge>{ficha.tribunal && <Badge>{ficha.tribunal}</Badge>}<span className="truncate">{ficha.titulo || ficha.classe}</span></p>
           </div>
         </div>
@@ -71,7 +72,7 @@ export function ProcessoFicha() {
       {(() => { const c = ficha.partes.find((p) => p.papel === "autor") ?? ficha.partes[0]; return c ? (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 surface-panel px-4 py-3 text-sm">
           <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Cliente</span>
-          <Link to={`/gestao/clientes/${c.pessoa_id}`} className="font-semibold text-accent-700 hover:underline dark:text-accent-300">{c.nome}</Link>
+          <Link to={`/gestao/clientes/${c.pessoa_id}`} className="font-semibold text-accent-700 hover:underline dark:text-accent-300">{c.nome}</Link><CopiarTexto texto={c.nome} rotulo="Nome do cliente" />
           {c.telefone && <span className="text-zinc-600 dark:text-zinc-300">{c.telefone}</span>}{c.email && <span className="text-zinc-600 dark:text-zinc-300">{c.email}</span>}
           <Link to={`/gestao/clientes/${c.pessoa_id}?aba=financeiro`} className="ml-auto text-xs text-accent-700 underline">Financeiro do cliente</Link>
         </div>) : null; })()}
