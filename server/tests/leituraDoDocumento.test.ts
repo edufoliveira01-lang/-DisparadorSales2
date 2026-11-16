@@ -46,7 +46,7 @@ describe("identificação do documento pelo CONTEÚDO", () => {
     expect(r).toMatchObject({ situacao: "classificado", slot: "cnis", data: "2026-11-01" });
     expect(obterArquivo(a.id).nome).toBe("2026-11-01 - CNIS.pdf");
     const b = salvarArquivo({ pessoaId: pessoa }, "contrato.pdf", pdf, {}, user);
-    expect(await identificarArquivo(b.id, async () => ({ tipo: "outro", data_documento: null, confianca: 0.9, retrato: null }))).toEqual({ situacao: "nao_identificado" });
+    expect(await identificarArquivo(b.id, async () => ({ tipo: "outro", data_documento: null, confianca: 0.9, retrato: null }))).toMatchObject({ situacao: "nao_identificado" });
     expect(obterArquivo(b.id).nome).toBe("contrato.pdf");
   });
 
@@ -67,7 +67,7 @@ describe("identificação do documento pelo CONTEÚDO", () => {
     // quem já tem foto: automático não sugere; pedido manual (substituir) sugere
     descartarSugestao(pessoa);
     aceitarFoto();
-    expect(await identificarArquivo(pdfOuImg.id, duvida)).toEqual({ situacao: "nao_identificado" });
+    expect(await identificarArquivo(pdfOuImg.id, duvida)).toMatchObject({ situacao: "nao_identificado" });
     expect(await identificarArquivo(pdfOuImg.id, duvida, { substituirFoto: true })).toEqual({ situacao: "so_foto" });
   });
 });

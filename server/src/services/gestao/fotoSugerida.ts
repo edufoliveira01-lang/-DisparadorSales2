@@ -40,6 +40,33 @@ export const detectorPadrao: Detector = async (imagem) => {
   return await perguntarComVisao(PROMPT, SCHEMA, imagem, cam, AbortSignal.timeout(120_000)) as Deteccao;
 };
 
+/** Largura e altura de um JPEG ou PNG (null se não der para ler). */
+export function dimensoesDaImagem(d: Buffer): { w: number; h: number } | null {
+  if (d.length >= 24 && d.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return { w: d.readUInt32BE(16), h: d.readUInt32BE(20) };
+  if (d.length > 4 && d[0] === 0xff && d[1] === 0xd8) {
+    let k = 2;
+    while (k < d.length - 9) {
+      if (d[k] !== 0xff) { k++; continue; }
+      const m = d[k + 1]!;
+      if (m === 0xc0 || m === 0xc1 || m === 0xc2) return { h: d.readUInt16BE(k + 5), w: d.readUInt16BE(k + 7) };
+      k += 2 + d.readUInt16BE(k + 2);
+    }
+  }
+  return null;
+}
+
+/** A IA às vezes devolve a caixa em porcentagem (0–100) ou em pixels em vez de frações (0–1): tudo vira fração da imagem inteira. */
+export function normalizarCaixa(c: CaixaDoRetrato | null, dim: { w: number; h: number } | null): CaixaDoRetrato | null {
+  if (!c) return null;
+  const v = [c.x, c.y, c.largura, c.altura];
+  if (!v.every((n) => Number.isFinite(n))) return c;
+  const max = Math.max(c.x + c.largura, c.y + c.altura, ...v);
+  if (max <= 1.05) return c;
+  if (max <= 100.5) return { x: c.x / 100, y: c.y / 100, largura: c.largura / 100, altura: c.altura / 100 };
+  if (dim && dim.w > 0 && dim.h > 0) return { x: c.x / dim.w, y: c.y / dim.h, largura: c.largura / dim.w, altura: c.altura / dim.h };
+  return c;
+}
+
 /** A caixa só vale se for plausível: dentro da imagem e com tamanho de retrato. Ganha uma folga para não cortar a cabeça. */
 export function caixaValida(c: CaixaDoRetrato | null): CaixaDoRetrato | null {
   if (!c) return null;
@@ -67,7 +94,7 @@ export function podeSugerirFoto(pessoaId: number | null, conteudo: Buffer, opcoe
 
 /** Guarda a sugestão (a cópia do documento + a caixa do retrato) quando a caixa é plausível. */
 export function registrarSugestao(pessoaId: number, conteudo: Buffer, caixaBruta: CaixaDoRetrato | null, documento: string, titulo: string): ResultadoDaSugestao {
-  const caixa = caixaValida(caixaBruta);
+  const caixa = caixaValida(normalizarCaixa(caixaBruta, dimensoesDaImagem(conteudo)));
   if (!caixa) return "sem_retrato";
   gravarImagemDaSugestao(pessoaId, conteudo);
   db.prepare("INSERT OR REPLACE INTO gestao_foto_sugerida(pessoa_id,x,y,largura,altura,documento,titulo) VALUES (?,?,?,?,?,?,?)").run(pessoaId, caixa.x, caixa.y, caixa.largura, caixa.altura, String(documento ?? "").slice(0, 40), titulo.slice(0, 120));
@@ -82,21 +109,33 @@ export async function imagensParaFoto(conteudo: Buffer): Promise<Buffer[]> {
   return [];
 }
 
-export async function sugerirFotoDoDocumento(pessoaId: number | null, conteudo: Buffer, titulo: string, detector: Detector = detectorPadrao, opcoes: { substituir?: boolean } = {}): Promise<ResultadoDaSugestao> {
+export const MOTIVO_DA_FOTO: Record<ResultadoDaSugestao, string> = {
+  sugerida: "", sem_retrato: "a IA não encontrou um rosto nítido na(s) imagem(ns) do arquivo", ja_tem_foto: "o cliente já tem foto", ja_sugerida: "já existe uma foto sugerida esperando confirmação",
+  sem_ia: "a IA não está disponível (conecte a conta ChatGPT ou cadastre uma chave de API)", nao_e_imagem: "o arquivo não tem imagem que dê para usar", grande_demais: "a imagem é grande demais", sem_cadastro: "o cliente não tem cadastro",
+};
+
+/** Como `sugerirFotoDoDocumento`, mas diz o MOTIVO de não ter sugerido (inclusive falha da IA), para a tela explicar e para o log. */
+export async function tentarFotoDoDocumento(pessoaId: number | null, conteudo: Buffer, titulo: string, detector: Detector = detectorPadrao, opcoes: { substituir?: boolean } = {}): Promise<{ resultado: ResultadoDaSugestao; motivo: string }> {
   const candidatas = await imagensParaFoto(conteudo);
-  if (candidatas.length === 0) return podeSugerirFoto(pessoaId, conteudo) ?? "nao_e_imagem";
+  if (candidatas.length === 0) { const r = podeSugerirFoto(pessoaId, conteudo) ?? "nao_e_imagem"; return { resultado: r, motivo: MOTIVO_DA_FOTO[r] }; }
   const barrou = podeSugerirFoto(pessoaId, candidatas[0]!, opcoes);
-  if (barrou) return barrou;
-  if (detector === detectorPadrao && !(await iaComVisaoDisponivel())) return "sem_ia";
-  let ultimo: ResultadoDaSugestao = "sem_retrato";
+  if (barrou) return { resultado: barrou, motivo: MOTIVO_DA_FOTO[barrou] };
+  if (detector === detectorPadrao && !(await iaComVisaoDisponivel())) return { resultado: "sem_ia", motivo: MOTIVO_DA_FOTO.sem_ia };
+  let ultimo: ResultadoDaSugestao = "sem_retrato"; let falha = "";
   for (const imagem of candidatas) { // PDF com frente e verso: tenta cada imagem até achar o retrato
     const ext = tipoDaImagem(imagem);
     if (!ext || ext === "ico" || imagem.length > LIMITE_DA_IMAGEM) continue;
-    const r = await detector({ mime: MIME[ext]!, base64: imagem.toString("base64") });
-    ultimo = registrarSugestao(pessoaId!, imagem, r.eh_documento_com_foto ? r.caixa : null, r.tipo_documento, titulo);
-    if (ultimo === "sugerida") break;
+    try {
+      const r = await detector({ mime: MIME[ext]!, base64: imagem.toString("base64") });
+      ultimo = registrarSugestao(pessoaId!, imagem, r.eh_documento_com_foto ? r.caixa : null, r.tipo_documento, titulo);
+      if (ultimo === "sugerida") return { resultado: "sugerida", motivo: "" };
+    } catch (e) { falha = e instanceof Error ? e.message.slice(0, 160) : "falha desconhecida"; console.warn("[foto sugerida] a IA falhou:", falha); }
   }
-  return ultimo;
+  return { resultado: ultimo, motivo: falha ? `a IA falhou ao olhar a imagem (${falha})` : `${MOTIVO_DA_FOTO[ultimo]} (${candidatas.length} imagem(ns) analisada(s))` };
+}
+
+export async function sugerirFotoDoDocumento(pessoaId: number | null, conteudo: Buffer, titulo: string, detector: Detector = detectorPadrao, opcoes: { substituir?: boolean } = {}): Promise<ResultadoDaSugestao> {
+  return (await tentarFotoDoDocumento(pessoaId, conteudo, titulo, detector, opcoes)).resultado;
 }
 
 export interface FotoSugerida { pessoa_id: number; x: number; largura: number; y: number; altura: number; documento: string; titulo: string; criado_em: string }

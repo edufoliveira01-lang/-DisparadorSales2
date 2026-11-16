@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { db } from "../src/db";
-import { aceitarSugestao, caixaValida, descartarSugestao, fotoSugeridaDaPessoa, sugerirFotoDoDocumento } from "../src/services/gestao/fotoSugerida";
+import { aceitarSugestao, caixaValida, descartarSugestao, dimensoesDaImagem, fotoSugeridaDaPessoa, normalizarCaixa, sugerirFotoDoDocumento, tentarFotoDoDocumento } from "../src/services/gestao/fotoSugerida";
 import { jpegEmbutidoNoPdf } from "../src/services/ai/pdf";
 import { fotoDaPessoa, apagarFoto } from "../src/services/gestao/fichaConfig";
 
@@ -57,5 +57,24 @@ describe("foto sugerida a partir do RG/CNH", () => {
     descartarSugestao(pessoa);
     expect(await sugerirFotoDoDocumento(pessoa, pdf, "CNH em PDF", detecta)).toBe("sugerida");
     expect(fotoSugeridaDaPessoa(pessoa)?.documento).toBe("CNH");
+  });
+
+  it("a caixa vinda em porcentagem ou em pixels vira fração; fração fica como está", () => {
+    expect(normalizarCaixa({ x: 0.1, y: 0.2, largura: 0.3, altura: 0.4 }, null)).toEqual({ x: 0.1, y: 0.2, largura: 0.3, altura: 0.4 });
+    expect(normalizarCaixa({ x: 10, y: 20, largura: 30, altura: 40 }, null)).toEqual({ x: 0.1, y: 0.2, largura: 0.3, altura: 0.4 });
+    const n = normalizarCaixa({ x: 160, y: 58, largura: 320, altura: 350 }, { w: 1600, h: 585 })!;
+    expect(n.x).toBeCloseTo(0.1); expect(n.largura).toBeCloseTo(0.2); expect(n.altura).toBeCloseTo(0.598, 2);
+    expect(caixaValida(n)).not.toBeNull();
+    expect(dimensoesDaImagem(Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.alloc(8), Buffer.from([0, 0, 6, 64, 0, 0, 2, 73])]))).toEqual({ w: 1600, h: 585 });
+  });
+
+  it("o motivo de não ter achado a foto é dito (inclusive quando a IA falha)", async () => {
+    descartarSugestao(pessoa); apagarFoto(pessoa);
+    const semRosto = async () => ({ eh_documento_com_foto: false, tipo_documento: "outro", caixa: null });
+    const t = await tentarFotoDoDocumento(pessoa, PNG, "x", semRosto);
+    expect(t.resultado).toBe("sem_retrato"); expect(t.motivo).toMatch(/não encontrou um rosto/);
+    const quebra = async () => { throw new Error("A IA não conseguiu ler o documento."); };
+    const f = await tentarFotoDoDocumento(pessoa, PNG, "x", quebra);
+    expect(f.motivo).toMatch(/a IA falhou ao olhar a imagem/);
   });
 });

@@ -8,9 +8,11 @@ import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
 import { dataBr, tamanho } from "./comum";
+import { EscolherFoto } from "./EscolherFoto";
+import { Camera } from "lucide-react";
 
 interface Versao { id: number; nome: string; tamanho: number; versao: number; autor: string; criado_em: string; categoria: string }
-interface Arq extends Versao { exibivel: boolean; descricao: string; versoes: Versao[]; slot?: string; data_documento?: string }
+interface Arq extends Versao { exibivel: boolean; descricao: string; versoes: Versao[]; slot?: string; data_documento?: string; mime?: string }
 const TIPOS_ESSENCIAIS: [string, string][] = [["rg", "RG"], ["cpf", "CPF"], ["cnh", "CNH"], ["comprovante", "Comprovante de residência"], ["cnis", "CNIS"]];
 interface Uso { usado_bytes: number; limite_bytes: number | null; limite_mb: number | null }
 const MAX = 25 * 1024 * 1024;
@@ -28,6 +30,7 @@ export function Arquivos({ escopo, id, aoMudar }: { escopo: "processos" | "pesso
   const [apagar, setApagar] = useState<Versao | null>(null);
   const [abertas, setAbertas] = useState<Set<number>>(new Set());
   const [editar, setEditar] = useState<Arq | null>(null);
+  const [fotoDe, setFotoDe] = useState<Arq | null>(null);
   const [novoNome, setNovoNome] = useState("");
   const [tipoDoc, setTipoDoc] = useState("");
   const [dataDoc, setDataDoc] = useState("");
@@ -60,10 +63,10 @@ export function Arquivos({ escopo, id, aoMudar }: { escopo: "processos" | "pesso
   async function identificar() {
     const a = editar; if (!a) return; setIdentificando(true);
     try {
-      const r = await api.post<{ situacao: string; slot?: string; nome?: string; foto?: boolean }>(`/gestao/arquivos/${a.id}/identificar`, {});
-      if (r.situacao === "classificado") { show(`Identificado como ${TIPOS_ESSENCIAIS.find(([k]) => k === r.slot)?.[1] ?? r.slot} e renomeado para ${r.nome}.${r.foto ? " Achei também a foto: confira o cartão no alto da ficha." : ""}`, "success"); setEditar(null); await carregar(); aoMudar?.(); }
+      const r = await api.post<{ situacao: string; slot?: string; nome?: string; foto?: boolean; motivo_foto?: string }>(`/gestao/arquivos/${a.id}/identificar`, {});
+      if (r.situacao === "classificado") { show(`Identificado como ${TIPOS_ESSENCIAIS.find(([k]) => k === r.slot)?.[1] ?? r.slot} e renomeado para ${r.nome}.${r.foto ? " Achei também a foto: confira o cartão no alto da ficha." : r.motivo_foto && (r.slot === "rg" || r.slot === "cnh") ? ` A foto não foi sugerida: ${r.motivo_foto}.` : ""}`, "success"); setEditar(null); await carregar(); aoMudar?.(); }
       else if (r.situacao === "so_foto") { show("Não tive certeza de que documento é, mas achei a foto: confira o cartão “Encontramos uma foto” no alto da ficha.", "success"); setEditar(null); aoMudar?.(); }
-      else show(r.situacao === "sem_ia" ? "A IA ainda não pode ler este arquivo: conecte a conta ChatGPT ou cadastre uma chave de API em Configurações → Central de IA." : r.situacao === "pdf_sem_leitor" ? "O servidor ainda não consegue abrir PDFs para a IA (falta instalar o pacote poppler-utils). Imagens funcionam; para PDF, classifique à mão por enquanto." : r.situacao === "nao_identificado" ? "Não consegui ter certeza do tipo deste documento nem achar uma foto. Escolha à mão." : "Este tipo ou tamanho de arquivo não pode ser lido.", "info");
+      else show(r.situacao === "sem_ia" ? "A IA ainda não pode ler este arquivo: conecte a conta ChatGPT ou cadastre uma chave de API em Configurações → Central de IA." : r.situacao === "pdf_sem_leitor" ? "O servidor ainda não consegue abrir PDFs para a IA (falta instalar o pacote poppler-utils). Imagens funcionam; para PDF, classifique à mão por enquanto." : r.situacao === "nao_identificado" ? `Não consegui ter certeza do tipo deste documento nem achar a foto${r.motivo_foto ? ` (${r.motivo_foto})` : ""}. Você pode escolher o tipo à mão e usar o botão da câmera para recortar a foto.` : "Este tipo ou tamanho de arquivo não pode ser lido.", "info");
     } catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível identificar.", "error"); }
     finally { setIdentificando(false); }
   }
@@ -112,6 +115,7 @@ export function Arquivos({ escopo, id, aoMudar }: { escopo: "processos" | "pesso
                   {a.versoes.length > 0 && <button type="button" title="Versões anteriores" aria-label="Versões anteriores" className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800" onClick={() => setAbertas((s) => { const n = new Set(s); n.has(a.id) ? n.delete(a.id) : n.add(a.id); return n; })}><History className="h-4 w-4" /></button>}
                   {a.exibivel && <a href={link(a, true)} target="_blank" rel="noopener noreferrer" title="Ver" aria-label={`Ver ${a.nome}`} className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><Eye className="h-4 w-4" /></a>}
                   <a href={link(a)} title="Baixar" aria-label={`Baixar ${a.nome}`} className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><Download className="h-4 w-4" /></a>
+                  {gerir && escopo === "pessoas" && ((a.mime ?? "").startsWith("image/") || a.mime === "application/pdf" || /\.(pdf|jpe?g|png|webp)$/i.test(a.nome)) && <button type="button" title="Escolher a foto do cliente neste documento" aria-label={`Escolher a foto do cliente em ${a.nome}`} className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800" onClick={() => setFotoDe(a)}><Camera className="h-4 w-4" /></button>}
                   {gerir && <button type="button" title="Renomear ou classificar" aria-label={`Renomear ou classificar ${a.nome}`} className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800" onClick={() => abrirEdicao(a)}><Pencil className="h-4 w-4" /></button>}
                   {gerir && <button type="button" title="Apagar" aria-label={`Apagar ${a.nome}`} className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-red-600 dark:hover:bg-zinc-800" onClick={() => setApagar(a)}><Trash2 className="h-4 w-4" /></button>}
                 </div>
@@ -122,6 +126,7 @@ export function Arquivos({ escopo, id, aoMudar }: { escopo: "processos" | "pesso
           ))}
         </ul>
       )}
+      {escopo === "pessoas" && fotoDe && <EscolherFoto arquivoId={fotoDe.id} pessoaId={id} nome="cliente" aberto aoFechar={() => setFotoDe(null)} aoSalvar={() => { aoMudar?.(); void carregar(); }} />}
       {escopo === "pessoas" && (
         <Modal open={Boolean(editar)} onClose={() => setEditar(null)} title="Renomear ou classificar" description="Se este arquivo é um dos documentos essenciais, escolha qual: ele passa a valer no lugar do anterior, pela data do documento." maxWidth="max-w-md"
           footer={<div className="flex w-full justify-end gap-2"><Button variant="outline" onClick={() => setEditar(null)}>Cancelar</Button><Button loading={salvandoEdicao} onClick={() => void salvarEdicao()}>Salvar</Button></div>}>

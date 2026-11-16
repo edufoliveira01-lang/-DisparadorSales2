@@ -25,7 +25,7 @@ import { FASES, arquivarProcesso, concluirProcesso, definirFase, fasesDoProcesso
 import { ESSENCIAIS, classificarArquivo, guardarEssencial, identificarSlot, listarEssenciais, renomearArquivo, slotValido } from "../services/gestao/documentosEssenciais";
 import { sugerirFotoDoDocumento } from "../services/gestao/fotoSugerida";
 import { identificarArquivo } from "../services/gestao/leituraDoDocumento";
-import { aceitarSugestao, descartarSugestao, fotoSugeridaDaPessoa } from "../services/gestao/fotoSugerida";
+import { aceitarSugestao, descartarSugestao, fotoSugeridaDaPessoa, imagensParaFoto } from "../services/gestao/fotoSugerida";
 import { contratoForaDoSistema, marcarContratoFora, marcarContratoForaEmLote } from "../armazenamento/chat";
 import { PADRAO as FICHA_PADRAO, ROTULO_SECAO, apagarFoto, apagarImagem, apagarLogo, fotoDaPessoa, imagemAtual, imagemDaSugestao, lerConfig, logoAtual, nomeDeImagemValido, salvarConfig, salvarFoto, salvarImagem, salvarLogo } from "../services/gestao/fichaConfig";
 import { AREAS_PRONTAS, lerAtendimentoIa, montarPromptDoAgente, pendenciasDoAtendimentoIa, salvarAtendimentoIa } from "../services/gestao/atendimentoIa";
@@ -193,6 +193,21 @@ gestaoRouter.post("/arquivos/:id/identificar", rota(async (req) => {
   catch (e) { if (e instanceof ErroGestao) throw e; throw new ErroGestao("A IA não conseguiu ler o documento agora. Confira a conexão da conta ChatGPT ou a chave de API e tente de novo.", 502); }
   auditAccess("gestao_arquivo_identificado", usuario(req).id, null, { arquivo: id(req), situacao: r.situacao });
   return r;
+}));
+/** Escolha manual da foto: as imagens que o documento tem (a própria imagem, ou as embutidas no PDF) para a pessoa recortar o rosto na tela. */
+gestaoRouter.get("/arquivos/:id/imagem-para-foto", rota(async (req, res) => {
+  const a = obterArquivo(id(req));
+  if (!a.pessoa_id || !fs.existsSync(a.caminho)) throw new ErroGestao("Arquivo não encontrado.", 404);
+  const imgs = await imagensParaFoto(fs.readFileSync(a.caminho));
+  const n = Math.max(0, Number(req.query.n) || 0);
+  if (req.query.total === "1") return { total: imgs.length };
+  const img = imgs[n];
+  if (!img) throw new ErroGestao("Este arquivo não tem imagem para recortar.", 404);
+  res.setHeader("Content-Type", img[0] === 0x89 ? "image/png" : "image/jpeg");
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.send(img);
+  return undefined;
 }));
 gestaoRouter.put("/arquivos/:id/nome", rota((req) => { const r = renomearArquivo(id(req), req.body?.nome); auditAccess("gestao_arquivo_renomeado", usuario(req).id, null, { arquivo: id(req) }); return r; }));
 gestaoRouter.get("/armazenamento", rota(() => usoDeArmazenamento()));
