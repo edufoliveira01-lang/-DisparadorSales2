@@ -30,7 +30,7 @@ const diasEntre = (de: string, ate: string) => Math.max(0, Math.round((Date.pars
 
 export type EstadoDaFase = "concluida" | "atual" | "futura" | "pulada";
 export interface FaseNaLinha { chave: string; rotulo: string; explicacao: string; estado: EstadoDaFase; entrou_em: string | null; saiu_em: string | null; dias_na_fase: number | null; limite_dias: number; atrasada: boolean }
-export interface Evento { data: string; tipo: "etapa" | "publicacao" | "pericia" | "datajud" | "prazo" | "desfecho"; titulo: string; detalhe: string; origem?: string }
+export interface Evento { publicacao_id?: number; data: string; tipo: "etapa" | "publicacao" | "pericia" | "datajud" | "prazo" | "desfecho"; titulo: string; detalhe: string; origem?: string }
 export interface LinhaDasFases {
   origem: "quadro" | "deduzida" | "nenhuma";
   fases: FaseNaLinha[];
@@ -115,8 +115,8 @@ export function fasesDoProcesso(processoId: number): LinhaDasFases {
   const eventos: Evento[] = [];
   for (const m of movs) eventos.push({ data: dia(m.created_at)!, tipo: "etapa", titulo: `Etapa: ${m.destino}`, detalhe: m.origem_movimento === "automatico" ? "Movida pelo sistema, a partir de uma publicação." : "Movida pela equipe.", origem: m.origem_movimento });
   try {
-    const pubs = db.prepare(`SELECT data_disponibilizacao d,tipo_documento t,orgao o,substr(texto,1,160) x FROM djen_publicacoes WHERE processo_chave IN (${marcas}) AND cancelada=0 ORDER BY data_disponibilizacao DESC,id DESC LIMIT 40`).all(...chaves) as { d: string; t: string; o: string; x: string }[];
-    for (const p of pubs) eventos.push({ data: dia(p.d)!, tipo: "publicacao", titulo: `Publicação: ${p.t || "andamento"}`, detalhe: (p.x || "").replace(/\s+/g, " ").trim() });
+    const pubs = db.prepare(`SELECT id,data_disponibilizacao d,tipo_documento t,orgao o,substr(texto,1,160) x FROM djen_publicacoes WHERE processo_chave IN (${marcas}) AND cancelada=0 ORDER BY data_disponibilizacao DESC,id DESC LIMIT 40`).all(...chaves) as { id: number; d: string; t: string; o: string; x: string }[];
+    for (const p of pubs) eventos.push({ publicacao_id: p.id, data: dia(p.d)!, tipo: "publicacao", titulo: `Publicação: ${p.t || "andamento"}`, detalhe: (p.x || "").replace(/\s+/g, " ").trim() });
   } catch { /* sem DJEN */ }
   for (const p of db.prepare(`SELECT tipo,data,horario,local FROM pericias_agendadas WHERE processo_chave IN (${marcas}) AND status='ativa'`).all(...chaves) as { tipo: string; data: string; horario: string | null; local: string | null }[]) {
     const iso = /^\d{2}\/\d{2}\/\d{4}/.test(p.data) ? `${p.data.slice(6, 10)}-${p.data.slice(3, 5)}-${p.data.slice(0, 2)}` : p.data.slice(0, 10);

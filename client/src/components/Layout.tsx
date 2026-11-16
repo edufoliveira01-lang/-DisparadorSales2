@@ -6,6 +6,7 @@ import { Sidebar } from "./Sidebar";
 import { CriarMenu } from "./CriarMenu";
 import { MenuDaPessoa } from "./MenuDaPessoa";
 import { QuickNavigation } from "./QuickNavigation";
+import { AbasDaArea } from "./AbasDaArea";
 import { GlobalServiceActivity } from "./GlobalServiceActivity";
 import { ProcessAlerts } from "./ProcessAlerts";
 import { LicencaAviso } from "./LicencaAviso";
@@ -159,6 +160,7 @@ export function Layout({ children }: { children: ReactNode }) {
             key={pathname}
             className="page-content mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-7 sm:py-8 xl:px-10"
           >
+            <AbasDaArea />
             {children}
           </div>
         </main>

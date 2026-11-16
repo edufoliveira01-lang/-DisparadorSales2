@@ -1,4 +1,5 @@
 import { LogOut } from "lucide-react";
+import { MapaDaIa } from "@/components/MapaDaIa";
 import { AISettings } from "@/components/AISettings";
 import { DeadlineSettings } from "@/components/djen/DeadlineSettings";
 import { itemDaSecao } from "@/lib/configNav";
@@ -40,7 +41,7 @@ export function Configuracoes({ secao }: { secao?: string | null } = {}) {
       />
 
       <div className="settings-layout"><div className="settings-detail">
-        {configSection === "ia" && <AISettings />}
+        {configSection === "ia" && <><MapaDaIa /><AISettings /></>}
         {configSection === "aparencia" && <AparenciaSection />}
         {configSection === "acesso" && <AcessoSection />}
         {configSection === "trello" && <TrelloSection />}

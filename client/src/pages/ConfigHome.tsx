@@ -9,6 +9,15 @@ import { GRUPOS_CONFIG, itemPermitido } from "@/lib/configNav";
 
 const normalizar = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
+function CartaoDeConfig({ i }: { i: import("@/lib/configNav").ItemConfig }) {
+  return (
+    <Link to={i.to} className="group flex gap-3 rounded-2xl border border-zinc-200 bg-white p-4 transition hover:border-accent-400 hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-50 text-accent-600 dark:bg-accent-900/30 dark:text-accent-300"><i.icon className="h-5 w-5" /></span>
+      <span className="min-w-0"><span className="block text-sm font-semibold text-zinc-900 dark:text-zinc-100">{i.titulo}</span><span className="mt-0.5 block text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{i.descricao}</span></span>
+    </Link>
+  );
+}
+
 /** Visão geral das configurações: busca e cada assunto no seu grupo. */
 export function ConfigHome() {
   const { user } = useAuth();
@@ -40,13 +49,13 @@ export function ConfigHome() {
           <h2 id={`cfg-${g.id}`} className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{g.titulo}</h2>
           <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">{g.descricao}</p>
           <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
-            {g.itens.map((i) => (
-              <Link key={i.to} to={i.to} className="group flex gap-3 rounded-2xl border border-zinc-200 bg-white p-4 transition hover:border-accent-400 hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-50 text-accent-600 dark:bg-accent-900/30 dark:text-accent-300"><i.icon className="h-5 w-5" /></span>
-                <span className="min-w-0"><span className="block text-sm font-semibold text-zinc-900 dark:text-zinc-100">{i.titulo}</span><span className="mt-0.5 block text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{i.descricao}</span></span>
-              </Link>
-            ))}
+            {g.itens.filter((i) => !i.avancado || busca.trim()).map((i) => <CartaoDeConfig key={i.to} i={i} />)}
           </div>
+          {!busca.trim() && g.itens.some((i) => i.avancado) && (
+            <details className="mt-3 rounded-2xl border border-zinc-200 dark:border-zinc-800">
+              <summary className="cursor-pointer list-none px-4 py-2.5 text-sm font-medium text-zinc-600 dark:text-zinc-300">Ajustes avançados ({g.itens.filter((i) => i.avancado).length})</summary>
+              <div className="grid gap-3 border-t border-zinc-200 p-3 sm:grid-cols-2 2xl:grid-cols-3 dark:border-zinc-800">{g.itens.filter((i) => i.avancado).map((i) => <CartaoDeConfig key={i.to} i={i} />)}</div>
+            </details>)}
         </section>
       ))}
     </div>

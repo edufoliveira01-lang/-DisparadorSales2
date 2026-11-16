@@ -35,6 +35,7 @@ export const navigation = [
     description: "Compromissos, avisos e pendências",
     icon: LayoutDashboard,
     group: "agenda",
+    ativoEm: ["/calendario", "/gestao/pericias-inss"],
     end: true,
   },
   {
@@ -43,6 +44,7 @@ export const navigation = [
     description: "Perícias e avaliações administrativas no INSS",
     icon: Landmark,
     group: "agenda",
+    oculto: true,
   },
   {
     to: "/calendario",
@@ -50,6 +52,7 @@ export const navigation = [
     description: "Perícias, audiências e lembretes",
     icon: CalendarDays,
     group: "agenda",
+    oculto: true,
   },
   {
     to: "/templates",
@@ -64,6 +67,7 @@ export const navigation = [
     description: "Clientes que ainda não retornaram",
     icon: MessageSquareReply,
     group: "comunicacao",
+    ativoEm: ["/historico"],
   },
   {
     to: "/historico",
@@ -71,6 +75,7 @@ export const navigation = [
     description: "Mensagens, entregas e respostas",
     icon: History,
     group: "comunicacao",
+    oculto: true,
   },
   {
     to: "/processos",
@@ -78,6 +83,7 @@ export const navigation = [
     description: "Andamentos e publicações do DJEN",
     icon: Scale,
     group: "processos",
+    ativoEm: ["/processos/quadro", "/processos/aguardando"],
     end: true,
   },
   {
@@ -86,6 +92,7 @@ export const navigation = [
     description: "Acompanhamento por etapa",
     icon: Columns3,
     group: "processos",
+    oculto: true,
   },
   {
     to: "/processos/aguardando",
@@ -93,6 +100,7 @@ export const navigation = [
     description: "Determinações aguardando cumprimento",
     icon: Clock3,
     group: "processos",
+    oculto: true,
   },
   {
     to: "/processos/advogados",
@@ -157,6 +165,7 @@ export const navigation = [
     description: "Honorários, contas a pagar e receber, fluxo de caixa",
     icon: Wallet,
     group: "financeiro",
+    ativoEm: ["/gestao/indicadores"],
   },
   {
     to: "/gestao/indicadores",
@@ -164,6 +173,7 @@ export const navigation = [
     description: "Produtividade, estoque de processos e receita",
     icon: BarChart3,
     group: "financeiro",
+    oculto: true,
   },
   {
     to: "/logs",
@@ -251,3 +261,11 @@ export function getCurrentPage(pathname: string) {
 export const ROTULO_GRUPO: Record<string, string> = { inicio: "Início", clientes: "Clientes", processos: "Processos e prazos", agenda: "Agenda e perícias", comunicacao: "Comunicação", financeiro: "Financeiro", configuracoes: "Configurações" };
 /** Nome da área a que a página pertence (usado no topo das páginas e no rodapé). */
 export const areaDaPagina = (pathname: string) => ROTULO_GRUPO[getCurrentPage(pathname).group] ?? "Sistema";
+
+/** As páginas que ficam lado a lado numa mesma área: o menu mostra uma entrada só e cada página mostra as abas das irmãs. */
+export const ABAS_DAS_AREAS: { id: string; abas: { to: string; rotulo: string }[] }[] = [
+  { id: "agenda", abas: [{ to: "/pericias", rotulo: "Perícias e compromissos" }, { to: "/calendario", rotulo: "Calendário" }, { to: "/gestao/pericias-inss", rotulo: "Perícias do INSS" }] },
+  { id: "djen", abas: [{ to: "/processos", rotulo: "Publicações" }, { to: "/processos/quadro", rotulo: "Quadro de processos" }, { to: "/processos/aguardando", rotulo: "Acompanhamentos" }] },
+  { id: "mensagens", abas: [{ to: "/pendentes", rotulo: "Aguardando resposta" }, { to: "/historico", rotulo: "Histórico de envios" }] },
+  { id: "financeiro", abas: [{ to: "/gestao/financeiro", rotulo: "Financeiro" }, { to: "/gestao/indicadores", rotulo: "Indicadores" }] },
+];

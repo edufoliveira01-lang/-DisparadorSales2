@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Check, CircleDashed } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
@@ -7,7 +8,7 @@ import { useToast } from "@/components/ui/Toast";
 import { dataBr } from "./comum";
 
 export interface FaseNaLinha { chave: string; rotulo: string; explicacao: string; estado: "concluida" | "atual" | "futura" | "pulada"; entrou_em: string | null; saiu_em: string | null; dias_na_fase: number | null; limite_dias: number; atrasada: boolean }
-export interface Evento { data: string; tipo: "etapa" | "publicacao" | "pericia" | "datajud" | "prazo" | "desfecho"; titulo: string; detalhe: string }
+export interface Evento { publicacao_id?: number; data: string; tipo: "etapa" | "publicacao" | "pericia" | "datajud" | "prazo" | "desfecho"; titulo: string; detalhe: string }
 export interface Linha {
   origem: "quadro" | "deduzida" | "nenhuma"; fases: FaseNaLinha[]; eventos: Evento[];
   atual: { chave: string; rotulo: string; explicacao: string; indice: number; atrasada: boolean; dias: number | null } | null;
@@ -98,6 +99,8 @@ export function LinhaDasFases({ processoId, gerir, aoMudar }: { processoId: numb
                 <p className="text-xs text-zinc-500">{dataBr(e.data)} · {ROTULO_DO_EVENTO[e.tipo]}</p>
                 <p className="font-medium text-zinc-900 dark:text-zinc-100">{e.titulo}</p>
                 {e.detalhe && <p className="line-clamp-2 text-xs text-zinc-500">{e.detalhe}</p>}
+                {e.publicacao_id && <Link to={`/processos?abrir=${e.publicacao_id}`} className="text-xs text-accent-700 underline dark:text-accent-300">Abrir a publicação</Link>}
+                {e.tipo === "pericia" && <Link to="/pericias" className="text-xs text-accent-700 underline dark:text-accent-300">Ver em Perícias e compromissos</Link>}
               </li>))}
           </ul>)}
       </div>

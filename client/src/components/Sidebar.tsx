@@ -128,7 +128,7 @@ export function Sidebar({
         className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-3 py-2"
       >
         {GRUPOS.map(({ group, label, icon: GIcon }) => {
-          const itens = visibleNavigation.filter((item) => item.group === group);
+          const itens = visibleNavigation.filter((item) => item.group === group && !("oculto" in item && item.oculto));
           if (itens.length === 0) return null;
           // Início e Configurações são um link só: as ferramentas de configuração ficam dentro da área de Configurações.
           if (group === "inicio" || group === "configuracoes") {
@@ -164,7 +164,7 @@ export function Sidebar({
                       end={"end" in item ? item.end : undefined}
                       onClick={onNavigate}
                       title={item.label}
-                      className={({ isActive }) => cn("sidebar-link", isActive && "is-active")}
+                      className={({ isActive }) => cn("sidebar-link", (isActive || ("ativoEm" in item && item.ativoEm.some((a: string) => location.pathname === a || location.pathname.startsWith(`${a}/`)))) && "is-active")}
                     >
                       <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={1.8} />
                       <span className="sidebar-copy">{item.label}</span><span className="sidebar-short">{CURTOS[item.to]}</span>
