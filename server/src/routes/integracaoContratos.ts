@@ -9,7 +9,8 @@ import { lerConfigDocumentos, ROTULO_VARIANTE, VARIANTES } from "../services/ges
 import { ErroZapSign } from "../zapsign/api";
 import { ErroContrato, estadoDoContrato, gerarContrato, type DadosContrato } from "../zapsign/contratos";
 import { ErroArmazenamento } from "../armazenamento/pastas";
-import { receberDocumentoDoChat } from "../armazenamento/chat";
+import { baixar, pessoaDoDocumento, receberDocumentoDoChat } from "../armazenamento/chat";
+import { sugerirFotoDoDocumento } from "../services/gestao/fotoSugerida";
 import { saudeDoArmazenamento } from "../armazenamento/fila";
 import { guardarRetrato } from "../atendimento/indicadores";
 import { ErroAsaas, processarWebhook } from "../services/gestao/asaas";
@@ -56,6 +57,14 @@ integracaoContratosRouter.post("/contratos", async (req, res) => {
  * Documento que o CLIENTE mandou pelo chat (fase 2 do Dropbox). O atendimento classifica e manda só o tipo, o título e um LINK TEMPORÁRIO do arquivo:
  * o Sales baixa, guarda numa pasta temporária e envia ao drive depois da assinatura do contrato. Corpo pequeno (sem arquivo dentro).
  */
+async function sugerirFotoPeloChat(d: { telefone: string; cpf: string; titulo: string; url: string }) {
+  try {
+    const pessoaId = pessoaDoDocumento(d.cpf, d.telefone);
+    if (pessoaId === null) return;
+    const r = await sugerirFotoDoDocumento(pessoaId, await baixar(d.url, fetch), d.titulo);
+    if (r === "sugerida") auditAccess("foto_sugerida_do_documento", null, null, { pessoa: pessoaId });
+  } catch (e) { console.warn("[foto sugerida]", e instanceof Error ? e.message : "falhou"); }
+}
 integracaoContratosRouter.post("/documentos", async (req, res) => {
   try {
     const d = (req.body ?? {}) as Record<string, unknown>;
@@ -64,6 +73,10 @@ integracaoContratosRouter.post("/documentos", async (req, res) => {
       titulo: String(d.titulo ?? ""), extensao: String(d.extensao ?? "pdf"), dataDocumento: typeof d.data === "string" ? d.data : undefined, url: String(d.url ?? ""),
     });
     auditAccess("documento_do_chat_recebido", null, null, { situacao: r.situacao, tipo: String(d.tipo ?? "") });
+    // Foto do cliente a partir do RG/CNH: melhor esforço, em segundo plano, nunca atrapalha o recebimento do documento.
+    if (["DOCUMENTOS PESSOAIS", "A CLASSIFICAR"].includes(String(d.tipo ?? "")) && /^(jpe?g|png|webp)$/i.test(String(d.extensao ?? ""))) {
+      void sugerirFotoPeloChat({ telefone: String(d.telefone ?? ""), cpf: String(d.cpf ?? ""), titulo: String(d.titulo ?? ""), url: String(d.url ?? "") });
+    }
     res.status(r.situacao === "ja_recebido" ? 200 : 201).json(r);
   } catch (e) { erro(res, e); }
 });

@@ -190,6 +190,12 @@ export function runGestaoMigrations(db: Database.Database) {
     criado_por INTEGER, criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
   CREATE INDEX IF NOT EXISTS ix_gestao_pericias_inss_pessoa ON gestao_pericias_inss(pessoa_id,data)`);
+  // Foto do cliente sugerida a partir do RG/CNH que ele mandou: só vira foto do cadastro quando alguém confirma.
+  db.exec(`CREATE TABLE IF NOT EXISTS gestao_foto_sugerida (
+    pessoa_id INTEGER PRIMARY KEY REFERENCES gestao_pessoas(id) ON DELETE CASCADE,
+    x REAL NOT NULL, y REAL NOT NULL, largura REAL NOT NULL, altura REAL NOT NULL,
+    documento TEXT NOT NULL DEFAULT '', titulo TEXT NOT NULL DEFAULT '', criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`);
   // Anotação IMPORTANTE (pendência): fica em destaque no cadastro do cliente até alguém marcar como cumprida.
   for (const tabela of ["gestao_anotacoes", "gestao_anotacoes_pessoa"]) {
     const cols = (db.prepare(`PRAGMA table_info(${tabela})`).all() as { name: string }[]).map((c) => c.name);

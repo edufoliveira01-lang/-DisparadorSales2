@@ -95,4 +95,8 @@ export function fotoDaPessoa(id: number) {
 }
 export function salvarFoto(id: number, d: Buffer) { fotoDaPessoa(id); gravar(pasta("fotos"), String(id), d, 2 * 1024 * 1024, "Foto"); }
 export function apagarFoto(id: number) { fotoDaPessoa(id); apagar(pasta("fotos"), String(id)); }
+/** Cópia TEMPORÁRIA do documento de onde saiu a foto sugerida: some quando alguém aceita ou dispensa (ou em 30 dias). */
+export const imagemDaSugestao = (id: number) => achar(pasta("fotos-sugeridas"), String(id));
+export const gravarImagemDaSugestao = (id: number, d: Buffer) => gravar(pasta("fotos-sugeridas"), String(id), d, 8 * 1024 * 1024, "Documento");
+export const apagarImagemDaSugestao = (id: number) => apagar(pasta("fotos-sugeridas"), String(id));
 export const comoDataUri = (img: { arquivo: string; mime: string } | null) => (img ? `data:${img.mime};base64,${fs.readFileSync(img.arquivo).toString("base64")}` : null);

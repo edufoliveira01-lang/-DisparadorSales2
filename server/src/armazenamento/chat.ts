@@ -54,7 +54,7 @@ export function urlDeDownloadPermitida(bruta: string): URL {
   return u;
 }
 
-async function baixar(url: string, http: typeof fetch): Promise<Buffer> {
+export async function baixar(url: string, http: typeof fetch): Promise<Buffer> {
   const u = urlDeDownloadPermitida(url);
   let r: Response;
   try { r = await http(u.toString(), { redirect: "error", signal: AbortSignal.timeout(60_000) }); }

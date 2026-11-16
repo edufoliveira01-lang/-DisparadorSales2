@@ -21,8 +21,9 @@ import { adicionarCamposPrevidenciarios, atualizarCampo, criarCampo, excluirCamp
 import { anotacaoRapida, anotacoesDaPessoa, anotarNaPessoa, cumprirPendencia, marcarComoImportante, pendenciasDaPessoa, removerAnotacaoDaPessoa } from "../services/gestao/anotacoes";
 import { fichaDeCadastroHtml, fichaDeExemplo } from "../services/gestao/ficha";
 import { vinculosDaPessoa, criarVinculo, removerVinculo, periciasInssDaPessoa, listarPericiasInss, criarPericiaInss, atualizarPericiaInss, excluirPericiaInss, TIPOS_DE_VINCULO, TIPOS_PERICIA_INSS, STATUS_PERICIA_INSS, RESULTADOS_PERICIA_INSS } from "../services/gestao/vinculos";
+import { aceitarSugestao, descartarSugestao, fotoSugeridaDaPessoa } from "../services/gestao/fotoSugerida";
 import { contratoForaDoSistema, marcarContratoFora, marcarContratoForaEmLote } from "../armazenamento/chat";
-import { PADRAO as FICHA_PADRAO, ROTULO_SECAO, apagarFoto, apagarImagem, apagarLogo, fotoDaPessoa, imagemAtual, lerConfig, logoAtual, nomeDeImagemValido, salvarConfig, salvarFoto, salvarImagem, salvarLogo } from "../services/gestao/fichaConfig";
+import { PADRAO as FICHA_PADRAO, ROTULO_SECAO, apagarFoto, apagarImagem, apagarLogo, fotoDaPessoa, imagemAtual, imagemDaSugestao, lerConfig, logoAtual, nomeDeImagemValido, salvarConfig, salvarFoto, salvarImagem, salvarLogo } from "../services/gestao/fichaConfig";
 import { AREAS_PRONTAS, lerAtendimentoIa, montarPromptDoAgente, pendenciasDoAtendimentoIa, salvarAtendimentoIa } from "../services/gestao/atendimentoIa";
 import { docxParaModelo } from "../services/gestao/importarDocx";
 import { DOCS, ROTULO_VARIANTE, atualizarDocumentoProprio, criarDocumentoProprio, excluirDocumentoProprio, TEXTOS_PADRAO, VARIANTES, VARIAVEIS_DOCUMENTO, kitHtml, lerConfigDocumentos, montarKit, restaurarTexto, salvarConfigDocumentos, type OpcoesKit } from "../services/gestao/documentos";
@@ -373,6 +374,10 @@ gestaoRouter.get("/ficha/previa", (req, res, next) => {
 gestaoRouter.get("/ficha/logo", (_req, res) => servirImagem(logoAtual(), res));
 gestaoRouter.post("/ficha/logo", express.raw({ type: () => true, limit: 1024 * 1024 + 1024 }), rota((req) => { salvarLogo(Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0)); return { ok: true }; }));
 gestaoRouter.delete("/ficha/logo", rota(() => { apagarLogo(); return { ok: true }; }));
+gestaoRouter.get("/pessoas/:id/foto-sugerida", rota((req) => ({ sugestao: fotoSugeridaDaPessoa(id(req)) })));
+gestaoRouter.get("/pessoas/:id/foto-sugerida/imagem", rota((req, res) => { if (!fotoSugeridaDaPessoa(id(req))) throw new ErroGestao("Não há foto sugerida.", 404); servirImagem(imagemDaSugestao(id(req)), res); }));
+gestaoRouter.post("/pessoas/:id/foto-sugerida/aceitar", express.raw({ type: () => true, limit: 2 * 1024 * 1024 + 1024 }), rota((req) => { aceitarSugestao(id(req), Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0)); auditAccess("foto_sugerida_aceita", usuario(req).id, null, { pessoa: id(req) }); return { ok: true }; }));
+gestaoRouter.delete("/pessoas/:id/foto-sugerida", rota((req) => { descartarSugestao(id(req)); return { ok: true }; }));
 gestaoRouter.get("/pessoas/:id/foto", rota((req, res) => servirImagem(fotoDaPessoa(id(req)), res)));
 gestaoRouter.post("/pessoas/:id/foto", express.raw({ type: () => true, limit: 2 * 1024 * 1024 + 1024 }), rota((req) => { salvarFoto(id(req), Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0)); return { ok: true }; }));
 gestaoRouter.delete("/pessoas/:id/foto", rota((req) => { apagarFoto(id(req)); return { ok: true }; }));

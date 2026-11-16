@@ -49,12 +49,13 @@ export async function listAiModels(provider: AiApiProvider, keyInput?: unknown) 
   }
   return [...models.values()].sort((a, b) => a.id.localeCompare(b.id));
 }
-export async function executeApiStructured(provider: AiApiProvider, model: string, prompt: string, schema: object, signal?: AbortSignal, temporaryKey?: unknown, test = false): Promise<unknown> {
+export interface ImagemParaIa { mime: string; base64: string }
+export async function executeApiStructured(provider: AiApiProvider, model: string, prompt: string, schema: object, signal?: AbortSignal, temporaryKey?: unknown, test = false, imagem?: ImagemParaIa): Promise<unknown> {
   model = requireModel(model);
   const key = resolveApiKey(provider, temporaryKey);
   const result = provider === "openai"
-    ? await request(provider, "/responses", key, { model, input: prompt, store: false, max_output_tokens: test ? 512 : 16384, text: { format: { type: "json_schema", name: "analise_ia", strict: true, schema } } }, signal)
-    : await request(provider, "/messages", key, { model, max_tokens: test ? 512 : 16384, messages: [{ role: "user", content: prompt }], output_config: { format: { type: "json_schema", schema } } }, signal);
+    ? await request(provider, "/responses", key, { model, input: imagem ? [{ role: "user", content: [{ type: "input_text", text: prompt }, { type: "input_image", image_url: `data:${imagem.mime};base64,${imagem.base64}` }] }] : prompt, store: false, max_output_tokens: test ? 512 : 16384, text: { format: { type: "json_schema", name: "analise_ia", strict: true, schema } } }, signal)
+    : await request(provider, "/messages", key, { model, max_tokens: test ? 512 : 16384, messages: [{ role: "user", content: imagem ? [{ type: "image", source: { type: "base64", media_type: imagem.mime, data: imagem.base64 } }, { type: "text", text: prompt }] : prompt }], output_config: { format: { type: "json_schema", schema } } }, signal);
   let text: string;
   if (provider === "openai") {
     if (result.status !== "completed" || !Array.isArray(result.output)) throw new AiProviderError("A análise não foi concluída pelo provedor. Confira os limites e tente novamente.");
