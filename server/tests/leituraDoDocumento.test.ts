@@ -1,5 +1,8 @@
 import fs from "node:fs";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
+
+// O teste não pode depender de a máquina que o roda ter a conta ChatGPT conectada (o servidor de deploy tem): sem caminho de visão, é «sem_ia».
+vi.mock("../src/services/ai/visao", async (original) => ({ ...(await original<typeof import("../src/services/ai/visao")>()), caminhoDeVisaoPronto: async () => null }));
 import { db } from "../src/db";
 import { salvarArquivo, obterArquivo } from "../src/services/gestao/arquivos";
 import { identificarArquivo, lerConteudo, leituraConfiavel, dataPlausivel } from "../src/services/gestao/leituraDoDocumento";
