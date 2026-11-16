@@ -1,4 +1,5 @@
 import { db } from "../../db";
+import { fasesDoProcesso } from "../../services/gestao/faseDoProcesso";
 import { periciasInssDaPessoa } from "../../services/gestao/vinculos";
 import { agendaDaPessoa, processosDaPessoa, andamentoDoProcesso } from "../../services/gestao/integracao";
 import { clientePeloTelefone, type ClienteAchado } from "./telefone";
@@ -97,6 +98,12 @@ export const FERRAMENTAS: readonly Ferramenta[] = [
       if (!alvo && todos.filter((p) => p.status === "ativo").length === 1 && !busca) alvo = todos.find((p) => p.status === "ativo");
       if (!alvo) return { texto: `O cliente tem ${todos.length} processos. Pergunte de qual ele quer saber: ${todos.slice(0, 8).map((p) => `${p.numero}${p.area ? ` (${p.area})` : ""}`).join("; ")}.`, dados: { precisa_escolher: true, processos: todos.map(processoView) } };
       const bruto = andamentoDoProcesso(alvo.id);
+      // Em que FASE o processo está, em linguagem simples (a explicação já é escrita para o cliente). Sem prometer prazo.
+      let faseTexto = "";
+      try {
+        const lf = fasesDoProcesso(alvo.id);
+        if (lf.atual) faseTexto = `Fase do processo (${lf.atual.indice + 1} de ${lf.fases.length}): ${lf.atual.rotulo}${lf.origem === "deduzida" ? " (estimada pelas publicações; a equipe ainda não confirmou)" : ""}. O que significa: ${lf.atual.explicacao}${lf.situacao ? ` No momento: ${lf.situacao.nome.toLowerCase()}.` : ""} Explique com suas palavras e NÃO prometa prazo para a próxima fase.`;
+      } catch { /* sem quadro: segue sem a fase */ }
       const a = {
         monitorado: bruto.monitorado, publicacoes_nao_lidas: bruto.publicacoes_nao_lidas,
         ultimas_publicacoes: bruto.ultimas_publicacoes as { data_disponibilizacao: string; tipo_documento: string; orgao: string; resumo: string }[],
@@ -114,6 +121,7 @@ export const FERRAMENTAS: readonly Ferramenta[] = [
         dados.ultimas_publicacoes.length ? `Últimas publicações: ${dados.ultimas_publicacoes.slice(0, 3).map((x) => `${x.data} (${x.tipo}): ${x.resumo}`).join(" | ")}` : "Nenhuma publicação do tribunal registrada ainda.",
         dados.prazos_abertos.length ? `Prazos abertos: ${dados.prazos_abertos.map((x) => `${x.descricao} até ${x.termino}`).join("; ")}.` : "",
         dados.pericias_e_audiencias.length ? `Agendado: ${dados.pericias_e_audiencias.map((x) => `${x.tipo} em ${x.data}${x.horario ? ` às ${x.horario}` : ""}`).join("; ")}.` : "",
+        faseTexto,
         AVISO_DE_TITULAR,
       ].filter(Boolean);
       return { texto: partes.join("\n"), dados };

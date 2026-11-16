@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { useToast } from "@/components/ui/Toast";
 import { dataBr } from "./comum";
+import { ProcessosParadosNaFase } from "./ProcessosParadosNaFase";
 import { TarefaModal, type Tarefa } from "./TarefaModal";
 import type { Responsavel } from "./Processos";
 import { BarrasMensais, Indicador, LinhaDeFunil, moeda, rotuloDoMes, Secao } from "../inicio/pecas";
@@ -202,6 +203,7 @@ export function GestaoInicio() {
             </ul>
           )}
         </Secao>
+        <ProcessosParadosNaFase />
         <Secao titulo="Publicações e prazos (DJEN)" direita={<Link to="/processos" className="text-sm font-medium text-accent-700 hover:underline dark:text-accent-300">Abrir</Link>}>
           <div className="grid grid-cols-2 gap-2">
             <Mini rotulo="Publicações não lidas" valor={d?.publicacoes.nao_lidas} tom={d && d.publicacoes.nao_lidas > 0 ? "azul" : "verde"} />

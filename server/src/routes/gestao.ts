@@ -21,6 +21,7 @@ import { adicionarCamposPrevidenciarios, atualizarCampo, criarCampo, excluirCamp
 import { anotacaoRapida, anotacoesDaPessoa, anotarNaPessoa, cumprirPendencia, marcarComoImportante, pendenciasDaPessoa, removerAnotacaoDaPessoa } from "../services/gestao/anotacoes";
 import { fichaDeCadastroHtml, fichaDeExemplo } from "../services/gestao/ficha";
 import { vinculosDaPessoa, criarVinculo, removerVinculo, periciasInssDaPessoa, listarPericiasInss, criarPericiaInss, atualizarPericiaInss, excluirPericiaInss, TIPOS_DE_VINCULO, TIPOS_PERICIA_INSS, STATUS_PERICIA_INSS, RESULTADOS_PERICIA_INSS } from "../services/gestao/vinculos";
+import { FASES, definirFase, fasesDoProcesso, processosAtrasadosNaFase, resumoDasFases } from "../services/gestao/faseDoProcesso";
 import { ESSENCIAIS, classificarArquivo, guardarEssencial, identificarSlot, listarEssenciais, renomearArquivo, slotValido } from "../services/gestao/documentosEssenciais";
 import { sugerirFotoDoDocumento } from "../services/gestao/fotoSugerida";
 import { identificarArquivo } from "../services/gestao/leituraDoDocumento";
@@ -117,6 +118,8 @@ gestaoRouter.get("/processos/pendentes-importacao", rota(() => ({ pendentes: pen
 gestaoRouter.post("/processos/ignorar-djen", rota((req) => { const r = ignorarPendentesDoDjen(); auditAccess("gestao_djen_ignorados", usuario(req).id, null, r); return r; }));
 gestaoRouter.post("/processos/importar-djen", rota((req) => { const r = importarDoDjen(usuario(req).id); auditAccess("gestao_processos_importados", usuario(req).id, null, r); return r; }));
 gestaoRouter.post("/processos", rota((req, res) => { const p = criarProcesso(req.body || {}, usuario(req).id); res.status(201); acompanharAgora(String((p as { chave?: string }).chave ?? "") || String(p.numero).replace(/\D/g, ""), String(p.numero)); auditAccess("gestao_processo_criado", usuario(req).id, null, { processo: p.id, pasta: p.pasta }); return p; }));
+gestaoRouter.get("/processos/fases-atrasadas", rota(() => processosAtrasadosNaFase()));
+gestaoRouter.get("/processos/fases", rota((req) => ({ fases: FASES.map((f) => ({ chave: f.chave, rotulo: f.rotulo })), resumo: resumoDasFases(String(req.query.ids ?? "").split(",").map(Number).filter((n) => Number.isSafeInteger(n) && n > 0)) })));
 gestaoRouter.get("/processos/:id", rota((req) => obterProcesso(id(req))));
 gestaoRouter.put("/processos/:id", rota((req) => atualizarProcesso(id(req), req.body || {})));
 gestaoRouter.delete("/processos/:id", rota((req) => { const r = excluirProcesso(id(req)); auditAccess("gestao_processo_excluido", usuario(req).id, null, { processo: id(req) }); return r; }));
@@ -168,6 +171,8 @@ const enviar = (escopo: "processo" | "pessoa") => rota(async (req, res) => {
   const { armazenado: _x, caminho: _c, ...publico } = atual;
   return { ...publico, identificado_como: identificado ? ESSENCIAIS[identificado as keyof typeof ESSENCIAIS].rotulo : null };
 });
+gestaoRouter.get("/processos/:id/fases", rota((req) => fasesDoProcesso(id(req))));
+gestaoRouter.put("/processos/:id/fase", rota((req) => { const r = definirFase(id(req), req.body?.fase); auditAccess("gestao_fase_definida", usuario(req).id, null, { processo: id(req), fase: String(req.body?.fase ?? "") }); return r; }));
 gestaoRouter.get("/pessoas/:id/documentos-essenciais", rota((req) => ({ itens: listarEssenciais(id(req)) })));
 gestaoRouter.post("/pessoas/:id/documentos-essenciais/:slot", corpoBruto, rota((req, res) => {
   const slot = req.params.slot;

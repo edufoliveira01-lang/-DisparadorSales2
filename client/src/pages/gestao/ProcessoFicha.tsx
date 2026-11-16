@@ -1,3 +1,4 @@
+import { LinhaDasFases } from "./LinhaDasFases";
 import { CopiarTexto, AbrirNoTribunal } from "@/components/CopiarTexto";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -76,6 +77,7 @@ export function ProcessoFicha() {
           {c.telefone && <span className="text-zinc-600 dark:text-zinc-300">{c.telefone}</span>}{c.email && <span className="text-zinc-600 dark:text-zinc-300">{c.email}</span>}
           <Link to={`/gestao/clientes/${c.pessoa_id}?aba=financeiro`} className="ml-auto text-xs text-accent-700 underline">Financeiro do cliente</Link>
         </div>) : null; })()}
+      <LinhaDasFases processoId={ficha.id} gerir={gerir} />
       <AcompanhamentoDjen processoId={ficha.id} aoAtualizar={carregar} />
       <div role="tablist" className="page-tabs">
         {ABAS.map(([k, r]) => <button key={k} role="tab" aria-selected={aba === k} onClick={() => setAba(k)} className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium transition ${aba === k ? "bg-accent-50 text-accent-700 dark:bg-accent-500/15 dark:text-accent-200" : "text-zinc-500 hover:bg-zinc-50 dark:hover:bg-white/5"}`}>{r}</button>)}

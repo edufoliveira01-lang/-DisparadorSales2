@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Pagination } from "@/components/ui/Pagination";
 import { useToast } from "@/components/ui/Toast";
 import { PessoaRapida } from "./PessoaRapida";
+import { FaseResumoBarra, useFases } from "./FaseResumo";
 import { AREAS, Campo, SeletorPessoa, STATUS, STATUS_TOM, dataBr, useAtraso, type Lista, type PessoaResumo } from "./comum";
 
 export interface ProcessoLinha { id: number; numero: string; numero_formatado: string; pasta: string; titulo: string; classe: string; tribunal: string; area: string; status: string; responsavel: string | null; autores: string | null; atualizado_em: string }
@@ -59,6 +60,7 @@ export function Processos({ semCabecalho = false, sinalNovo = 0 }: { semCabecalh
     catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível ignorar.", "error"); }
   };
   const lista = dados?.itens ?? [];
+  const fases = useFases(lista.map((p) => p.id));
 
   return (
     <div className="space-y-5">
@@ -85,7 +87,7 @@ export function Processos({ semCabecalho = false, sinalNovo = 0 }: { semCabecalh
               <li key={p.id}>
                 <Link to={`/gestao/processos/${p.id}`} className="grid gap-1 px-4 py-3 transition hover:bg-accent-50/50 dark:hover:bg-white/5 lg:grid-cols-[110px_1.3fr_1.2fr_1fr_auto] lg:items-center lg:gap-4">
                   <span className="inline-flex w-fit items-center gap-1.5 rounded-lg bg-accent-50 px-2 py-1 text-xs font-semibold text-accent-700 dark:bg-accent-500/15 dark:text-accent-200"><FolderOpen className="h-3.5 w-3.5" />{p.pasta}</span>
-                  <span className="min-w-0"><span className="block truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{p.numero_formatado || p.numero}</span><span className="block truncate text-xs text-zinc-500">{p.titulo || p.classe || "Sem título"}{p.tribunal ? ` · ${p.tribunal}` : ""}</span></span>
+                  <span className="min-w-0"><span className="block truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{p.numero_formatado || p.numero}</span><span className="block truncate text-xs text-zinc-500">{p.titulo || p.classe || "Sem título"}{p.tribunal ? ` · ${p.tribunal}` : ""}</span><span className="mt-1 block"><FaseResumoBarra f={fases[p.id]} /></span></span>
                   <span className="truncate text-sm text-zinc-600 dark:text-zinc-300">{p.autores || "Sem cliente vinculado"}</span>
                   <span className="truncate text-sm text-zinc-600 dark:text-zinc-300">{p.responsavel || <span className="text-amber-600">Sem responsável</span>}</span>
                   <span className="flex items-center gap-2"><Badge tone={STATUS_TOM[p.status] || "neutral"}>{STATUS[p.status] || p.status}</Badge><span className="hidden text-xs text-zinc-400 xl:inline">{dataBr(p.atualizado_em)}</span></span>

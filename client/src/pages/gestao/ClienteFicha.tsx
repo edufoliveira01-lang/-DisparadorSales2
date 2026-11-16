@@ -21,6 +21,7 @@ import { NegocioDaPessoa } from "./NegocioDaPessoa";
 import { Vinculos } from "./Vinculos";
 import { DocumentosEssenciais } from "./DocumentosEssenciais";
 import { FotoSugerida } from "./FotoSugerida";
+import { FaseResumoBarra, useFases } from "./FaseResumo";
 import { CopiarTexto, AbrirNoTribunal } from "@/components/CopiarTexto";
 import { FaixaDeCompromissos, SeloDeCompromissos, useCompromissos } from "./AvisoDeCompromissos";
 import { PericiaInssDaPessoa } from "./PericiaInss";
@@ -72,6 +73,7 @@ export function ClienteFicha() {
   const fotoRef = useRef<HTMLInputElement>(null);
   const [fotoVersao, setFotoVersao] = useState(0);
   const [docsVersao, setDocsVersao] = useState(0);
+  const fases = useFases((pessoa?.processos ?? []).map((p) => p.id));
 
   const carregar = useCallback(async () => {
     if (novo) { try { const c = await api.get<{ campos: CampoValor[] }>("/gestao/campos?entidade=pessoa"); setPessoa((p) => ({ ...(p ?? vazia()), campos: c.campos.map((x) => ({ ...x, valor: "", preenchido: false, imprimir: true })) })); } catch { /* campos indisponíveis */ } return; }
@@ -234,7 +236,7 @@ export function ClienteFicha() {
             <ul className="divide-y divide-zinc-100 overflow-hidden surface-panel dark:divide-zinc-800">
               {pessoa.processos!.map((p) => (
                 <li key={`${p.id}-${p.papel}`}><Link to={`/gestao/processos/${p.id}`} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/60">
-                  <span className="min-w-0"><span className="block truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100"><FolderOpen className="mr-1.5 inline h-4 w-4 text-zinc-400" />{p.pasta} · {p.numero}</span><span className="block truncate text-xs text-zinc-500">{p.titulo || "Sem título"}</span></span>
+                  <span className="min-w-0"><span className="block truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100"><FolderOpen className="mr-1.5 inline h-4 w-4 text-zinc-400" />{p.pasta} · {p.numero}</span><span className="block truncate text-xs text-zinc-500">{p.titulo || "Sem título"}</span><span className="mt-1 block"><FaseResumoBarra f={fases[p.id]} /></span></span>
                   <span className="flex items-center gap-2"><span className="text-xs text-zinc-500">{p.papel}</span><Badge tone={STATUS_TOM[p.status] || "neutral"}>{STATUS[p.status] || p.status}</Badge></span></Link></li>))}
             </ul>)}
         </section>
