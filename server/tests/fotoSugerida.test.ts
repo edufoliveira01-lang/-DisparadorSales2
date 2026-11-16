@@ -50,7 +50,8 @@ describe("foto sugerida a partir do RG/CNH", () => {
     // frente e verso: o retrato só está na primeira imagem tentada que o detector aceita
     let chamadas = 0;
     const soNaSegunda = async () => { chamadas++; return chamadas === 1 ? { eh_documento_com_foto: false, tipo_documento: "verso", caixa: null } : { eh_documento_com_foto: true, tipo_documento: "CNH", caixa: { x: 0.1, y: 0.1, largura: 0.3, altura: 0.4 } }; };
-    const pdf2 = Buffer.concat([pdf.subarray(0, pdf.length - 20), Buffer.from("\nstream\n"), Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(7000, 9), Buffer.from([0xff, 0xd9])]), Buffer.from("\nendstream\n%%EOF")]);
+    const stream = (tam: number, b: number) => Buffer.concat([Buffer.from("\nstream\n"), Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(tam, b), Buffer.from([0xff, 0xd9]), Buffer.from("\nendstream\nendobj\n")]);
+    const pdf2 = Buffer.concat([Buffer.from("%PDF-1.4\n1 0 obj\n<< /Filter /DCTDecode >>"), stream(9000, 7), Buffer.from("2 0 obj\n<< /Filter /DCTDecode >>"), stream(7000, 9), Buffer.from("%%EOF")]);
     expect(await sugerirFotoDoDocumento(pessoa, pdf2, "CNH frente e verso", soNaSegunda)).toBe("sugerida");
     expect(chamadas).toBe(2);
     descartarSugestao(pessoa);
