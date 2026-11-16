@@ -146,7 +146,7 @@ function sugerirFotoDoArquivo(arquivoId: number, slot: string) {
   if (slot !== "rg" && slot !== "cnh") return;
   try {
     const a = obterArquivo(arquivoId);
-    if (!a.pessoa_id || !/^image\/(jpeg|png|webp)$/.test(a.mime) || !fs.existsSync(a.caminho)) return;
+    if (!a.pessoa_id || !/^(image\/(jpeg|png|webp)|application\/pdf)$/.test(a.mime) || !fs.existsSync(a.caminho)) return;
     void sugerirFotoDoDocumento(a.pessoa_id, fs.readFileSync(a.caminho), a.nome).catch(() => undefined);
   } catch { /* sugestão é extra: nunca atrapalha o envio */ }
 }

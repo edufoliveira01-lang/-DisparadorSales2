@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { db } from "../src/db";
 import { aceitarSugestao, caixaValida, descartarSugestao, fotoSugeridaDaPessoa, sugerirFotoDoDocumento } from "../src/services/gestao/fotoSugerida";
+import { jpegEmbutidoNoPdf } from "../src/services/ai/pdf";
 import { fotoDaPessoa, apagarFoto } from "../src/services/gestao/fichaConfig";
 
 const PNG = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.alloc(64, 1)]);
@@ -36,5 +37,24 @@ describe("foto sugerida a partir do RG/CNH", () => {
     expect(fotoDaPessoa(pessoa)).not.toBeNull();
     expect(fotoSugeridaDaPessoa(pessoa)).toBeNull();
     expect(await sugerirFotoDoDocumento(pessoa, PNG, "CNH", sim)).toBe("ja_tem_foto"); // quem já tem foto não gasta IA
+  });
+
+  it("documento fotografado e salvo como PDF: a foto sai do JPEG embutido no PDF", async () => {
+    const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(9000, 7), Buffer.from([0xff, 0xd9])]);
+    const pdf = Buffer.concat([Buffer.from("%PDF-1.4\n1 0 obj\n<< /Type /XObject /Subtype /Image /Filter /DCTDecode >>\nstream\n"), jpeg, Buffer.from("\nendstream\nendobj\n%%EOF")]);
+    expect(jpegEmbutidoNoPdf(pdf)?.length).toBe(jpeg.length);
+    expect(jpegEmbutidoNoPdf(Buffer.from("%PDF-1.4 sem imagem"))).toBeNull();
+    descartarSugestao(pessoa);
+    apagarFoto(pessoa);
+    const detecta = async () => ({ eh_documento_com_foto: true, tipo_documento: "CNH", caixa: { x: 0.1, y: 0.1, largura: 0.3, altura: 0.4 } });
+    // frente e verso: o retrato só está na primeira imagem tentada que o detector aceita
+    let chamadas = 0;
+    const soNaSegunda = async () => { chamadas++; return chamadas === 1 ? { eh_documento_com_foto: false, tipo_documento: "verso", caixa: null } : { eh_documento_com_foto: true, tipo_documento: "CNH", caixa: { x: 0.1, y: 0.1, largura: 0.3, altura: 0.4 } }; };
+    const pdf2 = Buffer.concat([pdf.subarray(0, pdf.length - 20), Buffer.from("\nstream\n"), Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(7000, 9), Buffer.from([0xff, 0xd9])]), Buffer.from("\nendstream\n%%EOF")]);
+    expect(await sugerirFotoDoDocumento(pessoa, pdf2, "CNH frente e verso", soNaSegunda)).toBe("sugerida");
+    expect(chamadas).toBe(2);
+    descartarSugestao(pessoa);
+    expect(await sugerirFotoDoDocumento(pessoa, pdf, "CNH em PDF", detecta)).toBe("sugerida");
+    expect(fotoSugeridaDaPessoa(pessoa)?.documento).toBe("CNH");
   });
 });

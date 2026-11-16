@@ -6,7 +6,7 @@ import { hojeSaoPaulo } from "../djen/cache";
 import { ErroGestao } from "./erro";
 import { obterArquivo } from "./arquivos";
 import { classificarArquivo, slotValido, type SlotEssencial } from "./documentosEssenciais";
-import { podeSugerirFoto, registrarSugestao, type CaixaDoRetrato } from "./fotoSugerida";
+import { podeSugerirFoto, registrarSugestao, sugerirFotoDoDocumento, type CaixaDoRetrato } from "./fotoSugerida";
 
 /**
  * O sistema LÊ o arquivo (imagem ou PDF) e descobre sozinho que documento é, a data dele e, no RG/CNH, onde está o retrato.
@@ -79,14 +79,20 @@ export async function identificarArquivo(arquivoId: number, leitor: Leitor = lei
   if (r.situacao !== "ok") return { situacao: r.situacao };
   const l = r.leitura;
   // A FOTO é independente do tipo: se a IA achou um retrato plausível, ele vira sugestão (a confirmação é de uma pessoa) mesmo sem certeza do documento.
-  const sugerirFoto = (documento: string) => {
+  // Em PDF (documento fotografado e salvo como PDF), a foto sai da imagem embutida ou da primeira página.
+  const ehPdf = conteudo.subarray(0, 5).toString("latin1") === "%PDF-";
+  const sugerirFoto = async (documento: string): Promise<boolean> => {
+    if (ehPdf) {
+      if (documento !== "RG" && documento !== "CNH" && documento !== "DOCUMENTO") return false;
+      try { return (await sugerirFotoDoDocumento(a.pessoa_id, conteudo, a.nome, undefined, { substituir: opcoes.substituirFoto })) === "sugerida"; } catch { return false; }
+    }
     if (!l.retrato || podeSugerirFoto(a.pessoa_id, conteudo, { substituir: opcoes.substituirFoto })) return false;
     return registrarSugestao(a.pessoa_id!, conteudo, l.retrato, documento, a.nome) === "sugerida";
   };
-  if (!leituraConfiavel(l)) return sugerirFoto(slotValido(l.tipo) ? l.tipo.toUpperCase() : "documento") ? { situacao: "so_foto" } : { situacao: "nao_identificado" };
+  if (!leituraConfiavel(l)) return (await sugerirFoto(slotValido(l.tipo) ? l.tipo.toUpperCase() : "DOCUMENTO")) ? { situacao: "so_foto" } : { situacao: "nao_identificado" };
   const data = dataPlausivel(l.data_documento);
   const c = classificarArquivo(arquivoId, l.tipo, { data: data ?? undefined, padronizar: true }) as { nome: string };
-  const foto = sugerirFoto(l.tipo.toUpperCase());
+  const foto = await sugerirFoto(l.tipo.toUpperCase());
   db.prepare("UPDATE gestao_arquivos SET descricao=CASE WHEN descricao='' THEN ? ELSE descricao END WHERE id=?").run(`Original: ${a.nome} · identificado automaticamente`, arquivoId);
   return { situacao: "classificado", slot: l.tipo, data, nome: c.nome, foto };
 }

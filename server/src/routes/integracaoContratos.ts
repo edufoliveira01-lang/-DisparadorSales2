@@ -77,8 +77,11 @@ async function guardarNoCadastro(d: { telefone: string; cpf: string; titulo: str
       slot = r.leitura.tipo; data = dataPlausivel(r.leitura.data_documento); retrato = r.leitura.retrato; documento = slot.toUpperCase();
     }
     try { guardarEssencial(pessoaId, slot, nome, conteudo, { data, user: { id: null, nome: "Atendimento (WhatsApp)" }, origemRef: d.origemRef }); } catch (e) { console.warn("[documento essencial]", e instanceof Error ? e.message : "falhou"); }
-    if ((slot === "rg" || slot === "cnh") && /^(jpe?g|png|webp)$/.test(ext) && !podeSugerirFoto(pessoaId, conteudo)) {
-      const r = retrato ? registrarSugestao(pessoaId, conteudo, retrato, documento, d.titulo) : await sugerirFotoDoDocumento(pessoaId, conteudo, d.titulo);
+    if (slot === "rg" || slot === "cnh") {
+      // Imagem: usa o retrato já lido (ou procura). PDF: a foto sai da imagem embutida ou da primeira página.
+      let r: string | null = null;
+      if (ext === "pdf") r = await sugerirFotoDoDocumento(pessoaId, conteudo, d.titulo);
+      else if (/^(jpe?g|png|webp)$/.test(ext) && !podeSugerirFoto(pessoaId, conteudo)) r = retrato ? registrarSugestao(pessoaId, conteudo, retrato, documento, d.titulo) : await sugerirFotoDoDocumento(pessoaId, conteudo, d.titulo);
       if (r === "sugerida") auditAccess("foto_sugerida_do_documento", null, null, { pessoa: pessoaId });
     }
   } catch (e) { console.warn("[documento do chat no cadastro]", e instanceof Error ? e.message : "falhou"); }

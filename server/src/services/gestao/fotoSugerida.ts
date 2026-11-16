@@ -1,5 +1,6 @@
 import { db } from "../../db";
 import type { ImagemParaIa } from "../ai/apiProvider";
+import { imagensDoPdf } from "../ai/pdf";
 import { caminhoAceita, caminhoDeVisao, caminhoDeVisaoPronto, perguntarComVisao } from "../ai/visao";
 import { ErroGestao } from "./erro";
 import { apagarFoto, apagarImagemDaSugestao, fotoDaPessoa, gravarImagemDaSugestao, imagemDaSugestao, salvarFoto, tipoDaImagem } from "./fichaConfig";
@@ -73,13 +74,29 @@ export function registrarSugestao(pessoaId: number, conteudo: Buffer, caixaBruta
   return "sugerida";
 }
 
-export async function sugerirFotoDoDocumento(pessoaId: number | null, conteudo: Buffer, titulo: string, detector: Detector = detectorPadrao): Promise<ResultadoDaSugestao> {
-  const barrou = podeSugerirFoto(pessoaId, conteudo);
+/** Imagens de onde pode sair a foto: o próprio arquivo, se for imagem; no PDF, as imagens embutidas (frente e verso) ou a primeira página. */
+export async function imagensParaFoto(conteudo: Buffer): Promise<Buffer[]> {
+  const ext = tipoDaImagem(conteudo);
+  if (ext && ext !== "ico") return [conteudo];
+  if (conteudo.subarray(0, 5).toString("latin1") === "%PDF-") return imagensDoPdf(conteudo);
+  return [];
+}
+
+export async function sugerirFotoDoDocumento(pessoaId: number | null, conteudo: Buffer, titulo: string, detector: Detector = detectorPadrao, opcoes: { substituir?: boolean } = {}): Promise<ResultadoDaSugestao> {
+  const candidatas = await imagensParaFoto(conteudo);
+  if (candidatas.length === 0) return podeSugerirFoto(pessoaId, conteudo) ?? "nao_e_imagem";
+  const barrou = podeSugerirFoto(pessoaId, candidatas[0]!, opcoes);
   if (barrou) return barrou;
   if (detector === detectorPadrao && !(await iaComVisaoDisponivel())) return "sem_ia";
-  const ext = tipoDaImagem(conteudo)!;
-  const r = await detector({ mime: MIME[ext]!, base64: conteudo.toString("base64") });
-  return registrarSugestao(pessoaId!, conteudo, r.eh_documento_com_foto ? r.caixa : null, r.tipo_documento, titulo);
+  let ultimo: ResultadoDaSugestao = "sem_retrato";
+  for (const imagem of candidatas) { // PDF com frente e verso: tenta cada imagem até achar o retrato
+    const ext = tipoDaImagem(imagem);
+    if (!ext || ext === "ico" || imagem.length > LIMITE_DA_IMAGEM) continue;
+    const r = await detector({ mime: MIME[ext]!, base64: imagem.toString("base64") });
+    ultimo = registrarSugestao(pessoaId!, imagem, r.eh_documento_com_foto ? r.caixa : null, r.tipo_documento, titulo);
+    if (ultimo === "sugerida") break;
+  }
+  return ultimo;
 }
 
 export interface FotoSugerida { pessoa_id: number; x: number; largura: number; y: number; altura: number; documento: string; titulo: string; criado_em: string }
