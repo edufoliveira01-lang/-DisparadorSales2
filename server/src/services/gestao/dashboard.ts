@@ -1,3 +1,4 @@
+import { SQL_DATA_ISO } from "./integracao";
 /**
  * O painel da tela Início: tudo o que o escritório precisa ver de relance, num pedido só. Cada bloco é calculado separado e à prova de falha
  * (um módulo que não existe neste escritório, como o ZapSign ou o Dropbox, só deixa o bloco vazio).
@@ -75,19 +76,19 @@ export function dashboardDoInicio(mesBruto: unknown, podeVerReceita: boolean) {
   // ---- perícias e audiências ----
   const eAudiencia = "(lower(tipo) LIKE '%audi%' OR lower(tipo_chave) LIKE '%audi%')";
   const compromissosDe = (de: string, ate: string, limite: number): Compromisso[] => tentar(() => (db.prepare(
-    `SELECT id, tipo, nome, data, horario, local, processo, ${eAudiencia} AS eh_audiencia FROM pericias_agendadas WHERE status='ativa' AND data >= ? AND data <= ? ORDER BY data_hora_ms LIMIT ?`,
+    `SELECT id, tipo, nome, data, horario, local, processo, ${eAudiencia} AS eh_audiencia FROM pericias_agendadas WHERE status='ativa' AND ${SQL_DATA_ISO()} >= ? AND ${SQL_DATA_ISO()} <= ? ORDER BY data_hora_ms LIMIT ?`,
   ).all(de, ate, limite) as Array<Omit<Compromisso, "eh_audiencia"> & { eh_audiencia: number }>).map((c) => ({ ...c, eh_audiencia: Boolean(c.eh_audiencia) })), []);
   const agoraMs = Date.now();
   const periciasEAudiencias = {
     hoje: compromissosDe(hoje, hoje, 20),
     proximos: compromissosDe(somarDias(hoje, 1), somarDias(hoje, 7), 12),
-    hoje_total: tentar(() => num("SELECT COUNT(*) v FROM pericias_agendadas WHERE status='ativa' AND data=?", hoje), 0),
-    semana_total: tentar(() => num("SELECT COUNT(*) v FROM pericias_agendadas WHERE status='ativa' AND data>=? AND data<=?", hoje, somarDias(hoje, 7)), 0),
-    pericias_mes: tentar(() => num(`SELECT COUNT(*) v FROM pericias_agendadas WHERE status='ativa' AND NOT ${eAudiencia} AND ${noMes("data", mes)}`), 0),
-    audiencias_mes: tentar(() => num(`SELECT COUNT(*) v FROM pericias_agendadas WHERE status='ativa' AND ${eAudiencia} AND ${noMes("data", mes)}`), 0),
+    hoje_total: tentar(() => num(`SELECT COUNT(*) v FROM pericias_agendadas WHERE status='ativa' AND ${SQL_DATA_ISO()}=?`, hoje), 0),
+    semana_total: tentar(() => num(`SELECT COUNT(*) v FROM pericias_agendadas WHERE status='ativa' AND ${SQL_DATA_ISO()}>=? AND ${SQL_DATA_ISO()}<=?`, hoje, somarDias(hoje, 7)), 0),
+    pericias_mes: tentar(() => num(`SELECT COUNT(*) v FROM pericias_agendadas WHERE status='ativa' AND NOT ${eAudiencia} AND ${noMes(SQL_DATA_ISO(), mes)}`), 0),
+    audiencias_mes: tentar(() => num(`SELECT COUNT(*) v FROM pericias_agendadas WHERE status='ativa' AND ${eAudiencia} AND ${noMes(SQL_DATA_ISO(), mes)}`), 0),
     /** Compromissos dos próximos 7 dias que ainda não receberam lembrete: a lista de quem vai ser avisado. */
-    para_avisar: tentar(() => num("SELECT COUNT(*) v FROM pericias_agendadas WHERE status='ativa' AND data_hora_ms > ? AND data <= ? AND ultimo_lembrete_em IS NULL", agoraMs, somarDias(hoje, 7)), 0),
-    sem_telefone: tentar(() => num("SELECT COUNT(*) v FROM pericias_agendadas WHERE status='ativa' AND data_hora_ms > ? AND data <= ? AND (telefone_digits IS NULL OR telefone_digits='')", agoraMs, somarDias(hoje, 7)), 0),
+    para_avisar: tentar(() => num(`SELECT COUNT(*) v FROM pericias_agendadas WHERE status='ativa' AND data_hora_ms > ? AND ${SQL_DATA_ISO()} <= ? AND ultimo_lembrete_em IS NULL`, agoraMs, somarDias(hoje, 7)), 0),
+    sem_telefone: tentar(() => num(`SELECT COUNT(*) v FROM pericias_agendadas WHERE status='ativa' AND data_hora_ms > ? AND ${SQL_DATA_ISO()} <= ? AND (telefone_digits IS NULL OR telefone_digits='')`, agoraMs, somarDias(hoje, 7)), 0),
     aguardando_resposta: tentar(() => num("SELECT COUNT(*) v FROM pending_replies WHERE status='aguardando'"), 0),
     avisos_hoje: tentar(() => num("SELECT COUNT(*) v FROM send_logs WHERE status='sucesso' AND substr(created_at,1,10)=?", hoje), 0),
     avisos_com_falha_7d: tentar(() => num("SELECT COUNT(*) v FROM send_logs WHERE status='falha' AND substr(created_at,1,10)>=?", somarDias(hoje, -7)), 0),

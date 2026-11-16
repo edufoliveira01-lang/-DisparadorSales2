@@ -49,6 +49,20 @@ describe("vínculo entre clientes (herdeiro) e perícia do INSS", () => {
     expect(processosDaPessoa(ciclano)).toEqual([]);
   });
 
+  it("perícia agendada com data «dd/mm/aaaa» (como o WhatsApp grava) aparece nos compromissos do cliente", () => {
+    const [a, m, d] = amanha.split("-");
+    const mp = ins("INSERT INTO gestao_processos(numero,chave,pasta,titulo,status) VALUES ('6000006-66.2025.8.26.0006','60000066620258260006','P-9006','Fulano 2','ativo')");
+    db.prepare("INSERT INTO gestao_partes(processo_id,pessoa_id,papel,principal) VALUES (?,?,'autor',1)").run(mp, fulano);
+    ins("INSERT INTO pericias_agendadas(card_id,tipo,tipo_chave,origem,nome,nome_chave,telefone,telefone_digits,processo,processo_chave,data,horario,local,data_hora_ms,status) VALUES ('c','Perícia Médica','periciamedica','medica','Fulano','fulano','','','6000006-66.2025.8.26.0006','60000066620258260006',?,'09:00','Rua do Retiro, 468',?,'ativa')", `${d}/${m}/${a}`, Date.now() + 5 * 86_400_000);
+    try {
+      const t = chamar("proximos_compromissos", "5521911110001");
+      expect(t).toContain("Perícia Médica"); expect(t).toContain(`${d}/${m}/${a}`); expect(t).toContain("Rua do Retiro");
+    } finally {
+      db.prepare("DELETE FROM pericias_agendadas WHERE processo_chave='60000066620258260006'").run();
+      db.prepare("DELETE FROM gestao_processos WHERE pasta='P-9006'").run();
+    }
+  });
+
   it("perícia do INSS: cadastra, lista nas próximas, aparece para o agente e some quando realizada", () => {
     criarPericiaInss(fulano, { tipo: "medica", data: amanha, horario: "09:30", agencia: "APS Santos", protocolo: "123456789", beneficio: "Auxílio por incapacidade" });
     expect(listarPericiasInss().some((x) => x.pessoa_nome === "Fulano Teste Vinculo" && x.agencia === "APS Santos")).toBe(true);

@@ -9,7 +9,11 @@ const somarDias = (dia: string, n: number) => new Date(Date.parse(`${dia}T12:00:
 
 interface Pericia { id: number; tipo: string; nome: string; data: string; horario: string | null; local: string | null; profissional_perito: string | null; processo: string | null; processo_chave: string; ultimo_lembrete_em: string | null; passada: boolean }
 const colunasPericia = "id,tipo,nome,data,horario,local,profissional_perito,processo,processo_chave,ultimo_lembrete_em";
-const comPassada = (rows: Omit<Pericia, "passada">[], hoje: string): Pericia[] => rows.map((r) => ({ ...r, passada: r.data < hoje }));
+/** As perícias agendadas pelo WhatsApp/Trello guardam a data como «30/11/2026»; o resto do sistema compara AAAA-MM-DD. */
+export const dataIsoDaPericia = (d: string): string => (/^\d{2}\/\d{2}\/\d{4}/.test(d) ? `${d.slice(6, 10)}-${d.slice(3, 5)}-${d.slice(0, 2)}` : d);
+const comPassada = (rows: Omit<Pericia, "passada">[], hoje: string): Pericia[] => rows.map((r) => { const data = dataIsoDaPericia(r.data); return { ...r, data, passada: data < hoje }; });
+/** A mesma conversão, para usar dentro de consultas SQL («30/11/2026» ou «2026-11-30» → «2026-11-30»). */
+export const SQL_DATA_ISO = (col = "data") => `(CASE WHEN ${col} LIKE '__/__/____%' THEN substr(${col},7,4)||'-'||substr(${col},4,2)||'-'||substr(${col},1,2) ELSE substr(${col},1,10) END)`;
 
 /** O que o DJEN e a agenda de perícias sabem sobre este processo, sem sair da ficha. */
 export function andamentoDoProcesso(id: number) {
@@ -68,11 +72,11 @@ export function resumoDjenPericias() {
   const n = (sql: string, ...p: unknown[]) => (db.prepare(sql).get(...p) as { v: number }).v;
   let prazos: ReturnType<typeof listarPrazosEscritorio> = [];
   try { prazos = listarPrazosEscritorio(); } catch { /* DJEN ainda sem dados */ }
-  const proximas = db.prepare(`SELECT ${colunasPericia} FROM pericias_agendadas WHERE status='ativa' AND data>=? AND data<=? ORDER BY data_hora_ms LIMIT 6`).all(hoje, somarDias(hoje, 7)) as Omit<Pericia, "passada">[];
+  const proximas = db.prepare(`SELECT ${colunasPericia} FROM pericias_agendadas WHERE status='ativa' AND ${SQL_DATA_ISO()}>=? AND ${SQL_DATA_ISO()}<=? ORDER BY data_hora_ms LIMIT 6`).all(hoje, somarDias(hoje, 7)) as Omit<Pericia, "passada">[];
   return {
     publicacoes_nao_lidas: n("SELECT COUNT(*) v FROM djen_publicacoes WHERE cancelada=0 AND lida=0"),
     pericias_proximas: comPassada(proximas, hoje),
-    pericias_proximas_total: n("SELECT COUNT(*) v FROM pericias_agendadas WHERE status='ativa' AND data>=? AND data<=?", hoje, somarDias(hoje, 7)),
+    pericias_proximas_total: n(`SELECT COUNT(*) v FROM pericias_agendadas WHERE status='ativa' AND ${SQL_DATA_ISO()}>=? AND ${SQL_DATA_ISO()}<=?`, hoje, somarDias(hoje, 7)),
     prazos_escritorio: { total: prazos.length, vencidos: prazos.filter((x) => x.urgencia === "vencido").length, lista: prazos.slice(0, 5).map((x) => ({ publicacao_id: x.publicacao_id, processo: x.processo, cliente_nome: x.cliente_nome, descricao: x.descricao, termino: x.termino, urgencia: x.urgencia })) },
   };
 }
