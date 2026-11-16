@@ -29,7 +29,7 @@ import { DOCS, ROTULO_VARIANTE, atualizarDocumentoProprio, criarDocumentoProprio
 import { kitDocx } from "../services/gestao/docx";
 import { lerEscritorio, salvarEscritorio } from "../services/gestao/escritorio";
 import crypto from "node:crypto";
-import { agendaDaPessoa, andamentoDoProcesso } from "../services/gestao/integracao";
+import { agendaDaPessoa, andamentoDoProcesso, compromissosDaPessoa } from "../services/gestao/integracao";
 import { atendimentoDaInstancia } from "../atendimento/instancia";
 import { hojeSaoPaulo } from "../services/djen/cache";
 import { completarComDataJud, forcarConsulta, iniciarAcompanhamento, situacaoDoAcompanhamento } from "../services/djen/vigia";
@@ -124,6 +124,7 @@ gestaoRouter.delete("/processos/:id/anotacoes/:anotacaoId", rota((req) => { cons
 // anotações no cadastro da pessoa e atalho "anotação rápida" (cliente + processo opcional)
 gestaoRouter.get("/pessoas/:id/anotacoes", rota((req) => ({ itens: anotacoesDaPessoa(id(req)) })));
 gestaoRouter.post("/pessoas/:id/anotacoes", rota((req, res) => { const u = usuario(req); res.status(201); return anotarNaPessoa(id(req), req.body?.texto, { id: u.id, nome: nomeDe(u) }, req.body?.importante); }));
+gestaoRouter.get("/pessoas/:id/compromissos", rota((req) => ({ itens: compromissosDaPessoa(id(req)) })));
 gestaoRouter.get("/pessoas/:id/pendencias", rota((req) => ({ itens: pendenciasDaPessoa(id(req)) })));
 const origemDaAnotacao = (v: unknown): "cadastro" | "processo" => (v === "processo" ? "processo" : "cadastro");
 gestaoRouter.post("/anotacoes/:origem/:anotacaoId/cumprir", rota((req) => { const u = usuario(req); return cumprirPendencia(origemDaAnotacao(req.params.origem), id(req, "anotacaoId"), { id: u.id, nome: nomeDe(u) }, req.body?.cumprida !== false); }));

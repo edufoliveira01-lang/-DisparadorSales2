@@ -1,5 +1,5 @@
 import { db } from "../../db";
-import { pessoasDeQuemHerda } from "./vinculos";
+import { pessoasDeQuemHerda, periciasInssDaPessoa, TIPOS_PERICIA_INSS } from "./vinculos";
 import { hojeSaoPaulo } from "../djen/cache";
 import { listarPrazosEscritorio } from "../djen/prazosEscritorio";
 import { ErroGestao } from "./erro";
@@ -64,6 +64,24 @@ export function agendaDaPessoa(pessoaId: number) {
   const tarefas = db.prepare(`SELECT t.id,t.titulo,t.prazo,t.prazo_fatal,t.status,pr.pasta AS processo_pasta FROM gestao_tarefas t LEFT JOIN gestao_processos pr ON pr.id=t.processo_id
     WHERE t.status IN ('pendente','em_andamento') AND (t.pessoa_id=? OR t.processo_id IN (SELECT processo_id FROM gestao_partes WHERE pessoa_id=?)) ORDER BY t.prazo IS NULL,t.prazo LIMIT 30`).all(pessoaId, pessoaId);
   return { pericias, tarefas };
+}
+
+
+export interface CompromissoDoCliente {
+  origem: "judicial" | "audiencia" | "inss"; rotulo: string; data: string; horario: string; local: string; processo: string; dias: number;
+}
+/** O que o cliente tem pela frente (perícia judicial, audiência, perícia do INSS): vira o aviso fixo na ficha. Anotação NÃO entra aqui. */
+export function compromissosDaPessoa(pessoaId: number): CompromissoDoCliente[] {
+  const hoje = hojeSaoPaulo();
+  const dias = (iso: string) => Math.round((Date.parse(`${iso}T12:00:00Z`) - Date.parse(`${hoje}T12:00:00Z`)) / 86_400_000);
+  const judiciais = agendaDaPessoa(pessoaId).pericias.filter((x) => !x.passada).map((x): CompromissoDoCliente => {
+    const audiencia = /audi[eê]ncia/i.test(`${x.tipo}`);
+    return { origem: audiencia ? "audiencia" : "judicial", rotulo: audiencia ? "Audiência" : `${x.tipo || "Perícia"} (judicial)`, data: x.data, horario: x.horario || "", local: x.local || "", processo: x.processo || "", dias: dias(x.data) };
+  });
+  const inss = periciasInssDaPessoa(pessoaId).filter((x) => !x.passada && ["agendada", "remarcada"].includes(x.status)).map((x): CompromissoDoCliente => ({
+    origem: "inss", rotulo: `${(TIPOS_PERICIA_INSS as Record<string, string>)[x.tipo] ?? "Perícia"} no INSS`, data: x.data, horario: x.horario, local: x.agencia, processo: x.protocolo ? `protocolo ${x.protocolo}` : "", dias: dias(x.data),
+  }));
+  return [...judiciais, ...inss].sort((a, b) => a.data.localeCompare(b.data) || a.horario.localeCompare(b.horario));
 }
 
 /** Blocos do Meu painel vindos do DJEN e das perícias: tudo no mesmo lugar, com atalho para a tela de origem. */

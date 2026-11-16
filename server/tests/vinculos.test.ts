@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { db } from "../src/db";
 import { criarVinculo, removerVinculo, vinculosDaPessoa, criarPericiaInss, atualizarPericiaInss, listarPericiasInss, periciasInssDaPessoa } from "../src/services/gestao/vinculos";
-import { processosDaPessoa } from "../src/services/gestao/integracao";
+import { processosDaPessoa, compromissosDaPessoa } from "../src/services/gestao/integracao";
 import { tratarJsonRpc } from "../src/atendimento/mcp/servidor";
 
 const ins = (sql: string, ...p: unknown[]) => Number(db.prepare(sql).run(...p).lastInsertRowid);
@@ -60,6 +60,25 @@ describe("vínculo entre clientes (herdeiro) e perícia do INSS", () => {
     } finally {
       db.prepare("DELETE FROM pericias_agendadas WHERE processo_chave='60000066620258260006'").run();
       db.prepare("DELETE FROM gestao_processos WHERE pasta='P-9006'").run();
+    }
+  });
+
+  it("aviso da ficha: lista perícia judicial (data dd/mm/aaaa), audiência e perícia do INSS — só as futuras", () => {
+    const [a, m, d] = amanha.split("-");
+    const mp = ins("INSERT INTO gestao_processos(numero,chave,pasta,titulo,status) VALUES ('7000007-77.2025.8.26.0007','70000077720258260007','P-9007','Fulano 3','ativo')");
+    db.prepare("INSERT INTO gestao_partes(processo_id,pessoa_id,papel,principal) VALUES (?,?,'autor',1)").run(mp, fulano);
+    const pe = (tipo: string, data: string) => ins("INSERT INTO pericias_agendadas(card_id,tipo,tipo_chave,origem,nome,nome_chave,telefone,telefone_digits,processo,processo_chave,data,horario,local,data_hora_ms,status) VALUES ('c',?,?,'',?,?,'','','','70000077720258260007',?,'10:00','Fórum',?,'ativa')", tipo, tipo.toLowerCase(), `N${tipo}`, `n${tipo}`, data, Date.now());
+    pe("Perícia Médica", `${d}/${m}/${a}`); pe("Audiência de Instrução", `${d}/${m}/${a}`); pe("Perícia Social", "01/01/2020");
+    criarPericiaInss(fulano, { tipo: "medica", data: amanha, horario: "08:00", agencia: "APS Santos" });
+    try {
+      const c = compromissosDaPessoa(fulano);
+      expect(c.map((x) => x.origem).sort()).toEqual(["audiencia", "inss", "judicial"]);
+      expect(c.every((x) => /^\d{4}-\d{2}-\d{2}$/.test(x.data) && x.dias >= 0)).toBe(true);
+      expect(c.find((x) => x.origem === "inss")!.rotulo).toBe("Perícia médica no INSS");
+    } finally {
+      db.prepare("DELETE FROM pericias_agendadas WHERE processo_chave='70000077720258260007'").run();
+      db.prepare("DELETE FROM gestao_processos WHERE pasta='P-9007'").run();
+      db.prepare("DELETE FROM gestao_pericias_inss WHERE pessoa_id=?").run(fulano);
     }
   });
 
