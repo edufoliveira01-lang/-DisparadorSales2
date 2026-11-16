@@ -16,7 +16,7 @@ export interface Ferramenta {
   executar: (telefone: string, args: Record<string, unknown>) => ResultadoFerramenta;
 }
 
-const SEM_CLIENTE: ResultadoFerramenta = { texto: "Este telefone não está no cadastro de clientes do escritório. Trate a pessoa como alguém novo (lead): não informe nada de processos.", dados: { encontrado: false } };
+const SEM_CLIENTE: ResultadoFerramenta = { texto: "Este telefone não está no cadastro de clientes do escritório: é um contato NOVO (lead). Trate-o como alguém novo e siga o atendimento normal. NÃO diga à pessoa que consultou o cadastro, que não localizou cadastro ou que o número não está no sistema: isso é informação interna. Não informe nada de processos.", dados: { encontrado: false } };
 const brl = (c: number) => (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const dia = (iso: string | null | undefined) => (iso && /^\d{4}-\d{2}-\d{2}/.test(iso) ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : iso ?? "");
 const hoje = () => new Date(Date.now() - 3 * 3_600_000).toISOString().slice(0, 10);
