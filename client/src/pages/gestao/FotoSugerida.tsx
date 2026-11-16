@@ -16,7 +16,7 @@ function recortar(img: HTMLImageElement, s: Sugestao): Promise<Blob> {
 }
 
 /** «Encontramos a foto no documento»: mostra o recorte para alguém confirmar. Nada vira foto do cadastro sozinho. */
-export function FotoSugerida({ pessoaId, nome, gerir, aoAceitar }: { pessoaId: number; nome: string; gerir: boolean; aoAceitar: () => void }) {
+export function FotoSugerida({ pessoaId, nome, gerir, aoAceitar, temFoto }: { pessoaId: number; nome: string; gerir: boolean; aoAceitar: () => void; temFoto?: boolean }) {
   const { show } = useToast();
   const [s, setS] = useState<Sugestao | null>(null);
   const [pronta, setPronta] = useState(false);
@@ -46,7 +46,7 @@ export function FotoSugerida({ pessoaId, nome, gerir, aoAceitar }: { pessoaId: n
       <canvas ref={prev} aria-label={`Foto encontrada no documento de ${nome}`} className="h-40 rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-700" />
       <div className="min-w-0 flex-1">
         <h2 className="flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100"><Camera className="h-4 w-4" /> Encontramos uma foto no {s.documento && s.documento !== "outro" && s.documento !== "nenhum" ? s.documento : "documento"} enviado</h2>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">Confira se é {nome.split(" ")[0]} e use como foto do cadastro (aparece na ficha impressa). A cópia do documento usada aqui é apagada assim que você escolher.</p>
+        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">Confira se é {nome.split(" ")[0]} e use como foto do cadastro (aparece na ficha impressa).{temFoto ? " Isto substitui a foto atual." : ""} A cópia do documento usada aqui é apagada assim que você escolher.</p>
         {gerir && <div className="mt-3 flex flex-wrap gap-2"><Button size="sm" loading={ocupado} disabled={!pronta} onClick={() => void aceitar()}>Usar como foto do cadastro</Button><Button size="sm" variant="outline" disabled={ocupado} onClick={() => void dispensar()}>Dispensar</Button></div>}
       </div>
     </section>

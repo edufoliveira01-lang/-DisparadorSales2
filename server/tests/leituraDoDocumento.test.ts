@@ -8,11 +8,13 @@ import { salvarArquivo, obterArquivo } from "../src/services/gestao/arquivos";
 import { identificarArquivo, lerConteudo, leituraConfiavel, dataPlausivel } from "../src/services/gestao/leituraDoDocumento";
 import { listarEssenciais } from "../src/services/gestao/documentosEssenciais";
 import { fotoSugeridaDaPessoa, descartarSugestao } from "../src/services/gestao/fotoSugerida";
+import { salvarFoto, apagarFoto } from "../src/services/gestao/fichaConfig";
 
 const user = { id: null, nome: "Teste" };
 const PNG = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.alloc(64, 1)]);
 const pessoa = Number(db.prepare("INSERT INTO gestao_pessoas(tipo,nome) VALUES ('cliente','Zz Leitura Doc')").run().lastInsertRowid);
-afterAll(() => { descartarSugestao(pessoa); db.prepare("DELETE FROM gestao_arquivos WHERE pessoa_id=?").run(pessoa); db.prepare("DELETE FROM gestao_pessoas WHERE id=?").run(pessoa); });
+const aceitarFoto = () => salvarFoto(pessoa, PNG);
+afterAll(() => { apagarFoto(pessoa); descartarSugestao(pessoa); db.prepare("DELETE FROM gestao_arquivos WHERE pessoa_id=?").run(pessoa); db.prepare("DELETE FROM gestao_pessoas WHERE id=?").run(pessoa); });
 
 describe("identificação do documento pelo CONTEÚDO", () => {
   it("datas: só vale data real, passada e razoável", () => {
@@ -53,5 +55,19 @@ describe("identificação do documento pelo CONTEÚDO", () => {
     expect(r.situacao).toBe("sem_ia");
     expect((await lerConteudo(Buffer.from("x"), "a.exe")).situacao).toBe("tipo_nao_suportado");
     void fs;
+  });
+
+  it("sem certeza do tipo, mas com retrato achado: sugere SÓ a foto; e, ao pedir a identificação à mão, a foto sugerida pode substituir a atual", async () => {
+    const pdfOuImg = salvarArquivo({ pessoaId: pessoa }, "foto-estranha.png", PNG, {}, user);
+    descartarSugestao(pessoa);
+    const duvida = async () => ({ tipo: "outro" as const, data_documento: null, confianca: 0.3, retrato: { x: 0.1, y: 0.1, largura: 0.3, altura: 0.4 } });
+    expect(await identificarArquivo(pdfOuImg.id, duvida)).toEqual({ situacao: "so_foto" });
+    expect(fotoSugeridaDaPessoa(pessoa)).not.toBeNull();
+    expect(obterArquivo(pdfOuImg.id).nome).toBe("foto-estranha.png"); // o arquivo não é renomeado nem classificado
+    // quem já tem foto: automático não sugere; pedido manual (substituir) sugere
+    descartarSugestao(pessoa);
+    aceitarFoto();
+    expect(await identificarArquivo(pdfOuImg.id, duvida)).toEqual({ situacao: "nao_identificado" });
+    expect(await identificarArquivo(pdfOuImg.id, duvida, { substituirFoto: true })).toEqual({ situacao: "so_foto" });
   });
 });

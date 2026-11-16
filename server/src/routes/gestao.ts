@@ -189,9 +189,8 @@ gestaoRouter.post("/pessoas/:id/documentos-essenciais/:slot", corpoBruto, rota((
 gestaoRouter.put("/arquivos/:id/classificar", rota((req) => { const r = classificarArquivo(id(req), req.body?.slot, { data: req.body?.data, padronizar: req.body?.padronizar !== false }); sugerirFotoDoArquivo(id(req), String(req.body?.slot ?? "")); auditAccess("gestao_arquivo_classificado", usuario(req).id, null, { arquivo: id(req), slot: String(req.body?.slot ?? "") }); return r; }));
 gestaoRouter.post("/arquivos/:id/identificar", rota(async (req) => {
   let r;
-  try { r = await identificarArquivo(id(req)); }
+  try { r = await identificarArquivo(id(req), undefined, { substituirFoto: true }); }
   catch (e) { if (e instanceof ErroGestao) throw e; throw new ErroGestao("A IA não conseguiu ler o documento agora. Confira a conexão da conta ChatGPT ou a chave de API e tente de novo.", 502); }
-  if (r.situacao === "classificado") sugerirFotoDoArquivo(id(req), r.slot);
   auditAccess("gestao_arquivo_identificado", usuario(req).id, null, { arquivo: id(req), situacao: r.situacao });
   return r;
 }));

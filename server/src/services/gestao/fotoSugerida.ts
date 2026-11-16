@@ -54,12 +54,12 @@ export function caixaValida(c: CaixaDoRetrato | null): CaixaDoRetrato | null {
 export type ResultadoDaSugestao = "sugerida" | "sem_retrato" | "ja_tem_foto" | "ja_sugerida" | "sem_ia" | "nao_e_imagem" | "grande_demais" | "sem_cadastro";
 
 /** Pré-condições da sugestão de foto: cadastro existente, imagem, sem foto e sem sugestão pendente. Devolve o motivo de não seguir, ou null para seguir. */
-export function podeSugerirFoto(pessoaId: number | null, conteudo: Buffer): ResultadoDaSugestao | null {
+export function podeSugerirFoto(pessoaId: number | null, conteudo: Buffer, opcoes: { substituir?: boolean } = {}): ResultadoDaSugestao | null {
   if (pessoaId === null || !db.prepare("SELECT 1 FROM gestao_pessoas WHERE id=?").get(pessoaId)) return "sem_cadastro";
   const ext = tipoDaImagem(conteudo);
   if (!ext || ext === "ico") return "nao_e_imagem";
   if (conteudo.length > LIMITE_DA_IMAGEM) return "grande_demais";
-  if (fotoDaPessoa(pessoaId)) return "ja_tem_foto";
+  if (fotoDaPessoa(pessoaId) && !opcoes.substituir) return "ja_tem_foto";
   if (db.prepare("SELECT 1 FROM gestao_foto_sugerida WHERE pessoa_id=?").get(pessoaId)) return "ja_sugerida";
   return null;
 }

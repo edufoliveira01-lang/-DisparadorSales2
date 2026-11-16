@@ -60,9 +60,10 @@ export function Arquivos({ escopo, id, aoMudar }: { escopo: "processos" | "pesso
   async function identificar() {
     const a = editar; if (!a) return; setIdentificando(true);
     try {
-      const r = await api.post<{ situacao: string; slot?: string; nome?: string }>(`/gestao/arquivos/${a.id}/identificar`, {});
-      if (r.situacao === "classificado") { show(`Identificado como ${TIPOS_ESSENCIAIS.find(([k]) => k === r.slot)?.[1] ?? r.slot} e renomeado para ${r.nome}.`, "success"); setEditar(null); await carregar(); aoMudar?.(); }
-      else show(r.situacao === "sem_ia" ? "A IA ainda não pode ler este arquivo: conecte a conta ChatGPT ou cadastre uma chave de API em Configurações → Central de IA." : r.situacao === "pdf_sem_leitor" ? "O servidor ainda não consegue abrir PDFs para a IA (falta instalar o pacote poppler-utils). Imagens funcionam; para PDF, classifique à mão por enquanto." : r.situacao === "nao_identificado" ? "Não consegui ter certeza do tipo deste documento. Escolha à mão." : "Este tipo ou tamanho de arquivo não pode ser lido.", "info");
+      const r = await api.post<{ situacao: string; slot?: string; nome?: string; foto?: boolean }>(`/gestao/arquivos/${a.id}/identificar`, {});
+      if (r.situacao === "classificado") { show(`Identificado como ${TIPOS_ESSENCIAIS.find(([k]) => k === r.slot)?.[1] ?? r.slot} e renomeado para ${r.nome}.${r.foto ? " Achei também a foto: confira o cartão no alto da ficha." : ""}`, "success"); setEditar(null); await carregar(); aoMudar?.(); }
+      else if (r.situacao === "so_foto") { show("Não tive certeza de que documento é, mas achei a foto: confira o cartão “Encontramos uma foto” no alto da ficha.", "success"); setEditar(null); aoMudar?.(); }
+      else show(r.situacao === "sem_ia" ? "A IA ainda não pode ler este arquivo: conecte a conta ChatGPT ou cadastre uma chave de API em Configurações → Central de IA." : r.situacao === "pdf_sem_leitor" ? "O servidor ainda não consegue abrir PDFs para a IA (falta instalar o pacote poppler-utils). Imagens funcionam; para PDF, classifique à mão por enquanto." : r.situacao === "nao_identificado" ? "Não consegui ter certeza do tipo deste documento nem achar uma foto. Escolha à mão." : "Este tipo ou tamanho de arquivo não pode ser lido.", "info");
     } catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível identificar.", "error"); }
     finally { setIdentificando(false); }
   }

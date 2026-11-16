@@ -161,7 +161,7 @@ export function ClienteFicha() {
           {gerir && <Button loading={salvando} onClick={() => void salvar()} disabled={!sujo && !novo}><Save className="h-4 w-4" /> Salvar</Button>}
         </div>
       </div>
-      {!novo && <FotoSugerida pessoaId={id} nome={pessoa.nome} gerir={gerir} aoAceitar={() => { setFotoVersao((v) => v + 1); setPessoa((p) => (p ? { ...p, tem_foto: true } : p)); }} />}
+      {!novo && <FotoSugerida key={`fs-${docsVersao}`} temFoto={pessoa.tem_foto} pessoaId={id} nome={pessoa.nome} gerir={gerir} aoAceitar={() => { setFotoVersao((v) => v + 1); setPessoa((p) => (p ? { ...p, tem_foto: true } : p)); }} />}
       {!novo && <FaixaDeCompromissos itens={compromissos} aoAbrir={(a) => setAba(a)} />}
       {!novo && <FaixaDePendencias itens={pend.itens} aoCumprir={(p) => void pend.cumprir(p)} />}
       {!novo && <AvisoDePendencias pessoaId={id} nome={pessoa.nome} itens={pend.itens} aoCumprir={(p) => void pend.cumprir(p)} />}

@@ -48,7 +48,10 @@ export const leitorPadrao: Leitor = async (arquivo) => {
 /** A data só vale se for uma data real que não esteja no futuro. */
 const dataPlausivel = (d: unknown): string | null => (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d)) && d <= hojeSaoPaulo() && d >= "2000-01-01" ? d : null);
 
-export type ResultadoDaLeitura = { situacao: "classificado"; slot: SlotEssencial; data: string | null; nome: string } | { situacao: "nao_identificado" | "sem_ia" | "tipo_nao_suportado" | "grande_demais" | "pdf_sem_leitor" | "nao_e_do_cadastro" };
+export type ResultadoDaLeitura =
+  | { situacao: "classificado"; slot: SlotEssencial; data: string | null; nome: string; foto: boolean }
+  | { situacao: "so_foto" } // não deu para ter certeza do tipo do documento, mas o retrato foi achado e virou sugestão de foto
+  | { situacao: "nao_identificado" | "sem_ia" | "tipo_nao_suportado" | "grande_demais" | "pdf_sem_leitor" | "nao_e_do_cadastro" };
 
 /** Lê o conteúdo e devolve o que a IA entendeu (sem gravar nada). */
 export async function lerConteudo(conteudo: Buffer, nome: string, leitor: Leitor = leitorPadrao): Promise<{ situacao: "ok"; leitura: Leitura } | { situacao: "sem_ia" | "tipo_nao_suportado" | "grande_demais" | "pdf_sem_leitor" }> {
@@ -67,18 +70,24 @@ export async function lerConteudo(conteudo: Buffer, nome: string, leitor: Leitor
 export const leituraConfiavel = (l: Leitura): l is Leitura & { tipo: SlotEssencial } => slotValido(l.tipo) && Number.isFinite(l.confianca) && l.confianca >= CONFIANCA_MINIMA;
 
 /** Arquivo já guardado no cadastro: lê, classifica, renomeia para o padrão e, sendo RG/CNH com retrato, sugere a foto. */
-export async function identificarArquivo(arquivoId: number, leitor: Leitor = leitorPadrao): Promise<ResultadoDaLeitura> {
+export async function identificarArquivo(arquivoId: number, leitor: Leitor = leitorPadrao, opcoes: { substituirFoto?: boolean } = {}): Promise<ResultadoDaLeitura> {
   const a = obterArquivo(arquivoId);
   if (!a.pessoa_id || a.processo_id) return { situacao: "nao_e_do_cadastro" };
   if (!fs.existsSync(a.caminho)) throw new ErroGestao("O arquivo não está mais no servidor.", 404);
   const conteudo = fs.readFileSync(a.caminho);
   const r = await lerConteudo(conteudo, a.nome, leitor);
   if (r.situacao !== "ok") return { situacao: r.situacao };
-  if (!leituraConfiavel(r.leitura)) return { situacao: "nao_identificado" };
-  const data = dataPlausivel(r.leitura.data_documento);
-  const c = classificarArquivo(arquivoId, r.leitura.tipo, { data: data ?? undefined, padronizar: true }) as { nome: string };
-  if ((r.leitura.tipo === "rg" || r.leitura.tipo === "cnh") && r.leitura.retrato && !podeSugerirFoto(a.pessoa_id, conteudo)) registrarSugestao(a.pessoa_id, conteudo, r.leitura.retrato, r.leitura.tipo.toUpperCase(), a.nome);
+  const l = r.leitura;
+  // A FOTO é independente do tipo: se a IA achou um retrato plausível, ele vira sugestão (a confirmação é de uma pessoa) mesmo sem certeza do documento.
+  const sugerirFoto = (documento: string) => {
+    if (!l.retrato || podeSugerirFoto(a.pessoa_id, conteudo, { substituir: opcoes.substituirFoto })) return false;
+    return registrarSugestao(a.pessoa_id!, conteudo, l.retrato, documento, a.nome) === "sugerida";
+  };
+  if (!leituraConfiavel(l)) return sugerirFoto(slotValido(l.tipo) ? l.tipo.toUpperCase() : "documento") ? { situacao: "so_foto" } : { situacao: "nao_identificado" };
+  const data = dataPlausivel(l.data_documento);
+  const c = classificarArquivo(arquivoId, l.tipo, { data: data ?? undefined, padronizar: true }) as { nome: string };
+  const foto = sugerirFoto(l.tipo.toUpperCase());
   db.prepare("UPDATE gestao_arquivos SET descricao=CASE WHEN descricao='' THEN ? ELSE descricao END WHERE id=?").run(`Original: ${a.nome} · identificado automaticamente`, arquivoId);
-  return { situacao: "classificado", slot: r.leitura.tipo, data, nome: c.nome };
+  return { situacao: "classificado", slot: l.tipo, data, nome: c.nome, foto };
 }
 export { dataPlausivel };
