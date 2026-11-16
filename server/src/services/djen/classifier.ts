@@ -173,7 +173,7 @@ CATEGORIAS (podem coexistir apenas se houver fatos efetivos distintos):
 - transito_julgado: certidão ou declaração de trânsito em julgado já ocorrido. "Após o trânsito" é futuro e não vale.
 - emenda_inicial: determinação de emenda ou regularização da petição inicial (documentos, procuração, comprovante de residência) dirigida à parte autora. Informe o prazo no campo providência.
 - citacao_contestacao: citação do réu/INSS, contestação apresentada, réplica ou intimação para manifestar-se sobre a contestação.
-- audiencia: audiência efetivamente designada, redesignada, realizada ou cancelada (conciliação, instrução, julgamento). Perícia continua em "pericia".
+- audiencia: audiência efetivamente designada, redesignada, realizada ou cancelada (conciliação, instrução, julgamento). Perícia continua em "pericia" Quando a publicação trouxer DATA e HORÁRIO explícitos de audiência designada ou redesignada (e não houver perícia agendada na mesma publicação), preencha também o campo agendamento (data, horário e local), como na perícia.
 - implantacao_beneficio: ordem ao INSS/CEAB para implantar, restabelecer ou cumprir tutela, ou comprovação da implantação. Condenação genérica de implantar em sentença não cria esta categoria sozinha.
 - calculos: remessa à contadoria, apresentação, impugnação ou homologação de cálculos/planilha de liquidação.
 - vista_laudo: intimação das partes para ciência, manifestação ou impugnação de laudo já juntado. Não use para ordem ao perito de entregar o laudo.

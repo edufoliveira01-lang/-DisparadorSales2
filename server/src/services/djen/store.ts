@@ -1,3 +1,4 @@
+import { sincronizarCompromisso, refazerPendenciasDoProcesso } from "./compromissoDaPublicacao";
 import { processoFoiExcluido } from "./semVinculo";
 import { classificarComplementar } from "./classificacaoComplementar";
 import { mensagemSeExcederLimite } from "../../licenca/cliente";
@@ -344,7 +345,8 @@ export function importarPublicacoes(
     return novas;
   })();
 }
-const SELECT_PUB = `SELECT p.*,(SELECT MIN(termino) FROM djen_prazos dp WHERE dp.publicacao_id=p.id AND dp.status='aberto') AS proximo_prazo,(SELECT count(*) FROM djen_prazos dp WHERE dp.publicacao_id=p.id AND dp.status='aberto') AS prazos_abertos,pr.numero AS processo,pr.cliente_id,pr.observacoes,c.nome AS cliente_nome,c.telefone AS cliente_telefone
+const SELECT_PUB = `SELECT p.*,(SELECT MIN(termino) FROM djen_prazos dp WHERE dp.publicacao_id=p.id AND dp.status='aberto') AS proximo_prazo,(SELECT count(*) FROM djen_prazos dp WHERE dp.publicacao_id=p.id AND dp.status='aberto') AS prazos_abertos,pr.numero AS processo,pr.cliente_id,pr.observacoes,c.nome AS cliente_nome,c.telefone AS cliente_telefone,
+  (CASE WHEN p.cancelada=0 AND ((p.revisada=0 AND (p.categorias_json LIKE '%"pericia"%' OR p.categorias_json LIKE '%"audiencia"%')) OR p.compromisso_estado='completar') THEN 1 ELSE 0 END) AS prioridade_compromisso
   FROM djen_publicacoes p JOIN djen_processos pr ON pr.chave=p.processo_chave LEFT JOIN contacts c ON c.id=pr.cliente_id`;
 export interface PublicacaoRow {
   tribunal: string;
@@ -736,12 +738,13 @@ export function listarPublicacoes(filtro: Record<string, string>) {
   );
   const grupos = db
     .prepare(
-      `SELECT p.processo_chave,MAX(p.data_disponibilizacao) AS ultima_data,MAX(p.id) AS ultimo_id
+      `SELECT p.processo_chave,MAX(p.data_disponibilizacao) AS ultima_data,MAX(p.id) AS ultimo_id,
+         MAX(CASE WHEN p.cancelada=0 AND ((p.revisada=0 AND (p.categorias_json LIKE '%"pericia"%' OR p.categorias_json LIKE '%"audiencia"%')) OR p.compromisso_estado='completar') THEN 1 ELSE 0 END) AS prioridade
          FROM djen_publicacoes p
          JOIN djen_processos pr ON pr.chave=p.processo_chave
          LEFT JOIN contacts c ON c.id=pr.cliente_id` +
         condition +
-        " GROUP BY p.processo_chave ORDER BY ultima_data DESC,ultimo_id DESC LIMIT 25 OFFSET ?",
+        " GROUP BY p.processo_chave ORDER BY prioridade DESC,ultima_data DESC,ultimo_id DESC LIMIT 25 OFFSET ?",
     )
     .all(...values, (pagina - 1) * 25) as { processo_chave: string }[];
   const rows = grupos.map((grupo) => {
@@ -809,6 +812,8 @@ export function revisarPublicacao(id: number, data: Record<string, unknown>) {
       data.situacao.trim(),
       id,
     );
+  // Perícia/audiência marcada: depois da revisão, o compromisso entra sozinho no controle («Avisar»), ou fica como pendência a completar.
+  try { sincronizarCompromisso(id); } catch (e) { console.warn("[compromisso da publicação]", e instanceof Error ? e.message : "falhou"); }
   registrarHistoricoDjen(
     id,
     "revisao",
@@ -845,6 +850,7 @@ export function salvarProcessoDaPublicacao(
   db.prepare(
     "UPDATE djen_processos SET cliente_id=?,observacoes=? WHERE chave=?",
   ).run(cliente, data.observacoes.trim(), p.processo_chave);
+  if (cliente !== null) { try { refazerPendenciasDoProcesso(p.processo_chave); } catch { /* a pendência continua visível */ } }
   registrarHistoricoDjen(
     id,
     "processo",

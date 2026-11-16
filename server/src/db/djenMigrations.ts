@@ -394,6 +394,11 @@ export function runDjenMigrations(db: Database.Database): void {
     cumprido_em TEXT, observacoes TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`);
+  // Perícia e audiência marcadas numa publicação: o que já foi para o controle («Avisar»), o que falta completar e por quê.
+  {
+    const colsPub = (db.prepare("PRAGMA table_info(djen_publicacoes)").all() as { name: string }[]).map((c) => c.name);
+    for (const col of ["compromisso_estado", "compromisso_motivo", "compromisso_tipo"]) if (colsPub.length && !colsPub.includes(col)) db.exec(`ALTER TABLE djen_publicacoes ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`);
+  }
   // 2.60.0: área do processo (previdenciário, trabalhista, bancário, cível) e listas por área.
   const colunasProcessos = db.prepare("PRAGMA table_info(djen_processos)").all() as { name: string }[];
   if (!colunasProcessos.some((c) => c.name === "area")) db.exec("ALTER TABLE djen_processos ADD COLUMN area TEXT");

@@ -2,6 +2,7 @@ import { HistoryCoverage, RegisterFulfillment, instanteBR, type CoberturaHistori
 import { ActivityBadge, RegisterAction, type AtividadeProcesso } from "@/components/djen/ActivityBadge";
 import { AcompanhamentosLista } from "@/components/djen/Acompanhamentos";
 import { ProcessosSemVinculo } from "@/components/djen/ProcessosSemVinculo";
+import { CompromissosPendentes } from "@/components/djen/CompromissosPendentes";
 import { ContactPicker } from "@/components/djen/ContactPicker";
 import { MultiSelect } from "@/components/ui/MultiSelect";
 import {
@@ -111,6 +112,10 @@ export interface Advogado {
   correspondencia?: string;
 }
 interface Publicacao {
+  prioridade_compromisso?: number;
+  compromisso_estado?: string;
+  compromisso_motivo?: string;
+  compromisso_tipo?: string;
   captured_at?: string;
   historico_djen?: CoberturaHistorico;
   atividade?: AtividadeProcesso | null;
@@ -1020,6 +1025,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
 <div className="process-filter-fields"><div><span className="process-filter-label">Categorias de andamento</span><MultiSelect inline label="Categorias (múltiplas)" placeholder="Todas as categorias" value={filtro.categoria.split(",").filter(Boolean)} options={Object.entries(FILTROS).map(([value, label]) => ({ value, label }))} onChange={(v) => filtrar("categoria", v.join(","))} /></div><div><span className="process-filter-label">Resultado da sentença</span><MultiSelect inline label="Resultado da sentença" placeholder="Todos os resultados" value={filtro.resultado.split(",").filter(Boolean)} options={Object.entries(RESULTADOS).map(([value, label]) => ({ value, label }))} onChange={(v) => filtrar("resultado", v.join(","))} /></div><div><span className="process-filter-label">Advogado</span><MultiSelect inline label="Advogado" placeholder="Todos os advogados" value={filtro.advogado_id.split(",").filter(Boolean)} options={(status?.advogados || []).map((a) => ({ value: String(a.id), label: `${a.nome} · ${a.uf_oab} ${a.numero_oab}` }))} onChange={(v) => filtrar("advogado_id", v.join(","))} /></div><div><span className="process-filter-label">Leitura e pendências</span><MultiSelect inline label="Situação" placeholder="Todas as situações" value={filtro.situacao.split(",").filter(Boolean)} options={[{ value: "nao_lidas", label: "Não lidas" }, { value: "lidas", label: "Lidas" }, { value: "revisar", label: "A revisar" }, { value: "com_prazo", label: "Com prazo em aberto" }]} onChange={(v) => filtrar("situacao", v.join(","))} /></div></div>          </section>
           </aside><div className="process-results">
           {(Boolean(status?.ia.pausa) || (status?.ia.pendentes ?? 0) > 0) && <p className="flex items-center gap-2 text-[11px] text-zinc-500"><Sparkles className="h-3.5 w-3.5" />{status?.ia.pausa ? `Análise pausada: ${status.ia.pausa}` : `${status?.ia.pendentes ?? 0} publicação(ões) aguardando classificação pela IA`}. Classificações pendentes aparecem em Outros até a análise.</p>}
+          <CompromissosPendentes key={`cp-${total}`} aoAbrirPublicacao={(pid) => void abrir(pid)} aoMudar={() => void carregarLista()} />
           <div
             id="navegacao-publicacoes"
             className="sticky top-20 z-20 scroll-mt-24 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white/95 px-4 py-2 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95"
@@ -1168,6 +1174,10 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                                       : "Dados da perícia incompletos"}
                           </Badge>
                         )}
+                        {Boolean(p.prioridade_compromisso) && (p.compromisso_estado === "completar"
+                          ? <Badge tone="warning" title={p.compromisso_motivo}>⚠ {p.compromisso_tipo === "audiencia" ? "Audiência" : "Perícia"}: completar dados para avisar</Badge>
+                          : <Badge tone="danger">● {p.categorias.includes("audiencia" as never) && !p.categorias.includes("pericia" as never) ? "Audiência marcada" : "Perícia marcada"} · revisar agora</Badge>)}
+                        {p.compromisso_estado === "informado" && <Badge tone="success">✓ No controle: vai para “Avisar”</Badge>}
                         {!p.concluida && <ActivityBadge atividade={p.atividade} />}
                         {!p.lida && <Badge tone="accent">● Não lida</Badge>}
                         {Boolean(p.concluida) && <Badge tone="success">Concluída</Badge>}

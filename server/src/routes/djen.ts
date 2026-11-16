@@ -33,6 +33,7 @@ import {
   excluirDocumento,
 } from "../services/djen/workflow";
 import { Router } from "express";
+import { resumoDosCompromissos, sincronizarCompromisso } from "../services/djen/compromissoDaPublicacao";
 import { excluirProcessoDoDjen, listarProcessosSemVinculo, ErroExclusaoDjen } from "../services/djen/semVinculo";
 import { db } from "../db";
 import {
@@ -300,6 +301,16 @@ djenRouter.get(
       ...detalhesPublicacao(publicacaoId),
       pericia_controle: statusControlePericia(publicacaoId),
     });
+  }),
+);
+djenRouter.get("/compromissos/resumo", wrap((_req, res) => res.json(resumoDosCompromissos())));
+djenRouter.post(
+  "/publicacoes/:id/compromisso",
+  wrap((req, res) => {
+    const txt = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 200) : null);
+    const r = sincronizarCompromisso(id(req.params.id), { data: txt(req.body?.data), horario: txt(req.body?.horario), local: txt(req.body?.local) });
+    changed();
+    res.json(r);
   }),
 );
 djenRouter.post(

@@ -49,7 +49,7 @@ const MESES: Record<string, number> = {
   dezembro: 12,
 };
 
-function dataPadrao(value: string | null) {
+export function dataPadrao(value: string | null) {
   if (!value) return null;
   const numerica = value.match(/\b(\d{1,2})\s*[/.\-]\s*(\d{1,2})\s*[/.\-]\s*(\d{4})\b/);
   if (numerica)
@@ -61,7 +61,7 @@ function dataPadrao(value: string | null) {
   return `${extensa[1].padStart(2, "0")}/${String(MESES[extensa[2]]).padStart(2, "0")}/${extensa[3]}`;
 }
 
-function horarioPadrao(value: string | null) {
+export function horarioPadrao(value: string | null) {
   if (!value) return null;
   const match = canon(value).match(/\b(\d{1,2})\s*(?::|h|horas?)\s*(\d{0,2})/);
   if (!match) return null;
@@ -71,13 +71,13 @@ function horarioPadrao(value: string | null) {
   return `${String(hora).padStart(2, "0")}:${String(minuto).padStart(2, "0")}`;
 }
 
-function dataHoraAgendamento(data: string | null, horario: string | null) {
+export function dataHoraAgendamento(data: string | null, horario: string | null) {
   const d = dataPadrao(data);
   const h = horarioPadrao(horario);
   return d && h ? parseBrazilianDate(d, h) : Number.NaN;
 }
 
-function publicacao(id: number) {
+export function publicacao(id: number) {
   return db
     .prepare(
       `SELECT p.id,p.processo_chave,p.categorias_json,p.ia_json,p.texto,
@@ -102,7 +102,7 @@ function publicacao(id: number) {
     | undefined;
 }
 
-function agendamentoDaPublicacao(p: NonNullable<ReturnType<typeof publicacao>>) {
+export function agendamentoDaPublicacao(p: NonNullable<ReturnType<typeof publicacao>>) {
   let analise: AnaliseAgendamento = {};
   try {
     analise = p.ia_json ? JSON.parse(p.ia_json) : {};
@@ -199,26 +199,52 @@ export function statusControlePericia(publicacaoId: number) {
   };
 }
 
-export function adicionarPublicacaoAoControle(publicacaoId: number) {
+/** Quando a análise (IA) não preencheu data/horário/local, procura no próprio texto, perto da palavra «perícia» ou «audiência». */
+export function agendamentoNoTexto(texto: string, tipo: "pericia" | "audiencia") {
+  const palavra = tipo === "audiencia" ? /audi[eê]ncia/i : /per[ií]cia/i;
+  const trechos = texto.split(/(?<=[.;])\s+/);
+  for (let i = 0; i < trechos.length; i++) {
+    if (!palavra.test(trechos[i]!)) continue;
+    // A leitura começa na palavra-chave e ignora o número CNJ do processo (que parece uma data: «8.26.7777»).
+    const junto = trechos.slice(i, i + 2).join(" ").replace(/\b\d{7}-?\d{2}\.?\d{4}\.?\d\.?\d{2}\.?\d{4}\b/g, " ");
+    const comeco = junto.search(palavra);
+    const janela = junto.slice(Math.max(0, comeco), Math.max(0, comeco) + 600);
+    const data = dataPadrao(janela);
+    const hora = janela.match(/\b\d{1,2}\s*(?::|h)\s*\d{0,2}\b/i)?.[0] ?? null;
+    if (!data || !hora) continue;
+    const local = janela.match(/\b(?:sito|situad[oa]|local:|realizad[oa]\s+(?:no|na)|na|no)\s+((?:rua|av\.?|avenida|alameda|pra[cç]a|rodovia|f[oó]rum|sala|vara|consult[oó]rio|cl[ií]nica|hospital|videoconfer[eê]ncia|link)[^.;]{3,140})/i)?.[1]?.trim() ?? null;
+    return { data, horario: hora, local };
+  }
+  return { data: null as string | null, horario: null as string | null, local: null as string | null };
+}
+
+export type CompromissoManual = { data?: string | null; horario?: string | null; local?: string | null };
+export function adicionarPublicacaoAoControle(publicacaoId: number, manual: CompromissoManual = {}) {
   const p = publicacao(publicacaoId);
   if (!p) throw new DjenInputError("Publicação não encontrada.");
   const categorias = JSON.parse(p.categorias_json || "[]") as string[];
-  if (!categorias.includes("pericia"))
-    throw new DjenInputError("A publicação precisa estar classificada como perícia agendada.");
+  const ehPericia = categorias.includes("pericia");
+  if (!ehPericia && !categorias.includes("audiencia"))
+    throw new DjenInputError("A publicação precisa estar classificada como perícia ou audiência marcada.");
   if (!p.cliente_id || !p.cliente_nome)
-    throw new DjenInputError("Vincule o cliente antes de adicionar a perícia ao controle.");
+    throw new DjenInputError("Vincule o cliente antes de adicionar o compromisso ao controle.");
 
-  const agendamento = agendamentoDaPublicacao(p);
+  const tipoDoCompromisso = ehPericia ? "pericia" : "audiencia";
+  const daAnalise = agendamentoDaPublicacao(p);
+  const doTexto = !daAnalise.data || !daAnalise.horario ? agendamentoNoTexto(p.texto, tipoDoCompromisso) : { data: null, horario: null, local: null };
+  const agendamento = {
+    data: manual.data || daAnalise.data || doTexto.data,
+    horario: manual.horario || daAnalise.horario || doTexto.horario,
+    local: manual.local || daAnalise.local || doTexto.local,
+  };
   if (!agendamento.data || !agendamento.horario)
     throw new DjenInputError("A publicação não contém data e horário válidos.");
 
-  const tipo = /per[ií]cia\s+social/i.test(p.texto)
-    ? "Perícia social"
-    : "Perícia médica";
+  const tipo = !ehPericia ? "Audiência" : /per[ií]cia\s+social/i.test(p.texto) ? "Perícia social" : "Perícia médica";
   const data = dataPadrao(agendamento.data);
   const horario = horarioPadrao(agendamento.horario);
   if (!data || !horario)
-    throw new DjenInputError("Não foi possível reconhecer a data e o horário da perícia.");
+    throw new DjenInputError("Não foi possível reconhecer a data e o horário do compromisso.");
   const dados: Pericia = {
     tipo,
     data,
@@ -227,7 +253,7 @@ export function adicionarPublicacaoAoControle(publicacaoId: number) {
     nome: p.cliente_nome,
     telefone: p.telefone || "",
     processo: p.processo,
-    origem: tipo === "Perícia social" ? "social" : "medica",
+    origem: !ehPericia ? "audiencia" : tipo === "Perícia social" ? "social" : "medica",
   };
   const resultado = registrarPericiaAgendadaComResultado(
     `djen:${publicacaoId}`,
@@ -235,19 +261,19 @@ export function adicionarPublicacaoAoControle(publicacaoId: number) {
     "trello_sync",
   );
   if (resultado.status === "data_invalida")
-    throw new DjenInputError("Não foi possível reconhecer a data e o horário da perícia.");
+    throw new DjenInputError("Não foi possível reconhecer a data e o horário do compromisso.");
 
   registrarHistoricoDjen(
     publicacaoId,
     "pericia",
     resultado.status === "duplicada"
-      ? "Perícia conferida no controle existente; nenhuma cópia foi criada."
-      : "Perícia adicionada ao controle de perícias por ação do usuário.",
+      ? `${tipo} conferida no controle existente; nenhuma cópia foi criada.`
+      : `${tipo} adicionada ao controle (Perícias e compromissos → Avisar).`,
   );
   return {
     resultado: resultado.status,
     pericia: resultado.pericia,
-    controle: statusControlePericia(publicacaoId),
+    controle: ehPericia ? statusControlePericia(publicacaoId) : null,
   };
 }
 
