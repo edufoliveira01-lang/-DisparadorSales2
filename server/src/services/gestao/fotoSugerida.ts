@@ -1,9 +1,8 @@
 import { db } from "../../db";
-import { aiConfiguration, aiProfile, apiKeyName, type AiProvider } from "../ai/config";
-import { executeApiStructured, type ImagemParaIa } from "../ai/apiProvider";
+import type { ImagemParaIa } from "../ai/apiProvider";
+import { caminhoAceita, caminhoDeVisao, perguntarComVisao } from "../ai/visao";
 import { ErroGestao } from "./erro";
 import { apagarFoto, apagarImagemDaSugestao, fotoDaPessoa, gravarImagemDaSugestao, imagemDaSugestao, salvarFoto, tipoDaImagem } from "./fichaConfig";
-import { getSetting } from "../settingsService";
 
 /**
  * Foto do cliente sugerida a partir do RG/CNH que ele mandou pelo atendimento. A IA com visão acha o retrato no documento e devolve
@@ -31,22 +30,13 @@ const SCHEMA = {
 } as const;
 const PROMPT = "Você recebe a imagem de um documento enviado por um cliente de escritório de advocacia. Diga se é um documento de identificação com o retrato da pessoa (RG, CNH, passaporte). Se for, devolva o retângulo que contém SÓ a foto do titular (rosto e ombros), em frações de 0 a 1 da largura e altura da imagem inteira. Se a imagem for outra coisa (comprovante de residência, laudo, contrato, print), ou não houver retrato nítido, responda eh_documento_com_foto=false e caixa=null. Não identifique a pessoa e não leia dados do documento.";
 
-/** Quem confere a imagem: a IA configurada no Sales (provedor por API). Sem chave ou com a conta ChatGPT (bloqueada no modo hospedado), não detecta. */
-export function iaComVisaoDisponivel(): { provedor: Exclude<AiProvider, "codex">; modelo: string } | null {
-  try {
-    const c = aiConfiguration();
-    if (c.provider === "codex") return null;
-    if (!(getSetting(apiKeyName(c.provider)) ?? "").trim()) return null;
-    const modelo = aiProfile("economico").modelo;
-    return modelo ? { provedor: c.provider, modelo } : null;
-  } catch { return null; }
-}
+/** Há como olhar a imagem? (chave de API ou conta ChatGPT conectada). Mantido com este nome: os fluxos de foto e de leitura perguntam por ele. */
+export const iaComVisaoDisponivel = () => caminhoDeVisao();
 
 export const detectorPadrao: Detector = async (imagem) => {
-  const ia = iaComVisaoDisponivel();
-  if (!ia) throw new ErroGestao("IA com visão não configurada.", 409);
-  const r = await executeApiStructured(ia.provedor, ia.modelo, PROMPT, SCHEMA, AbortSignal.timeout(60_000), undefined, false, imagem) as Deteccao;
-  return r;
+  const cam = caminhoDeVisao();
+  if (!cam || !caminhoAceita(cam, imagem)) throw new ErroGestao("IA com visão não configurada.", 409);
+  return await perguntarComVisao(PROMPT, SCHEMA, imagem, cam, AbortSignal.timeout(120_000)) as Deteccao;
 };
 
 /** A caixa só vale se for plausível: dentro da imagem e com tamanho de retrato. Ganha uma folga para não cortar a cabeça. */

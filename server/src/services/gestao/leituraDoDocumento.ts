@@ -1,11 +1,12 @@
 import fs from "node:fs";
 import { db } from "../../db";
-import { executeApiStructured, type ImagemParaIa } from "../ai/apiProvider";
+import type { ImagemParaIa } from "../ai/apiProvider";
+import { caminhoAceita, caminhoDeVisao, perguntarComVisao } from "../ai/visao";
 import { hojeSaoPaulo } from "../djen/cache";
 import { ErroGestao } from "./erro";
 import { obterArquivo } from "./arquivos";
 import { classificarArquivo, slotValido, type SlotEssencial } from "./documentosEssenciais";
-import { iaComVisaoDisponivel, podeSugerirFoto, registrarSugestao, type CaixaDoRetrato } from "./fotoSugerida";
+import { podeSugerirFoto, registrarSugestao, type CaixaDoRetrato } from "./fotoSugerida";
 
 /**
  * O sistema LÊ o arquivo (imagem ou PDF) e descobre sozinho que documento é, a data dele e, no RG/CNH, onde está o retrato.
@@ -39,9 +40,9 @@ const LIMITE_IMAGEM = 6 * 1024 * 1024, LIMITE_PDF = 12 * 1024 * 1024, CONFIANCA_
 
 export type Leitor = (arquivo: ImagemParaIa) => Promise<Leitura>;
 export const leitorPadrao: Leitor = async (arquivo) => {
-  const ia = iaComVisaoDisponivel();
-  if (!ia) throw new ErroGestao("IA com visão não configurada.", 409);
-  return await executeApiStructured(ia.provedor, ia.modelo, PROMPT, SCHEMA, AbortSignal.timeout(90_000), undefined, false, arquivo) as Leitura;
+  const cam = caminhoDeVisao();
+  if (!cam || !caminhoAceita(cam, arquivo)) throw new ErroGestao("IA com visão não configurada.", 409);
+  return await perguntarComVisao(PROMPT, SCHEMA, arquivo, cam, AbortSignal.timeout(120_000)) as Leitura;
 };
 
 /** A data só vale se for uma data real que não esteja no futuro. */
@@ -55,7 +56,7 @@ export async function lerConteudo(conteudo: Buffer, nome: string, leitor: Leitor
   const mime = MIME[ext];
   if (!mime) return { situacao: "tipo_nao_suportado" };
   if (conteudo.length > (mime === "application/pdf" ? LIMITE_PDF : LIMITE_IMAGEM)) return { situacao: "grande_demais" };
-  if (leitor === leitorPadrao && !iaComVisaoDisponivel()) return { situacao: "sem_ia" };
+  if (leitor === leitorPadrao) { const cam = caminhoDeVisao(); if (!cam || (mime === "application/pdf" && cam.via === "codex")) return { situacao: "sem_ia" }; }
   const l = await leitor({ mime, base64: conteudo.toString("base64"), nome });
   return { situacao: "ok", leitura: l };
 }
