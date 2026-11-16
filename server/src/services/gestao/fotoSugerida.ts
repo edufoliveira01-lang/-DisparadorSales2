@@ -63,20 +63,33 @@ export function caixaValida(c: CaixaDoRetrato | null): CaixaDoRetrato | null {
 
 export type ResultadoDaSugestao = "sugerida" | "sem_retrato" | "ja_tem_foto" | "ja_sugerida" | "sem_ia" | "nao_e_imagem" | "grande_demais" | "sem_cadastro";
 
-export async function sugerirFotoDoDocumento(pessoaId: number | null, conteudo: Buffer, titulo: string, detector: Detector = detectorPadrao): Promise<ResultadoDaSugestao> {
+/** Pré-condições da sugestão de foto: cadastro existente, imagem, sem foto e sem sugestão pendente. Devolve o motivo de não seguir, ou null para seguir. */
+export function podeSugerirFoto(pessoaId: number | null, conteudo: Buffer): ResultadoDaSugestao | null {
   if (pessoaId === null || !db.prepare("SELECT 1 FROM gestao_pessoas WHERE id=?").get(pessoaId)) return "sem_cadastro";
   const ext = tipoDaImagem(conteudo);
   if (!ext || ext === "ico") return "nao_e_imagem";
   if (conteudo.length > LIMITE_DA_IMAGEM) return "grande_demais";
   if (fotoDaPessoa(pessoaId)) return "ja_tem_foto";
   if (db.prepare("SELECT 1 FROM gestao_foto_sugerida WHERE pessoa_id=?").get(pessoaId)) return "ja_sugerida";
-  if (detector === detectorPadrao && !iaComVisaoDisponivel()) return "sem_ia";
-  const r = await detector({ mime: MIME[ext]!, base64: conteudo.toString("base64") });
-  const caixa = r.eh_documento_com_foto ? caixaValida(r.caixa) : null;
+  return null;
+}
+
+/** Guarda a sugestão (a cópia do documento + a caixa do retrato) quando a caixa é plausível. */
+export function registrarSugestao(pessoaId: number, conteudo: Buffer, caixaBruta: CaixaDoRetrato | null, documento: string, titulo: string): ResultadoDaSugestao {
+  const caixa = caixaValida(caixaBruta);
   if (!caixa) return "sem_retrato";
   gravarImagemDaSugestao(pessoaId, conteudo);
-  db.prepare("INSERT OR REPLACE INTO gestao_foto_sugerida(pessoa_id,x,y,largura,altura,documento,titulo) VALUES (?,?,?,?,?,?,?)").run(pessoaId, caixa.x, caixa.y, caixa.largura, caixa.altura, String(r.tipo_documento ?? "").slice(0, 40), titulo.slice(0, 120));
+  db.prepare("INSERT OR REPLACE INTO gestao_foto_sugerida(pessoa_id,x,y,largura,altura,documento,titulo) VALUES (?,?,?,?,?,?,?)").run(pessoaId, caixa.x, caixa.y, caixa.largura, caixa.altura, String(documento ?? "").slice(0, 40), titulo.slice(0, 120));
   return "sugerida";
+}
+
+export async function sugerirFotoDoDocumento(pessoaId: number | null, conteudo: Buffer, titulo: string, detector: Detector = detectorPadrao): Promise<ResultadoDaSugestao> {
+  const barrou = podeSugerirFoto(pessoaId, conteudo);
+  if (barrou) return barrou;
+  if (detector === detectorPadrao && !iaComVisaoDisponivel()) return "sem_ia";
+  const ext = tipoDaImagem(conteudo)!;
+  const r = await detector({ mime: MIME[ext]!, base64: conteudo.toString("base64") });
+  return registrarSugestao(pessoaId!, conteudo, r.eh_documento_com_foto ? r.caixa : null, r.tipo_documento, titulo);
 }
 
 export interface FotoSugerida { pessoa_id: number; x: number; largura: number; y: number; altura: number; documento: string; titulo: string; criado_em: string }

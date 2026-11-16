@@ -10,7 +10,8 @@ import { ErroZapSign } from "../zapsign/api";
 import { ErroContrato, estadoDoContrato, gerarContrato, type DadosContrato } from "../zapsign/contratos";
 import { ErroArmazenamento } from "../armazenamento/pastas";
 import { baixar, pessoaDoDocumento, receberDocumentoDoChat } from "../armazenamento/chat";
-import { sugerirFotoDoDocumento } from "../services/gestao/fotoSugerida";
+import { podeSugerirFoto, registrarSugestao, sugerirFotoDoDocumento, type CaixaDoRetrato } from "../services/gestao/fotoSugerida";
+import { dataPlausivel, leituraConfiavel, lerConteudo } from "../services/gestao/leituraDoDocumento";
 import { guardarEssencial, identificarSlot } from "../services/gestao/documentosEssenciais";
 import { saudeDoArmazenamento } from "../armazenamento/fila";
 import { guardarRetrato } from "../atendimento/indicadores";
@@ -63,14 +64,21 @@ async function guardarNoCadastro(d: { telefone: string; cpf: string; titulo: str
   try {
     const pessoaId = pessoaDoDocumento(d.cpf, d.telefone);
     if (pessoaId === null) return;
-    const slot = identificarSlot(d.titulo);
-    const imagem = /^(jpe?g|png|webp)$/i.test(d.extensao);
-    const querFoto = imagem && ["DOCUMENTOS PESSOAIS", "A CLASSIFICAR"].includes(d.tipo);
-    if (!slot && !querFoto) return;
+    const ext = d.extensao.toLowerCase();
+    const candidato = ["DOCUMENTOS PESSOAIS", "DOCUMENTOS ADMINISTRATIVO", "A CLASSIFICAR"].includes(d.tipo) && /^(jpe?g|png|webp|pdf)$/.test(ext);
+    let slot = identificarSlot(d.titulo);
+    if (!slot && !candidato) return;
     const conteudo = await baixar(d.url, fetch);
-    if (slot) { try { guardarEssencial(pessoaId, slot, `${d.titulo}.${d.extensao.toLowerCase()}`, conteudo, { user: { id: null, nome: "Atendimento (WhatsApp)" }, origemRef: d.origemRef }); } catch (e) { console.warn("[documento essencial]", e instanceof Error ? e.message : "falhou"); } }
-    if (querFoto) {
-      const r = await sugerirFotoDoDocumento(pessoaId, conteudo, d.titulo);
+    const nome = `${d.titulo}.${ext}`;
+    let data: string | null = null, retrato: CaixaDoRetrato | null = null, documento = "";
+    if (!slot) { // o título não disse: a IA lê o arquivo
+      const r = await lerConteudo(conteudo, nome);
+      if (r.situacao !== "ok" || !leituraConfiavel(r.leitura)) return;
+      slot = r.leitura.tipo; data = dataPlausivel(r.leitura.data_documento); retrato = r.leitura.retrato; documento = slot.toUpperCase();
+    }
+    try { guardarEssencial(pessoaId, slot, nome, conteudo, { data, user: { id: null, nome: "Atendimento (WhatsApp)" }, origemRef: d.origemRef }); } catch (e) { console.warn("[documento essencial]", e instanceof Error ? e.message : "falhou"); }
+    if ((slot === "rg" || slot === "cnh") && /^(jpe?g|png|webp)$/.test(ext) && !podeSugerirFoto(pessoaId, conteudo)) {
+      const r = retrato ? registrarSugestao(pessoaId, conteudo, retrato, documento, d.titulo) : await sugerirFotoDoDocumento(pessoaId, conteudo, d.titulo);
       if (r === "sugerida") auditAccess("foto_sugerida_do_documento", null, null, { pessoa: pessoaId });
     }
   } catch (e) { console.warn("[documento do chat no cadastro]", e instanceof Error ? e.message : "falhou"); }

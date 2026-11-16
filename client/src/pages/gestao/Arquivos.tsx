@@ -46,13 +46,26 @@ export function Arquivos({ escopo, id, aoMudar }: { escopo: "processos" | "pesso
     let ok = 0;
     for (const f of itens) {
       if (f.size > MAX) { show(`${f.name}: passa de 25 MB.`, "error"); continue; }
-      try { await api.upload(`/gestao/${escopo}/${id}/arquivos?nome=${encodeURIComponent(f.name)}&categoria=${encodeURIComponent(categoria)}`, f); ok++; }
+      try {
+        const r = await api.upload<{ identificado_como?: string | null; nome?: string }>(`/gestao/${escopo}/${id}/arquivos?nome=${encodeURIComponent(f.name)}&categoria=${encodeURIComponent(categoria)}`, f); ok++;
+        if (r?.identificado_como) show(`Identificado como ${r.identificado_como}${r.nome && r.nome !== f.name ? ` e renomeado para ${r.nome}` : ""}.`, "success");
+      }
       catch (e) { show(`${f.name}: ${e instanceof ApiError ? e.message : "falha no envio."}`, "error"); }
     }
     if (ok) show(`${ok} arquivo(s) enviado(s).`, "success");
-    setEnviando(false); if (entrada.current) entrada.current.value = ""; await carregar();
+    setEnviando(false); if (entrada.current) entrada.current.value = ""; await carregar(); if (ok) aoMudar?.();
   };
   function abrirEdicao(a: Arq) { setEditar(a); setNovoNome(a.nome); setTipoDoc(a.slot ?? ""); setDataDoc((a.data_documento || a.criado_em).slice(0, 10)); }
+  const [identificando, setIdentificando] = useState(false);
+  async function identificar() {
+    const a = editar; if (!a) return; setIdentificando(true);
+    try {
+      const r = await api.post<{ situacao: string; slot?: string; nome?: string }>(`/gestao/arquivos/${a.id}/identificar`, {});
+      if (r.situacao === "classificado") { show(`Identificado como ${TIPOS_ESSENCIAIS.find(([k]) => k === r.slot)?.[1] ?? r.slot} e renomeado para ${r.nome}.`, "success"); setEditar(null); await carregar(); aoMudar?.(); }
+      else show(r.situacao === "sem_ia" ? "A IA com leitura de documentos ainda não está configurada (Configurações → Central de IA, com chave de API)." : r.situacao === "nao_identificado" ? "Não consegui ter certeza do tipo deste documento. Escolha à mão." : "Este tipo ou tamanho de arquivo não pode ser lido.", "info");
+    } catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível identificar.", "error"); }
+    finally { setIdentificando(false); }
+  }
   async function salvarEdicao() {
     const a = editar; if (!a) return; setSalvandoEdicao(true);
     try {
@@ -112,6 +125,7 @@ export function Arquivos({ escopo, id, aoMudar }: { escopo: "processos" | "pesso
         <Modal open={Boolean(editar)} onClose={() => setEditar(null)} title="Renomear ou classificar" description="Se este arquivo é um dos documentos essenciais, escolha qual: ele passa a valer no lugar do anterior, pela data do documento." maxWidth="max-w-md"
           footer={<div className="flex w-full justify-end gap-2"><Button variant="outline" onClick={() => setEditar(null)}>Cancelar</Button><Button loading={salvandoEdicao} onClick={() => void salvarEdicao()}>Salvar</Button></div>}>
           <div className="space-y-3 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50"><span className="text-xs text-zinc-600 dark:text-zinc-300">Deixe o sistema ler o arquivo e descobrir que documento é, a data e o nome certo.</span><Button size="sm" variant="outline" loading={identificando} onClick={() => void identificar()}>Identificar automaticamente</Button></div>
             <label className="block"><span className="font-medium text-zinc-800 dark:text-zinc-200">Este arquivo é</span>
               <select value={tipoDoc} onChange={(e) => setTipoDoc(e.target.value)} className="mt-1.5 w-full rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"><option value="">Outro documento (comum)</option>{TIPOS_ESSENCIAIS.map(([k, r]) => <option key={k} value={k}>{r}</option>)}</select></label>
             {tipoDoc && <label className="block"><span className="font-medium text-zinc-800 dark:text-zinc-200">Data do documento</span><Input type="date" value={dataDoc} onChange={(e) => setDataDoc(e.target.value)} className="mt-1.5" /><span className="mt-1 block text-xs text-zinc-500">Ao classificar, o nome vira o padrão (AAAA-MM-DD - Documento), a menos que você mude o nome abaixo.</span></label>}

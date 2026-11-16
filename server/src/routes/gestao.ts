@@ -23,6 +23,7 @@ import { fichaDeCadastroHtml, fichaDeExemplo } from "../services/gestao/ficha";
 import { vinculosDaPessoa, criarVinculo, removerVinculo, periciasInssDaPessoa, listarPericiasInss, criarPericiaInss, atualizarPericiaInss, excluirPericiaInss, TIPOS_DE_VINCULO, TIPOS_PERICIA_INSS, STATUS_PERICIA_INSS, RESULTADOS_PERICIA_INSS } from "../services/gestao/vinculos";
 import { ESSENCIAIS, classificarArquivo, guardarEssencial, identificarSlot, listarEssenciais, renomearArquivo, slotValido } from "../services/gestao/documentosEssenciais";
 import { sugerirFotoDoDocumento } from "../services/gestao/fotoSugerida";
+import { identificarArquivo } from "../services/gestao/leituraDoDocumento";
 import { aceitarSugestao, descartarSugestao, fotoSugeridaDaPessoa } from "../services/gestao/fotoSugerida";
 import { contratoForaDoSistema, marcarContratoFora, marcarContratoForaEmLote } from "../armazenamento/chat";
 import { PADRAO as FICHA_PADRAO, ROTULO_SECAO, apagarFoto, apagarImagem, apagarLogo, fotoDaPessoa, imagemAtual, imagemDaSugestao, lerConfig, logoAtual, nomeDeImagemValido, salvarConfig, salvarFoto, salvarImagem, salvarLogo } from "../services/gestao/fichaConfig";
@@ -146,16 +147,26 @@ function sugerirFotoDoArquivo(arquivoId: number, slot: string) {
     void sugerirFotoDoDocumento(a.pessoa_id, fs.readFileSync(a.caminho), a.nome).catch(() => undefined);
   } catch { /* sugestão é extra: nunca atrapalha o envio */ }
 }
-const enviar = (escopo: "processo" | "pessoa") => rota((req, res) => {
+const enviar = (escopo: "processo" | "pessoa") => rota(async (req, res) => {
   const u = usuario(req);
   const e = escopo === "processo" ? { processoId: id(req) } : { pessoaId: id(req) };
   const a = salvarArquivo(e, req.query.nome, Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0), { categoria: String(req.query.categoria ?? ""), descricao: String(req.query.descricao ?? "") }, { id: u.id, nome: nomeDe(u) });
-  // Um RG, CNIS, comprovante… enviado como arquivo comum é reconhecido pelo nome e entra no espaço certo (o nome só muda se a pessoa pedir).
-  const reconhecido = escopo === "pessoa" ? identificarSlot(a.nome, String(req.query.categoria ?? "")) : null;
-  if (reconhecido) { classificarArquivo(a.id, reconhecido, { padronizar: false }); sugerirFotoDoArquivo(a.id, reconhecido); a.categoria = ESSENCIAIS[reconhecido].rotulo; (a as { slot?: string }).slot = reconhecido; }
+  let identificado: string | null = null;
+  if (escopo === "pessoa") {
+    // 1) pelo nome (de graça); 2) se o nome não disse, a IA LÊ o arquivo, descobre o documento e acerta nome e data.
+    const reconhecido = identificarSlot(a.nome, String(req.query.categoria ?? ""));
+    if (reconhecido) { classificarArquivo(a.id, reconhecido, { padronizar: false }); sugerirFotoDoArquivo(a.id, reconhecido); identificado = reconhecido; }
+    else {
+      try {
+        const r = await Promise.race([identificarArquivo(a.id), new Promise<null>((ok) => setTimeout(() => ok(null), 40_000))]);
+        if (r && r.situacao === "classificado") identificado = r.slot;
+      } catch { /* sem IA ou falha do provedor: o arquivo fica como comum e dá para classificar à mão */ }
+    }
+  }
   res.status(201);
-  const { armazenado: _x, ...publico } = a;
-  return publico;
+  const atual = obterArquivo(a.id);
+  const { armazenado: _x, caminho: _c, ...publico } = atual;
+  return { ...publico, identificado_como: identificado ? ESSENCIAIS[identificado as keyof typeof ESSENCIAIS].rotulo : null };
 });
 gestaoRouter.get("/pessoas/:id/documentos-essenciais", rota((req) => ({ itens: listarEssenciais(id(req)) })));
 gestaoRouter.post("/pessoas/:id/documentos-essenciais/:slot", corpoBruto, rota((req, res) => {
@@ -168,6 +179,12 @@ gestaoRouter.post("/pessoas/:id/documentos-essenciais/:slot", corpoBruto, rota((
   return { ...r, itens: listarEssenciais(id(req)) };
 }));
 gestaoRouter.put("/arquivos/:id/classificar", rota((req) => { const r = classificarArquivo(id(req), req.body?.slot, { data: req.body?.data, padronizar: req.body?.padronizar !== false }); sugerirFotoDoArquivo(id(req), String(req.body?.slot ?? "")); auditAccess("gestao_arquivo_classificado", usuario(req).id, null, { arquivo: id(req), slot: String(req.body?.slot ?? "") }); return r; }));
+gestaoRouter.post("/arquivos/:id/identificar", rota(async (req) => {
+  const r = await identificarArquivo(id(req));
+  if (r.situacao === "classificado") sugerirFotoDoArquivo(id(req), r.slot);
+  auditAccess("gestao_arquivo_identificado", usuario(req).id, null, { arquivo: id(req), situacao: r.situacao });
+  return r;
+}));
 gestaoRouter.put("/arquivos/:id/nome", rota((req) => { const r = renomearArquivo(id(req), req.body?.nome); auditAccess("gestao_arquivo_renomeado", usuario(req).id, null, { arquivo: id(req) }); return r; }));
 gestaoRouter.get("/armazenamento", rota(() => usoDeArmazenamento()));
 gestaoRouter.get("/processos/:id/arquivos", rota((req) => listarArquivos({ processoId: id(req) })));
