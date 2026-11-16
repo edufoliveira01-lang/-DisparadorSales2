@@ -21,6 +21,7 @@ import { adicionarCamposPrevidenciarios, atualizarCampo, criarCampo, excluirCamp
 import { anotacaoRapida, anotacoesDaPessoa, anotarNaPessoa, cumprirPendencia, marcarComoImportante, pendenciasDaPessoa, removerAnotacaoDaPessoa } from "../services/gestao/anotacoes";
 import { fichaDeCadastroHtml, fichaDeExemplo } from "../services/gestao/ficha";
 import { vinculosDaPessoa, criarVinculo, removerVinculo, periciasInssDaPessoa, listarPericiasInss, criarPericiaInss, atualizarPericiaInss, excluirPericiaInss, TIPOS_DE_VINCULO, TIPOS_PERICIA_INSS, STATUS_PERICIA_INSS, RESULTADOS_PERICIA_INSS } from "../services/gestao/vinculos";
+import { ESSENCIAIS, classificarArquivo, guardarEssencial, identificarSlot, listarEssenciais, renomearArquivo, slotValido } from "../services/gestao/documentosEssenciais";
 import { aceitarSugestao, descartarSugestao, fotoSugeridaDaPessoa } from "../services/gestao/fotoSugerida";
 import { contratoForaDoSistema, marcarContratoFora, marcarContratoForaEmLote } from "../armazenamento/chat";
 import { PADRAO as FICHA_PADRAO, ROTULO_SECAO, apagarFoto, apagarImagem, apagarLogo, fotoDaPessoa, imagemAtual, imagemDaSugestao, lerConfig, logoAtual, nomeDeImagemValido, salvarConfig, salvarFoto, salvarImagem, salvarLogo } from "../services/gestao/fichaConfig";
@@ -139,10 +140,24 @@ const enviar = (escopo: "processo" | "pessoa") => rota((req, res) => {
   const u = usuario(req);
   const e = escopo === "processo" ? { processoId: id(req) } : { pessoaId: id(req) };
   const a = salvarArquivo(e, req.query.nome, Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0), { categoria: String(req.query.categoria ?? ""), descricao: String(req.query.descricao ?? "") }, { id: u.id, nome: nomeDe(u) });
+  // Um RG, CNIS, comprovante… enviado como arquivo comum é reconhecido pelo nome e entra no espaço certo (o nome só muda se a pessoa pedir).
+  const reconhecido = escopo === "pessoa" ? identificarSlot(a.nome, String(req.query.categoria ?? "")) : null;
+  if (reconhecido) { classificarArquivo(a.id, reconhecido, { padronizar: false }); a.categoria = ESSENCIAIS[reconhecido].rotulo; (a as { slot?: string }).slot = reconhecido; }
   res.status(201);
   const { armazenado: _x, ...publico } = a;
   return publico;
 });
+gestaoRouter.get("/pessoas/:id/documentos-essenciais", rota((req) => ({ itens: listarEssenciais(id(req)) })));
+gestaoRouter.post("/pessoas/:id/documentos-essenciais/:slot", corpoBruto, rota((req, res) => {
+  const slot = req.params.slot;
+  if (!slotValido(slot)) throw new ErroGestao("Documento inválido.", 400);
+  const u = usuario(req);
+  const r = guardarEssencial(id(req), slot, String(req.query.nome ?? ""), Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0), { data: typeof req.query.data === "string" ? req.query.data : null, user: { id: u.id, nome: nomeDe(u) } });
+  res.status(201);
+  return { ...r, itens: listarEssenciais(id(req)) };
+}));
+gestaoRouter.put("/arquivos/:id/classificar", rota((req) => { const r = classificarArquivo(id(req), req.body?.slot, { data: req.body?.data, padronizar: req.body?.padronizar !== false }); auditAccess("gestao_arquivo_classificado", usuario(req).id, null, { arquivo: id(req), slot: String(req.body?.slot ?? "") }); return r; }));
+gestaoRouter.put("/arquivos/:id/nome", rota((req) => { const r = renomearArquivo(id(req), req.body?.nome); auditAccess("gestao_arquivo_renomeado", usuario(req).id, null, { arquivo: id(req) }); return r; }));
 gestaoRouter.get("/armazenamento", rota(() => usoDeArmazenamento()));
 gestaoRouter.get("/processos/:id/arquivos", rota((req) => listarArquivos({ processoId: id(req) })));
 gestaoRouter.post("/processos/:id/arquivos", corpoBruto, enviar("processo"));

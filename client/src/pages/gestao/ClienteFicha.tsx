@@ -19,6 +19,7 @@ import { AnotacoesPessoa } from "./AnotacoesPessoa";
 import { AvisoDePendencias, FaixaDePendencias, SeloDePendencias, usePendencias } from "./PendenciasDoCliente";
 import { NegocioDaPessoa } from "./NegocioDaPessoa";
 import { Vinculos } from "./Vinculos";
+import { DocumentosEssenciais } from "./DocumentosEssenciais";
 import { FotoSugerida } from "./FotoSugerida";
 import { CopiarTexto, AbrirNoTribunal } from "@/components/CopiarTexto";
 import { FaixaDeCompromissos, SeloDeCompromissos, useCompromissos } from "./AvisoDeCompromissos";
@@ -70,6 +71,7 @@ export function ClienteFicha() {
   const numeroRef = useRef<HTMLInputElement>(null);
   const fotoRef = useRef<HTMLInputElement>(null);
   const [fotoVersao, setFotoVersao] = useState(0);
+  const [docsVersao, setDocsVersao] = useState(0);
 
   const carregar = useCallback(async () => {
     if (novo) { try { const c = await api.get<{ campos: CampoValor[] }>("/gestao/campos?entidade=pessoa"); setPessoa((p) => ({ ...(p ?? vazia()), campos: c.campos.map((x) => ({ ...x, valor: "", preenchido: false, imprimir: true })) })); } catch { /* campos indisponíveis */ } return; }
@@ -241,7 +243,9 @@ export function ClienteFicha() {
       {!novo && aba === "documentos" && (
         <section className="space-y-4">
           {gerir && <div className="flex flex-wrap items-center justify-between gap-3 surface-panel p-4"><p className="text-sm text-zinc-600 dark:text-zinc-300">Procuração, contrato, declarações e os documentos próprios do escritório, com cabeçalho e rodapé.</p><Button onClick={() => (sujo ? show("Salve as alterações antes de gerar os documentos.", "info") : setDocs(true))}><FileText className="h-4 w-4" /> Gerar documentos</Button></div>}
-          <Arquivos escopo="pessoas" id={id} />
+          <DocumentosEssenciais key={docsVersao} pessoaId={id} gerir={gerir} />
+          <h3 className="pt-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">Todos os arquivos</h3>
+          <Arquivos escopo="pessoas" id={id} aoMudar={() => setDocsVersao((v) => v + 1)} />
         </section>
       )}
       {!novo && aba === "anotacoes" && <AnotacoesPessoa id={id} nome={pessoa.nome} gerir={gerir} />}

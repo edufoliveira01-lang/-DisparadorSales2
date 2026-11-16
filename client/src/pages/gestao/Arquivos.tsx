@@ -1,20 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Download, Eye, FileText, Trash2, Upload, History } from "lucide-react";
+import { Download, Eye, FileText, Pencil, Trash2, Upload, History } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
 import { dataBr, tamanho } from "./comum";
 
 interface Versao { id: number; nome: string; tamanho: number; versao: number; autor: string; criado_em: string; categoria: string }
-interface Arq extends Versao { exibivel: boolean; descricao: string; versoes: Versao[] }
+interface Arq extends Versao { exibivel: boolean; descricao: string; versoes: Versao[]; slot?: string; data_documento?: string }
+const TIPOS_ESSENCIAIS: [string, string][] = [["rg", "RG"], ["cpf", "CPF"], ["cnh", "CNH"], ["comprovante", "Comprovante de residência"], ["cnis", "CNIS"]];
 interface Uso { usado_bytes: number; limite_bytes: number | null; limite_mb: number | null }
 const MAX = 25 * 1024 * 1024;
 
 /** Arquivos de uma pasta (processo) ou de uma pessoa: envio, versões, visualização e download. */
-export function Arquivos({ escopo, id }: { escopo: "processos" | "pessoas"; id: number }) {
+export function Arquivos({ escopo, id, aoMudar }: { escopo: "processos" | "pessoas"; id: number; aoMudar?: () => void }) {
   const { can } = useAuth();
   const { show } = useToast();
   const gerir = can("gestao.manage");
@@ -25,6 +27,11 @@ export function Arquivos({ escopo, id }: { escopo: "processos" | "pessoas"; id: 
   const [arrastando, setArrastando] = useState(false);
   const [apagar, setApagar] = useState<Versao | null>(null);
   const [abertas, setAbertas] = useState<Set<number>>(new Set());
+  const [editar, setEditar] = useState<Arq | null>(null);
+  const [novoNome, setNovoNome] = useState("");
+  const [tipoDoc, setTipoDoc] = useState("");
+  const [dataDoc, setDataDoc] = useState("");
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false);
   const entrada = useRef<HTMLInputElement>(null);
 
   const carregar = useCallback(async () => {
@@ -45,6 +52,16 @@ export function Arquivos({ escopo, id }: { escopo: "processos" | "pessoas"; id: 
     if (ok) show(`${ok} arquivo(s) enviado(s).`, "success");
     setEnviando(false); if (entrada.current) entrada.current.value = ""; await carregar();
   };
+  function abrirEdicao(a: Arq) { setEditar(a); setNovoNome(a.nome); setTipoDoc(a.slot ?? ""); setDataDoc((a.data_documento || a.criado_em).slice(0, 10)); }
+  async function salvarEdicao() {
+    const a = editar; if (!a) return; setSalvandoEdicao(true);
+    try {
+      if ((a.slot ?? "") !== tipoDoc) await api.put(`/gestao/arquivos/${a.id}/classificar`, { slot: tipoDoc, data: dataDoc, padronizar: Boolean(tipoDoc) && novoNome === a.nome });
+      if (novoNome !== a.nome) await api.put(`/gestao/arquivos/${a.id}/nome`, { nome: novoNome });
+      show("Arquivo atualizado.", "success"); setEditar(null); await carregar(); aoMudar?.();
+    } catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível salvar.", "error"); }
+    finally { setSalvandoEdicao(false); }
+  }
   const excluir = async () => {
     if (!apagar) return;
     try { await api.delete(`/gestao/arquivos/${apagar.id}`); show("Arquivo apagado.", "success"); setApagar(null); await carregar(); }
@@ -76,11 +93,12 @@ export function Arquivos({ escopo, id }: { escopo: "processos" | "pessoas"; id: 
               <div className="flex items-center gap-3">
                 <FileText className="h-5 w-5 shrink-0 text-zinc-400" />
                 <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{a.nome}{a.versao > 1 && <span className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">v{a.versao}</span>}</p>
-                  <p className="truncate text-xs text-zinc-500">{tamanho(a.tamanho)} · {dataBr(a.criado_em)} · {a.autor || "—"}{a.categoria ? ` · ${a.categoria}` : ""}</p></div>
+                  <p className="truncate text-xs text-zinc-500">{tamanho(a.tamanho)} · {dataBr(a.criado_em)} · {a.autor || "—"}{a.categoria ? ` · ${a.categoria}` : ""}{a.slot ? " · documento essencial" : ""}</p></div>
                 <div className="flex shrink-0 items-center gap-1">
                   {a.versoes.length > 0 && <button type="button" title="Versões anteriores" aria-label="Versões anteriores" className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800" onClick={() => setAbertas((s) => { const n = new Set(s); n.has(a.id) ? n.delete(a.id) : n.add(a.id); return n; })}><History className="h-4 w-4" /></button>}
                   {a.exibivel && <a href={link(a, true)} target="_blank" rel="noopener noreferrer" title="Ver" aria-label={`Ver ${a.nome}`} className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><Eye className="h-4 w-4" /></a>}
                   <a href={link(a)} title="Baixar" aria-label={`Baixar ${a.nome}`} className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><Download className="h-4 w-4" /></a>
+                  {gerir && <button type="button" title="Renomear ou classificar" aria-label={`Renomear ou classificar ${a.nome}`} className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800" onClick={() => abrirEdicao(a)}><Pencil className="h-4 w-4" /></button>}
                   {gerir && <button type="button" title="Apagar" aria-label={`Apagar ${a.nome}`} className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-red-600 dark:hover:bg-zinc-800" onClick={() => setApagar(a)}><Trash2 className="h-4 w-4" /></button>}
                 </div>
               </div>
@@ -90,6 +108,16 @@ export function Arquivos({ escopo, id }: { escopo: "processos" | "pessoas"; id: 
           ))}
         </ul>
       )}
+      {escopo === "pessoas" && (
+        <Modal open={Boolean(editar)} onClose={() => setEditar(null)} title="Renomear ou classificar" description="Se este arquivo é um dos documentos essenciais, escolha qual: ele passa a valer no lugar do anterior, pela data do documento." maxWidth="max-w-md"
+          footer={<div className="flex w-full justify-end gap-2"><Button variant="outline" onClick={() => setEditar(null)}>Cancelar</Button><Button loading={salvandoEdicao} onClick={() => void salvarEdicao()}>Salvar</Button></div>}>
+          <div className="space-y-3 text-sm">
+            <label className="block"><span className="font-medium text-zinc-800 dark:text-zinc-200">Este arquivo é</span>
+              <select value={tipoDoc} onChange={(e) => setTipoDoc(e.target.value)} className="mt-1.5 w-full rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"><option value="">Outro documento (comum)</option>{TIPOS_ESSENCIAIS.map(([k, r]) => <option key={k} value={k}>{r}</option>)}</select></label>
+            {tipoDoc && <label className="block"><span className="font-medium text-zinc-800 dark:text-zinc-200">Data do documento</span><Input type="date" value={dataDoc} onChange={(e) => setDataDoc(e.target.value)} className="mt-1.5" /><span className="mt-1 block text-xs text-zinc-500">Ao classificar, o nome vira o padrão (AAAA-MM-DD - Documento), a menos que você mude o nome abaixo.</span></label>}
+            <label className="block"><span className="font-medium text-zinc-800 dark:text-zinc-200">Nome do arquivo</span><Input value={novoNome} onChange={(e) => setNovoNome(e.target.value)} className="mt-1.5" maxLength={180} /></label>
+          </div>
+        </Modal>)}
       <ConfirmDialog open={Boolean(apagar)} title="Apagar arquivo" message={`Apagar ${apagar?.nome} (v${apagar?.versao})? O arquivo é removido do servidor e não pode ser recuperado.`} confirmLabel="Apagar" onConfirm={() => void excluir()} onCancel={() => setApagar(null)} />
     </div>
   );

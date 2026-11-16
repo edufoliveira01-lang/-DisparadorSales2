@@ -196,6 +196,12 @@ export function runGestaoMigrations(db: Database.Database) {
     x REAL NOT NULL, y REAL NOT NULL, largura REAL NOT NULL, altura REAL NOT NULL,
     documento TEXT NOT NULL DEFAULT '', titulo TEXT NOT NULL DEFAULT '', criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`);
+  // Documentos essenciais do cliente (RG, CPF, CNH, comprovante de residência, CNIS): qual é o «espaço» do arquivo e a data do documento.
+  {
+    const colsArq = (db.prepare("PRAGMA table_info(gestao_arquivos)").all() as { name: string }[]).map((c) => c.name);
+    if (colsArq.length && !colsArq.includes("slot")) db.exec("ALTER TABLE gestao_arquivos ADD COLUMN slot TEXT NOT NULL DEFAULT ''");
+    if (colsArq.length && !colsArq.includes("data_documento")) db.exec("ALTER TABLE gestao_arquivos ADD COLUMN data_documento TEXT NOT NULL DEFAULT ''");
+  }
   // Anotação IMPORTANTE (pendência): fica em destaque no cadastro do cliente até alguém marcar como cumprida.
   for (const tabela of ["gestao_anotacoes", "gestao_anotacoes_pessoa"]) {
     const cols = (db.prepare(`PRAGMA table_info(${tabela})`).all() as { name: string }[]).map((c) => c.name);
