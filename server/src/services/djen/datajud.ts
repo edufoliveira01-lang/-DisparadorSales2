@@ -7,6 +7,7 @@
 import { db } from "../../db";
 import { getSetting, setSetting } from "../settingsService";
 import { tribunalDoCnj } from "../gestao/validacao";
+import { descreverFalhaDeRede } from "../gestao/asaas";
 
 const BASE = "https://api-publica.datajud.cnj.jus.br";
 const CHAVE = "datajud_chave";
@@ -67,15 +68,22 @@ export function normalizarDataJud(resposta: unknown): DadosDataJud | null {
 export async function buscarNoDataJud(chave: string, apiKey: string, http: typeof fetch = fetch): Promise<DadosDataJud | null> {
   const alias = aliasDoTribunal(chave);
   if (!alias) throw new ErroDataJud("O DataJud não cobre o tribunal deste número.", 422);
-  let r: Response;
-  try {
-    r = await http(`${BASE}/api_publica_${alias}/_search`, {
-      method: "POST",
-      headers: { Authorization: `APIKey ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ size: 5, query: { match: { numeroProcesso: chave } } }),
-      signal: AbortSignal.timeout(25_000),
-    });
-  } catch { throw new ErroDataJud("Não foi possível acessar o DataJud (rede ou demora)."); }
+  // O DataJud é lento e instável em horários de pico: 60 s por tentativa e, se estourar o tempo ou der erro de rede/5xx, mais uma tentativa.
+  const LIMITE_MS = 60_000;
+  let r: Response | null = null; let causa = "";
+  for (let tentativa = 1; tentativa <= 2 && !r; tentativa++) {
+    try {
+      const resp = await http(`${BASE}/api_publica_${alias}/_search`, {
+        method: "POST",
+        headers: { Authorization: `APIKey ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ size: 5, query: { match: { numeroProcesso: chave } } }),
+        signal: AbortSignal.timeout(LIMITE_MS),
+      });
+      if (resp.status >= 500 && tentativa === 1) { causa = `o DataJud respondeu HTTP ${resp.status}`; await resp.body?.cancel(); continue; }
+      r = resp;
+    } catch (e) { causa = descreverFalhaDeRede(e, LIMITE_MS); }
+  }
+  if (!r) throw new ErroDataJud(`Não foi possível acessar o DataJud (${causa}). O serviço do CNJ costuma ficar lento: tente de novo em alguns minutos.`);
   if (r.status === 401 || r.status === 403) throw new ErroDataJud("O DataJud recusou a chave. Confira, em Configurações → DataJud, se ela é a chave pública vigente do CNJ.", 401);
   if (!r.ok) throw new ErroDataJud(`O DataJud respondeu HTTP ${r.status}.`);
   try { return normalizarDataJud(await r.json()); } catch { throw new ErroDataJud("O DataJud devolveu uma resposta que não consegui ler."); }
