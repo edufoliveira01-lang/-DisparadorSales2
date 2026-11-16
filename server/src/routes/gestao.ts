@@ -22,6 +22,7 @@ import { anotacaoRapida, anotacoesDaPessoa, anotarNaPessoa, cumprirPendencia, ma
 import { fichaDeCadastroHtml, fichaDeExemplo } from "../services/gestao/ficha";
 import { vinculosDaPessoa, criarVinculo, removerVinculo, periciasInssDaPessoa, listarPericiasInss, criarPericiaInss, atualizarPericiaInss, excluirPericiaInss, TIPOS_DE_VINCULO, TIPOS_PERICIA_INSS, STATUS_PERICIA_INSS, RESULTADOS_PERICIA_INSS } from "../services/gestao/vinculos";
 import { ESSENCIAIS, classificarArquivo, guardarEssencial, identificarSlot, listarEssenciais, renomearArquivo, slotValido } from "../services/gestao/documentosEssenciais";
+import { sugerirFotoDoDocumento } from "../services/gestao/fotoSugerida";
 import { aceitarSugestao, descartarSugestao, fotoSugeridaDaPessoa } from "../services/gestao/fotoSugerida";
 import { contratoForaDoSistema, marcarContratoFora, marcarContratoForaEmLote } from "../armazenamento/chat";
 import { PADRAO as FICHA_PADRAO, ROTULO_SECAO, apagarFoto, apagarImagem, apagarLogo, fotoDaPessoa, imagemAtual, imagemDaSugestao, lerConfig, logoAtual, nomeDeImagemValido, salvarConfig, salvarFoto, salvarImagem, salvarLogo } from "../services/gestao/fichaConfig";
@@ -136,13 +137,22 @@ gestaoRouter.post("/anotacao-rapida", rota((req, res) => { const u = usuario(req
 
 // ---------- arquivos ----------
 const corpoBruto = express.raw({ type: () => true, limit: TAMANHO_MAXIMO + 1024 });
+/** RG/CNH em imagem: procura o retrato para sugerir a foto do cadastro (segundo plano, só se não houver foto e a IA com visão estiver configurada). */
+function sugerirFotoDoArquivo(arquivoId: number, slot: string) {
+  if (slot !== "rg" && slot !== "cnh") return;
+  try {
+    const a = obterArquivo(arquivoId);
+    if (!a.pessoa_id || !/^image\/(jpeg|png|webp)$/.test(a.mime) || !fs.existsSync(a.caminho)) return;
+    void sugerirFotoDoDocumento(a.pessoa_id, fs.readFileSync(a.caminho), a.nome).catch(() => undefined);
+  } catch { /* sugestão é extra: nunca atrapalha o envio */ }
+}
 const enviar = (escopo: "processo" | "pessoa") => rota((req, res) => {
   const u = usuario(req);
   const e = escopo === "processo" ? { processoId: id(req) } : { pessoaId: id(req) };
   const a = salvarArquivo(e, req.query.nome, Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0), { categoria: String(req.query.categoria ?? ""), descricao: String(req.query.descricao ?? "") }, { id: u.id, nome: nomeDe(u) });
   // Um RG, CNIS, comprovante… enviado como arquivo comum é reconhecido pelo nome e entra no espaço certo (o nome só muda se a pessoa pedir).
   const reconhecido = escopo === "pessoa" ? identificarSlot(a.nome, String(req.query.categoria ?? "")) : null;
-  if (reconhecido) { classificarArquivo(a.id, reconhecido, { padronizar: false }); a.categoria = ESSENCIAIS[reconhecido].rotulo; (a as { slot?: string }).slot = reconhecido; }
+  if (reconhecido) { classificarArquivo(a.id, reconhecido, { padronizar: false }); sugerirFotoDoArquivo(a.id, reconhecido); a.categoria = ESSENCIAIS[reconhecido].rotulo; (a as { slot?: string }).slot = reconhecido; }
   res.status(201);
   const { armazenado: _x, ...publico } = a;
   return publico;
@@ -153,10 +163,11 @@ gestaoRouter.post("/pessoas/:id/documentos-essenciais/:slot", corpoBruto, rota((
   if (!slotValido(slot)) throw new ErroGestao("Documento inválido.", 400);
   const u = usuario(req);
   const r = guardarEssencial(id(req), slot, String(req.query.nome ?? ""), Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0), { data: typeof req.query.data === "string" ? req.query.data : null, user: { id: u.id, nome: nomeDe(u) } });
+  if (r) sugerirFotoDoArquivo(r.id, slot);
   res.status(201);
   return { ...r, itens: listarEssenciais(id(req)) };
 }));
-gestaoRouter.put("/arquivos/:id/classificar", rota((req) => { const r = classificarArquivo(id(req), req.body?.slot, { data: req.body?.data, padronizar: req.body?.padronizar !== false }); auditAccess("gestao_arquivo_classificado", usuario(req).id, null, { arquivo: id(req), slot: String(req.body?.slot ?? "") }); return r; }));
+gestaoRouter.put("/arquivos/:id/classificar", rota((req) => { const r = classificarArquivo(id(req), req.body?.slot, { data: req.body?.data, padronizar: req.body?.padronizar !== false }); sugerirFotoDoArquivo(id(req), String(req.body?.slot ?? "")); auditAccess("gestao_arquivo_classificado", usuario(req).id, null, { arquivo: id(req), slot: String(req.body?.slot ?? "") }); return r; }));
 gestaoRouter.put("/arquivos/:id/nome", rota((req) => { const r = renomearArquivo(id(req), req.body?.nome); auditAccess("gestao_arquivo_renomeado", usuario(req).id, null, { arquivo: id(req) }); return r; }));
 gestaoRouter.get("/armazenamento", rota(() => usoDeArmazenamento()));
 gestaoRouter.get("/processos/:id/arquivos", rota((req) => listarArquivos({ processoId: id(req) })));
