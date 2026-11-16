@@ -1,6 +1,6 @@
 import { db } from "../../db";
 import type { ImagemParaIa } from "../ai/apiProvider";
-import { caminhoAceita, caminhoDeVisao, perguntarComVisao } from "../ai/visao";
+import { caminhoAceita, caminhoDeVisao, caminhoDeVisaoPronto, perguntarComVisao } from "../ai/visao";
 import { ErroGestao } from "./erro";
 import { apagarFoto, apagarImagemDaSugestao, fotoDaPessoa, gravarImagemDaSugestao, imagemDaSugestao, salvarFoto, tipoDaImagem } from "./fichaConfig";
 
@@ -31,10 +31,10 @@ const SCHEMA = {
 const PROMPT = "Você recebe a imagem de um documento enviado por um cliente de escritório de advocacia. Diga se é um documento de identificação com o retrato da pessoa (RG, CNH, passaporte). Se for, devolva o retângulo que contém SÓ a foto do titular (rosto e ombros), em frações de 0 a 1 da largura e altura da imagem inteira. Se a imagem for outra coisa (comprovante de residência, laudo, contrato, print), ou não houver retrato nítido, responda eh_documento_com_foto=false e caixa=null. Não identifique a pessoa e não leia dados do documento.";
 
 /** Há como olhar a imagem? (chave de API ou conta ChatGPT conectada). Mantido com este nome: os fluxos de foto e de leitura perguntam por ele. */
-export const iaComVisaoDisponivel = () => caminhoDeVisao();
+export const iaComVisaoDisponivel = () => caminhoDeVisaoPronto();
 
 export const detectorPadrao: Detector = async (imagem) => {
-  const cam = caminhoDeVisao();
+  const cam = await caminhoDeVisaoPronto();
   if (!cam || !caminhoAceita(cam, imagem)) throw new ErroGestao("IA com visão não configurada.", 409);
   return await perguntarComVisao(PROMPT, SCHEMA, imagem, cam, AbortSignal.timeout(120_000)) as Deteccao;
 };
@@ -76,7 +76,7 @@ export function registrarSugestao(pessoaId: number, conteudo: Buffer, caixaBruta
 export async function sugerirFotoDoDocumento(pessoaId: number | null, conteudo: Buffer, titulo: string, detector: Detector = detectorPadrao): Promise<ResultadoDaSugestao> {
   const barrou = podeSugerirFoto(pessoaId, conteudo);
   if (barrou) return barrou;
-  if (detector === detectorPadrao && !iaComVisaoDisponivel()) return "sem_ia";
+  if (detector === detectorPadrao && !(await iaComVisaoDisponivel())) return "sem_ia";
   const ext = tipoDaImagem(conteudo)!;
   const r = await detector({ mime: MIME[ext]!, base64: conteudo.toString("base64") });
   return registrarSugestao(pessoaId!, conteudo, r.eh_documento_com_foto ? r.caixa : null, r.tipo_documento, titulo);

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { db } from "../../db";
 import type { ImagemParaIa } from "../ai/apiProvider";
-import { caminhoAceita, caminhoDeVisao, perguntarComVisao } from "../ai/visao";
+import { caminhoAceita, caminhoDeVisaoPronto, PdfSemLeitorError, perguntarComVisao } from "../ai/visao";
 import { hojeSaoPaulo } from "../djen/cache";
 import { ErroGestao } from "./erro";
 import { obterArquivo } from "./arquivos";
@@ -40,7 +40,7 @@ const LIMITE_IMAGEM = 6 * 1024 * 1024, LIMITE_PDF = 12 * 1024 * 1024, CONFIANCA_
 
 export type Leitor = (arquivo: ImagemParaIa) => Promise<Leitura>;
 export const leitorPadrao: Leitor = async (arquivo) => {
-  const cam = caminhoDeVisao();
+  const cam = await caminhoDeVisaoPronto();
   if (!cam || !caminhoAceita(cam, arquivo)) throw new ErroGestao("IA com visão não configurada.", 409);
   return await perguntarComVisao(PROMPT, SCHEMA, arquivo, cam, AbortSignal.timeout(120_000)) as Leitura;
 };
@@ -48,17 +48,19 @@ export const leitorPadrao: Leitor = async (arquivo) => {
 /** A data só vale se for uma data real que não esteja no futuro. */
 const dataPlausivel = (d: unknown): string | null => (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d)) && d <= hojeSaoPaulo() && d >= "2000-01-01" ? d : null);
 
-export type ResultadoDaLeitura = { situacao: "classificado"; slot: SlotEssencial; data: string | null; nome: string } | { situacao: "nao_identificado" | "sem_ia" | "tipo_nao_suportado" | "grande_demais" | "nao_e_do_cadastro" };
+export type ResultadoDaLeitura = { situacao: "classificado"; slot: SlotEssencial; data: string | null; nome: string } | { situacao: "nao_identificado" | "sem_ia" | "tipo_nao_suportado" | "grande_demais" | "pdf_sem_leitor" | "nao_e_do_cadastro" };
 
 /** Lê o conteúdo e devolve o que a IA entendeu (sem gravar nada). */
-export async function lerConteudo(conteudo: Buffer, nome: string, leitor: Leitor = leitorPadrao): Promise<{ situacao: "ok"; leitura: Leitura } | { situacao: "sem_ia" | "tipo_nao_suportado" | "grande_demais" }> {
+export async function lerConteudo(conteudo: Buffer, nome: string, leitor: Leitor = leitorPadrao): Promise<{ situacao: "ok"; leitura: Leitura } | { situacao: "sem_ia" | "tipo_nao_suportado" | "grande_demais" | "pdf_sem_leitor" }> {
   const ext = nome.split(".").pop()?.toLowerCase() ?? "";
   const mime = MIME[ext];
   if (!mime) return { situacao: "tipo_nao_suportado" };
   if (conteudo.length > (mime === "application/pdf" ? LIMITE_PDF : LIMITE_IMAGEM)) return { situacao: "grande_demais" };
-  if (leitor === leitorPadrao) { const cam = caminhoDeVisao(); if (!cam || (mime === "application/pdf" && cam.via === "codex")) return { situacao: "sem_ia" }; }
-  const l = await leitor({ mime, base64: conteudo.toString("base64"), nome });
-  return { situacao: "ok", leitura: l };
+  if (leitor === leitorPadrao && !(await caminhoDeVisaoPronto())) return { situacao: "sem_ia" };
+  try {
+    const l = await leitor({ mime, base64: conteudo.toString("base64"), nome });
+    return { situacao: "ok", leitura: l };
+  } catch (e) { if (e instanceof PdfSemLeitorError) return { situacao: "pdf_sem_leitor" }; throw e; }
 }
 
 /** A leitura vale para classificar? Tipo conhecido e certeza suficiente. */

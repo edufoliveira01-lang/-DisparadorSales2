@@ -537,16 +537,21 @@ export async function analisarLoteComCodex(
 
 
 /** Pergunta à conta ChatGPT conectada (Codex) sobre UMA IMAGEM, com saída estruturada. PDF não: o Codex só recebe imagens. */
-export async function executarVisaoCodex(prompt: string, schemaValue: object, imagem: { extensao: string; conteudo: Buffer }, modelo: string, signal?: AbortSignal): Promise<unknown> {
+export async function executarVisaoCodex(prompt: string, schemaValue: object, imagem: { extensao: string; conteudo: Buffer } | null, modelo: string, signal?: AbortSignal): Promise<unknown> {
   if (!chatgptLocalLoginAllowed()) throw new Error("A conexão da conta ChatGPT não está habilitada neste modo. Use uma chave de API.");
   if (!(await verificarConexaoCodex()).conectado) throw new Error("IA sem conexão com a conta ChatGPT. Conecte em Configurações → Inteligência artificial.");
   const workdir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-visao-"));
   try {
-    const schema = path.join(workdir, "schema.json"), output = path.join(workdir, "saida.json"), foto = path.join(workdir, `documento.${imagem.extensao.replace(/[^a-z0-9]/gi, "") || "jpg"}`);
+    const schema = path.join(workdir, "schema.json"), output = path.join(workdir, "saida.json");
     await fs.writeFile(schema, JSON.stringify(schemaValue), { mode: 0o600 });
-    await fs.writeFile(foto, imagem.conteudo, { mode: 0o600 });
+    const anexo: string[] = [];
+    if (imagem) {
+      const foto = path.join(workdir, `documento.${imagem.extensao.replace(/[^a-z0-9]/gi, "") || "jpg"}`);
+      await fs.writeFile(foto, imagem.conteudo, { mode: 0o600 });
+      anexo.push("--image", foto);
+    }
     const r = await executarCliCodex(
-      ["exec", ...CONFIG_CODEX, "--image", foto, "--model", modelo, "-c", 'model_reasoning_effort="low"', "--ignore-rules", "--ephemeral", "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never", "--output-schema", schema, "-o", output, "-"],
+      ["exec", ...CONFIG_CODEX, ...anexo, "--model", modelo, "-c", 'model_reasoning_effort="low"', "--ignore-rules", "--ephemeral", "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never", "--output-schema", schema, "-o", output, "-"],
       workdir, prompt, signal, 120_000,
     );
     if (r.code !== 0) { invalidarConexaoCodex(); throw new Error("A IA não conseguiu ler o documento. Confira a conexão e os limites da conta."); }
