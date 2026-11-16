@@ -33,6 +33,7 @@ import {
   excluirDocumento,
 } from "../services/djen/workflow";
 import { Router } from "express";
+import { excluirProcessoDoDjen, listarProcessosSemVinculo, ErroExclusaoDjen } from "../services/djen/semVinculo";
 import { db } from "../db";
 import {
   configuracaoDjen,
@@ -144,6 +145,11 @@ djenRouter.get(
     });
   }),
 );
+djenRouter.get("/processos/sem-vinculo", wrap((_req, res) => res.json({ itens: listarProcessosSemVinculo() })));
+djenRouter.delete("/processos/:chave", wrap((req, res) => {
+  try { const r = excluirProcessoDoDjen(String(req.params.chave)); changed(); res.json(r); }
+  catch (e) { if (e instanceof ErroExclusaoDjen) return void res.status(e.status).json({ error: e.message }); throw e; }
+}));
 djenRouter.get("/kanban", wrap((_req, res) => res.json(listarKanban())));
 djenRouter.post("/kanban/listas", wrap((req, res) => { const lista = criarListaKanban(req.body || {}); changed(); res.json(lista); }));
 djenRouter.put("/kanban/cartoes/:processoChave/area", wrap((req, res) => { const r = alterarAreaProcesso(req.params.processoChave, req.body?.area ?? null); changed(); res.json(r); }));

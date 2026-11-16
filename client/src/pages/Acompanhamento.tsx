@@ -1,6 +1,7 @@
 import { HistoryCoverage, RegisterFulfillment, instanteBR, type CoberturaHistorico } from "@/components/djen/HistoryCoverage";
 import { ActivityBadge, RegisterAction, type AtividadeProcesso } from "@/components/djen/ActivityBadge";
 import { AcompanhamentosLista } from "@/components/djen/Acompanhamentos";
+import { ProcessosSemVinculo } from "@/components/djen/ProcessosSemVinculo";
 import { ContactPicker } from "@/components/djen/ContactPicker";
 import { MultiSelect } from "@/components/ui/MultiSelect";
 import {
@@ -771,6 +772,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
       setConsultando(false);
     }
   }
+  const [semVinculoAberto, setSemVinculoAberto] = useState(false);
   async function abrir(id: number) {
     const current = ++detailSeq.current;
     setDetalhe(null);
@@ -942,6 +944,11 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                 <RefreshCw className="h-4 w-4" />
                 Atualizar
               </Button>
+              {secao === "publicacoes" && (
+                <Button variant="outline" onClick={() => setSemVinculoAberto(true)}>
+                  Sem vínculo
+                </Button>
+              )}
               {secao === "publicacoes" && (
                 <Button onClick={() => setConsultaAberta(true)}>
                   <Search className="h-4 w-4" /> Consultar DJEN
@@ -1312,6 +1319,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
         />
       )}
       </div>
+      <ProcessosSemVinculo aberto={semVinculoAberto} aoFechar={() => setSemVinculoAberto(false)} aoMudar={() => void carregarLista()} aoAbrirPublicacao={(id) => void abrir(id)} />
       <Modal open={consultaAberta} onClose={() => setConsultaAberta(false)} title="Consultar DJEN" description="Busque novas publicações por período. Resultados repetidos não criam duplicatas." maxWidth="max-w-xl"
         footer={<>
           <Button variant="outline" onClick={() => setConsultaAberta(false)}>Fechar</Button>

@@ -1,3 +1,4 @@
+import { processoFoiExcluido } from "./semVinculo";
 import { classificarComplementar } from "./classificacaoComplementar";
 import { mensagemSeExcederLimite } from "../../licenca/cliente";
 import { situacaoDaOrdem, ordemAtiva, type SituacaoDaOrdem, type PublicacaoPosterior } from "./orderStatus";
@@ -244,6 +245,7 @@ export function importarPublicacoes(
       if (!correspondencia && !historicoDoProcesso) continue;
       const chave =
         normalizeProcesso(p.processo) || `comunicacao:${p.comunicacao_id}`;
+      if (processoFoiExcluido(chave)) continue;
       db.prepare(
         "INSERT OR IGNORE INTO djen_processos(chave,numero) VALUES (?,?)",
       ).run(chave, p.processo);

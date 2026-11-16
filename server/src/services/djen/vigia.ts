@@ -1,3 +1,4 @@
+import { reativarProcessoExcluido } from "./semVinculo";
 /**
  * Acompanhamento automático de um processo cadastrado na Gestão.
  *
@@ -34,6 +35,7 @@ export function emAcompanhamento(chave: string): boolean {
 /** Coloca o processo na fila do DJEN. Repetir não duplica. Devolve false quando o número não é CNJ (não dá para consultar). */
 export function iniciarAcompanhamento(chave: string, numero = chave): boolean {
   if (!CNJ.test(chave)) return false;
+  reativarProcessoExcluido(chave);
   db.transaction(() => {
     db.prepare("INSERT OR IGNORE INTO djen_processos(chave,numero) VALUES (?,?)").run(chave, numero);
     db.prepare("UPDATE gestao_processos SET djen_chave=? WHERE chave=? AND (djen_chave IS NULL OR djen_chave='')").run(chave, chave);
