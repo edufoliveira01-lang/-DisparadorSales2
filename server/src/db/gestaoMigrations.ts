@@ -202,6 +202,11 @@ export function runGestaoMigrations(db: Database.Database) {
     if (colsArq.length && !colsArq.includes("slot")) db.exec("ALTER TABLE gestao_arquivos ADD COLUMN slot TEXT NOT NULL DEFAULT ''");
     if (colsArq.length && !colsArq.includes("data_documento")) db.exec("ALTER TABLE gestao_arquivos ADD COLUMN data_documento TEXT NOT NULL DEFAULT ''");
   }
+  // Desfecho do processo (procedente, improcedente, acordo…): como ele terminou, quando e uma observação.
+  {
+    const colsProc = (db.prepare("PRAGMA table_info(gestao_processos)").all() as { name: string }[]).map((c) => c.name);
+    for (const col of ["desfecho", "desfecho_em", "desfecho_obs"]) if (colsProc.length && !colsProc.includes(col)) db.exec(`ALTER TABLE gestao_processos ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`);
+  }
   // Anotação IMPORTANTE (pendência): fica em destaque no cadastro do cliente até alguém marcar como cumprida.
   for (const tabela of ["gestao_anotacoes", "gestao_anotacoes_pessoa"]) {
     const cols = (db.prepare(`PRAGMA table_info(${tabela})`).all() as { name: string }[]).map((c) => c.name);

@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { db } from "../src/db";
-import { FASES, definirFase, fasesDoProcesso, resumoDasFases } from "../src/services/gestao/faseDoProcesso";
+import { FASES, arquivarProcesso, concluirProcesso, definirFase, fasesDoProcesso, reabrirProcesso, resumoDasFases } from "../src/services/gestao/faseDoProcesso";
 import { tratarJsonRpc } from "../src/atendimento/mcp/servidor";
 
 const CH = "88888881120268268888";
@@ -61,5 +61,28 @@ describe("fases do processo", () => {
     const texto = r.result.content[0].text as string;
     expect(texto).toMatch(/Fase do processo \(6 de 9\): Sentença/);
     expect(texto).toMatch(/NÃO prometa prazo/);
+  });
+
+  it("concluir com resultado: encerra, registra o desfecho, o cartão vai para Concluído e a Helena sabe", () => {
+    expect(() => concluirProcesso(proc, { desfecho: "talvez" })).toThrow(/como o processo terminou/);
+    expect(() => concluirProcesso(proc, { desfecho: "procedente", data: "2099-01-01" })).toThrow(/futuro/);
+    const l = concluirProcesso(proc, { desfecho: "procedente", data: "2026-11-10", observacao: "Benefício concedido" });
+    expect(l.desfecho).toMatchObject({ codigo: "procedente", rotulo: "Procedente", em: "2026-11-10", arquivado: false });
+    expect((db.prepare("SELECT status FROM gestao_processos WHERE id=?").get(proc) as { status: string }).status).toBe("encerrado");
+    expect(l.atual?.chave).toBe("pagamento");
+    expect(l.fases.filter((f) => f.atrasada)).toHaveLength(0);
+    expect(l.fases.slice(0, 9).every((f) => f.estado === "concluida")).toBe(true);
+    expect(l.eventos.find((e) => e.tipo === "desfecho")).toMatchObject({ titulo: "Processo concluído: Procedente", data: "2026-11-10" });
+    const r = tratarJsonRpc({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "andamento_do_processo", arguments: {} } }, { telefone: "5511988880001" }) as any;
+    expect(r.result.content[0].text).toMatch(/CONCLUÍDO .*Procedente/);
+  });
+
+  it("arquivar e reabrir", () => {
+    const a = arquivarProcesso(proc, { observacao: "Cliente desistiu" });
+    expect(a.desfecho).toMatchObject({ codigo: "arquivado", arquivado: true, observacao: "Cliente desistiu" });
+    expect((db.prepare("SELECT status FROM gestao_processos WHERE id=?").get(proc) as { status: string }).status).toBe("arquivado");
+    const o = reabrirProcesso(proc);
+    expect(o.desfecho).toBeNull();
+    expect((db.prepare("SELECT status FROM gestao_processos WHERE id=?").get(proc) as { status: string }).status).toBe("ativo");
   });
 });

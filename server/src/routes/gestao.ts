@@ -21,7 +21,7 @@ import { adicionarCamposPrevidenciarios, atualizarCampo, criarCampo, excluirCamp
 import { anotacaoRapida, anotacoesDaPessoa, anotarNaPessoa, cumprirPendencia, marcarComoImportante, pendenciasDaPessoa, removerAnotacaoDaPessoa } from "../services/gestao/anotacoes";
 import { fichaDeCadastroHtml, fichaDeExemplo } from "../services/gestao/ficha";
 import { vinculosDaPessoa, criarVinculo, removerVinculo, periciasInssDaPessoa, listarPericiasInss, criarPericiaInss, atualizarPericiaInss, excluirPericiaInss, TIPOS_DE_VINCULO, TIPOS_PERICIA_INSS, STATUS_PERICIA_INSS, RESULTADOS_PERICIA_INSS } from "../services/gestao/vinculos";
-import { FASES, definirFase, fasesDoProcesso, processosAtrasadosNaFase, resumoDasFases } from "../services/gestao/faseDoProcesso";
+import { FASES, arquivarProcesso, concluirProcesso, definirFase, fasesDoProcesso, processosAtrasadosNaFase, reabrirProcesso, resumoDasFases } from "../services/gestao/faseDoProcesso";
 import { ESSENCIAIS, classificarArquivo, guardarEssencial, identificarSlot, listarEssenciais, renomearArquivo, slotValido } from "../services/gestao/documentosEssenciais";
 import { sugerirFotoDoDocumento } from "../services/gestao/fotoSugerida";
 import { identificarArquivo } from "../services/gestao/leituraDoDocumento";
@@ -172,6 +172,9 @@ const enviar = (escopo: "processo" | "pessoa") => rota(async (req, res) => {
   return { ...publico, identificado_como: identificado ? ESSENCIAIS[identificado as keyof typeof ESSENCIAIS].rotulo : null };
 });
 gestaoRouter.get("/processos/:id/fases", rota((req) => fasesDoProcesso(id(req))));
+gestaoRouter.post("/processos/:id/concluir", rota((req) => { const r = concluirProcesso(id(req), req.body || {}); auditAccess("gestao_processo_concluido", usuario(req).id, null, { processo: id(req), desfecho: String(req.body?.desfecho ?? "") }); return r; }));
+gestaoRouter.post("/processos/:id/arquivar", rota((req) => { const r = arquivarProcesso(id(req), req.body || {}); auditAccess("gestao_processo_arquivado", usuario(req).id, null, { processo: id(req) }); return r; }));
+gestaoRouter.post("/processos/:id/reabrir", rota((req) => { const r = reabrirProcesso(id(req)); auditAccess("gestao_processo_reaberto", usuario(req).id, null, { processo: id(req) }); return r; }));
 gestaoRouter.put("/processos/:id/fase", rota((req) => { const r = definirFase(id(req), req.body?.fase); auditAccess("gestao_fase_definida", usuario(req).id, null, { processo: id(req), fase: String(req.body?.fase ?? "") }); return r; }));
 gestaoRouter.get("/pessoas/:id/documentos-essenciais", rota((req) => ({ itens: listarEssenciais(id(req)) })));
 gestaoRouter.post("/pessoas/:id/documentos-essenciais/:slot", corpoBruto, rota((req, res) => {

@@ -1,4 +1,5 @@
-import { LinhaDasFases } from "./LinhaDasFases";
+import { LinhaDasFases, type Linha } from "./LinhaDasFases";
+import { BotoesDeEncerramento, FaixaDoDesfecho } from "./EncerrarProcesso";
 import { CopiarTexto, AbrirNoTribunal } from "@/components/CopiarTexto";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -21,6 +22,7 @@ import type { Responsavel } from "./Processos";
 
 interface Parte { papel: string; principal: number; pessoa_id: number; nome: string; documento: string; telefone: string; email: string; tipo: string }
 interface Ficha {
+  desfecho?: string; desfecho_em?: string; desfecho_obs?: string;
   id: number; numero: string; numero_formatado: string; pasta: string; titulo: string; tribunal: string; orgao: string; comarca: string; classe: string; assunto: string; area: string;
   valor_causa_centavos: number | null; fase: string; status: string; responsavel_user_id: number | null; responsavel: string | null; data_distribuicao: string; observacoes: string;
   djen_chave: string | null; criado_em: string; partes: Parte[]; campos?: CampoValor[];
@@ -29,6 +31,7 @@ interface Evento { tipo: "publicacao" | "pericia" | "anotacao" | "cadastro"; dat
 const ABAS = [["resumo", "Resumo"], ["partes", "Partes"], ["andamento", "Andamento e perícias"], ["historico", "Histórico e anotações"], ["tarefas", "Tarefas"], ["arquivos", "Arquivos"]] as const;
 type Aba = typeof ABAS[number][0];
 
+const ROTULOS_DESFECHO: Record<string, string> = { procedente: "Procedente", parcialmente_procedente: "Parcialmente procedente", improcedente: "Improcedente", acordo: "Acordo homologado", extinto: "Extinto sem resolução do mérito", arquivado: "Arquivado" };
 export function ProcessoFicha() {
   const { id } = useParams();
   const { can } = useAuth();
@@ -40,6 +43,7 @@ export function ProcessoFicha() {
   const [aba, setAba] = useState<Aba>("resumo");
   const [resp, setResp] = useState<Responsavel[]>([]);
   const [apagar, setApagar] = useState(false);
+  const [fasesVersao, setFasesVersao] = useState(0);
   const [docs, setDocs] = useState(false);
 
   const carregar = useCallback(async () => {
@@ -67,7 +71,7 @@ export function ProcessoFicha() {
             <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500"><Badge tone="accent">Pasta {ficha.pasta}</Badge><Badge tone={STATUS_TOM[ficha.status] || "neutral"}>{STATUS[ficha.status] || ficha.status}</Badge>{ficha.tribunal && <Badge>{ficha.tribunal}</Badge>}<span className="truncate">{ficha.titulo || ficha.classe}</span></p>
           </div>
         </div>
-        {gerir ? <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setDocs(true)}>Gerar documentos</Button><Button variant="ghost" onClick={() => setApagar(true)}><Trash2 className="h-4 w-4" /> Excluir</Button></div> : undefined}
+        {gerir ? <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setDocs(true)}>Gerar documentos</Button><BotoesDeEncerramento processoId={ficha.id} status={ficha.status} aoMudar={() => { setFasesVersao((v) => v + 1); void carregar(); }} /><Button variant="ghost" onClick={() => setApagar(true)}><Trash2 className="h-4 w-4" /> Excluir</Button></div> : undefined}
       </div>
       <GerarDocumentos aberto={docs} aoFechar={() => setDocs(false)} processo={{ id: ficha.id, rotulo: `${ficha.pasta} · ${ficha.numero_formatado || ficha.numero}` }} />
       {(() => { const c = ficha.partes.find((p) => p.papel === "autor") ?? ficha.partes[0]; return c ? (
@@ -77,7 +81,8 @@ export function ProcessoFicha() {
           {c.telefone && <span className="text-zinc-600 dark:text-zinc-300">{c.telefone}</span>}{c.email && <span className="text-zinc-600 dark:text-zinc-300">{c.email}</span>}
           <Link to={`/gestao/clientes/${c.pessoa_id}?aba=financeiro`} className="ml-auto text-xs text-accent-700 underline">Financeiro do cliente</Link>
         </div>) : null; })()}
-      <LinhaDasFases processoId={ficha.id} gerir={gerir} />
+      <FaixaDoDesfecho desfecho={ficha.desfecho ? { codigo: ficha.desfecho, rotulo: ROTULOS_DESFECHO[ficha.desfecho] ?? ficha.desfecho, em: ficha.desfecho_em || null, observacao: ficha.desfecho_obs || "", arquivado: ficha.status === "arquivado" } : null} />
+      <LinhaDasFases key={fasesVersao} processoId={ficha.id} gerir={gerir} aoMudar={() => void carregar()} />
       <AcompanhamentoDjen processoId={ficha.id} aoAtualizar={carregar} />
       <div role="tablist" className="page-tabs">
         {ABAS.map(([k, r]) => <button key={k} role="tab" aria-selected={aba === k} onClick={() => setAba(k)} className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium transition ${aba === k ? "bg-accent-50 text-accent-700 dark:bg-accent-500/15 dark:text-accent-200" : "text-zinc-500 hover:bg-zinc-50 dark:hover:bg-white/5"}`}>{r}</button>)}

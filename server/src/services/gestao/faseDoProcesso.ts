@@ -30,12 +30,14 @@ const diasEntre = (de: string, ate: string) => Math.max(0, Math.round((Date.pars
 
 export type EstadoDaFase = "concluida" | "atual" | "futura" | "pulada";
 export interface FaseNaLinha { chave: string; rotulo: string; explicacao: string; estado: EstadoDaFase; entrou_em: string | null; saiu_em: string | null; dias_na_fase: number | null; limite_dias: number; atrasada: boolean }
-export interface Evento { data: string; tipo: "etapa" | "publicacao" | "pericia" | "datajud" | "prazo"; titulo: string; detalhe: string; origem?: string }
+export interface Evento { data: string; tipo: "etapa" | "publicacao" | "pericia" | "datajud" | "prazo" | "desfecho"; titulo: string; detalhe: string; origem?: string }
 export interface LinhaDasFases {
   origem: "quadro" | "deduzida" | "nenhuma";
   fases: FaseNaLinha[];
   atual: { chave: string; rotulo: string; explicacao: string; indice: number; atrasada: boolean; dias: number | null } | null;
   situacao: { nome: string; desde: string | null; dias: number | null } | null;
+  /** Preenchido quando o processo foi concluído ou arquivado: como terminou. */
+  desfecho: { codigo: string; rotulo: string; em: string | null; observacao: string; arquivado: boolean } | null;
   eventos: Evento[];
 }
 
@@ -128,9 +130,17 @@ export function fasesDoProcesso(processoId: number): LinhaDasFases {
   } catch { /* sem DataJud/prazos */ }
   eventos.sort((a, b) => b.data.localeCompare(a.data));
 
+  const pr = db.prepare("SELECT status,desfecho,desfecho_em,desfecho_obs FROM gestao_processos WHERE id=?").get(processoId) as { status: string; desfecho: string; desfecho_em: string; desfecho_obs: string };
+  const desfecho = pr.desfecho ? { codigo: pr.desfecho, rotulo: ROTULO_DO_DESFECHO[pr.desfecho] ?? pr.desfecho, em: pr.desfecho_em || null, observacao: pr.desfecho_obs, arquivado: pr.status === "arquivado" } : null;
+  if (desfecho) {
+    eventos.push({ data: desfecho.em ?? hoje, tipo: "desfecho", titulo: desfecho.arquivado ? "Processo arquivado" : `Processo concluído: ${desfecho.rotulo}`, detalhe: desfecho.observacao });
+    // Processo encerrado: nada mais está «em andamento» nem atrasado; a fase em que terminou conta como concluída.
+    for (const [i, x] of fases.entries()) { if (i <= atual) { x.estado = "concluida"; x.dias_na_fase = null; x.atrasada = false; } }
+    eventos.sort((a, b) => b.data.localeCompare(a.data));
+  }
   const f = atual >= 0 ? fases[atual]! : null;
   return {
-    origem, fases, situacao, eventos: eventos.slice(0, 80),
+    origem, fases, situacao, desfecho, eventos: eventos.slice(0, 80),
     atual: f ? { chave: f.chave, rotulo: f.rotulo, explicacao: f.explicacao, indice: atual, atrasada: f.atrasada, dias: f.dias_na_fase } : null,
   };
 }
@@ -145,25 +155,61 @@ export function resumoDasFases(ids: number[]): Record<number, { rotulo: string; 
   return r;
 }
 
+/** Põe o cartão do quadro na etapa de código `codigo` (modo manual, com histórico). Cria o cartão se o processo ainda não estava no quadro. */
+function fixarEtapa(processoId: number, codigo: string) {
+  const chaves = chavesDoProcesso(processoId);
+  const chave = chaves.find((c) => /^\d{20}$/.test(c)) ?? chaves[0]!;
+  const lista = db.prepare("SELECT id,nome FROM djen_kanban_listas WHERE codigo=?").get(codigo) as { id: number; nome: string } | undefined;
+  if (!lista) return false;
+  db.prepare("INSERT OR IGNORE INTO djen_processos(chave,numero) VALUES (?,?)").run(chave, chave);
+  if (db.prepare("SELECT 1 FROM djen_kanban_cartoes WHERE processo_chave=?").get(chave)) moverCartaoKanban(chave, lista.id);
+  else db.transaction(() => {
+    db.prepare("INSERT INTO djen_kanban_cartoes(processo_chave,lista_id,modo,revisar_etapa) VALUES (?,?,'manual',0)").run(chave, lista.id);
+    db.prepare("INSERT INTO djen_kanban_movimentos(processo_chave,origem,destino,origem_movimento) VALUES (?,NULL,?,'manual')").run(chave, lista.nome);
+  })();
+  db.prepare("UPDATE djen_kanban_cartoes SET modo='manual',revisar_etapa=0 WHERE processo_chave=? AND lista_id=? AND modo<>'manual'").run(chave, lista.id);
+  return true;
+}
+
 /** A equipe define a fase: o cartão do quadro vai para a PRIMEIRA etapa da fase (modo manual). Serve também para confirmar a fase deduzida. */
 export function definirFase(processoId: number, fase: unknown) {
   const f = FASES.find((x) => x.chave === fase);
   if (!f) throw new ErroGestao("Escolha uma fase válida.", 400);
-  const chaves = chavesDoProcesso(processoId);
-  const chave = chaves.find((c) => /^\d{20}$/.test(c)) ?? chaves[0]!;
-  const lista = db.prepare("SELECT id FROM djen_kanban_listas WHERE codigo=?").get(f.codigos[0]!) as { id: number } | undefined;
-  if (!lista) throw new ErroGestao("A etapa desta fase não existe no quadro. Recrie-a em Processos → Quadro.", 409);
-  db.prepare("INSERT OR IGNORE INTO djen_processos(chave,numero) VALUES (?,?)").run(chave, chave);
-  if (db.prepare("SELECT 1 FROM djen_kanban_cartoes WHERE processo_chave=?").get(chave)) moverCartaoKanban(chave, lista.id); // ao mudar de etapa, fixa o modo manual e registra o histórico
-  else { // processo sem publicações ainda: o quadro não o incluiu, então o cartão nasce já na fase escolhida
-    const nome = (db.prepare("SELECT nome FROM djen_kanban_listas WHERE id=?").get(lista.id) as { nome: string }).nome;
-    db.transaction(() => {
-      db.prepare("INSERT INTO djen_kanban_cartoes(processo_chave,lista_id,modo,revisar_etapa) VALUES (?,?,'manual',0)").run(chave, lista.id);
-      db.prepare("INSERT INTO djen_kanban_movimentos(processo_chave,origem,destino,origem_movimento) VALUES (?,NULL,?,'manual')").run(chave, nome);
-    })();
-  }
-  // Confirmar a fase em que o cartão JÁ está: não houve mudança de etapa, então fixa o modo manual aqui (o sistema não a muda mais sozinho).
-  db.prepare("UPDATE djen_kanban_cartoes SET modo='manual',revisar_etapa=0 WHERE processo_chave=? AND lista_id=? AND modo<>'manual'").run(chave, lista.id);
+  if (!fixarEtapa(processoId, f.codigos[0]!)) throw new ErroGestao("A etapa desta fase não existe no quadro. Recrie-a em Processos → Quadro.", 409);
+  return fasesDoProcesso(processoId);
+}
+
+// ---------- desfecho: concluir, arquivar e reabrir ----------
+export const ROTULO_DO_DESFECHO: Record<string, string> = {
+  procedente: "Procedente", parcialmente_procedente: "Parcialmente procedente", improcedente: "Improcedente", acordo: "Acordo homologado",
+  extinto: "Extinto sem resolução do mérito", arquivado: "Arquivado",
+};
+const DESFECHOS_DA_CONCLUSAO = ["procedente", "parcialmente_procedente", "improcedente", "acordo", "extinto"];
+const dataIso = (d: unknown): string | null => (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d)) ? d : null);
+
+/** Conclui o processo com o resultado: ele sai do «em andamento» (status Encerrado), o cartão vai para Concluído e o desfecho fica registrado. */
+export function concluirProcesso(processoId: number, d: { desfecho?: unknown; data?: unknown; observacao?: unknown }) {
+  const p = db.prepare("SELECT status FROM gestao_processos WHERE id=?").get(processoId) as { status: string } | undefined;
+  if (!p) throw new ErroGestao("Processo não encontrado.", 404);
+  if (typeof d.desfecho !== "string" || !DESFECHOS_DA_CONCLUSAO.includes(d.desfecho)) throw new ErroGestao("Escolha como o processo terminou: procedente, parcialmente procedente, improcedente, acordo ou extinto.", 400);
+  const em = dataIso(d.data) ?? hojeSaoPaulo();
+  if (em > hojeSaoPaulo()) throw new ErroGestao("A data da conclusão não pode ser no futuro.", 400);
+  db.prepare("UPDATE gestao_processos SET status='encerrado',desfecho=?,desfecho_em=?,desfecho_obs=?,atualizado_em=CURRENT_TIMESTAMP WHERE id=?").run(d.desfecho, em, String(d.observacao ?? "").trim().slice(0, 1000), processoId);
+  try { fixarEtapa(processoId, "concluido"); } catch { /* sem quadro: o desfecho já está registrado */ }
+  return fasesDoProcesso(processoId);
+}
+
+/** Arquiva o processo (sem resultado de mérito): sai das listas e dos alertas, e pode ser reaberto. */
+export function arquivarProcesso(processoId: number, d: { observacao?: unknown }) {
+  if (!db.prepare("SELECT 1 FROM gestao_processos WHERE id=?").get(processoId)) throw new ErroGestao("Processo não encontrado.", 404);
+  db.prepare("UPDATE gestao_processos SET status='arquivado',desfecho='arquivado',desfecho_em=?,desfecho_obs=?,atualizado_em=CURRENT_TIMESTAMP WHERE id=?").run(hojeSaoPaulo(), String(d.observacao ?? "").trim().slice(0, 1000), processoId);
+  return fasesDoProcesso(processoId);
+}
+
+/** Reabre o processo concluído ou arquivado: volta a «Ativo» e o desfecho é limpo (a fase continua como estava; a equipe pode ajustá-la). */
+export function reabrirProcesso(processoId: number) {
+  if (!db.prepare("SELECT 1 FROM gestao_processos WHERE id=?").get(processoId)) throw new ErroGestao("Processo não encontrado.", 404);
+  db.prepare("UPDATE gestao_processos SET status='ativo',desfecho='',desfecho_em='',desfecho_obs='',atualizado_em=CURRENT_TIMESTAMP WHERE id=?").run(processoId);
   return fasesDoProcesso(processoId);
 }
 

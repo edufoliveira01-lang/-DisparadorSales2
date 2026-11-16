@@ -7,13 +7,14 @@ import { useToast } from "@/components/ui/Toast";
 import { dataBr } from "./comum";
 
 export interface FaseNaLinha { chave: string; rotulo: string; explicacao: string; estado: "concluida" | "atual" | "futura" | "pulada"; entrou_em: string | null; saiu_em: string | null; dias_na_fase: number | null; limite_dias: number; atrasada: boolean }
-export interface Evento { data: string; tipo: "etapa" | "publicacao" | "pericia" | "datajud" | "prazo"; titulo: string; detalhe: string }
+export interface Evento { data: string; tipo: "etapa" | "publicacao" | "pericia" | "datajud" | "prazo" | "desfecho"; titulo: string; detalhe: string }
 export interface Linha {
   origem: "quadro" | "deduzida" | "nenhuma"; fases: FaseNaLinha[]; eventos: Evento[];
   atual: { chave: string; rotulo: string; explicacao: string; indice: number; atrasada: boolean; dias: number | null } | null;
   situacao: { nome: string; desde: string | null; dias: number | null } | null;
+  desfecho?: { codigo: string; rotulo: string; em: string | null; observacao: string; arquivado: boolean } | null;
 }
-const ROTULO_DO_EVENTO: Record<Evento["tipo"], string> = { etapa: "Etapa", publicacao: "DJEN", pericia: "Perícia", datajud: "DataJud", prazo: "Prazo" };
+const ROTULO_DO_EVENTO: Record<Evento["tipo"], string> = { etapa: "Etapa", publicacao: "DJEN", pericia: "Perícia", datajud: "DataJud", prazo: "Prazo", desfecho: "Conclusão" };
 
 /** As 9 fases do processo numa linha, com a fase atual em destaque, o tempo nela e o histórico detalhado por data. */
 export function LinhaDasFases({ processoId, gerir, aoMudar }: { processoId: number; gerir: boolean; aoMudar?: () => void }) {
@@ -71,7 +72,7 @@ export function LinhaDasFases({ processoId, gerir, aoMudar }: { processoId: numb
         })}
       </ol>
 
-      {l.atual ? (
+      {l.desfecho ? null : l.atual ? (
         <div className={`rounded-xl border p-3 text-sm ${l.atual.atrasada ? "border-red-200 bg-red-50 dark:border-red-500/30 dark:bg-red-500/10" : "border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/50"}`}>
           <p className="flex flex-wrap items-center gap-2 font-semibold text-zinc-900 dark:text-zinc-100">Fase atual: {l.atual.rotulo}
             {l.situacao && <Badge tone="warning">{l.situacao.nome}{l.situacao.dias !== null ? ` · há ${l.situacao.dias} d` : ""}</Badge>}
@@ -80,7 +81,7 @@ export function LinhaDasFases({ processoId, gerir, aoMudar }: { processoId: numb
         </div>
       ) : <p className="rounded-xl border border-dashed border-zinc-300 p-3 text-sm text-zinc-500 dark:border-zinc-600">Fase não definida: ainda não há publicações nem etapa no quadro para este processo.{gerir ? " Escolha a fase abaixo." : ""}</p>}
 
-      {gerir && (
+      {gerir && !l.desfecho && (
         <div className="flex flex-wrap items-center gap-2">
           <select value={escolha} onChange={(e) => setEscolha(e.target.value)} aria-label="Definir a fase" className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"><option value="">{l.origem === "deduzida" ? "Confirmar ou corrigir a fase…" : "Definir a fase…"}</option>{l.fases.map((f) => <option key={f.chave} value={f.chave}>{f.rotulo}</option>)}</select>
           <Button size="sm" variant="outline" loading={salvando} disabled={!escolha} onClick={() => void definir(escolha)}>Definir</Button>

@@ -102,7 +102,10 @@ export const FERRAMENTAS: readonly Ferramenta[] = [
       let faseTexto = "";
       try {
         const lf = fasesDoProcesso(alvo.id);
-        if (lf.atual) faseTexto = `Fase do processo (${lf.atual.indice + 1} de ${lf.fases.length}): ${lf.atual.rotulo}${lf.origem === "deduzida" ? " (estimada pelas publicações; a equipe ainda não confirmou)" : ""}. O que significa: ${lf.atual.explicacao}${lf.situacao ? ` No momento: ${lf.situacao.nome.toLowerCase()}.` : ""} Explique com suas palavras e NÃO prometa prazo para a próxima fase.`;
+        if (lf.desfecho) faseTexto = lf.desfecho.arquivado
+          ? `Este processo está ARQUIVADO${lf.desfecho.em ? ` desde ${dia(lf.desfecho.em)}` : ""}. Informe isso com objetividade e ofereça que o advogado explique.`
+          : `Este processo foi CONCLUÍDO${lf.desfecho.em ? ` em ${dia(lf.desfecho.em)}` : ""} com o resultado: ${lf.desfecho.rotulo}. Informe o resultado registrado de forma objetiva e com cuidado, sem opinar sobre o mérito e sem prometer nada; ofereça que o advogado do caso explique os próximos passos (por exemplo, recurso ou recebimento de valores).`;
+        else if (lf.atual) faseTexto = `Fase do processo (${lf.atual.indice + 1} de ${lf.fases.length}): ${lf.atual.rotulo}${lf.origem === "deduzida" ? " (estimada pelas publicações; a equipe ainda não confirmou)" : ""}. O que significa: ${lf.atual.explicacao}${lf.situacao ? ` No momento: ${lf.situacao.nome.toLowerCase()}.` : ""} Explique com suas palavras e NÃO prometa prazo para a próxima fase.`;
       } catch { /* sem quadro: segue sem a fase */ }
       const a = {
         monitorado: bruto.monitorado, publicacoes_nao_lidas: bruto.publicacoes_nao_lidas,
