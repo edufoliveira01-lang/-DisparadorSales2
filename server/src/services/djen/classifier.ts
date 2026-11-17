@@ -471,6 +471,19 @@ export function validarAnaliseCodex(
     )
       return fail(`evidência${e && typeof e === "object" ? ` «${String((e as { categoria?: unknown }).categoria)}»` : ""} que não é trecho literal da publicação: «${String((e as { trecho?: unknown } | undefined)?.trecho ?? "").slice(0, 140)}»`);
   }
+  // LOCAL: a IA costuma reescrever o endereço («Sala de Perícia desta Subseção Judiciária, Praça… nº 30») em vez de copiá-lo. Isso derrubava a análise
+  // inteira, com data e horário certos. O local é só informativo: se quase todas as palavras dele estão no texto, vale; se não, vira alerta e o campo
+  // fica vazio — nunca uma perícia sem classificação por causa do endereço.
+  if (typeof a.agendamento.local === "string" && a.agendamento.local.trim() && !source.includes(canon(a.agendamento.local))) {
+    const palavras = canon(a.agendamento.local).split(/[^a-z0-9]+/).filter((w) => w.length >= 3);
+    const presentes = palavras.filter((w) => source.includes(w)).length;
+    if (palavras.length > 0 && presentes / palavras.length >= 0.75) {
+      a.alertas = [...a.alertas, "O local foi resumido pela IA; confira o endereço completo no inteiro teor."];
+    } else {
+      a.alertas = [...a.alertas, `A IA indicou um local que não confere com o texto («${a.agendamento.local.slice(0, 120)}»); o campo foi deixado em branco. Confira no inteiro teor.`];
+      a.agendamento.local = null;
+    }
+  }
   for (const key of ["data", "horario", "local"] as const) {
     const v = a.agendamento[key];
     if (
@@ -478,7 +491,7 @@ export function validarAnaliseCodex(
       (typeof v !== "string" ||
         !v.trim() ||
         v.length > 500 ||
-        !(key === "data" ? dataNoTexto(texto, v) : key === "horario" ? horaNoTexto(texto, v) : source.includes(canon(v))))
+        !(key === "data" ? dataNoTexto(texto, v) : key === "horario" ? horaNoTexto(texto, v) : true))
     )
       return fail(`agendamento.${key} não aparece literalmente no texto: «${String(v).slice(0, 140)}»`);
   }

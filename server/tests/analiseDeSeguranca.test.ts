@@ -82,3 +82,24 @@ describe("a IA escreve a data de outro jeito (causa real da falha da perícia da
     expect(a?.agendamento.local).not.toMatch(/consoante/);
   });
 });
+
+describe("local reescrito pela IA não derruba a análise (causa final da perícia da Mayara)", () => {
+  const base = (local: string | null) => ({
+    categorias: ["pericia"], resultado: "nao_identificado", resumo: "Perícia designada.", justificativa: "O ato ordinatório intima da perícia designada.",
+    evidencias: [{ categoria: "pericia", trecho: "Ficam as partes intimadas da perícia designada para o dia 03 de dezembro de 2026, às 16:00 horas" }],
+    agendamento: { data: "2026-12-03", horario: "16:00", local },
+    providencia: { tipo: "ciencia", descricao: null, prazo_texto: null, responsavel: "indeterminado" }, alertas: [] as string[],
+  });
+  it("local parafraseado (o que a IA devolveu) é aceito, com alerta", () => {
+    const r = validarAnaliseCodex(base("Sala de Perícia desta Subseção Judiciária, Praça Barão do Rio Branco nº 30, Centro, Santos/SP (3º andar)"), TEXTO);
+    expect(r.categorias).toContain("pericia");
+    expect(r.agendamento.local).toMatch(/Barão do Rio Branco/);
+    expect(r.alertas.join(" ")).toMatch(/resumido pela IA/);
+  });
+  it("local inventado é descartado (campo vazio) sem perder a perícia", () => {
+    const r = validarAnaliseCodex(base("Fórum Central de São Paulo, Avenida Paulista 1000, sala 12"), TEXTO);
+    expect(r.categorias).toContain("pericia");
+    expect(r.agendamento.local).toBeNull();
+    expect(r.alertas.join(" ")).toMatch(/não confere/);
+  });
+});
