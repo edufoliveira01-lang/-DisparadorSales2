@@ -282,6 +282,76 @@ function homologacaoEfetiva(s: string): boolean {
   }
   return false;
 }
+/**
+ * REDE DE SEGURANÇA — perícia e audiência nunca podem passar despercebidas.
+ *
+ * Quando a IA falha (análise inválida, sem evidência verificável, fora do ar), a publicação ficava SEM classificação e o texto «perícia
+ * designada para o dia 03 de dezembro de 2026, às 16:00 horas» aparecia como «sem prazo». Aqui a publicação é classificada por REGRA
+ * LITERAL: só quando o próprio texto afirma, numa frase, que a perícia/audiência foi designada/agendada/marcada, com data e horário
+ * escritos. Frase condicional, cancelamento, «a designar» e pedido de informação NÃO contam. O resultado passa pelo mesmo validador da IA
+ * e carrega um alerta pedindo conferência: é uma classificação de emergência, não uma análise completa.
+ */
+const MES = "janeiro|fevereiro|mar[cç]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro";
+export function analiseDeSeguranca(texto: string, contexto: ContextoPublicacao = {}): AnaliseCodex | null {
+  const limpo = texto.replace(/\b\d{7}-?\d{2}\.?\d{4}\.?\d\.?\d{2}\.?\d{4}\b/g, " ");
+  const frases = limpo.split(/(?<=[.;])\s+|\n+/);
+  for (const tipo of ["pericia", "audiencia"] as const) {
+    const palavra = tipo === "pericia" ? /\b(?:per[ií]cia|exame pericial)\b/i : /\baudi[eê]ncia\b/i;
+    for (const frase of frases) {
+      if (!palavra.test(frase)) continue;
+      const c = canon(frase);
+      if (!/\b(?:designad[ao]|agendad[ao]|marcad[ao]|redesignad[ao]|realizar-se-a|sera realizada|fica designada|designo)\b/.test(c)) continue;
+      if (/\b(?:cancelad[ao]|desmarcad[ao]|revogad[ao]|a designar|para designacao|aguardando designacao|solicite-se|informe|devera informar|caso|se houver|apos|quando)\b/.test(c)) continue;
+      const aposPalavra = frase.slice(Math.max(0, frase.search(palavra)));
+      const data = aposPalavra.match(new RegExp(`\\b\\d{1,2}\\s+de\\s+(?:${MES})(?:\\s*,?\\s*de)?\\s+\\d{4}\\b`, "i"))?.[0]
+        ?? aposPalavra.match(/\b\d{1,2}\s*[/.-]\s*\d{1,2}\s*[/.-]\s*\d{4}\b/)?.[0];
+      const horario = aposPalavra.match(/\b\d{1,2}\s*(?::\s*\d{2}|h\s*\d{0,2}|horas?)/i)?.[0];
+      if (!data || !horario) continue;
+      const local = aposPalavra.match(/\b(?:sito|situad[oa]|local:|na|no)\s+((?:sala|rua|av\.?|avenida|pra[cç]a|rodovia|f[oó]rum|vara|consult[oó]rio|cl[ií]nica|hospital)[^.;]{3,200})/i)?.[0];
+      const nome = tipo === "pericia" ? "Perícia" : "Audiência";
+      // O trecho tem de existir LITERALMENTE no texto original (o validador confere): corta a partir da palavra-chave, no original.
+      const inicio = texto.indexOf(aposPalavra.slice(0, 50));
+      const trecho = (inicio >= 0 ? texto.slice(inicio, inicio + Math.min(aposPalavra.length, 700)) : aposPalavra).trim();
+      if (trecho.length < 15) continue;
+      const analise: AnaliseCodex = {
+        situacao: `${nome} designada`,
+        categorias: [tipo],
+        resultado: "nao_identificado",
+        resumo: `${nome} designada para ${data}, às ${horario}.`,
+        justificativa: "Classificada por regra literal de segurança: o texto afirma a designação com data e horário. A análise da IA não pôde ser concluída ou verificada.",
+        evidencias: [{ categoria: tipo, trecho }],
+        agendamento: { data, horario, local: local ?? null },
+        providencia: { tipo: "ciencia", descricao: null, prazo_texto: null, responsavel: "indeterminado" },
+        alertas: [`Classificação de emergência (a IA não concluiu): confira data, horário e local no inteiro teor e adicione ao controle de ${tipo === "pericia" ? "perícias" : "audiências"}.`],
+      };
+      try {
+        const validada = validarAnaliseCodex(analise, texto, contexto);
+        return validada.categorias.includes(tipo) ? validada : null;
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+/** A IA respondeu, mas deixou passar uma perícia/audiência literalmente designada: a regra de segurança acrescenta a categoria, com alerta. */
+export function completarComRegraDeSeguranca(analise: AnaliseCodex, texto: string, contexto: ContextoPublicacao = {}): AnaliseCodex {
+  if (analise.categorias.includes("pericia") || analise.categorias.includes("audiencia")) return analise;
+  const seg = analiseDeSeguranca(texto, contexto);
+  if (!seg) return analise;
+  const tipo = seg.categorias[0]!;
+  return {
+    ...analise,
+    categorias: [...analise.categorias, tipo],
+    evidencias: [...analise.evidencias, ...seg.evidencias],
+    agendamento: {
+      data: analise.agendamento.data ?? seg.agendamento.data,
+      horario: analise.agendamento.horario ?? seg.agendamento.horario,
+      local: analise.agendamento.local ?? seg.agendamento.local,
+    },
+    alertas: [...analise.alertas, `A IA não apontou ${tipo === "pericia" ? "a perícia" : "a audiência"} designada neste texto; a regra de segurança a acrescentou. Confira data, horário e local.`],
+  };
+}
 export function validarAnaliseCodex(
   value: unknown,
   texto: string,

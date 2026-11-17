@@ -14,6 +14,8 @@ import {
 import { configuracaoDjen, DjenInputError, publicacaoPorId } from "./store";
 import {
   ErroAnaliseCodex,
+  analiseDeSeguranca,
+  completarComRegraDeSeguranca,
   validarAnaliseCodex,
   VERSAO_CLASSIFICADOR,
   type AnaliseCodex,
@@ -328,9 +330,27 @@ function precisaAprofundar(analise: AnaliseCodex) {
   );
 }
 
+/**
+ * A IA falhou: antes de deixar a publicação sem classificação, a regra literal procura perícia/audiência já designada com data e horário.
+ * Perder um agendamento é inadmissível; a publicação sai classificada, com alerta de conferência, e a falha da IA fica no histórico.
+ */
+function recuperarPorRegra(p: Tarefa, motivo: string): boolean {
+  try {
+    const analise = analiseDeSeguranca(p.texto, contexto(p));
+    if (!analise) return false;
+    const perfil = { modo: "economico", modelo: "regra literal", esforco: "low", provedor: "regra", configuracao: 0 } as unknown as AiProfile;
+    if (!salvarAnaliseCodex(p.id, p.texto, p.tipo_documento, analise, perfil)) return false;
+    registrarHistoricoDjen(p.id, "analise", `A IA não concluiu (${motivo.slice(0, 160)}). A publicação foi classificada por regra de segurança: ${analise.categorias.join(", ")} em ${analise.agendamento.data} às ${analise.agendamento.horario}. Confira.`, { provedor: "regra", categorias: analise.categorias });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function marcarErro(p: Tarefa, error: unknown) {
   const erro =
     error instanceof Error ? error.message : "Falha na análise da IA.";
+  if (recuperarPorRegra(p, erro)) return erro;
   db.prepare(
     "UPDATE djen_publicacoes SET ia_status='erro',ia_manual=0,ia_erro=? WHERE id=? AND texto=? AND tipo_documento=? AND ia_status='analisando'",
   ).run(erro, p.id, p.texto, p.tipo_documento);
@@ -424,6 +444,7 @@ async function executarGrupo(
           perfilUsado = perfilForte;
           analise = await analisarComCodex(p.texto, p.tipo_documento, controller.signal, contexto(p), perfilUsado);
         }
+        analise = completarComRegraDeSeguranca(analise, p.texto, contexto(p));
         if (salvarAnaliseCodex(p.id, p.texto, p.tipo_documento, analise, perfilUsado)) {
           gravarCache(p, analise, perfilUsado);
           db.prepare(
