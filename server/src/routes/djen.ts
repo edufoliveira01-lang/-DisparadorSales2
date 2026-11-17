@@ -1,3 +1,6 @@
+import { urgenciaDasPublicacoes } from "../services/djen/urgencia";
+import { indiciosDePrazo } from "../services/djen/indiciosDePrazo";
+import { ConclusaoBloqueada, concluirComSeguranca, concluirLoteComSeguranca, pendenciasDaConclusao, andamentosDaConclusao } from "../services/djen/conclusaoSegura";
 import { processarHistoricos, resumoHistoricos } from "../services/djen/processHistory";
 import { solicitarHistorico, coberturaHistorico } from "../services/djen/historyCoverage";
 import { memoDjen, memoDjenAsync } from "../services/djen/cache";
@@ -289,8 +292,13 @@ djenRouter.get(
 djenRouter.post(
   "/publicacoes/conclusao-em-lote",
   wrap((req, res) => {
-    const resultado = concluirProcessosSelecionados(req.body?.ids);
-    changed(); res.json(resultado);
+    try {
+      const resultado = concluirLoteComSeguranca(req.body?.ids, { forcar: req.body?.forcar === true, justificativa: typeof req.body?.justificativa === "string" ? req.body.justificativa : "" });
+      changed(); res.json(resultado);
+    } catch (e) {
+      if (e instanceof ConclusaoBloqueada) return void res.status(409).json({ error: e.message, bloqueada: true, total: e.total, pendencias: e.pendencias });
+      throw e;
+    }
   }),
 );
 djenRouter.get(
@@ -303,6 +311,7 @@ djenRouter.get(
     });
   }),
 );
+djenRouter.get("/urgencia", wrap((_req, res) => res.json(urgenciaDasPublicacoes())));
 djenRouter.get("/compromissos/resumo", wrap((_req, res) => res.json(resumoDosCompromissos())));
 djenRouter.post(
   "/publicacoes/:id/compromisso",
@@ -584,25 +593,29 @@ djenRouter.post(
     if (typeof req.body.concluida !== "boolean")
       throw new DjenInputError("Informe a conclusão.");
     const n = id(req.params.id);
-    const processo = db
-      .prepare("SELECT processo_chave FROM djen_publicacoes WHERE id=?")
-      .get(n) as { processo_chave: string } | undefined;
-    if (!processo) throw new DjenInputError("Publicação não encontrada.");
-    const publicacoes = db
-      .prepare("SELECT id FROM djen_publicacoes WHERE processo_chave=? AND cancelada=0")
-      .all(processo.processo_chave) as { id: number }[];
-    for (const publicacao of publicacoes) {
-      concluirPublicacao(publicacao.id, req.body.concluida);
-      registrarHistoricoDjen(
-        publicacao.id,
-        "conclusao",
-        req.body.concluida
-          ? "Processo concluído pelo usuário; andamentos agrupados foram arquivados."
-          : "Processo reaberto pelo usuário; andamentos agrupados voltaram à lista.",
-      );
+    try {
+      const r = concluirComSeguranca({
+        id: n,
+        concluida: req.body.concluida,
+        escopo: req.body.escopo === "processo" ? "processo" : "andamento",
+        forcar: req.body.forcar === true,
+        justificativa: typeof req.body.justificativa === "string" ? req.body.justificativa : "",
+      });
+      changed();
+      res.json({ ...detalhesPublicacao(n), conclusao: r });
+    } catch (e) {
+      if (e instanceof ConclusaoBloqueada) return void res.status(409).json({ error: e.message, bloqueada: true, total: e.total, pendencias: e.pendencias });
+      throw e;
     }
-    changed();
-    res.json(detalhesPublicacao(n));
+  }),
+);
+djenRouter.get(
+  "/publicacoes/:id/conclusao-previa",
+  wrap((req, res) => {
+    const n = id(req.params.id);
+    const escopo = req.query.escopo === "processo" ? "processo" : "andamento";
+    const alvo = andamentosDaConclusao(n, escopo, true);
+    res.json({ escopo, andamentos: alvo, pendencias: pendenciasDaConclusao(alvo.map((a) => a.id)) });
   }),
 );
 djenRouter.post(
@@ -629,8 +642,11 @@ djenRouter.get(
     res.json(
       (() => {
         const p = detalhesPublicacao(id(req.params.id));
+        const sugestoes = sugestoesPrazos({ ...p, texto: p.texto || "" });
         return {
-          ...sugestoesPrazos({ ...p, texto: p.texto || "" }),
+          ...sugestoes,
+          // O sistema não confirmou nenhum período, mas a IA ou o texto citam «15 dias úteis»: mostra como INDÍCIO a conferir, nunca como prazo calculado.
+          indicios: (sugestoes as { candidatos?: unknown[] }).candidatos?.length ? [] : indiciosDePrazo(p as unknown as { texto?: string; analise?: { resumo?: string; providencia?: { prazo_texto?: string | null; descricao?: string | null } } | null }),
           calendario_automatico: solicitarCalendario(
             p.tribunal,
             p.orgao,

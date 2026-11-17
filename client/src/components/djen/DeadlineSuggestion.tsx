@@ -18,6 +18,7 @@ type CalendarioAutomatico = {
   atualizado_em: string | null;
   erro: string | null;
 };
+type Indicio = { dias: number; unidade: "uteis" | "corridos"; unidade_citada: boolean; trecho: string; origem: "ia" | "texto" };
 type Ordem = { responsavel: string; destinatario: string; tipo: string; descricao: string; trecho: string; dias: number | null; unidade: string | null; alerta: string | null };
 type Sugestao = {
   inicio: string;
@@ -48,6 +49,7 @@ export function DeadlineSuggestion({
   const [ordens, setOrdens] = useState<Ordem[]>([]);
   const ordensEscritorio = ordens.filter((o) => ["escritorio", "ambas_partes"].includes(o.responsavel) && o.tipo !== "ciencia");
   const [externos, setExternos] = useState<{ tipo: string; responsavel: string; trecho: string; prazo_citado_dias: number | null; prazo_texto?: string | null; alerta?: string | null }[]>([]);
+  const [indicios, setIndicios] = useState<Indicio[]>([]);
   const [candidatos, setCandidatos] = useState<Candidato[]>([]),
     [descricao, setDescricao] = useState("Manifestação processual"),
     [dias, setDias] = useState<number | "">(""),
@@ -79,6 +81,7 @@ export function DeadlineSuggestion({
         candidatos: Candidato[];
         obrigacoes_externas?: typeof externos;
         ordens?: Ordem[];
+        indicios?: Indicio[];
         calendario_automatico: CalendarioAutomatico | null;
       }>(`/djen/publicacoes/${id}/prazos/sugestoes`)
       .then((r) => {
@@ -86,6 +89,7 @@ export function DeadlineSuggestion({
           setCandidatos(r.candidatos);
           setExternos(r.obrigacoes_externas || []);
           setOrdens(r.ordens || []);
+          setIndicios(r.indicios || []);
           setCalendario(r.calendario_automatico);
           const principal = r.candidatos.length === 1 ? r.candidatos[0] : null;
           if (principal) {
@@ -200,7 +204,37 @@ export function DeadlineSuggestion({
                 </Button>
               </div>
             ))}
-            {prontoParaCalcular && !candidatos.length && (
+            {prontoParaCalcular && !candidatos.length && indicios.length > 0 && (
+              <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs dark:border-amber-700 dark:bg-amber-950">
+                <p className="font-semibold text-amber-900 dark:text-amber-200">
+                  {indicios[0]!.origem === "ia" ? "A IA e/ou o texto citam" : "O texto cita"} um período, mas o sistema não confirmou o marco inicial.
+                </p>
+                {indicios.map((i) => (
+                  <div key={`${i.dias}-${i.unidade}`} className="rounded-md bg-white p-2 dark:bg-zinc-900">
+                    <p className="font-medium text-zinc-900 dark:text-zinc-100">
+                      {i.dias} dias {i.unidade === "uteis" ? "úteis" : "corridos"} · início a conferir
+                      {!i.unidade_citada && " · unidade não citada: confirme se são úteis ou corridos"}
+                    </p>
+                    <p className="mt-1 text-zinc-600 dark:text-zinc-400">“…{i.trecho}…”</p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-2"
+                      onClick={() => {
+                        setDias(i.dias);
+                        setUnidade(i.unidade);
+                        setDescricao("Prazo a conferir (indicado pela IA/texto)");
+                        invalidar();
+                      }}
+                    >
+                      Calcular com {i.dias} dias {i.unidade === "uteis" ? "úteis" : "corridos"} (a conferir)
+                    </Button>
+                  </div>
+                ))}
+                <p className="text-amber-800 dark:text-amber-300">Confirme no inteiro teor quem deve cumprir e de quando o prazo conta antes de lançar na agenda.</p>
+              </div>
+            )}
+            {prontoParaCalcular && !candidatos.length && indicios.length === 0 && (
               <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
                 Nenhum período em dias foi confirmado para cálculo automático. Confira as ordens acima e o documento; datas ou unidades diferentes precisam ser conferidas, sem presumir 15 dias.
               </p>

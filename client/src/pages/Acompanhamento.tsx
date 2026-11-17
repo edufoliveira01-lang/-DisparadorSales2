@@ -3,6 +3,7 @@ import { ActivityBadge, RegisterAction, type AtividadeProcesso } from "@/compone
 import { AcompanhamentosLista } from "@/components/djen/Acompanhamentos";
 import { ProcessosSemVinculo } from "@/components/djen/ProcessosSemVinculo";
 import { CompromissosPendentes } from "@/components/djen/CompromissosPendentes";
+import { ConcluirAndamento, FaixaDesfazer, dataBR as dataDoAndamento } from "@/components/djen/ConcluirAndamento";
 import { ContactPicker } from "@/components/djen/ContactPicker";
 import { MultiSelect } from "@/components/ui/MultiSelect";
 import {
@@ -53,6 +54,19 @@ import { useAuth } from "@/context/AuthContext";
 import { MonitoramentoDjen } from "@/components/djen/DjenMonitoramento";
 import { AdvogadosAcompanhados } from "@/components/djen/DjenAdvogados";
 import { Callout, SettingRow } from "@/components/ui/Settings";
+
+/** A mensagem de aviso ao cliente: perícia e audiência dizem DATA, HORÁRIO e LOCAL (o essencial); os demais atos usam o texto geral. */
+function textoDoAviso(nome: string, processo: string | null | undefined, categorias: string[], situacao: string, tiposTexto: string, ag?: { data: string | null; horario: string | null; local: string | null } | null) {
+  const proc = processo || "acompanhado pelo escritório";
+  const compromisso = categorias.includes("pericia") ? "perícia" : categorias.includes("audiencia") ? "audiência" : "";
+  if (compromisso && ag?.data && ag?.horario) {
+    return `Olá, ${nome}. Houve uma publicação no processo ${proc} informando que a ${compromisso} está marcada para ${ag.data}, às ${ag.horario}${ag.local ? `, em: ${ag.local}` : ""}.\n\nPor favor, confirme que recebeu esta mensagem. Nossa equipe vai orientar você sobre documentos e como comparecer.\n\nSales & Associados.`;
+  }
+  if (compromisso) {
+    return `Olá, ${nome}. Houve uma publicação no processo ${proc} sobre ${compromisso === "perícia" ? "a sua perícia" : "a sua audiência"}. Nossa equipe vai confirmar a data e o horário e entrar em contato para orientar você.\n\nSales & Associados.`;
+  }
+  return `Olá, ${nome}. Houve uma nova publicação no processo ${proc}: ${situacao || tiposTexto || "andamento processual"}.\n\nNossa equipe está analisando o conteúdo para orientar você.\n\nSales & Associados.`;
+}
 
 const TIPOS = {
   sentenca: "Sentença de mérito",
@@ -522,6 +536,10 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
   const [superados, setSuperados] = useState<(AguardandoRetorno & { motivo_superada: string; ultimo_andamento_em: string | null })[]>([]);
   const [selecionados, setSelecionados] = useState<number[]>([]);
   const [confirmarLote, setConfirmarLote] = useState(false);
+  const [concluindo, setConcluindo] = useState<{ id: number; rotulo: string; total: number } | null>(null);
+  const [desfazer, setDesfazer] = useState<{ escopo: "andamento" | "processo"; total: number; publicacaoId: number } | null>(null);
+  const [bloqueioLote, setBloqueioLote] = useState<{ pendencias: { publicacao_id: number; texto: string }[]; total: number } | null>(null);
+  const [justificativaLote, setJustificativaLote] = useState("");
   const [removerAdv, setRemoverAdv] = useState<Advogado | null>(null);
   const [selecionandoTodos, setSelecionandoTodos] = useState(false);
   const [carregandoSemLaudo, setCarregandoSemLaudo] = useState(false);
@@ -549,9 +567,11 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
     hoverTimer.current = setTimeout(() => { void carregarDetalhe(id).catch(() => {}); }, 150);
   }
+  const [urgencia, setUrgencia] = useState<{ vencidos: number; vencem_hoje: number; compromissos_7_dias: number; datas_a_confirmar: number; novas_para_triagem: number } | null>(null);
   const carregarStatus = useCallback(async () => {
     const data = await api.get<Status>("/djen/status");
     setStatus(data);
+    void api.get<NonNullable<typeof urgencia>>("/djen/urgencia").then(setUrgencia).catch(() => undefined);
     return data;
   }, []);
   const carregarSemLaudo = useCallback(async () => {
@@ -730,17 +750,35 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     } catch (e) { show(erro(e), "error"); }
     finally { setSelecionandoTodos(false); }
   }
-  async function concluirSelecionados() {
+  async function concluirSelecionados(forcar = false) {
     setSalvando(true);
     try {
-      const resultado = await api.post<{ processos: number }>("/djen/publicacoes/conclusao-em-lote", { ids: selecionados });
+      const resultado = await api.post<{ processos: number }>("/djen/publicacoes/conclusao-em-lote", { ids: selecionados, ...(forcar ? { forcar: true, justificativa: justificativaLote.trim() } : {}) });
       setConfirmarLote(false);
+      setBloqueioLote(null);
+      setJustificativaLote("");
       setSelecionados([]);
       await carregarLista();
       await carregarStatus();
       show(`${resultado.processos} processo(s) concluído(s).`, "success");
-    } catch (e) { show(erro(e), "error"); }
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409 && e.data?.bloqueada) {
+        setConfirmarLote(false);
+        setBloqueioLote({ pendencias: (e.data.pendencias as { publicacao_id: number; texto: string }[]) ?? [], total: Number(e.data.total ?? 0) });
+      } else show(erro(e), "error");
+    }
     finally { setSalvando(false); }
+  }
+  async function desfazerConclusao() {
+    if (!desfazer) return;
+    const info = desfazer;
+    setDesfazer(null);
+    try {
+      await api.post(`/djen/publicacoes/${info.publicacaoId}/conclusao`, { concluida: false, escopo: info.escopo });
+      await carregarLista();
+      await carregarStatus();
+      show("Conclusão desfeita.", "success");
+    } catch (e) { show(erro(e), "error"); }
   }
   async function acao(fn: () => Promise<void>) {
     if (lock.current) return;
@@ -846,7 +884,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
       request_id:
         globalThis.crypto?.randomUUID?.() ||
         `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`,
-      texto: `Olá, ${contato.nome}. Houve uma nova publicação no processo ${detalhe.processo || "acompanhado pelo escritório"}: ${situacao || categorias.map((c) => TIPOS[c]).join(", ") || "andamento processual"}.\n\nNossa equipe está analisando o conteúdo para orientar você.\n\nSales & Associados.`,
+      texto: textoDoAviso(contato.nome, detalhe.processo, categorias.map((c) => String(c)), situacao, categorias.map((c) => TIPOS[c]).join(", "), detalhe.analise?.agendamento),
     });
   }
   async function enviar() {
@@ -994,6 +1032,27 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
       {secao === "aguardando" && conteudoAguardando}
       {secao === "publicacoes" && (
         <div className="process-workbench"><aside className="process-filter-rail"><div className="pub-resumo">
+          {urgencia && (
+            <div role="group" aria-label="Urgência de hoje" className="mb-3 grid grid-cols-2 gap-2">
+              {[
+                { rotulo: "Prazos vencidos", valor: urgencia.vencidos, tom: "red", acao: () => void carregarAlerta("prazos").catch((e) => show(erro(e), "error")) },
+                { rotulo: "Vencem hoje", valor: urgencia.vencem_hoje, tom: "amber", acao: () => void carregarAlerta("prazos").catch((e) => show(erro(e), "error")) },
+                { rotulo: "Perícias e audiências · 7 dias", valor: urgencia.compromissos_7_dias, tom: "red", acao: () => filtrar("categoria", "pericia") },
+                { rotulo: "Datas a confirmar", valor: urgencia.datas_a_confirmar, tom: "amber", acao: () => document.getElementById("compromissos-pendentes")?.scrollIntoView({ behavior: "smooth", block: "start" }) },
+                { rotulo: "Novas para triagem", valor: urgencia.novas_para_triagem, tom: "blue", acao: () => filtrar("situacao", "nao_lidas") },
+              ].map(({ rotulo, valor, tom, acao }) => (
+                <button
+                  key={rotulo}
+                  type="button"
+                  onClick={acao}
+                  className={`rounded-xl border bg-white px-3 py-2 text-left shadow-sm transition hover:border-zinc-400 dark:bg-zinc-900 ${valor > 0 ? (tom === "red" ? "border-red-300" : tom === "amber" ? "border-amber-300" : "border-accent-300") : "border-zinc-200 dark:border-zinc-800"}`}
+                >
+                  <span className="block text-[10px] font-medium uppercase tracking-wide text-zinc-500">{rotulo}</span>
+                  <strong className={`text-xl ${valor > 0 ? (tom === "red" ? "text-red-700" : tom === "amber" ? "text-amber-700" : "text-accent-700") : "text-zinc-400"}`}>{valor}</strong>
+                </button>
+              ))}
+            </div>
+          )}
           <div>
             {[
               { label: "Processos na lista", value: total, Icon: FolderOpen, action: () => filtrar("categoria", "") },
@@ -1025,7 +1084,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
 <div className="process-filter-fields"><div><span className="process-filter-label">Categorias de andamento</span><MultiSelect inline label="Categorias (múltiplas)" placeholder="Todas as categorias" value={filtro.categoria.split(",").filter(Boolean)} options={Object.entries(FILTROS).map(([value, label]) => ({ value, label }))} onChange={(v) => filtrar("categoria", v.join(","))} /></div><div><span className="process-filter-label">Resultado da sentença</span><MultiSelect inline label="Resultado da sentença" placeholder="Todos os resultados" value={filtro.resultado.split(",").filter(Boolean)} options={Object.entries(RESULTADOS).map(([value, label]) => ({ value, label }))} onChange={(v) => filtrar("resultado", v.join(","))} /></div><div><span className="process-filter-label">Advogado</span><MultiSelect inline label="Advogado" placeholder="Todos os advogados" value={filtro.advogado_id.split(",").filter(Boolean)} options={(status?.advogados || []).map((a) => ({ value: String(a.id), label: `${a.nome} · ${a.uf_oab} ${a.numero_oab}` }))} onChange={(v) => filtrar("advogado_id", v.join(","))} /></div><div><span className="process-filter-label">Leitura e pendências</span><MultiSelect inline label="Situação" placeholder="Todas as situações" value={filtro.situacao.split(",").filter(Boolean)} options={[{ value: "nao_lidas", label: "Não lidas" }, { value: "lidas", label: "Lidas" }, { value: "revisar", label: "A revisar" }, { value: "com_prazo", label: "Com prazo em aberto" }]} onChange={(v) => filtrar("situacao", v.join(","))} /></div></div>          </section>
           </aside><div className="process-results">
           {(Boolean(status?.ia.pausa) || (status?.ia.pendentes ?? 0) > 0) && <p className="flex items-center gap-2 text-[11px] text-zinc-500"><Sparkles className="h-3.5 w-3.5" />{status?.ia.pausa ? `Análise pausada: ${status.ia.pausa}` : `${status?.ia.pendentes ?? 0} publicação(ões) aguardando classificação pela IA`}. Classificações pendentes aparecem em Outros até a análise.</p>}
-          <CompromissosPendentes key={`cp-${total}`} aoAbrirPublicacao={(pid) => void abrir(pid)} aoMudar={() => void carregarLista()} />
+          <div id="compromissos-pendentes"><CompromissosPendentes key={`cp-${total}`} aoAbrirPublicacao={(pid) => void abrir(pid)} aoMudar={() => void carregarLista()} /></div>
           <div
             id="navegacao-publicacoes"
             className="sticky top-20 z-20 scroll-mt-24 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white/95 px-4 py-2 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95"
@@ -1181,7 +1240,10 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                         {!p.concluida && <ActivityBadge atividade={p.atividade} />}
                         {!p.lida && <Badge tone="accent">● Não lida</Badge>}
                         {Boolean(p.concluida) && <Badge tone="success">Concluída</Badge>}
-                        {p.ia_status === "erro" && <Badge tone="danger">Análise pendente de revisão</Badge>}
+                        {p.ia_status === "erro" && <Badge tone="danger" title={p.ia_erro ?? undefined}>IA falhou · revisão necessária</Badge>}
+                        {p.ia_status === "concluida" && p.ia_provedor === "regra" && !p.revisada && <Badge tone="warning" title="A IA não concluiu; uma regra de segurança leu o texto. Confira data, horário e local.">Provisória por regra · conferir</Badge>}
+                        {p.ia_status === "concluida" && p.ia_provedor !== "regra" && !p.revisada && <Badge tone="info" title="Classificação sugerida pela IA, ainda não conferida por uma pessoa.">Sugestão da IA · a conferir</Badge>}
+                        {Boolean(p.revisada) && <Badge tone="success">Revisada por pessoa</Badge>}
                         {(p.ia_status === "pendente" || p.ia_status === "analisando") && <Badge tone="neutral">Classificação em andamento</Badge>}
                         {Boolean(p.cancelada) && (
                           <Badge tone="danger">Cancelada na origem</Badge>
@@ -1243,22 +1305,18 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                         variant="outline"
                         className="w-full"
                         disabled={salvando}
-                        onClick={() =>
+                        onClick={() => {
+                          if (!p.concluida) {
+                            setConcluindo({ id: p.id, rotulo: `${p.tipo_documento || "Andamento"} de ${dataDoAndamento(p.data_disponibilizacao)}`, total: p.andamentos_total ?? 1 });
+                            return;
+                          }
                           void acao(async () => {
-                            await api.post(
-                              `/djen/publicacoes/${p.id}/conclusao`,
-                              { concluida: !p.concluida },
-                            );
+                            await api.post(`/djen/publicacoes/${p.id}/conclusao`, { concluida: false, escopo: "processo" });
                             await carregarLista();
                             await carregarStatus();
-                            show(
-                              p.concluida
-                                ? "Publicação reaberta."
-                                : "Publicação concluída. Consulte-a no filtro Concluídas.",
-                              "success",
-                            );
-                          })
-                        }
+                            show("Publicação reaberta.", "success");
+                          });
+                        }}
                       >
                         {p.concluida ? "Reabrir" : "Concluir"}
                       </Button>
@@ -1519,6 +1577,43 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
         onCancel={() => setConfirmarLote(false)}
       />
       <Modal
+        presentation="center"
+        open={bloqueioLote !== null}
+        onClose={() => { setBloqueioLote(null); setJustificativaLote(""); }}
+        title="Há pendências nos processos selecionados"
+        description="A conclusão em lote não esconde trabalho pendente sem confirmação."
+        maxWidth="max-w-xl"
+        footer={
+          <div className="flex w-full flex-wrap justify-end gap-2">
+            <Button variant="outline" onClick={() => { setBloqueioLote(null); setJustificativaLote(""); }}>Voltar e revisar</Button>
+            <Button variant="danger" loading={salvando} disabled={justificativaLote.trim().length < 5} onClick={() => void concluirSelecionados(true)}>Concluir mesmo assim</Button>
+          </div>
+        }
+      >
+        <div className="space-y-3 text-sm">
+          <div className="max-h-56 overflow-auto rounded-lg border border-red-200 bg-red-50 p-3 text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+            <ul className="list-disc space-y-1 pl-5">{(bloqueioLote?.pendencias ?? []).slice(0, 40).map((x, i) => <li key={i}>{x.texto}</li>)}</ul>
+            {(bloqueioLote?.pendencias.length ?? 0) > 40 && <p className="mt-2 text-xs">… e mais {(bloqueioLote?.pendencias.length ?? 0) - 40}.</p>}
+          </div>
+          <div>
+            <Label htmlFor="justificativa-lote">Por que concluir mesmo assim? (obrigatório)</Label>
+            <Textarea id="justificativa-lote" value={justificativaLote} onChange={(e) => setJustificativaLote(e.target.value)} rows={3} maxLength={1000} />
+            <p className="mt-1 text-xs text-zinc-500">A justificativa fica registrada no histórico de cada andamento concluído.</p>
+          </div>
+        </div>
+      </Modal>
+      {concluindo && (
+        <ConcluirAndamento
+          open
+          publicacaoId={concluindo.id}
+          rotulo={concluindo.rotulo}
+          totalAndamentos={concluindo.total}
+          onClose={() => setConcluindo(null)}
+          onConcluido={(info) => { setDesfazer(info); void carregarLista(); void carregarStatus(); }}
+        />
+      )}
+      <FaixaDesfazer info={desfazer} onDesfazer={() => void desfazerConclusao()} onFechar={() => setDesfazer(null)} />
+      <Modal
         open={mostrarSemLaudo}
         onClose={() => setMostrarSemLaudo(false)}
         title="Perícias realizadas sem laudo identificado"
@@ -1690,6 +1785,47 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                   </Badge>
                 </div>
               </div>
+              {(() => {
+                const ehPericia = detalhe.categorias.includes("pericia" as never);
+                const ehAudiencia = detalhe.categorias.includes("audiencia" as never);
+                const ag = detalhe.analise?.agendamento;
+                if ((ehPericia || ehAudiencia) && !detalhe.concluida) {
+                  const nome = ehPericia ? "Perícia" : "Audiência";
+                  const noControle = detalhe.compromisso_estado === "informado";
+                  return (
+                    <section role="region" aria-label="Ação principal" className={`mt-4 rounded-xl border p-4 ${noControle ? "border-emerald-300 bg-emerald-50/70 dark:border-emerald-900 dark:bg-emerald-950/20" : "border-red-300 bg-red-50/70 dark:border-red-900 dark:bg-red-950/20"}`}>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">{noControle ? "Compromisso no controle" : "Ação principal · compromisso marcado"}</p>
+                      <h3 className="mt-1 text-base font-semibold">
+                        {nome} {ag?.data ? `em ${ag.data}${ag.horario ? ` às ${ag.horario}` : ""}` : "marcada · data a confirmar no inteiro teor"}
+                      </h3>
+                      {ag?.local && <p className="mt-1 text-xs text-zinc-700 dark:text-zinc-300">Local: {ag.local}</p>}
+                      {detalhe.ia_provedor === "regra" && <p className="mt-1 text-[11px] font-medium text-amber-800 dark:text-amber-300">Classificação provisória por regra de segurança (a IA não concluiu): confira data, horário e local no inteiro teor.</p>}
+                      {!noControle && detalhe.compromisso_motivo && <p className="mt-1 text-xs text-red-800 dark:text-red-300">{detalhe.compromisso_motivo}</p>}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {!noControle && (
+                          <Button size="sm" disabled={salvando} onClick={() => void acao(async () => {
+                            const r = await api.post<{ estado: string; motivo: string }>(`/djen/publicacoes/${detalhe.id}/compromisso`, {});
+                            setDetalhe(await api.get<Publicacao>(`/djen/publicacoes/${detalhe.id}`));
+                            await carregarLista();
+                            show(r.estado === "informado" ? `${nome} adicionada ao controle (Avisar).` : r.motivo || `Não foi possível adicionar a ${nome.toLowerCase()} ao controle.`, r.estado === "informado" ? "success" : "error");
+                          })}>Adicionar ao controle</Button>
+                        )}
+                        <Button size="sm" variant="outline" onClick={() => setAbaDetalhe("publicacao")}>Ver inteiro teor</Button>
+                      </div>
+                    </section>
+                  );
+                }
+                if (detalhe.acao?.tipo === "prazo_explicito" && !detalhe.concluida) {
+                  return (
+                    <section role="region" aria-label="Ação principal" className="mt-4 rounded-xl border border-amber-300 bg-amber-50/70 p-4 dark:border-amber-900 dark:bg-amber-950/20">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Ação principal · prazo expresso</p>
+                      <p className="mt-1 text-sm text-zinc-800 dark:text-zinc-200">{detalhe.acao.prazo_texto || detalhe.acao.descricao}</p>
+                      <Button size="sm" className="mt-3" onClick={() => setAbaDetalhe("prazos")}>Conferir e calcular prazo <ArrowRight className="h-3.5 w-3.5" /></Button>
+                    </section>
+                  );
+                }
+                return null;
+              })()}
               <HistoryCoverage historico={detalhe.historico_djen} publicacaoId={detalhe.id} />
               <details className="mt-4 text-xs">
                 <summary className="cursor-pointer font-medium text-accent-600">
