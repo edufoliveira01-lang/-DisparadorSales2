@@ -268,7 +268,9 @@ export function adicionarPublicacaoAoControle(publicacaoId: number, manual: Comp
     "pericia",
     resultado.status === "duplicada"
       ? `${tipo} conferida no controle existente; nenhuma cópia foi criada.`
-      : `${tipo} adicionada ao controle (Perícias e compromissos → Avisar).`,
+      : resultado.status === "criada" && resultado.substituidas?.length
+        ? `${tipo} REMARCADA no controle: nova data ${resultado.pericia.data}${resultado.pericia.horario ? ` às ${resultado.pericia.horario}` : ""}; substitui ${resultado.substituidas.map((a) => `${a.data}${a.horario ? ` às ${a.horario}` : ""}`).join(" e ")} (mantida no histórico, sem duplicar).`
+        : `${tipo} adicionada ao controle (Perícias e compromissos → Avisar).`,
   );
   return {
     resultado: resultado.status,

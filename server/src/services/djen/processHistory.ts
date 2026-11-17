@@ -1,3 +1,4 @@
+import { registrarHistoricoDjen } from './history';
 import { db } from '../../db';
 import { licencaPermiteOperar } from "../../licenca/cliente";
 import { emitEvent } from '../../websocket';
@@ -58,10 +59,20 @@ export async function atualizarHistoricoProcesso(processo: string, ctx: Contexto
       status=CASE WHEN revisao=? THEN 'atualizado' ELSE 'pendente' END,
       inicio=?,fim=?,consultado_em=CURRENT_TIMESTAMP,revisao_conferida=?,erro=NULL,
       proxima_tentativa_em=NULL WHERE processo_chave=?`).run(estado.revisao,escopo.inicio,escopo.fim,estado.revisao,processo);
+    // Registro operacional: cada consulta diz se trouxe novidade (a tela de Histórico mostra «Consulta ao DJEN» separada de leitura, revisão e providência).
+    try {
+      const novos = [...recebidos].filter(id => !conhecidos.includes(id)).length;
+      const ultima = db.prepare('SELECT id FROM djen_publicacoes WHERE processo_chave=? AND cancelada=0 ORDER BY data_disponibilizacao DESC,id DESC LIMIT 1').get(processo) as { id: number } | undefined;
+      if (ultima) registrarHistoricoDjen(ultima.id, 'consulta', novos > 0 ? `Consulta ao DJEN concluída: ${novos} publicação(ões) nova(s) neste processo (período ${escopo.inicio} a ${escopo.fim}).` : `Consulta ao DJEN concluída: nenhuma publicação nova neste processo (período ${escopo.inicio} a ${escopo.fim}).`, { novos, inicio: escopo.inicio, fim: escopo.fim });
+    } catch { /* o registro é complementar */ }
     void completarComDataJud(processo);
     try { preencherDoDjen(processo); } catch { console.error('[DJEN] Histórico atualizado; ficha do processo sem preenchimento.'); }
     try { atualizarKanbanComNovasPublicacoes(); } catch { console.error("[DJEN] Histórico atualizado; quadro pendente de revisão."); }
   } catch (e) {
+    try {
+      const ultima = db.prepare('SELECT id FROM djen_publicacoes WHERE processo_chave=? AND cancelada=0 ORDER BY data_disponibilizacao DESC,id DESC LIMIT 1').get(processo) as { id: number } | undefined;
+      if (ultima) registrarHistoricoDjen(ultima.id, 'consulta', `Consulta ao DJEN falhou: ${e instanceof Error ? e.message.slice(0, 200) : 'erro desconhecido'}. Nova tentativa em 15 minutos.`);
+    } catch { /* o registro é complementar */ }
     db.prepare("UPDATE djen_historico_consultas SET status='falha',erro=?,proxima_tentativa_em=datetime('now','+15 minutes') WHERE processo_chave=?")
       .run(e instanceof Error ? e.message.slice(0,500) : 'Falha ao consultar histórico.',processo);
     throw e;

@@ -91,17 +91,24 @@ export function DjenDocumentos({
   refresh: () => Promise<void>;
 }) {
   void refresh;
+  // O link do tribunal pode ser a PEÇA (PJe com parâmetro do documento) ou só o PORTAL do tribunal (nesse caso não abre a peça, e alguns
+  // portais, como os do TJSP, dão erro de certificado em certos navegadores). A tela diz qual é, em vez de prometer o que o link não faz.
+  const hostDoTribunal = (() => { try { return tribunal ? new URL(tribunal).hostname : ""; } catch { return ""; } })();
+  const pecaEspecifica = Boolean(tribunal && /[?&](x|id|numeroDocumento|documento|idDocumento)=/i.test(tribunal));
+  const descricaoTribunal = !tribunal ? "" : pecaEspecifica
+    ? `Peça no ${hostDoTribunal || "tribunal"} · pode exigir login`
+    : `Portal geral (${hostDoTribunal || "tribunal"}) · não abre a peça. Se aparecer erro de certificado, é do site do tribunal: use o PDF do DJEN ou o texto`;
   return (
     <section className={panel}>
       <h3 className="flex items-center gap-2 text-sm font-semibold">
         <FileText className="h-4 w-4" />
         Documentos do andamento
       </h3>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
         {[
+          { url: `/api/djen/publicacoes/${id}/documento`, titulo: "Texto da publicação", descricao: "Versão capturada, abre sempre", tipo: "Texto" },
           { url: certidao, titulo: "Certidão oficial DJEN", descricao: "PDF com o teor da publicação", tipo: "PDF oficial" },
-          { url: tribunal, titulo: "Documento no tribunal", descricao: "Consultar a origem · pode exigir login", tipo: "Tribunal" },
-          { url: `/api/djen/publicacoes/${id}/documento`, titulo: "Texto da publicação", descricao: "Versão capturada para leitura", tipo: "Texto" },
+          { url: tribunal, titulo: pecaEspecifica ? "Peça no tribunal" : "Portal do tribunal", descricao: descricaoTribunal, tipo: "Tribunal" },
           ...documentos.map((d) => ({ url: d.url, titulo: d.nome, descricao: "Documento vinculado ao andamento", tipo: "Anexo" })),
         ].map((d, i) => d.url ? <a key={i} href={d.url} target="_blank" rel="noopener noreferrer" className="group flex min-w-0 items-start gap-3 rounded-xl border border-zinc-200 bg-zinc-50/70 p-4 transition-colors hover:border-accent-300 hover:bg-accent-50 dark:border-zinc-700 dark:bg-zinc-800/40 dark:hover:bg-accent-950/30">
           <span className="rounded-lg bg-white p-2 text-accent-600 dark:bg-zinc-900"><FileText className="h-4 w-4" /></span><span className="min-w-0 flex-1"><span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">{d.tipo}</span><strong className="mt-1 block break-words text-sm text-zinc-800 dark:text-zinc-100">{d.titulo}</strong><span className="mt-1 block text-xs text-zinc-500">{d.descricao}</span></span><ExternalLink className="mt-1 h-4 w-4 shrink-0 text-zinc-400 group-hover:text-accent-600" />
@@ -355,6 +362,60 @@ export function DjenPrazos({
     </section>
   );
 }
+const GRUPOS_DO_HISTORICO: { chave: string; rotulo: string; tipos: string[] }[] = [
+  { chave: "todos", rotulo: "Tudo", tipos: [] },
+  { chave: "providencia", rotulo: "Providências e prazos", tipos: ["providencia", "prazo", "agenda"] },
+  { chave: "conclusao", rotulo: "Conclusões", tipos: ["conclusao"] },
+  { chave: "consulta", rotulo: "Consultas ao DJEN", tipos: ["consulta", "captura"] },
+  { chave: "ia", rotulo: "Análise e revisão", tipos: ["analise", "revisao", "regra", "processo"] },
+  { chave: "cliente", rotulo: "Cliente e compromissos", tipos: ["mensagem", "pericia"] },
+  { chave: "leitura", rotulo: "Leitura", tipos: ["leitura", "documento"] },
+];
+const ROTULO_DO_EVENTO: Record<string, string> = {
+  providencia: "Providência", prazo: "Prazo", agenda: "Agenda", conclusao: "Conclusão", consulta: "Consulta ao DJEN", captura: "Captura",
+  analise: "Análise da IA", revisao: "Revisão", regra: "Regra", processo: "Vínculo do processo", mensagem: "Mensagem ao cliente",
+  pericia: "Compromisso", leitura: "Leitura", documento: "Documento",
+};
+
+/** O histórico do acompanhamento separado por tipo: leitura, revisão, providência, conclusão, consulta ao DJEN e mensagem ficam distinguíveis e filtráveis. */
+function HistoricoOperacional({ eventos, id, abrir }: { eventos: Evento[]; id: number; abrir: (id: number) => void }) {
+  const [grupo, setGrupo] = useState("todos");
+  const tipos = GRUPOS_DO_HISTORICO.find((g) => g.chave === grupo)?.tipos ?? [];
+  const lista = grupo === "todos" ? eventos : eventos.filter((e) => tipos.includes(e.tipo));
+  return (
+    <div className="mt-5">
+      <h4 className="text-xs font-semibold">Histórico de alterações no acompanhamento</h4>
+      <p className="mt-1 text-[11px] text-zinc-500">Últimas 100 alterações registradas neste processo.</p>
+      <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label="Filtrar histórico">
+        {GRUPOS_DO_HISTORICO.map((g) => {
+          const n = g.chave === "todos" ? eventos.length : eventos.filter((e) => g.tipos.includes(e.tipo)).length;
+          return (
+            <button key={g.chave} type="button" onClick={() => setGrupo(g.chave)} aria-pressed={grupo === g.chave}
+              className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${grupo === g.chave ? "border-accent-500 bg-accent-50 text-accent-700 dark:bg-accent-900/30" : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-900"}`}>
+              {g.rotulo} · {n}
+            </button>
+          );
+        })}
+      </div>
+      {!lista.length ? (
+        <p className="mt-3 text-xs text-zinc-500">Nenhum registro neste filtro.</p>
+      ) : (
+        lista.map((e) => (
+          <div key={e.id} className="mt-2 border-l-2 border-zinc-200 pl-3 text-xs dark:border-zinc-700">
+            <p className="text-[11px] text-zinc-500">
+              {momento(e.created_at)} · <span className="font-semibold text-zinc-700 dark:text-zinc-300">{ROTULO_DO_EVENTO[e.tipo] ?? e.tipo}</span>
+            </p>
+            <p className="mt-1">{e.descricao}</p>
+            {e.publicacao_id !== id && (
+              <button className="mt-1 text-accent-600" onClick={() => abrir(e.publicacao_id)}>Abrir andamento relacionado</button>
+            )}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
 export function DjenHistorico({
   id,
   andamentos = [],
@@ -436,39 +497,7 @@ export function DjenHistorico({
           Carregar mais andamentos
         </Button>
       )}
-      <details className="mt-5">
-        <summary className="cursor-pointer text-xs font-semibold">
-          Histórico de alterações no acompanhamento
-        </summary>
-        <p className="mt-2 text-[11px] text-zinc-500">
-          Últimas 100 alterações registradas neste processo.
-        </p>
-        {!eventos.length ? (
-          <p className="mt-2 text-xs text-zinc-500">
-            Nenhuma alteração registrada.
-          </p>
-        ) : (
-          eventos.map((e) => (
-            <div
-              key={e.id}
-              className="mt-2 border-l-2 border-zinc-200 pl-3 text-xs dark:border-zinc-700"
-            >
-              <p className="text-[11px] text-zinc-500">
-                {momento(e.created_at)}
-              </p>
-              <p className="mt-1">{e.descricao}</p>
-              {e.publicacao_id !== id && (
-                <button
-                  className="mt-1 text-accent-600"
-                  onClick={() => abrir(e.publicacao_id)}
-                >
-                  Abrir andamento relacionado
-                </button>
-              )}
-            </div>
-          ))
-        )}
-      </details>
+      <HistoricoOperacional eventos={eventos} id={id} abrir={abrir} />
     </section>
   );
 }

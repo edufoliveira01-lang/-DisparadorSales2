@@ -68,6 +68,35 @@ function textoDoAviso(nome: string, processo: string | null | undefined, categor
   return `Olá, ${nome}. Houve uma nova publicação no processo ${proc}: ${situacao || tiposTexto || "andamento processual"}.\n\nNossa equipe está analisando o conteúdo para orientar você.\n\nSales & Associados.`;
 }
 
+type SinalDoCartao = { chave: string; texto: string; tom: "neutral" | "success" | "warning" | "danger" | "accent" | "info" | "violet" | "cyan" | "indigo"; peso: number; dica?: string };
+/** Os sinais do cartão em ordem de importância: o que pede ação aparece primeiro; o resto fica recolhido em «+N sinais». */
+function sinaisDoCartao(p: Publicacao): SinalDoCartao[] {
+  const out: SinalDoCartao[] = [];
+  const cats = p.categorias as string[];
+  const ehCompromisso = cats.includes("pericia") || cats.includes("audiencia");
+  const nomeCompromisso = cats.includes("audiencia") && !cats.includes("pericia") ? "Audiência" : "Perícia";
+  if (Boolean(p.cancelada)) out.push({ chave: "cancelada", texto: "Cancelada na origem", tom: "danger", peso: 100 });
+  if (p.compromisso_estado === "completar") out.push({ chave: "completar", texto: `⚠ ${p.compromisso_tipo === "audiencia" ? "Audiência" : "Perícia"}: completar dados para avisar`, tom: "warning", peso: 98, dica: p.compromisso_motivo });
+  else if (Boolean(p.prioridade_compromisso)) out.push({ chave: "marcada", texto: `● ${nomeCompromisso} marcada · revisar agora`, tom: "danger", peso: 99 });
+  if (p.compromisso_estado === "informado") out.push({ chave: "no-controle", texto: "✓ No controle: vai para “Avisar”", tom: "success", peso: 60 });
+  if (p.ia_status === "erro") out.push({ chave: "ia-falhou", texto: "IA falhou · revisão necessária", tom: "danger", peso: 95, dica: p.ia_erro ?? undefined });
+  if (p.ia_status === "concluida" && p.ia_provedor === "regra" && !p.revisada) out.push({ chave: "regra", texto: "Provisória por regra · conferir", tom: "warning", peso: 94, dica: "A IA não concluiu; uma regra de segurança leu o texto. Confira data, horário e local." });
+  if (p.pericia_controle && ehCompromisso) {
+    const st = p.pericia_controle.status;
+    const texto = st === "duplicidade" ? "Já informada · duplicidade" : st === "redesignacao" ? "Possível redesignação" : st === "cadastrada_nao_informada" ? "No calendário · sem confirmação de aviso" : st === "cadastrada_a_conferir" ? "No calendário · conferir local" : st === "nao_cadastrada" ? "Ainda fora do controle de perícias" : "Dados da perícia incompletos";
+    out.push({ chave: "controle", texto, tom: st === "duplicidade" ? "success" : st === "redesignacao" ? "warning" : st === "cadastrada_nao_informada" ? "info" : "neutral", peso: st === "dados_incompletos" ? 90 : 55 });
+  }
+  if (!p.lida) out.push({ chave: "nao-lida", texto: "● Não lida", tom: "accent", peso: 70 });
+  if (Boolean(p.concluida)) out.push({ chave: "concluida", texto: "Concluída", tom: "success", peso: 65 });
+  if (p.ia_status === "concluida" && p.ia_provedor !== "regra" && !p.revisada) out.push({ chave: "sugestao", texto: "Sugestão da IA · a conferir", tom: "info", peso: 50, dica: "Classificação sugerida pela IA, ainda não conferida por uma pessoa." });
+  if (p.ia_status === "pendente" || p.ia_status === "analisando") out.push({ chave: "andamento", texto: "Classificação em andamento", tom: "neutral", peso: 30 });
+  if (p.revisada) out.push({ chave: "revisada", texto: "Revisada por pessoa", tom: "success", peso: 20 });
+  for (const c of p.categorias) out.push({ chave: `cat-${c}`, texto: TIPOS[c], tom: (tons[c] as SinalDoCartao["tom"]) ?? "neutral", peso: 40 });
+  if (!p.categorias.length) out.push({ chave: "cat-outros", texto: "Outros", tom: "neutral", peso: 35 });
+  if (cats.includes("sentenca")) out.push({ chave: "resultado", texto: RESULTADOS[p.resultado], tom: p.resultado === "nao_identificado" ? "neutral" : "info", peso: 45 });
+  return out.sort((a, b) => b.peso - a.peso);
+}
+
 const TIPOS = {
   sentenca: "Sentença de mérito",
   acordao: "Acórdão",
@@ -1082,7 +1111,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                 <option value="todos">Todos</option>
               </Select>
             </div>
-<div className="process-filter-fields"><div><span className="process-filter-label">Categorias de andamento</span><MultiSelect inline label="Categorias (múltiplas)" placeholder="Todas as categorias" value={filtro.categoria.split(",").filter(Boolean)} options={Object.entries(FILTROS).map(([value, label]) => ({ value, label }))} onChange={(v) => filtrar("categoria", v.join(","))} /></div><div><span className="process-filter-label">Resultado da sentença</span><MultiSelect inline label="Resultado da sentença" placeholder="Todos os resultados" value={filtro.resultado.split(",").filter(Boolean)} options={Object.entries(RESULTADOS).map(([value, label]) => ({ value, label }))} onChange={(v) => filtrar("resultado", v.join(","))} /></div><div><span className="process-filter-label">Advogado</span><MultiSelect inline label="Advogado" placeholder={(status?.advogados || []).length ? "Todos os advogados" : "Nenhum advogado acompanhado cadastrado"} value={filtro.advogado_id.split(",").filter(Boolean)} options={(status?.advogados || []).map((a) => ({ value: String(a.id), label: `${a.nome} · ${a.uf_oab} ${a.numero_oab}` }))} onChange={(v) => filtrar("advogado_id", v.join(","))} /></div><div><span className="process-filter-label">Leitura e pendências</span><MultiSelect inline label="Situação" placeholder="Todas as situações" value={filtro.situacao.split(",").filter(Boolean)} options={[{ value: "nao_lidas", label: "Não lidas" }, { value: "lidas", label: "Lidas" }, { value: "revisar", label: "A revisar" }, { value: "com_prazo", label: "Com prazo em aberto" }]} onChange={(v) => filtrar("situacao", v.join(","))} /></div></div>          </section>
+<div className="process-filter-fields"><div><span className="process-filter-label">Categorias de andamento</span><MultiSelect inline label="Categorias (múltiplas)" placeholder="Todas as categorias" value={filtro.categoria.split(",").filter(Boolean)} options={Object.entries(FILTROS).map(([value, label]) => ({ value, label }))} onChange={(v) => filtrar("categoria", v.join(","))} /></div><div><span className="process-filter-label">Leitura e pendências</span><MultiSelect inline label="Situação" placeholder="Todas as situações" value={filtro.situacao.split(",").filter(Boolean)} options={[{ value: "nao_lidas", label: "Não lidas" }, { value: "lidas", label: "Lidas" }, { value: "revisar", label: "A revisar" }, { value: "com_prazo", label: "Com prazo em aberto" }]} onChange={(v) => filtrar("situacao", v.join(","))} /></div><details className="process-filter-more col-span-full text-xs"><summary className="cursor-pointer select-none font-medium text-accent-600">Mais filtros (resultado da sentença, advogado)</summary><div className="mt-2 grid gap-3"><div><span className="process-filter-label">Resultado da sentença</span><MultiSelect inline label="Resultado da sentença" placeholder="Todos os resultados" value={filtro.resultado.split(",").filter(Boolean)} options={Object.entries(RESULTADOS).map(([value, label]) => ({ value, label }))} onChange={(v) => filtrar("resultado", v.join(","))} /></div><div><span className="process-filter-label">Advogado</span><MultiSelect inline label="Advogado" placeholder={(status?.advogados || []).length ? "Todos os advogados" : "Nenhum advogado acompanhado cadastrado"} value={filtro.advogado_id.split(",").filter(Boolean)} options={(status?.advogados || []).map((a) => ({ value: String(a.id), label: `${a.nome} · ${a.uf_oab} ${a.numero_oab}` }))} onChange={(v) => filtrar("advogado_id", v.join(","))} /></div></div></details></div>          </section>
           </aside><div className="process-results">
           {(Boolean(status?.ia.pausa) || (status?.ia.pendentes ?? 0) > 0) && <p className="flex items-center gap-2 text-[11px] text-zinc-500"><Sparkles className="h-3.5 w-3.5" />{status?.ia.pausa ? `Análise pausada: ${status.ia.pausa}` : `${status?.ia.pendentes ?? 0} publicação(ões) aguardando classificação pela IA`}. Classificações pendentes aparecem em Outros até a análise.</p>}
           <div id="compromissos-pendentes"><CompromissosPendentes key={`cp-${total}`} aoAbrirPublicacao={(pid) => void abrir(pid)} aoMudar={() => void carregarLista()} /></div>
@@ -1151,7 +1180,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
               }
             />
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {items.map((p) => (
                 <article
                   key={p.id}
@@ -1176,7 +1205,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                       void abrir(p.id);
                     }
                   }}
-                  className={`group cursor-pointer rounded-2xl border bg-white p-5 shadow-sm transition-all hover:border-accent-400 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 dark:bg-zinc-900 ${!p.lida ? "border-l-4 border-l-accent-600 dark:border-zinc-800 dark:border-l-accent-500" : "border-zinc-200 dark:border-zinc-800"}`}
+                  className={`group cursor-pointer rounded-xl border bg-white p-3.5 shadow-sm transition-all hover:border-accent-400 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 dark:bg-zinc-900 ${!p.lida ? "border-l-4 border-l-accent-600 dark:border-zinc-800 dark:border-l-accent-500" : "border-zinc-200 dark:border-zinc-800"}`}
                 >
                   {filtro.arquivo === "ativos" && <label className="mb-3 inline-flex cursor-pointer items-center gap-2 text-xs text-zinc-500">
                     <Checkbox checked={selecionados.includes(p.id)} onChange={(e) => setSelecionados((atual) => e.target.checked ? [...new Set([...atual, p.id])] : atual.filter((id) => id !== p.id))} />
@@ -1184,73 +1213,29 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                   </label>}
                   <div className="flex flex-col gap-4 sm:flex-row sm:justify-between">
                     <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap gap-2">
-                        {p.categorias.length ? (
-                          p.categorias.map((c) => (
-                            <Badge key={c} tone={tons[c]}>
-                              {TIPOS[c]}
-                            </Badge>
-                          ))
-                        ) : (
-                          <Badge>Outros</Badge>
-                        )}
-                        {p.categorias.includes("sentenca") && (
-                          <Badge
-                            tone={
-                              p.resultado === "nao_identificado"
-                                ? "neutral"
-                                : "info"
-                            }
-                          >
-                            {RESULTADOS[p.resultado]}
-                          </Badge>
-                        )}
-                        {p.pericia_controle && (
-                          <Badge
-                            tone={
-                              p.pericia_controle.status === "duplicidade"
-                                ? "success"
-                                : p.pericia_controle.status === "redesignacao"
-                                  ? "warning"
-                                  : p.pericia_controle.status ===
-                                      "cadastrada_nao_informada"
-                                    ? "info"
-                                    : "neutral"
-                            }
-                          >
-                            {p.pericia_controle.status === "duplicidade"
-                              ? "Já informada · duplicidade"
-                              : p.pericia_controle.status === "redesignacao"
-                                ? "Possível redesignação"
-                                : p.pericia_controle.status ===
-                                    "cadastrada_nao_informada"
-                                  ? "No calendário · sem confirmação de aviso"
-                                  : p.pericia_controle.status ===
-                                      "cadastrada_a_conferir"
-                                    ? "No calendário · conferir local"
-                                    : p.pericia_controle.status ===
-                                        "nao_cadastrada"
-                                      ? "Ainda fora do controle de perícias"
-                                      : "Dados da perícia incompletos"}
-                          </Badge>
-                        )}
-                        {Boolean(p.prioridade_compromisso) && (p.compromisso_estado === "completar"
-                          ? <Badge tone="warning" title={p.compromisso_motivo}>⚠ {p.compromisso_tipo === "audiencia" ? "Audiência" : "Perícia"}: completar dados para avisar</Badge>
-                          : <Badge tone="danger">● {p.categorias.includes("audiencia" as never) && !p.categorias.includes("pericia" as never) ? "Audiência marcada" : "Perícia marcada"} · revisar agora</Badge>)}
-                        {p.compromisso_estado === "informado" && <Badge tone="success">✓ No controle: vai para “Avisar”</Badge>}
-                        {!p.concluida && <ActivityBadge atividade={p.atividade} />}
-                        {!p.lida && <Badge tone="accent">● Não lida</Badge>}
-                        {Boolean(p.concluida) && <Badge tone="success">Concluída</Badge>}
-                        {p.ia_status === "erro" && <Badge tone="danger" title={p.ia_erro ?? undefined}>IA falhou · revisão necessária</Badge>}
-                        {p.ia_status === "concluida" && p.ia_provedor === "regra" && !p.revisada && <Badge tone="warning" title="A IA não concluiu; uma regra de segurança leu o texto. Confira data, horário e local.">Provisória por regra · conferir</Badge>}
-                        {p.ia_status === "concluida" && p.ia_provedor !== "regra" && !p.revisada && <Badge tone="info" title="Classificação sugerida pela IA, ainda não conferida por uma pessoa.">Sugestão da IA · a conferir</Badge>}
-                        {Boolean(p.revisada) && <Badge tone="success">Revisada por pessoa</Badge>}
-                        {(p.ia_status === "pendente" || p.ia_status === "analisando") && <Badge tone="neutral">Classificação em andamento</Badge>}
-                        {Boolean(p.cancelada) && (
-                          <Badge tone="danger">Cancelada na origem</Badge>
-                        )}
-                      </div>
-                      <h2 className="mt-3 text-base font-semibold text-zinc-900 dark:text-zinc-100">{p.cliente_exibicao || "Cliente não identificado"}</h2>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                        {dia(p.data_disponibilizacao)} · {p.tipo_documento || "Andamento"}
+                      </p>
+                      {(() => {
+                        const sinais = sinaisDoCartao(p);
+                        const destaque = sinais.slice(0, 3);
+                        const resto = sinais.slice(3);
+                        return (
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            {destaque.map((x) => <Badge key={x.chave} tone={x.tom} title={x.dica}>{x.texto}</Badge>)}
+                            {!p.concluida && <ActivityBadge atividade={p.atividade} />}
+                            {resto.length > 0 && (
+                              <details className="inline-block text-[11px] text-zinc-500">
+                                <summary className="cursor-pointer select-none rounded-md bg-zinc-100 px-2 py-0.5 font-medium hover:bg-zinc-200 dark:bg-zinc-800">+{resto.length} sinais</summary>
+                                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                  {resto.map((x) => <Badge key={x.chave} tone={x.tom} title={x.dica}>{x.texto}</Badge>)}
+                                </div>
+                              </details>
+                            )}
+                          </div>
+                        );
+                      })()}
+                      <h2 className="mt-2 text-base font-semibold text-zinc-900 dark:text-zinc-100">{p.cliente_exibicao || "Cliente não identificado"}</h2>
                       <p className="mt-1 break-all text-xs font-medium text-zinc-600 dark:text-zinc-300">Processo {p.processo || "não informado"}</p>
                       {Boolean(p.andamentos_total && p.andamentos_total > 1) && (
                         <p className="mt-1 text-[11px] font-medium text-accent-700 dark:text-accent-300">
@@ -1811,6 +1796,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                             show(r.estado === "informado" ? `${nome} adicionada ao controle (Avisar).` : r.motivo || `Não foi possível adicionar a ${nome.toLowerCase()} ao controle.`, r.estado === "informado" ? "success" : "error");
                           })}>Adicionar ao controle</Button>
                         )}
+                        {noControle && <Button size="sm" variant="outline" onClick={() => navigate("/pericias")}>Abrir em Perícias e compromissos</Button>}
                         <Button size="sm" variant="outline" onClick={() => setAbaDetalhe("publicacao")}>Ver inteiro teor</Button>
                       </div>
                     </section>

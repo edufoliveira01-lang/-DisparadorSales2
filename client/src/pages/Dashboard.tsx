@@ -215,6 +215,7 @@ export function Dashboard() {
     contatoId?: number;
   } | null>(null);
   const [salvandoContato, setSalvandoContato] = useState(false);
+  const [semTrello, setSemTrello] = useState(false);
 
   const [edicaoNome, setEdicaoNome] = useState<{ card: CardViewModel; nome: string } | null>(null);
   const [edicaoPericia, setEdicaoPericia] = useState<{ card: CardViewModel; index: number; pericia: Pericia } | null>(null);
@@ -228,7 +229,9 @@ export function Dashboard() {
     } catch (err) {
       if (!silencioso) {
         setCards([]);
-        setErro(err instanceof ApiError ? err.message : "Erro ao carregar os cards do Trello.");
+        // Trello é OPCIONAL: sem ele as perícias chegam pelas Publicações. Não é uma falha, e a tela diz isso.
+        if (err instanceof ApiError && err.data?.codigo === "trello_nao_configurado") setSemTrello(true);
+        else setErro(err instanceof ApiError ? err.message : "Erro ao carregar os cards do Trello.");
       }
     } finally {
       if (!silencioso) setCarregando(false);
@@ -851,7 +854,7 @@ export function Dashboard() {
 
       <div className="overview-layout">
         <div className="overview-work">
-      {erro ? <EmptyState icon={Inbox} title="Não foi possível carregar os cards" description={erro} action={can("integrations.manage") ? <Button variant="outline" onClick={() => navigate("/configuracoes")}>Ir para Configurações</Button> : undefined} /> : (
+      {semTrello && !erro ? <EmptyState icon={Inbox} title="O Trello não está conectado" description="Isso é opcional. As perícias e audiências deste escritório chegam pelas Publicações (DJEN): ao adicionar uma ao controle, ela aparece em Avisar e no Calendário. Conecte o Trello só se o escritório usa os cartões dele." action={<div className="flex flex-wrap justify-center gap-2"><Button onClick={() => navigate("/processos")}>Ir para Publicações</Button>{can("integrations.manage") ? <Button variant="outline" onClick={() => navigate("/configuracoes")}>Conectar o Trello</Button> : null}</div>} /> : erro ? <EmptyState icon={Inbox} title="Não foi possível carregar os cards" description={erro} action={can("integrations.manage") ? <Button variant="outline" onClick={() => navigate("/configuracoes")}>Ir para Configurações</Button> : undefined} /> : (
         <div className="min-w-0 space-y-4">
           <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
             {([["todos", "Todos os avisos", cards?.length ?? 0, `${resumo.prontos} prontos para avisar`], ["nao_enviado", "Para enviar", resumo.pendentes, ""], ["enviado", "Enviados", resumo.enviados, ""], ["falhou", "Com falha", (cards ?? []).filter((c) => c.ultimoEnvio?.status === "falha").length, ""]] as [FiltroStatus, string, number, string][]).map(([k, rotulo, n, ajuda]) => (

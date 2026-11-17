@@ -421,6 +421,7 @@ djenRouter.post(
   "/publicacoes/:id/mensagem",
   wrap(async (req, res) => {
     const mensagem = await enviarMensagemDjen(id(req.params.id), req.body);
+    try { registrarHistoricoDjen(id(req.params.id), "mensagem", `Aviso ao cliente pelo WhatsApp: ${(mensagem as { status?: string } | null)?.status === "sucesso" ? "enviado e confirmado" : "tentativa sem confirmação de sucesso; confira a conversa"}.`); } catch { /* registro complementar */ }
     changed();
     res.json({ mensagem });
   }),
@@ -628,10 +629,12 @@ djenRouter.post(
       .prepare("SELECT processo_chave FROM djen_publicacoes WHERE id=?")
       .get(n) as { processo_chave: string } | undefined;
     if (!processo) throw new DjenInputError("Publicação não encontrada.");
-    db.prepare("UPDATE djen_publicacoes SET lida=? WHERE processo_chave=? AND cancelada=0").run(
+    const afetadas = db.prepare("UPDATE djen_publicacoes SET lida=? WHERE processo_chave=? AND cancelada=0 AND lida<>?").run(
       req.body.lida ? 1 : 0,
       processo.processo_chave,
-    );
+      req.body.lida ? 1 : 0,
+    ).changes;
+    if (afetadas > 0) { try { registrarHistoricoDjen(n, "leitura", req.body.lida ? `Marcado como lido (${afetadas} andamento(s) do processo).` : `Marcado como não lido (${afetadas} andamento(s) do processo).`); } catch { /* registro complementar */ } }
     changed();
     res.json({ ok: true });
   }),

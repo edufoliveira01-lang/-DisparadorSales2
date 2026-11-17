@@ -90,3 +90,15 @@ describe("conclusão segura de andamentos", () => {
     expect(concluirLoteComSeguranca([ok]).publicacoes).toBe(1);
   });
 });
+
+describe("fila por urgência", () => {
+  it("prazo vencido ou que vence hoje aparece antes de uma ciência mais recente", async () => {
+    const { listarPublicacoes } = await import("../src/services/djen/store");
+    db.exec("DELETE FROM djen_prazos; DELETE FROM djen_historico; DELETE FROM djen_publicacao_advogados; DELETE FROM djen_publicacoes;");
+    const antigo = publicar("fila-1", "2026-10-01", { texto: "Intime-se para manifestação." });
+    const recente = publicar("fila-2", "2026-11-16", { texto: "Ciência." });
+    db.prepare("INSERT INTO djen_prazos(publicacao_id,descricao,inicio,termino,status) VALUES (?,?,?,?,?)").run(antigo, "Manifestação", "2026-10-02", "2026-10-20", "aberto");
+    const r = listarPublicacoes({ arquivo: "ativos" }) as { items: { id: number }[] };
+    expect(r.items.map((i) => i.id)).toEqual([antigo, recente]);
+  });
+});

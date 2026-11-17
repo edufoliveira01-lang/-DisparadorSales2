@@ -257,7 +257,7 @@ export function detectarRemarcacao(cardId: string, pericia: Pericia): Remarcacao
  * não há como posicionar a perícia no calendário, então essa entrada é simplesmente ignorada.
  */
 export type ResultadoRegistroPericia =
-  | { status: "criada"; pericia: PericiaAgendada }
+  | { status: "criada"; pericia: PericiaAgendada; substituidas?: { id: number; data: string; horario: string | null }[] }
   | { status: "duplicada"; pericia: PericiaAgendada }
   | { status: "data_invalida"; pericia: null };
 
@@ -341,7 +341,7 @@ export function registrarPericiaAgendadaComResultado(
 
   scheduleGoogleCalendarSync(nova.id);
 
-  return { status: "criada", pericia: nova };
+  return { status: "criada", pericia: nova, ...(anteriores.length ? { substituidas: anteriores.map((a) => ({ id: a.id, data: a.data, horario: a.horario ?? null })) } : {}) };
 }
 
 export function registrarPericiaAgendada(

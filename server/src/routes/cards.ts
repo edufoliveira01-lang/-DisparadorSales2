@@ -52,7 +52,7 @@ cardsRouter.get("/", async (req, res) => {
   const listId = getSetting("trello_list_id");
 
   if (!key || !token || !listId) {
-    return res.status(400).json({ error: "Configure o Trello (API Key, Token e Lista) na tela de Configurações." });
+    return res.status(400).json({ error: "Configure o Trello (API Key, Token e Lista) na tela de Configurações.", codigo: "trello_nao_configurado" });
   }
 
   try {

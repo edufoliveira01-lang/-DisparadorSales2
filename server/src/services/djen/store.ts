@@ -741,12 +741,13 @@ export function listarPublicacoes(filtro: Record<string, string>) {
   const grupos = db
     .prepare(
       `SELECT p.processo_chave,MAX(p.data_disponibilizacao) AS ultima_data,MAX(p.id) AS ultimo_id,
-         MAX(CASE WHEN p.cancelada=0 AND ((p.revisada=0 AND (p.categorias_json LIKE '%"pericia"%' OR p.categorias_json LIKE '%"audiencia"%')) OR p.compromisso_estado='completar') THEN 1 ELSE 0 END) AS prioridade
+         MAX(CASE WHEN p.cancelada=0 AND ((p.revisada=0 AND (p.categorias_json LIKE '%"pericia"%' OR p.categorias_json LIKE '%"audiencia"%')) OR p.compromisso_estado='completar') THEN 1 ELSE 0 END) AS prioridade,
+         MAX(CASE WHEN p.cancelada=0 AND p.concluida=0 AND EXISTS(SELECT 1 FROM djen_prazos dz WHERE dz.publicacao_id=p.id AND dz.status='aberto' AND dz.termino<=date('now','-3 hours')) THEN 1 ELSE 0 END) AS vencido_ou_hoje
          FROM djen_publicacoes p
          JOIN djen_processos pr ON pr.chave=p.processo_chave
          LEFT JOIN contacts c ON c.id=pr.cliente_id` +
         condition +
-        " GROUP BY p.processo_chave ORDER BY prioridade DESC,ultima_data DESC,ultimo_id DESC LIMIT 25 OFFSET ?",
+        " GROUP BY p.processo_chave ORDER BY prioridade DESC,vencido_ou_hoje DESC,ultima_data DESC,ultimo_id DESC LIMIT 25 OFFSET ?",
     )
     .all(...values, (pagina - 1) * 25) as { processo_chave: string }[];
   const rows = grupos.map((grupo) => {

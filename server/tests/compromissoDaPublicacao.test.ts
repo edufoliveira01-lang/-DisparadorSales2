@@ -50,6 +50,20 @@ describe("perícia e audiência marcadas viram prioridade e entram em «Avisar»
     expect(sincronizarCompromisso(passada)).toMatchObject({ estado: "ignorado" });
   });
 
+  it("remarcação: um único registro ativo; o histórico diz a data anterior que foi substituída", () => {
+    const d2 = new Date(Date.now() + 20 * 86_400_000);
+    const nd = `${String(d2.getDate()).padStart(2, "0")}/${String(d2.getMonth() + 1).padStart(2, "0")}/${d2.getFullYear()}`;
+    const texto2 = `Processo 7777777-13.2026.8.26.7777 - Fica redesignada a audiência de instrução para o dia ${nd}, às 10h00, na Sala 3 do Fórum de Jundiaí.`;
+    const re = ins("INSERT INTO djen_publicacoes(comunicacao_id,processo_chave,tribunal,orgao,classe,tipo_documento,tipo_comunicacao,data_disponibilizacao,texto,categorias_json,revisada) VALUES ('zz-comp-4',?,'TJSP','Vara','Classe','Intimação','Intimação',date('now'),?,?,1)", CH, texto2, JSON.stringify(["audiencia"]));
+    expect(sincronizarCompromisso(re)).toMatchObject({ estado: "informado" });
+    const ativas = db.prepare("SELECT COUNT(*) n FROM pericias_agendadas WHERE processo_chave=? AND status='ativa'").get(CH) as { n: number };
+    expect(ativas.n).toBe(1);
+    const h = db.prepare("SELECT descricao FROM djen_historico WHERE publicacao_id=? AND tipo='pericia'").get(re) as { descricao: string };
+    expect(h.descricao).toMatch(/REMARCADA/);
+    expect(h.descricao).toContain(`${dd}/${mm}/${aaaa}`);
+    db.prepare("DELETE FROM djen_historico WHERE publicacao_id=?").run(re);
+  });
+
   it("a publicação de perícia/audiência a revisar aparece no resumo", () => {
     const nova = ins("INSERT INTO djen_publicacoes(comunicacao_id,processo_chave,tribunal,orgao,classe,tipo_documento,tipo_comunicacao,data_disponibilizacao,texto,categorias_json,revisada) VALUES ('zz-comp-3',?,'TJSP','Vara','Classe','Intimação','Intimação',date('now'),'x','[\"pericia\"]',0)", CH);
     expect(resumoDosCompromissos().a_revisar).toBeGreaterThanOrEqual(1);
