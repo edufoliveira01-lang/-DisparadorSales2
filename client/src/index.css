@@ -595,3 +595,9 @@ html.dark.modo-leve .app-topbar { background: rgb(9 9 11 / .96); }
 .process-quick-filters button { padding:5px 11px !important; font-size:11.5px !important; }
 /* cabeçalho da página mais baixo */
 .process-results > p, .process-results > div { margin-top:0; }
+
+/* Corrige herança das regras antigas do rail (coluna, botão largo, número grande à esquerda): as pílulas ficam em linha, compactas */
+.process-filter-rail > .pub-faixa { flex-direction:row !important; flex-wrap:wrap !important; align-items:center; gap:6px !important; }
+.process-filter-rail > .pub-faixa > .pub-pill { display:inline-flex !important; flex:0 0 auto !important; width:auto !important; padding:5px 11px !important; border-radius:999px !important; gap:8px; align-items:center; min-height:0; }
+.process-filter-rail > .pub-faixa > .pub-pill > span { flex:0 0 auto !important; width:auto !important; min-height:0 !important; display:inline !important; }
+.process-filter-rail > .pub-faixa > .pub-pill > strong { order:0 !important; min-width:0 !important; margin:0 !important; font-size:13px !important; line-height:1 !important; }
