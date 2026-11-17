@@ -352,17 +352,38 @@ export function completarComRegraDeSeguranca(analise: AnaliseCodex, texto: strin
     alertas: [...analise.alertas, `A IA não apontou ${tipo === "pericia" ? "a perícia" : "a audiência"} designada neste texto; a regra de segurança a acrescentou. Confira data, horário e local.`],
   };
 }
+/** Nomes dos campos da resposta da IA que não passaram na conferência de estrutura (só para a mensagem de erro). */
+function diagnosticoDeEstrutura(a: AnaliseCodex): string {
+  const f: string[] = [];
+  if (!Array.isArray(a.categorias)) f.push("categorias não é lista");
+  else if (a.categorias.some((c) => !CATEGORIAS_DJEN.includes(c))) f.push(`categoria desconhecida: ${a.categorias.filter((c) => !CATEGORIAS_DJEN.includes(c)).join(",")}`);
+  if (!RESULTADOS_DJEN.includes(a.resultado)) f.push(`resultado inválido: ${String(a.resultado)}`);
+  if (!Array.isArray(a.evidencias)) f.push("evidencias não é lista"); else if (a.evidencias.length > 24) f.push("evidências demais");
+  if (!Array.isArray(a.alertas)) f.push("alertas não é lista"); else if (a.alertas.length > 12 || a.alertas.some((x) => typeof x !== "string" || x.length > 1000)) f.push("alertas fora do limite");
+  if (typeof a.resumo !== "string" || !a.resumo.trim() || a.resumo.length > 2500) f.push("resumo vazio ou longo demais");
+  if (typeof a.justificativa !== "string" || !a.justificativa.trim() || a.justificativa.length > 2500) f.push("justificativa vazia ou longa demais");
+  if (!a.agendamento || typeof a.agendamento !== "object") f.push("agendamento ausente");
+  if (!a.providencia || typeof a.providencia !== "object") f.push("providencia ausente");
+  else {
+    if (!["ciencia", "cumprimento", "prazo_explicito", "indeterminado"].includes(a.providencia.tipo)) f.push(`providencia.tipo inválido: ${String(a.providencia.tipo)}`);
+    if (!["escritorio", "cliente", "perito", "outra_parte", "indeterminado"].includes(a.providencia.responsavel)) f.push(`providencia.responsavel inválido: ${String(a.providencia.responsavel)}`);
+    if (a.providencia.descricao !== null && (typeof a.providencia.descricao !== "string" || a.providencia.descricao.length > 1000)) f.push("providencia.descricao inválida");
+    if (a.providencia.prazo_texto !== null && (typeof a.providencia.prazo_texto !== "string" || a.providencia.prazo_texto.length > 1200)) f.push("providencia.prazo_texto inválido");
+  }
+  return f.join("; ") || "não identificado";
+}
 export function validarAnaliseCodex(
   value: unknown,
   texto: string,
   contexto: ContextoPublicacao = {},
 ): AnaliseCodex {
-  const fail = (): never => {
+  // `detalhe` diz QUAL conferência falhou (campo e trecho): sem isso o erro era sempre a mesma frase e ninguém sabia o que consertar.
+  const fail = (detalhe = ""): never => {
     throw new ErroAnaliseCodex(
-      "O Codex retornou uma análise inválida ou sem evidência verificável. Reanalise a publicação.",
+      `O Codex retornou uma análise inválida ou sem evidência verificável. Reanalise a publicação.${detalhe ? ` (Detalhe técnico: ${detalhe.slice(0, 300)})` : ""}`,
     );
   };
-  if (!value || typeof value !== "object") return fail();
+  if (!value || typeof value !== "object") return fail("a resposta não é um objeto");
   const a = value as AnaliseCodex;
   if (
     !Array.isArray(a.categorias) ||
@@ -397,7 +418,7 @@ export function validarAnaliseCodex(
       (typeof a.providencia.prazo_texto !== "string" ||
         a.providencia.prazo_texto.length > 1200))
   )
-    return fail();
+    return fail(`estrutura fora do esquema (${diagnosticoDeEstrutura(a)})`);
   if (
     a.situacao !== undefined &&
     (typeof a.situacao !== "string" || a.situacao.length > 250)
@@ -413,7 +434,7 @@ export function validarAnaliseCodex(
       e.trecho.length > 1200 ||
       !source.includes(canon(e.trecho))
     )
-      return fail();
+      return fail(`evidência${e && typeof e === "object" ? ` «${String((e as { categoria?: unknown }).categoria)}»` : ""} que não é trecho literal da publicação: «${String((e as { trecho?: unknown } | undefined)?.trecho ?? "").slice(0, 140)}»`);
   }
   for (const key of ["data", "horario", "local"] as const) {
     const v = a.agendamento[key];
@@ -424,13 +445,13 @@ export function validarAnaliseCodex(
         v.length > 500 ||
         !source.includes(canon(v)))
     )
-      return fail();
+      return fail(`agendamento.${key} não aparece literalmente no texto: «${String(v).slice(0, 140)}»`);
   }
   if (
     a.providencia.prazo_texto &&
     !source.includes(canon(a.providencia.prazo_texto))
   )
-    return fail();
+    return fail(`providencia.prazo_texto não aparece literalmente no texto: «${a.providencia.prazo_texto.slice(0, 140)}»`);
   if (
     a.providencia.tipo === "prazo_explicito" &&
     (!a.providencia.prazo_texto ||
