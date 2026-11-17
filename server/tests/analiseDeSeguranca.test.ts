@@ -42,3 +42,41 @@ describe("rede de segurança de perícia e audiência", () => {
     expect(completarComRegraDeSeguranca(base, TEXTO)).toBe(base);
   });
 });
+
+import { validarAnaliseCodex, dataNoTexto, horaNoTexto } from "../src/services/djen/classifier";
+
+describe("a IA escreve a data de outro jeito (causa real da falha da perícia da Mayara)", () => {
+  it("data e hora equivalentes são reconhecidas pelo valor", () => {
+    expect(dataNoTexto(TEXTO, "03/12/2026")).toBe(true);
+    expect(dataNoTexto(TEXTO, "3 de dezembro de 2026")).toBe(true);
+    expect(dataNoTexto(TEXTO, "04/12/2026")).toBe(false);
+    expect(horaNoTexto(TEXTO, "16:00")).toBe(true);
+    expect(horaNoTexto(TEXTO, "16h")).toBe(true);
+    expect(horaNoTexto(TEXTO, "17:00")).toBe(false);
+  });
+
+  it("uma análise da IA com data 03/12/2026 e hora 16:00 é aceita como perícia", () => {
+    const aceita = validarAnaliseCodex({
+      categorias: ["pericia"], resultado: "nao_identificado", resumo: "Perícia designada.", justificativa: "O ato ordinatório intima as partes da perícia designada.",
+      evidencias: [{ categoria: "pericia", trecho: "Ficam as partes intimadas da perícia designada para o dia 03 de dezembro de 2026, às 16:00 horas" }],
+      agendamento: { data: "03/12/2026", horario: "16:00", local: null },
+      providencia: { tipo: "ciencia", descricao: null, prazo_texto: null, responsavel: "indeterminado" }, alertas: [],
+    }, TEXTO);
+    expect(aceita.categorias).toContain("pericia");
+  });
+
+  it("data que NÃO está no texto continua sendo rejeitada", () => {
+    expect(() => validarAnaliseCodex({
+      categorias: ["pericia"], resultado: "nao_identificado", resumo: "x", justificativa: "y",
+      evidencias: [{ categoria: "pericia", trecho: "Ficam as partes intimadas da perícia designada para o dia 03 de dezembro de 2026" }],
+      agendamento: { data: "05/12/2026", horario: "16:00", local: null },
+      providencia: { tipo: "ciencia", descricao: null, prazo_texto: null, responsavel: "indeterminado" }, alertas: [],
+    }, TEXTO)).toThrow(/agendamento\.data/);
+  });
+
+  it("o local da regra de segurança para antes de «consoante determinado»", () => {
+    const a = analiseDeSeguranca(TEXTO);
+    expect(a?.agendamento.local).toMatch(/Praça Barão do Rio Branco nº 30/);
+    expect(a?.agendamento.local).not.toMatch(/consoante/);
+  });
+});

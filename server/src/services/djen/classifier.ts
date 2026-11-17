@@ -215,6 +215,36 @@ const decisaoColegiada = (s: string) =>
     (/\b(?:turma recursal|turma julgadora|colegiado|camara julgadora)\b/.test(s) &&
       /\b(?:por unanimidade|por maioria|deram provimento|deu provimento|negaram provimento|negou provimento|recurso conhecido|conheceram do recurso)\b/.test(s)));
 
+/**
+ * DATA E HORÁRIO EQUIVALENTES. O texto diz «03 de dezembro de 2026, às 16:00 horas» e a IA devolve «03/12/2026» e «16:00»: é o MESMO dado, só escrito de
+ * outro jeito. A conferência exigia o trecho idêntico e descartava a análise inteira («agendamento.data não aparece literalmente no texto»), deixando uma
+ * perícia sem classificação. Aqui a data e a hora são comparadas pelo VALOR; o que não é data/hora segue exigindo trecho literal.
+ */
+const MESES_POR_NOME: Record<string, number> = { janeiro: 1, fevereiro: 2, marco: 3, abril: 4, maio: 5, junho: 6, julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12 };
+const dd2 = (n: number) => String(n).padStart(2, "0");
+function datasNoTexto(texto: string): Set<string> {
+  const c = normalizarTexto(texto);
+  const out = new Set<string>();
+  for (const m of c.matchAll(/\b(\d{1,2})\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*(\d{4})\b/g)) out.add(`${dd2(Number(m[1]))}/${dd2(Number(m[2]))}/${m[3]}`);
+  for (const m of c.matchAll(/\b(\d{1,2})\s+de\s+(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)(?:\s*,?\s*de)?\s+(\d{4})\b/g)) out.add(`${dd2(Number(m[1]))}/${dd2(MESES_POR_NOME[m[2]!]!)}/${m[3]}`);
+  return out;
+}
+function horasNoTexto(texto: string): Set<string> {
+  const c = normalizarTexto(texto);
+  const out = new Set<string>();
+  for (const m of c.matchAll(/\b(\d{1,2})\s*(?::\s*(\d{2})|h\s*(\d{2})?|horas?(?:\s*e\s*(\d{1,2})\s*min\w*)?)/g)) {
+    const h = Number(m[1]); const min = Number(m[2] ?? m[3] ?? m[4] ?? 0);
+    if (h <= 23 && min <= 59) out.add(`${dd2(h)}:${dd2(min)}`);
+  }
+  return out;
+}
+const normData = (v: string): string | null => { const s = datasNoTexto(v); return s.size === 1 ? [...s][0]! : null; };
+const normHora = (v: string): string | null => { const s = horasNoTexto(v); return s.size >= 1 ? [...s][0]! : null; };
+/** O valor (data) está no texto, literalmente ou como a MESMA data escrita de outro jeito? */
+export const dataNoTexto = (texto: string, v: string): boolean => normalizarTexto(texto).includes(canonLocal(v)) || ((): boolean => { const n = normData(v); return n !== null && datasNoTexto(texto).has(n); })();
+export const horaNoTexto = (texto: string, v: string): boolean => normalizarTexto(texto).includes(canonLocal(v)) || ((): boolean => { const n = normHora(v); return n !== null && horasNoTexto(texto).has(n); })();
+const canonLocal = (s: string) => normalizarTexto(s).replace(/\s+/g, " ").trim();
+
 /** Resgata apenas fatos consumados e conferíveis no próprio DJEN; não altera revisão humana. */
 export function refinarCategoriasDaAnalise(analise: AnaliseCodex, texto: string) {
   const categorias: CategoriaDjen[] = [];
@@ -260,7 +290,7 @@ export function refinarCategoriasDaAnalise(analise: AnaliseCodex, texto: string)
       (s) => /\b(?:designad[ao]|designo|agendad[ao]|redesignad[ao]|marcad[ao]|sera realizada|comparec(?:a|er))\b/.test(s) &&
         !/\b(?:cancelad[ao]|desmarcad[ao]|para designacao|a designar|informe data)\b/.test(s),
     );
-    if (prova && source.includes(canon(data)) && source.includes(canon(horario)))
+    if (prova && dataNoTexto(texto, data) && horaNoTexto(texto, horario))
       adicionar("pericia", prova);
   }
   return { categorias, evidencias };
@@ -307,7 +337,7 @@ export function analiseDeSeguranca(texto: string, contexto: ContextoPublicacao =
         ?? aposPalavra.match(/\b\d{1,2}\s*[/.-]\s*\d{1,2}\s*[/.-]\s*\d{4}\b/)?.[0];
       const horario = aposPalavra.match(/\b\d{1,2}\s*(?::\s*\d{2}|h\s*\d{0,2}|horas?)/i)?.[0];
       if (!data || !horario) continue;
-      const local = aposPalavra.match(/\b(?:sito|situad[oa]|local:|na|no)\s+((?:sala|rua|av\.?|avenida|pra[cç]a|rodovia|f[oó]rum|vara|consult[oó]rio|cl[ií]nica|hospital)[^.;]{3,200})/i)?.[0];
+      const local = aposPalavra.match(/\b(?:sito|situad[oa]|local:|na|no)\s+((?:sala|rua|av\.?|avenida|pra[cç]a|rodovia|f[oó]rum|vara|consult[oó]rio|cl[ií]nica|hospital)[^.;]{3,200}?)(?=\s*,?\s*(?:consoante|conforme|nos termos|id\b)|[.;]|$)/i)?.[0];
       const nome = tipo === "pericia" ? "Perícia" : "Audiência";
       // O trecho tem de existir LITERALMENTE no texto original (o validador confere): corta a partir da palavra-chave, no original.
       const inicio = texto.indexOf(aposPalavra.slice(0, 50));
@@ -443,7 +473,7 @@ export function validarAnaliseCodex(
       (typeof v !== "string" ||
         !v.trim() ||
         v.length > 500 ||
-        !source.includes(canon(v)))
+        !(key === "data" ? dataNoTexto(texto, v) : key === "horario" ? horaNoTexto(texto, v) : source.includes(canon(v))))
     )
       return fail(`agendamento.${key} não aparece literalmente no texto: «${String(v).slice(0, 140)}»`);
   }
@@ -492,8 +522,8 @@ export function validarAnaliseCodex(
           ((horario &&
           /\b\d{1,2}(?:\s*[/.-]\s*\d{1,2}|\s+de\s+[a-z]+)/.test(canon(data)) &&
           /\b\d{1,2}(?:\s*[:h]\s*\d{0,2}|\s*horas?)/.test(canon(horario)) &&
-          source.includes(canon(data)) &&
-          source.includes(canon(horario)) &&
+          dataNoTexto(texto, data) &&
+          horaNoTexto(texto, horario) &&
           agendamentoEfetivo) ||
           (!horario && remarcacao?.data === data && evidence.some((e) => canon(e.trecho).includes(canon(remarcacao.trecho))))),
       );
