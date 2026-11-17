@@ -1186,7 +1186,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                 <Input className="pl-9" aria-label="Buscar publicações" placeholder="Buscar cliente, processo ou trecho…" value={buscaTexto} onChange={(e) => setBuscaTexto(e.target.value)} />
               </div>
               <Select className="lg:max-w-[210px]" aria-label="Situação dos processos" value={filtro.arquivo} onChange={(e) => filtrar("arquivo", e.target.value)}>
-                <option value="ativos">Pendentes de conclusão</option>
+                <option value="ativos">Pendentes e prazos abertos</option>
                 <option value="concluidos">Concluídos</option>
                 <option value="todos">Todos</option>
               </Select>
