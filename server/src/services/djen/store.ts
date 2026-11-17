@@ -679,6 +679,8 @@ function montarConsultaPublicacoes(filtro: Record<string, string>) {
     revisar: "p.revisada=0",
     com_prazo:
       "EXISTS(SELECT 1 FROM djen_prazos dp WHERE dp.publicacao_id=p.id AND dp.status='aberto')",
+    sem_prazo:
+      "(p.concluida=0 AND p.texto LIKE '%prazo%' AND NOT EXISTS(SELECT 1 FROM djen_prazos dp WHERE dp.publicacao_id=p.id))",
   };
   if (situacoes.some((s) => !Object.hasOwn(condicoes, s)))
     throw new DjenInputError("Situação de filtro inválida.");

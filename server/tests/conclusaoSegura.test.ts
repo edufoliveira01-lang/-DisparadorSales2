@@ -3,13 +3,13 @@ import { db } from "../src/db";
 import { ConclusaoBloqueada, concluirComSeguranca, concluirLoteComSeguranca, pendenciasDaConclusao } from "../src/services/djen/conclusaoSegura";
 
 let serial = 0;
-function publicar(chave: string, data: string, extra: { categorias?: string[]; compromisso?: string; ia?: string; revisada?: number } = {}) {
+function publicar(chave: string, data: string, extra: { categorias?: string[]; compromisso?: string; ia?: string; revisada?: number; texto?: string } = {}) {
   db.prepare("INSERT OR IGNORE INTO djen_processos(chave,numero) VALUES (?,?)").run(chave, chave);
   return Number(
     db.prepare(
       `INSERT INTO djen_publicacoes(comunicacao_id,processo_chave,tribunal,orgao,classe,tipo_documento,tipo_comunicacao,data_disponibilizacao,texto,categorias_json,compromisso_estado,ia_status,revisada)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    ).run(`conc-${++serial}`, chave, "TRF3", "Vara", "Comum", "Ato ordinatório", "Intimação", data, "texto", JSON.stringify(extra.categorias ?? []), extra.compromisso ?? "", extra.ia ?? "concluida", extra.revisada ?? 1).lastInsertRowid,
+    ).run(`conc-${++serial}`, chave, "TRF3", "Vara", "Comum", "Ato ordinatório", "Intimação", data, extra.texto ?? "texto", JSON.stringify(extra.categorias ?? []), extra.compromisso ?? "", extra.ia ?? "concluida", extra.revisada ?? 1).lastInsertRowid,
   );
 }
 const concluida = (id: number) => (db.prepare("SELECT concluida FROM djen_publicacoes WHERE id=?").get(id) as { concluida: number }).concluida;
@@ -62,6 +62,17 @@ describe("conclusão segura de andamentos", () => {
     const h = db.prepare("SELECT descricao FROM djen_historico WHERE publicacao_id=? AND tipo='conclusao'").get(id) as { descricao: string };
     expect(h.descricao).toMatch(/COM PENDÊNCIAS/);
     expect(h.descricao).toMatch(/agenda do advogado/);
+  });
+
+  it("ordem com prazo para o escritório sem prazo lançado bloqueia; com prazo lançado, passa", () => {
+    const id = publicar("proc-10", "2026-11-01", { texto: "Intime-se a parte autora para emendar a petição inicial, no prazo de 15 (quinze) dias úteis, sob pena de indeferimento." });
+    const pend = pendenciasDaConclusao([id]);
+    expect(pend.map((p) => p.tipo)).toContain("prazo_sem_lancamento");
+    expect(() => concluirComSeguranca({ id, concluida: true })).toThrow(ConclusaoBloqueada);
+    db.prepare("INSERT INTO djen_prazos(publicacao_id,descricao,inicio,termino,status) VALUES (?,?,?,?,?)").run(id, "Emenda", "2026-11-02", "2026-11-24", "aberto");
+    expect(pendenciasDaConclusao([id])).toEqual([]);
+    concluirComSeguranca({ id, concluida: true });
+    expect(concluida(id)).toBe(1);
   });
 
   it("reabrir não exige conferência", () => {

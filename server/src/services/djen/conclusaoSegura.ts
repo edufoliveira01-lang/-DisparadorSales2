@@ -2,6 +2,7 @@ import { db } from "../../db";
 import { DjenInputError } from "./store";
 import { concluirPublicacao } from "./deadlines";
 import { registrarHistoricoDjen } from "./history";
+import { identificarOrdensProcessuais, ordemDoEscritorio } from "./proceduralOrders";
 
 /**
  * CONCLUIR NÃO PODE ESCONDER TRABALHO PENDENTE.
@@ -13,7 +14,7 @@ import { registrarHistoricoDjen } from "./history";
 export type EscopoDaConclusao = "andamento" | "processo";
 export interface PendenciaDaConclusao {
   publicacao_id: number;
-  tipo: "compromisso" | "prazo" | "analise_ia" | "classificacao";
+  tipo: "compromisso" | "prazo_sem_lancamento" | "analise_ia" | "classificacao";
   gravidade: "alta" | "media";
   texto: string;
 }
@@ -27,7 +28,8 @@ interface Linha {
   compromisso_estado: string | null;
   ia_status: string | null;
   revisada: number;
-  prazos_abertos: number;
+  prazos_total: number;
+  texto: string | null;
 }
 
 const rotuloData = (iso: string) => iso.split("-").reverse().join("/");
@@ -38,8 +40,8 @@ export function pendenciasDaConclusao(ids: number[]): PendenciaDaConclusao[] {
   const marcas = ids.map(() => "?").join(",");
   const linhas = db
     .prepare(
-      `SELECT p.id,p.data_disponibilizacao,p.tipo_documento,p.categorias_json,p.compromisso_estado,p.ia_status,p.revisada,
-              (SELECT count(*) FROM djen_prazos dp WHERE dp.publicacao_id=p.id AND dp.status='aberto') AS prazos_abertos
+      `SELECT p.id,p.data_disponibilizacao,p.tipo_documento,p.categorias_json,p.compromisso_estado,p.ia_status,p.revisada,p.texto,
+              (SELECT count(*) FROM djen_prazos dp WHERE dp.publicacao_id=p.id) AS prazos_total
          FROM djen_publicacoes p WHERE p.id IN (${marcas}) AND p.cancelada=0`,
     )
     .all(...ids) as Linha[];
@@ -52,8 +54,12 @@ export function pendenciasDaConclusao(ids: number[]): PendenciaDaConclusao[] {
     if (compromisso && l.compromisso_estado !== "informado" && l.compromisso_estado !== "ignorado") {
       out.push({ publicacao_id: l.id, tipo: "compromisso", gravidade: "alta", texto: `${quando}: ${compromisso.toLowerCase()} ainda não está no controle de Perícias e compromissos.` });
     }
-    if (l.prazos_abertos > 0) {
-      out.push({ publicacao_id: l.id, tipo: "prazo", gravidade: "alta", texto: `${quando}: ${l.prazos_abertos === 1 ? "há 1 prazo aberto" : `há ${l.prazos_abertos} prazos abertos`}.` });
+    // Regra do escritório: tudo o que EXIGE PRAZO do escritório precisa estar lançado (e, portanto, acompanhado na agenda) antes de concluir.
+    // Prazo já lançado não é pendência: ele segue vivo na agenda mesmo com o andamento concluído.
+    if (l.prazos_total === 0) {
+      let exigePrazo = false;
+      try { exigePrazo = identificarOrdensProcessuais(l.texto ?? "").some((o) => ordemDoEscritorio(o) && o.tipo === "prazo_explicito"); } catch { /* texto ilegível: não presume */ }
+      if (exigePrazo) out.push({ publicacao_id: l.id, tipo: "prazo_sem_lancamento", gravidade: "alta", texto: `${quando}: exige prazo do escritório e nenhum prazo foi lançado.` });
     }
     if (!l.revisada && l.ia_status && l.ia_status !== "concluida") {
       out.push({ publicacao_id: l.id, tipo: "analise_ia", gravidade: "alta", texto: `${quando}: a análise da IA ${l.ia_status === "erro" ? "falhou" : "não terminou"} e ninguém conferiu a classificação.` });
