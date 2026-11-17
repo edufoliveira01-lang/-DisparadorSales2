@@ -131,7 +131,7 @@ describe("serviço do painel", () => {
   it("cria escritório em teste, com chave própria e sem guardar a chave em claro", async () => {
     const r = await novo();
     expect(r.escritorio).toMatchObject({ slug: "sales", status: "teste", endereco: "https://sales.disparazap.exemplo.com.br" });
-    expect(r.escritorio.vence_em).toBe("2026-12-15T23:59:59-03:00");
+    expect(r.escritorio.vence_em).toBe("2026-12-08T23:59:59-03:00");
     expect(r.chave).toMatch(/^dz_[\w-]{32}$/);
     expect(JSON.stringify(db.prepare("SELECT * FROM escritorios").all())).not.toContain(r.chave);
     expect(prov.chamadas).toEqual([]); // plano de preço 0: sem cobrança automática
@@ -149,7 +149,7 @@ describe("serviço do painel", () => {
   it("cria cobrança no provedor com o primeiro vencimento no fim do teste; falha do provedor não impede o cadastro", async () => {
     await comPreco();
     const r = await novo();
-    expect(prov.chamadas).toEqual(["cliente:" + r.escritorio.id, "assinatura:19900:2026-12-15"]);
+    expect(prov.chamadas).toEqual(["cliente:" + r.escritorio.id, "assinatura:19900:2026-12-08"]);
     expect(s.obterEscritorio(r.escritorio.id)).toMatchObject({ asaas_subscription_id: "sub_1", link_fatura: "https://fatura.exemplo/1" });
     prov.falhar = true;
     const r2 = await s.criarEscritorio({ nome: "Outro", slug: "outro", email: "o@o.com" });

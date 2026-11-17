@@ -12,10 +12,24 @@ export const ENTITLEMENTS = {
   max_processos: { tipo: "limite", padrao: null, rotulo: "Processos acompanhados" },
   ia_habilitada: { tipo: "recurso", padrao: true, rotulo: "Análise por IA" },
   max_armazenamento_mb: { tipo: "limite", padrao: null, rotulo: "Armazenamento de arquivos (MB)" },
-  modulo_gestao: { tipo: "recurso", padrao: true, rotulo: "Módulo de gestão (pessoas, processos, arquivos, tarefas)" },
-  modulo_financeiro: { tipo: "recurso", padrao: true, rotulo: "Módulo financeiro e indicadores de receita" },
+  modulo_gestao: { tipo: "recurso", padrao: true, rotulo: "Módulo de gestão (pessoas e processos)" },
+  modulo_arquivos: { tipo: "recurso", padrao: true, rotulo: "Arquivos por pasta e modelos de documento" },
+  modulo_tarefas: { tipo: "recurso", padrao: true, rotulo: "Tarefas e Meu painel" },
+  modulo_indicadores: { tipo: "recurso", padrao: true, rotulo: "Indicadores do escritório (BI)" },
+  modulo_captacao: { tipo: "recurso", padrao: true, rotulo: "Captação de clientes (funil e negócios)" },
+  modulo_financeiro: { tipo: "recurso", padrao: true, rotulo: "Módulo financeiro (honorários, contas e fluxo de caixa)" },
+  modulo_contratos: { tipo: "recurso", padrao: true, rotulo: "Contratos com assinatura e cobrança pelo Asaas" },
   modulo_atendimento: { tipo: "recurso", padrao: false, rotulo: "Atendimento e vendas por WhatsApp com IA (DeskcommCRM)" },
 } as const;
+
+/** Como cada item aparece na página de contratação (agrupado), na ordem em que é mostrado. */
+export const GRUPOS_DE_ENTITLEMENTS: { titulo: string; chaves: ChaveEntitlement[] }[] = [
+  { titulo: "Capacidade", chaves: ["max_usuarios", "max_advogados", "max_processos", "max_numeros_whatsapp", "max_armazenamento_mb"] },
+  { titulo: "Publicações e processos", chaves: ["ia_habilitada", "modulo_gestao"] },
+  { titulo: "Gestão do escritório", chaves: ["modulo_arquivos", "modulo_tarefas", "modulo_indicadores", "modulo_captacao"] },
+  { titulo: "Financeiro e contratos", chaves: ["modulo_financeiro", "modulo_contratos"] },
+  { titulo: "Atendimento", chaves: ["modulo_atendimento"] },
+];
 
 export type ChaveEntitlement = keyof typeof ENTITLEMENTS;
 export type ValorEntitlement = number | boolean | null;

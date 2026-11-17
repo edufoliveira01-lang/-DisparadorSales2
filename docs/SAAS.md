@@ -23,7 +23,8 @@ Inicie com `npm run painel` (desenvolvimento) ou `npm run painel --prefix server
 | `PAINEL_PUBLIC_URL` | URL pública (HTTPS). Define o cookie seguro e a URL do webhook exibida. |
 | `PAINEL_BASE_DOMAIN` | Domínio dos workspaces (padrão `saleseassociados.com.br`: escritórios em `nome.saleseassociados.com.br`; `disparazap` e outros endereços já em uso são reservados). Requer DNS curinga `*` e, no acesso direto, certificado curinga. |
 | `ASAAS_API_KEY`, `ASAAS_BASE_URL`, `ASAAS_WEBHOOK_TOKEN` | Cobrança. Por padrão aponta para o **sandbox** do Asaas. |
-| `PAINEL_CARENCIA_DIAS` (7), `PAINEL_TESTE_DIAS` (14), `PAINEL_VALIDADE_LICENCA_HORAS` (72), `PAINEL_TOLERANCIA_OFFLINE_DIAS` (14) | Regras padrão. |
+| `PAINEL_CONTRATACAO_PUBLICA` (`1` abre a página pública `/contratar`; desligada por padrão) | Contratação online: o visitante escolhe um plano à venda e o painel cria o escritório em teste. |
+| `PAINEL_CARENCIA_DIAS` (7), `PAINEL_TESTE_DIAS` (7), `PAINEL_VALIDADE_LICENCA_HORAS` (72), `PAINEL_TOLERANCIA_OFFLINE_DIAS` (14) | Regras padrão. |
 
 ### Fluxo de um novo assinante
 
@@ -52,6 +53,12 @@ Consulta, relatórios e **exportação/backup continuam**; alterações, envios 
 ## Licença na instância
 
 `LICENSE_SERVER_URL`, `LICENSE_KEY` e `LICENSE_PUBLIC_KEY_B64` (as três, ou nenhuma). A instância consulta o painel ao iniciar e a cada 6 horas (a cada 15 min se estiver restrita), recebe uma licença **assinada (Ed25519)** e guarda uma cópia em `DATA_DIR/license.json`. A instância só tem a chave pública: não consegue forjar nem estender a própria licença. A licença traz as datas de vencimento e carência, então a assinatura vencida avança para carência e somente leitura no momento certo mesmo sem contato com o painel. Sem contato por muito tempo (72 h de validade + 14 dias de tolerância) a instância restringe; a primeira instalação sem painel tem 3 dias de carência inicial. Configuração parcial das variáveis deixa a instância em somente leitura com a explicação no aviso, em vez de liberar sem licença.
+
+## Planos de fábrica e página de contratação
+
+O painel nasce com quatro planos (editáveis em **Planos**; preços e limites são ponto de partida): **Essencial** (R$ 197), **Profissional** (R$ 397, destacado), **Avançado** (R$ 797) e **Ilimitado** (R$ 1.497). Cada um define limites (usuários, advogados, processos, números de WhatsApp, armazenamento) e módulos (gestão, arquivos e modelos, tarefas, indicadores, captação, financeiro, contratos/cobrança, atendimento com IA). O servidor recusa (403, `modulo_nao_contratado`) a área de um módulo que o plano não inclui e a interface esconde o atalho.
+
+A página pública **`/contratar`** (scrollytelling com animações guiadas por rolagem) lista os planos marcados como **à venda** e cria o escritório com **7 dias de teste** (`PAINEL_TESTE_DIAS`). Para abri-la defina `PAINEL_CONTRATACAO_PUBLICA=1`. Proteções: no máximo 5 tentativas por hora por IP, campo-armadilha contra robôs, aceite dos termos obrigatório, e o visitante nunca define limites, cortesia, dias de teste ou porta. Sem `PAINEL_AUTO_PROVISIONAR=1` o escritório é criado no painel e a instância precisa ser provisionada manualmente.
 
 ## Limites e planos (para ampliar depois)
 

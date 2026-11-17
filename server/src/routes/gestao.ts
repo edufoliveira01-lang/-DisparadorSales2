@@ -56,6 +56,16 @@ import { recursoLiberadoNaLicenca } from "../licenca/cliente";
 const kickDoHistorico = () => { if (licencaPermiteOperar()) void processarHistoricos().catch(() => undefined); };
 /** Processo novo com número CNJ entra sozinho no acompanhamento do DJEN. */
 const acompanharAgora = (chave: string, numero: string) => { try { if (iniciarAcompanhamento(chave, numero)) kickDoHistorico(); } catch (e) { console.error("[gestao] acompanhamento automático:", e instanceof Error ? e.message : e); } };
+/** Qual módulo do plano cada área da gestão exige (além do módulo de gestão em si). */
+const MODULOS_DAS_ROTAS: { prefixo: RegExp; chave: import("../licenca/entitlements").ChaveEntitlement; nome: string }[] = [
+  { prefixo: /^\/financeiro/, chave: "modulo_financeiro", nome: "o módulo financeiro" },
+  { prefixo: /^\/(arquivos|armazenamento|modelos|documentos)/, chave: "modulo_arquivos", nome: "arquivos e modelos de documento" },
+  { prefixo: /^\/(tarefas|meu-painel)/, chave: "modulo_tarefas", nome: "tarefas e o Meu painel" },
+  { prefixo: /^\/indicadores/, chave: "modulo_indicadores", nome: "os indicadores do escritório" },
+  { prefixo: /^\/captacao/, chave: "modulo_captacao", nome: "a captação de clientes" },
+  { prefixo: /^\/(contratos-zapsign|asaas)/, chave: "modulo_contratos", nome: "contratos com assinatura e cobrança" },
+];
+export const moduloExigidoPelaRota = (caminho: string) => MODULOS_DAS_ROTAS.find((m) => m.prefixo.test(caminho));
 export const gestaoRouter = Router();
 // Ao gravar clientes, processos ou partes, o espelho de contatos dos avisos é recalculado (em segundo plano).
 gestaoRouter.use((req, res, next) => { res.on("finish", () => { if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method) && res.statusCode < 400 && /^\/(pessoas|processos|partes)/.test(req.path)) agendarReconciliacao(); }); next(); });
@@ -63,7 +73,8 @@ gestaoRouter.use((req, res, next) => { res.on("finish", () => { if (["POST", "PU
 // Módulos contratados no plano (SaaS): sem o módulo, a área inteira responde 403.
 gestaoRouter.use((req, res, next) => {
   if (!recursoLiberadoNaLicenca("modulo_gestao")) return void res.status(403).json({ error: "O plano atual não inclui o módulo de gestão.", codigo: "modulo_nao_contratado" });
-  if (req.path.startsWith("/financeiro") && !recursoLiberadoNaLicenca("modulo_financeiro")) return void res.status(403).json({ error: "O plano atual não inclui o módulo financeiro.", codigo: "modulo_nao_contratado" });
+  const exigido = moduloExigidoPelaRota(req.path);
+  if (exigido && !recursoLiberadoNaLicenca(exigido.chave)) return void res.status(403).json({ error: `O plano atual não inclui ${exigido.nome}.`, codigo: "modulo_nao_contratado", modulo: exigido.chave });
   next();
 });
 

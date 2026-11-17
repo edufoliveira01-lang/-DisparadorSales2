@@ -12,7 +12,7 @@ export type Permission =
 export type Role = "administrador" | "gestor" | "advogado" | "atendimento" | "consulta";
 export interface TeamUser {
   id: number; username: string; display_name: string | null; email: string | null;
-  role: Role; active: boolean; permissions: Permission[]; must_change_password?: boolean; home_page?: string;
+  role: Role; active: boolean; permissions: Permission[]; must_change_password?: boolean; home_page?: string; modulos_bloqueados?: string[];
 }
 
 const Context = createContext<{ user: TeamUser; can: (permission: Permission) => boolean } | null>(null);

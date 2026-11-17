@@ -46,7 +46,7 @@ export function Sidebar({
 }: SidebarProps) {
   const { user } = useAuth();
   const identidade = useIdentidade();
-  const visibleNavigation = permittedNavigation(user.permissions);
+  const visibleNavigation = permittedNavigation(user.permissions, user.modulos_bloqueados);
   const location = useLocation();
   const asideRef = useRef<HTMLElement>(null);
   const [desktop, setDesktop] = useState(

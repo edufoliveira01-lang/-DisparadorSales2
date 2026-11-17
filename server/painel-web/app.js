@@ -252,16 +252,19 @@ function secaoInstancia(id, recarregar) {
 
 function telaPlanos() {
   const linhas = state.planos.map((p) => h('tr', { class: 'row', onclick: () => editarPlano(p) }, h('td', {}, h('b', {}, p.nome)), h('td', {}, p.preco_centavos ? reais(p.preco_centavos) + '/mês' : 'sem cobrança automática'), h('td', {}, Object.entries(p.entitlements).map(([k, v]) => `${state.config.entitlements[k]?.rotulo || k}: ${v === null ? 'ilimitado' : v === true ? 'ligado' : v === false ? 'desligado' : v}`).join(' · ') || 'Padrão do sistema (ilimitado)'), h('td', {}, p.ativo ? 'Ativo' : 'Inativo')));
-  return h('div', {}, h('div', { class: 'bar' }, h('span', { class: 'mut', style: 'flex:1' }, 'Os limites do plano valem para todos os escritórios dele, salvo ajuste específico. Hoje: advogados e usuários ilimitados.'), h('button', { class: 'pri', onclick: () => editarPlano(null) }, '+ Novo plano')),
+  return h('div', {}, h('div', { class: 'bar' }, h('span', { class: 'mut', style: 'flex:1' }, 'Os limites e módulos do plano valem para todos os escritórios dele, salvo ajuste específico. Os planos marcados como “à venda” aparecem na página de contratação (/contratar).'), h('button', { class: 'pri', onclick: () => editarPlano(null) }, '+ Novo plano')),
     h('div', { class: 'card' }, h('table', {}, h('thead', {}, h('tr', {}, ['Plano', 'Preço', 'Limites', 'Situação'].map((t) => h('th', {}, t)))), h('tbody', {}, linhas))));
 }
 function editarPlano(p) {
   const nome = h('input', { value: p?.nome || '', required: true }), preco = h('input', { type: 'number', min: 0, step: '0.01', value: p ? (p.preco_centavos / 100).toFixed(2) : '' });
   const ativo = h('input', { type: 'checkbox', style: 'min-height:auto' }); ativo.checked = p ? p.ativo : true;
+  const publico = h('input', { type: 'checkbox', style: 'min-height:auto' }); publico.checked = p ? Boolean(p.publico) : false;
+  const destaque = h('input', { type: 'checkbox', style: 'min-height:auto' }); destaque.checked = p ? Boolean(p.destaque) : false;
+  const resumo = h('input', { value: p?.resumo || '', maxlength: 200, placeholder: 'Frase curta mostrada na página de contratação' });
   const limites = campoLimites(p?.entitlements || {}); const erro = h('div', { class: 'note err', hidden: true });
-  const m = modal(p ? 'Editar plano' : 'Novo plano', h('form', { onsubmit: async (e) => { e.preventDefault(); try { const corpo = { nome: nome.value, preco_centavos: Math.round(Number(preco.value || 0) * 100), entitlements: limites.valor(), ativo: ativo.checked }; if (p) await api('PUT', '/planos/' + p.id, corpo); else await api('POST', '/planos', corpo); m.fechar(); await carregar(); } catch (x) { erro.textContent = x.message; erro.hidden = false; } } },
+  const m = modal(p ? 'Editar plano' : 'Novo plano', h('form', { onsubmit: async (e) => { e.preventDefault(); try { const corpo = { nome: nome.value, preco_centavos: Math.round(Number(preco.value || 0) * 100), entitlements: limites.valor(), ativo: ativo.checked, publico: publico.checked, destaque: destaque.checked, resumo: resumo.value }; if (p) await api('PUT', '/planos/' + p.id, corpo); else await api('POST', '/planos', corpo); m.fechar(); await carregar(); } catch (x) { erro.textContent = x.message; erro.hidden = false; } } },
     erro, h('div', { class: 'field' }, h('label', {}, 'Nome'), nome), h('div', { class: 'field' }, h('label', {}, 'Preço mensal (R$) — 0 = sem cobrança automática'), preco),
-    h('label', {}, ativo, ' Plano ativo (disponível para novos escritórios)'), h('div', { class: 'sec' }, 'Limites e recursos'), limites.el, h('button', { class: 'pri' }, 'Salvar')));
+    h('div', { class: 'field' }, h('label', {}, 'Resumo (página de contratação)'), resumo), h('label', {}, ativo, ' Plano ativo (disponível para novos escritórios)'), h('label', {}, publico, ' À venda na página de contratação'), h('label', {}, destaque, ' Destacar como “mais escolhido”'), h('div', { class: 'sec' }, 'Limites e recursos'), limites.el, h('button', { class: 'pri' }, 'Salvar')));
 }
 function abrirConfig() {
   const c = state.config;

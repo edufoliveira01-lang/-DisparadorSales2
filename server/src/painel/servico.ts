@@ -31,7 +31,7 @@ interface LinhaEscritorio {
   chave_hash: string; chave_prefixo: string; ultimo_contato_em: string | null; ultima_versao: string | null; ultimo_ip: string | null;
   observacoes: string; criado_em: string; atualizado_em: string;
 }
-interface LinhaPlano { id: string; nome: string; preco_centavos: number; entitlements_json: string; ativo: number; criado_em: string }
+interface LinhaPlano { id: string; nome: string; preco_centavos: number; entitlements_json: string; ativo: number; criado_em: string; publico?: number; resumo?: string; destaque?: number }
 
 export class ServicoPainel {
   constructor(
@@ -52,8 +52,12 @@ export class ServicoPainel {
   listarPlanos() {
     return (this.db.prepare("SELECT * FROM planos ORDER BY nome").all() as LinhaPlano[]).map((p) => ({ ...p, ativo: Boolean(p.ativo), entitlements: JSON.parse(p.entitlements_json) as Entitlements }));
   }
+  /** Planos à venda na página de contratação (ativos e marcados como públicos), do mais barato ao mais caro. */
+  planosPublicos() {
+    return this.listarPlanos().filter((p) => p.ativo && (p as { publico?: number }).publico).sort((a, b) => a.preco_centavos - b.preco_centavos);
+  }
   private validarPlano(d: Record<string, unknown>, parcial: boolean) {
-    const campos: { nome?: string; preco_centavos?: number; entitlements_json?: string; ativo?: number } = {};
+    const campos: { nome?: string; preco_centavos?: number; entitlements_json?: string; ativo?: number; publico?: number; resumo?: string; destaque?: number } = {};
     if (!parcial || d.nome !== undefined) { const nome = texto(d.nome, 80); if (nome.length < 2) throw new ErroPainel("Informe o nome do plano."); campos.nome = nome; }
     if (!parcial || d.preco_centavos !== undefined) {
       const p = Number(d.preco_centavos);
@@ -65,6 +69,9 @@ export class ServicoPainel {
       catch (e) { if (e instanceof EntitlementInvalido) throw new ErroPainel(e.message); throw e; }
     }
     if (d.ativo !== undefined) campos.ativo = d.ativo ? 1 : 0;
+    if (d.publico !== undefined) campos.publico = d.publico ? 1 : 0;
+    if (d.destaque !== undefined) campos.destaque = d.destaque ? 1 : 0;
+    if (d.resumo !== undefined) campos.resumo = texto(d.resumo, 200);
     return campos;
   }
   criarPlano(d: Record<string, unknown>) {
@@ -72,8 +79,8 @@ export class ServicoPainel {
     const id = (texto(d.id, 40) || c.nome!).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
     if (id.length < 2) throw new ErroPainel("Identificador de plano inválido.");
     if (this.db.prepare("SELECT id FROM planos WHERE id=?").get(id)) throw new ErroPainel("Já existe um plano com esse identificador.", 409);
-    this.db.prepare("INSERT INTO planos(id,nome,preco_centavos,entitlements_json,ativo,criado_em) VALUES (?,?,?,?,?,?)")
-      .run(id, c.nome, c.preco_centavos, c.entitlements_json, c.ativo ?? 1, agoraIso(this.relogio()));
+    this.db.prepare("INSERT INTO planos(id,nome,preco_centavos,entitlements_json,ativo,criado_em,publico,resumo,destaque) VALUES (?,?,?,?,?,?,?,?,?)")
+      .run(id, c.nome, c.preco_centavos, c.entitlements_json, c.ativo ?? 1, agoraIso(this.relogio()), c.publico ?? 0, c.resumo ?? "", c.destaque ?? 0);
     this.registrar(null, "plano_criado", { id });
     return this.listarPlanos().find((p) => p.id === id)!;
   }

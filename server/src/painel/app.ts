@@ -5,7 +5,7 @@ import type { Banco } from "./banco";
 import type { ConfigPainel } from "./config";
 import { ErroPainel, ServicoPainel, comparar } from "./servico";
 import { criarLimitador, entrar, sair, usuarioDaSessao } from "./auth";
-import { ENTITLEMENTS } from "../licenca/entitlements";
+import { ENTITLEMENTS, GRUPOS_DE_ENTITLEMENTS, combinarEntitlements, type ChaveEntitlement } from "../licenca/entitlements";
 import { ErroProvisionamento, type Provisionador } from "./provisionador";
 import { montarExtensaoDeskcomm } from "./extensaoDeskcomm";
 import { VerificadorDeVersao } from "./versaoAtendimento";
@@ -135,12 +135,12 @@ export function criarAppPainel(deps: DepsPainel) {
   admin.post("/planos", rota((req, res) => { res.status(201); return servico.criarPlano(req.body || {}); }));
   admin.put("/planos/:id", rota((req) => servico.atualizarPlano(String(req.params.id), req.body || {})));
   admin.get("/escritorios", rota(() => servico.listarEscritorios()));
-  admin.post("/escritorios", rota(async (req, res) => {
-    const pedida = Number(req.body?.porta) || undefined;
-    const admin = servico.validarAdminInicial(req.body?.admin_usuario, req.body?.admin_senha);
+  /** Cria o escritório e, com o provisionamento automático ligado, a instância dele. Usado pelo painel e pela página de contratação. */
+  const criarComProvisionamento = async (entrada: Record<string, unknown>) => {
+    const pedida = Number(entrada.porta) || undefined;
+    const admin = servico.validarAdminInicial(entrada.admin_usuario, entrada.admin_senha);
     if (prov) { try { prov.alocarPorta(pedida, servico.portasRegistradas()); } catch (e) { if (e instanceof ErroProvisionamento) throw new ErroPainel(e.message); throw e; } }
-    const r = await servico.criarEscritorio(req.body || {});
-    res.status(201);
+    const r = await servico.criarEscritorio(entrada);
     if (!prov) return { ...r, provisionamento: servico.provisionamento(r.escritorio.id, r.chave, { novaInstancia: true, porta: pedida, chavePublicaPem: deps.chavePublicaPem, ...admin }) };
     const slug = r.escritorio.slug;
     let porta = pedida ?? 0;
@@ -155,6 +155,68 @@ export function criarAppPainel(deps: DepsPainel) {
       servico.definirInstancia(r.escritorio.id, null, "instancia_erro", { erro: msg });
       return { ...r, instancia: { ok: false, erro: msg } };
     }
+  };
+  // ---------- página pública de contratação (liga com PAINEL_CONTRATACAO_PUBLICA=1) ----------
+  const tentativasContratacao = criarLimitador(5, 60 * 60_000);
+  const textoDoValor = (chave: ChaveEntitlement, valor: unknown): { texto: string; incluido: boolean } => {
+    const def = ENTITLEMENTS[chave];
+    if (def.tipo === "recurso") return { texto: valor === false ? "Não incluído" : "Incluído", incluido: valor !== false };
+    if (valor === null || valor === undefined) return { texto: "Ilimitado", incluido: true };
+    const n = Number(valor);
+    if (chave === "max_armazenamento_mb") return { texto: n >= 1024 ? `${Math.round(n / 1024)} GB` : `${n} MB`, incluido: true };
+    return { texto: n.toLocaleString("pt-BR"), incluido: true };
+  };
+  app.get("/api/publico/planos", rota((_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    return {
+      contratacao_aberta: cfg.contratacaoPublica,
+      teste_dias: cfg.testePadraoDias,
+      dominio: cfg.baseDomain,
+      planos: servico.planosPublicos().map((p) => {
+        const efetivo = combinarEntitlements(p.entitlements);
+        return {
+          id: p.id, nome: p.nome, preco_centavos: p.preco_centavos, resumo: (p as { resumo?: string }).resumo || "", destaque: Boolean((p as { destaque?: number }).destaque),
+          grupos: GRUPOS_DE_ENTITLEMENTS.map((g) => ({
+            titulo: g.titulo,
+            itens: g.chaves.map((k) => ({ chave: k, rotulo: ENTITLEMENTS[k].rotulo, tipo: ENTITLEMENTS[k].tipo, ...textoDoValor(k, efetivo[k]) })),
+          })),
+        };
+      }),
+    };
+  }));
+  app.post("/api/publico/contratar", rota(async (req, res) => {
+    if (!cfg.contratacaoPublica) throw new ErroPainel("A contratação online não está aberta no momento.", 403);
+    if (!tentativasContratacao(IP(req))) { res.status(429).json({ error: "Muitas tentativas. Tente novamente mais tarde." }); return; }
+    const b = (req.body || {}) as Record<string, unknown>;
+    if (typeof b.site === "string" && b.site.trim()) return { ok: true }; // campo-armadilha: robô preencheu, finge sucesso
+    if (b.aceite !== true) throw new ErroPainel("Aceite os termos de uso e a política de privacidade para continuar.");
+    if (typeof b.admin_senha !== "string" || !b.admin_senha) throw new ErroPainel("Escolha uma senha de acesso com 12 ou mais caracteres, sem espaços.");
+    const plano = servico.planosPublicos().find((p) => p.id === String(b.plano_id || ""));
+    if (!plano) throw new ErroPainel("Escolha um dos planos disponíveis.");
+    // Só os campos de cadastro passam: nada de limites, cortesia, dias de teste ou porta vindos do visitante.
+    const limpo: Record<string, unknown> = {
+      nome: b.nome, slug: b.slug, email: b.email, documento: b.documento, telefone: b.telefone, plano_id: plano.id,
+      admin_usuario: b.admin_usuario, admin_senha: b.admin_senha, observacoes: "Contratação pela página pública.",
+    };
+    const r = await criarComProvisionamento(limpo);
+    servico.registrar(r.escritorio.id, "contratacao_publica", { plano: plano.id, ip: IP(req) });
+    const inst = (r as { instancia?: { ok: boolean; url?: string } }).instancia;
+    res.status(201);
+    return {
+      ok: true,
+      teste_ate: r.escritorio.teste_ate,
+      endereco: `https://${r.escritorio.slug}.${cfg.baseDomain}`,
+      usuario: String(b.admin_usuario || "").trim(),
+      ambiente_pronto: Boolean(inst?.ok),
+      mensagem: inst?.ok ? "Seu ambiente está pronto. Entre com o usuário e a senha que você escolheu." : "Recebemos seu cadastro. Estamos preparando o seu ambiente: em instantes ele estará disponível no endereço abaixo.",
+    };
+  }));
+  app.get(["/contratar", "/contratar/"], (_req, res) => res.sendFile(path.resolve(deps.webDir ?? path.resolve(__dirname, "../../painel-web"), "contratar.html")));
+
+  admin.post("/escritorios", rota(async (req, res) => {
+    const r = await criarComProvisionamento(req.body || {});
+    res.status(201);
+    return r;
   }));
   admin.get("/escritorios/:id", rota((req) => servico.obterEscritorio(String(req.params.id))));
   admin.put("/escritorios/:id", rota((req) => servico.atualizarEscritorio(String(req.params.id), req.body || {})));

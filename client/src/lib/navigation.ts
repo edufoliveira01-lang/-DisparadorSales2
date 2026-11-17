@@ -239,8 +239,18 @@ export function navigationPermission(to: string): Permission | null {
   return null;
 }
 
-export function permittedNavigation(permissions: readonly Permission[]) {
+/** Página → módulo do plano que a libera (o servidor lista em `modulos_bloqueados` o que o plano não inclui). */
+const MODULO_DA_PAGINA: Record<string, string> = {
+  "/gestao/tarefas": "modulo_tarefas",
+  "/gestao/captacao": "modulo_captacao",
+  "/gestao/financeiro": "modulo_financeiro",
+  "/gestao/indicadores": "modulo_indicadores",
+};
+
+export function permittedNavigation(permissions: readonly Permission[], modulosBloqueados: readonly string[] = []) {
   return navigation.filter((item) => {
+    const modulo = MODULO_DA_PAGINA[item.to];
+    if (modulo && modulosBloqueados.includes(modulo)) return false;
     const required = navigationPermission(item.to);
     return !required || permissions.includes(required);
   });

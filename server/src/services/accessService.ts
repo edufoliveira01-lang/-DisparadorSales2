@@ -57,6 +57,8 @@ export function hasPermission(user: AccessUser, permission: Permission): boolean
   return user.active === 1 && effectivePermissions(user).includes(permission);
 }
 
+const MODULOS_DO_MENU = ["modulo_arquivos", "modulo_tarefas", "modulo_indicadores", "modulo_captacao", "modulo_contratos", "modulo_financeiro"] as const;
+
 export function publicUser(user: AccessUser) {
   return {
     id: user.id, username: user.username, display_name: user.display_name,
@@ -66,6 +68,8 @@ export function publicUser(user: AccessUser) {
       p.startsWith("gestao.") ? recursoLiberadoNaLicenca("modulo_gestao") : p.startsWith("financeiro.") ? recursoLiberadoNaLicenca("modulo_gestao") && recursoLiberadoNaLicenca("modulo_financeiro") : true),
     must_change_password: Boolean(user.must_change_password),
     home_page: user.home_page || "",
+    // Módulos que o plano não inclui: a interface esconde os atalhos (o servidor já recusa o acesso).
+    modulos_bloqueados: MODULOS_DO_MENU.filter((m) => !recursoLiberadoNaLicenca(m)),
   };
 }
 

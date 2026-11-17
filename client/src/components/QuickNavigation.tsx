@@ -29,7 +29,7 @@ export function QuickNavigation({
   }, [open]);
   const results = useMemo(
     () =>
-      permittedNavigation(user.permissions).filter((item) =>
+      permittedNavigation(user.permissions, user.modulos_bloqueados).filter((item) =>
         normalize(item.label + " " + item.description).includes(
           normalize(query),
         ),

@@ -8,6 +8,8 @@ export interface ConfigPainel {
   urlPublica: string;
   carenciaPadraoDias: number;
   testePadraoDias: number;
+  /** Página pública de contratação aberta (PAINEL_CONTRATACAO_PUBLICA=1). Desligada por padrão. */
+  contratacaoPublica: boolean;
   toleranciaOfflineDias: number;
   validadeLicencaHoras: number;
   asaasApiKey: string;
@@ -44,7 +46,8 @@ export function lerConfigPainel(env: NodeJS.ProcessEnv = process.env): ConfigPai
     baseDomain: (env.PAINEL_BASE_DOMAIN || "saleseassociados.com.br").replace(/^\.+|\.+$/g, ""),
     urlPublica: (env.PAINEL_PUBLIC_URL || "").replace(/\/+$/, ""),
     carenciaPadraoDias: inteiro(env.PAINEL_CARENCIA_DIAS, 7),
-    testePadraoDias: inteiro(env.PAINEL_TESTE_DIAS, 14),
+    testePadraoDias: inteiro(env.PAINEL_TESTE_DIAS, 7),
+    contratacaoPublica: env.PAINEL_CONTRATACAO_PUBLICA === "1",
     toleranciaOfflineDias: inteiro(env.PAINEL_TOLERANCIA_OFFLINE_DIAS, 14),
     validadeLicencaHoras: inteiro(env.PAINEL_VALIDADE_LICENCA_HORAS, 72, 1, 720),
     asaasApiKey: env.ASAAS_API_KEY || "",
