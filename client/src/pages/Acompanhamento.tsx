@@ -60,7 +60,7 @@ function textoDoAviso(nome: string, processo: string | null | undefined, categor
   const proc = processo || "acompanhado pelo escritório";
   const compromisso = categorias.includes("pericia") ? "perícia" : categorias.includes("audiencia") ? "audiência" : "";
   if (compromisso && ag?.data && ag?.horario) {
-    return `Olá, ${nome}. Houve uma publicação no processo ${proc} informando que a ${compromisso} está marcada para ${ag.data}, às ${ag.horario}${ag.local ? `, em: ${ag.local}` : ""}.\n\nPor favor, confirme que recebeu esta mensagem. Nossa equipe vai orientar você sobre documentos e como comparecer.\n\nSales & Associados.`;
+    return `Olá, ${nome}. Houve uma publicação no processo ${proc} informando que a ${compromisso} está marcada para ${dataPorExtenso(ag.data)}, às ${horaPorExtenso(ag.horario)}${ag.local ? `, em: ${ag.local}` : ""}.\n\nPor favor, confirme que recebeu esta mensagem. Nossa equipe vai orientar você sobre documentos e como comparecer.\n\nSales & Associados.`;
   }
   if (compromisso) {
     return `Olá, ${nome}. Houve uma publicação no processo ${proc} sobre ${compromisso === "perícia" ? "a sua perícia" : "a sua audiência"}. Nossa equipe vai confirmar a data e o horário e entrar em contato para orientar você.\n\nSales & Associados.`;
@@ -95,6 +95,31 @@ function sinaisDoCartao(p: Publicacao): SinalDoCartao[] {
   if (!p.categorias.length) out.push({ chave: "cat-outros", texto: "Outros", tom: "neutral", peso: 35 });
   if (cats.includes("sentenca")) out.push({ chave: "resultado", texto: RESULTADOS[p.resultado], tom: p.resultado === "nao_identificado" ? "neutral" : "info", peso: 45 });
   return out.sort((a, b) => b.peso - a.peso);
+}
+
+const MESES_EXTENSO = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+const DIAS_DA_SEMANA = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"];
+/** «2026-11-30», «30/11/2026» ou «30 de novembro de 2026» → «30 de novembro de 2026 (segunda-feira)». Texto que não for data fica como veio. */
+function dataPorExtenso(valor: string | null | undefined): string {
+  if (!valor) return "";
+  const v = valor.trim();
+  let d = 0, m = 0, a = 0;
+  const iso = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const br = v.match(/^(\d{1,2})\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*(\d{4})/);
+  if (iso) { a = +iso[1]!; m = +iso[2]!; d = +iso[3]!; }
+  else if (br) { d = +br[1]!; m = +br[2]!; a = +br[3]!; }
+  else return v;
+  if (m < 1 || m > 12 || d < 1 || d > 31) return v;
+  const semana = DIAS_DA_SEMANA[new Date(Date.UTC(a, m - 1, d)).getUTCDay()];
+  return `${d} de ${MESES_EXTENSO[m - 1]} de ${a} (${semana})`;
+}
+/** «09:00» → «9h»; «16:30» → «16h30». */
+function horaPorExtenso(valor: string | null | undefined): string {
+  if (!valor) return "";
+  const m = valor.trim().match(/^(\d{1,2})\s*(?::|h)\s*(\d{2})?/);
+  if (!m) return valor.trim();
+  const min = m[2] && m[2] !== "00" ? m[2] : "";
+  return `${Number(m[1])}h${min}`;
 }
 
 const TIPOS = {
@@ -1776,7 +1801,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                     <section role="region" aria-label="Ação principal" className={`mt-4 rounded-xl border p-4 ${noControle ? "border-emerald-300 bg-emerald-50/70 dark:border-emerald-900 dark:bg-emerald-950/20" : "border-red-300 bg-red-50/70 dark:border-red-900 dark:bg-red-950/20"}`}>
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">{noControle ? "Compromisso no controle" : "Ação principal · compromisso marcado"}</p>
                       <h3 className="mt-1 text-base font-semibold">
-                        {nome} {ag?.data ? `em ${ag.data}${ag.horario ? ` às ${ag.horario}` : ""}` : "marcada · data a confirmar no inteiro teor"}
+                        {nome} {ag?.data ? `em ${dataPorExtenso(ag.data)}${ag.horario ? `, às ${horaPorExtenso(ag.horario)}` : ""}` : "marcada · data a confirmar no inteiro teor"}
                       </h3>
                       {ag?.local && <p className="mt-1 text-xs text-zinc-700 dark:text-zinc-300">Local: {ag.local}</p>}
                       {detalhe.ia_provedor === "regra" && <p className="mt-1 text-[11px] font-medium text-amber-800 dark:text-amber-300">Classificação provisória por regra de segurança (a IA não concluiu): confira data, horário e local no inteiro teor.</p>}
@@ -2034,8 +2059,8 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                   {Object.values(detalhe.analise.agendamento).some(Boolean) && (
                     <div className="grid gap-2 sm:grid-cols-3">
                       {Object.entries({
-                        Data: detalhe.analise.agendamento.data,
-                        Horário: detalhe.analise.agendamento.horario,
+                        Data: dataPorExtenso(detalhe.analise.agendamento.data),
+                        Horário: horaPorExtenso(detalhe.analise.agendamento.horario),
                         Local: detalhe.analise.agendamento.local,
                       }).map(([label, value]) => (
                         <p key={label}>
