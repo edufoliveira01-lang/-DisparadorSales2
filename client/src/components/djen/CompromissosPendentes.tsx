@@ -30,11 +30,10 @@ export function CompromissosPendentes({ aoAbrirPublicacao, aoMudar }: { aoAbrirP
 
   if (!r || (r.a_revisar === 0 && r.a_completar === 0)) return null;
   return (
-    <section role="alert" aria-label="Perícias e audiências marcadas" className="rounded-2xl border border-red-200 bg-red-50 p-4 dark:border-red-500/30 dark:bg-red-500/10">
-      <h2 className="flex items-center gap-2 text-sm font-semibold text-red-900 dark:text-red-200"><CalendarClock className="h-4 w-4" />Perícias e audiências marcadas: prioridade</h2>
-      <p className="mt-1 text-sm text-red-900/80 dark:text-red-200/80">{r.a_revisar > 0 ? `${r.a_revisar} publicação(ões) para revisar: depois de revisadas, entram sozinhas em “Avisar”. ` : ""}{r.a_completar > 0 ? `${r.a_completar} para completar dados antes de avisar o cliente.` : ""}</p>
+    <section role="alert" aria-label="Perícias e audiências marcadas" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 dark:border-red-500/30 dark:bg-red-500/10">
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px] text-red-900/90 dark:text-red-200/90"><CalendarClock className="h-4 w-4 shrink-0" /><strong className="font-semibold">Perícias e audiências: prioridade.</strong> <span>{r.a_revisar > 0 ? `${r.a_revisar} publicação(ões) para revisar: depois de revisadas, entram sozinhas em “Avisar”. ` : ""}{r.a_completar > 0 ? `${r.a_completar} para completar dados antes de avisar o cliente.` : ""}</span></p>
       {r.completar.length > 0 && (
-        <ul className="mt-3 space-y-2">
+        <ul className="mt-2 space-y-1.5">
           {r.completar.map((c) => (
             <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-white px-3 py-2 text-sm dark:border-red-500/30 dark:bg-zinc-900">
               <span className="min-w-0"><span className="block font-medium text-zinc-900 dark:text-zinc-100">{c.tipo === "audiencia" ? "Audiência" : "Perícia"} · {c.processo_chave}</span><span className="block text-xs text-zinc-500">{c.motivo}</span></span>

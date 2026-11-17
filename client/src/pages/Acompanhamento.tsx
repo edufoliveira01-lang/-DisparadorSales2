@@ -1085,45 +1085,28 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
       )}
       {secao === "aguardando" && conteudoAguardando}
       {secao === "publicacoes" && (
-        <div className="process-workbench"><aside className="process-filter-rail"><div className="pub-resumo">
-          {urgencia && (
-            <div role="group" aria-label="Urgência de hoje" className="mb-3 grid grid-cols-2 gap-2">
-              {[
-                { rotulo: "Prazos vencidos", valor: urgencia.vencidos, tom: "red", acao: () => void carregarAlerta("prazos").catch((e) => show(erro(e), "error")) },
-                { rotulo: "Vencem hoje", valor: urgencia.vencem_hoje, tom: "amber", acao: () => void carregarAlerta("prazos").catch((e) => show(erro(e), "error")) },
-                { rotulo: "Perícias e audiências · 7 dias", valor: urgencia.compromissos_7_dias, tom: "red", acao: () => filtrar("categoria", "pericia") },
-                { rotulo: "Prazo a lançar", valor: urgencia.prazo_a_lancar, tom: "red", acao: () => filtrar("situacao", "sem_prazo") },
-                { rotulo: "Datas a confirmar", valor: urgencia.datas_a_confirmar, tom: "amber", acao: () => document.getElementById("compromissos-pendentes")?.scrollIntoView({ behavior: "smooth", block: "start" }) },
-                { rotulo: "Novas para triagem", valor: urgencia.novas_para_triagem, tom: "blue", acao: () => filtrar("situacao", "nao_lidas") },
-              ].map(({ rotulo, valor, tom, acao }) => (
-                <button
-                  key={rotulo}
-                  type="button"
-                  onClick={acao}
-                  className={`rounded-xl border bg-white px-3 py-2 text-left shadow-sm transition hover:border-zinc-400 dark:bg-zinc-900 ${valor > 0 ? (tom === "red" ? "border-red-300" : tom === "amber" ? "border-amber-300" : "border-accent-300") : "border-zinc-200 dark:border-zinc-800"}`}
-                >
-                  <span className="block text-[10px] font-medium uppercase tracking-wide text-zinc-500">{rotulo}</span>
-                  <strong className={`text-xl ${valor > 0 ? (tom === "red" ? "text-red-700" : tom === "amber" ? "text-amber-700" : "text-accent-700") : "text-zinc-400"}`}>{valor}</strong>
-                </button>
-              ))}
-            </div>
-          )}
-          <div>
-            {[
-              { label: "Processos na lista", value: total, Icon: FolderOpen, action: () => filtrar("categoria", "") },
-              { label: "Processos não lidos", value: status?.resumo.nao_lidas ?? 0, Icon: FileCheck2, action: () => filtrar("situacao", "nao_lidas") },
-              { label: "Aguardando retorno", value: status?.aguardando_retorno ?? 0, nota: status && status.aguardando_retorno > (status.aguardando_retorno_conferidos ?? status.aguardando_retorno) ? `${status.aguardando_retorno_conferidos ?? 0} com histórico conferido` : "", Icon: Clock3, action: () => { setAguardandoAberto(true); void carregarAguardando().catch(e => show(erro(e), "error")); } },
-              { label: "Perícias sem laudo · 60 dias", value: status?.pericias_sem_laudo ?? 0, nota: status && status.pericias_sem_laudo > (status.pericias_sem_laudo_conferidas ?? status.pericias_sem_laudo) ? `${status.pericias_sem_laudo_conferidas ?? 0} com histórico conferido` : "", Icon: AlertCircle, action: () => { setMostrarSemLaudo(true); void carregarSemLaudo(); } },
-              { label: "Prazos do escritório · vencidos ou a vencer", value: status?.prazos_escritorio ?? 0, nota: "", Icon: AlertCircle, action: () => void carregarAlerta("prazos").catch((e) => show(erro(e), "error")) },
-              { label: "Processos parados", value: status?.processos_parados ?? 0, nota: "", Icon: Clock3, action: () => void carregarAlerta("parados", diasParado).catch((e) => show(erro(e), "error")) },
-            ].map(({ label, value, nota, Icon, action }) => (
-              <button key={label} type="button" onClick={action} className="group rounded-2xl border border-zinc-200 bg-white p-4 text-left shadow-sm transition hover:border-accent-400 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900">
-                <span className="flex items-center justify-between gap-2 text-[11px] font-medium text-zinc-500"><span>{label}</span><Icon className="h-4 w-4 text-accent-600" /></span>
-                <strong className="mt-3 block text-2xl font-semibold text-zinc-900 dark:text-zinc-100">{value}</strong>
-                {nota && <span className="mt-1 block text-[10px] font-normal text-zinc-500">{nota}</span>}
-              </button>
-            ))}
-          </div></div>
+        <div className="process-workbench"><aside className="process-filter-rail"><div className="pub-faixa" role="group" aria-label="Resumo e urgência">
+          {[
+            ...(urgencia ? [
+              { label: "Prazos vencidos", value: urgencia.vencidos, tom: "red", title: "Prazos do escritório já vencidos e sem baixa", action: () => void carregarAlerta("prazos").catch((e) => show(erro(e), "error")) },
+              { label: "Vencem hoje", value: urgencia.vencem_hoje, tom: "amber", title: "Prazos que vencem hoje", action: () => void carregarAlerta("prazos").catch((e) => show(erro(e), "error")) },
+              { label: "Perícias · 7 dias", value: urgencia.compromissos_7_dias, tom: "red", title: "Perícias e audiências nos próximos 7 dias", action: () => filtrar("categoria", "pericia") },
+              { label: "Prazo a lançar", value: urgencia.prazo_a_lancar, tom: "red", title: "Ordem com prazo para o escritório e nenhum prazo lançado", action: () => filtrar("situacao", "sem_prazo") },
+              { label: "Datas a confirmar", value: urgencia.datas_a_confirmar, tom: "amber", title: "Perícias e audiências com dados incompletos", action: () => document.getElementById("compromissos-pendentes")?.scrollIntoView({ behavior: "smooth", block: "start" }) },
+              { label: "Novas", value: urgencia.novas_para_triagem, tom: "blue", title: "Publicações novas ainda não conferidas por uma pessoa", action: () => filtrar("situacao", "nao_lidas") },
+            ] : []),
+            { label: "Na lista", value: total, tom: "", title: "Processos na lista", action: () => filtrar("categoria", "") },
+            { label: "Não lidos", value: status?.resumo.nao_lidas ?? 0, tom: "", title: "Processos não lidos", action: () => filtrar("situacao", "nao_lidas") },
+            { label: "Aguardando retorno", value: status?.aguardando_retorno ?? 0, tom: "", title: "Aguardando retorno", action: () => { setAguardandoAberto(true); void carregarAguardando().catch(e => show(erro(e), "error")); } },
+            { label: "Sem laudo · 60 dias", value: status?.pericias_sem_laudo ?? 0, tom: "", title: "Perícias sem laudo identificado em 60 dias", action: () => { setMostrarSemLaudo(true); void carregarSemLaudo(); } },
+            { label: "Prazos do escritório", value: status?.prazos_escritorio ?? 0, tom: "", title: "Prazos do escritório vencidos ou a vencer", action: () => void carregarAlerta("prazos").catch((e) => show(erro(e), "error")) },
+            { label: "Parados", value: status?.processos_parados ?? 0, tom: "", title: "Processos parados", action: () => void carregarAlerta("parados", diasParado).catch((e) => show(erro(e), "error")) },
+          ].map(({ label, value, tom, title, action }) => (
+            <button key={label} type="button" title={title} onClick={action} className={`pub-pill ${value > 0 && tom ? `pub-pill-${tom}` : ""}`}>
+              <span>{label}</span><strong>{value}</strong>
+            </button>
+          ))}
+        </div>
           <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"><div className="process-filter-heading"><h2 className="text-sm font-semibold">Filtrar publicações</h2><button type="button" className="text-xs text-accent-600 dark:text-accent-300" onClick={() => { setBuscaTexto(""); setFiltro({categoria:"",resultado:"",advogado_id:"",situacao:"",arquivo:"ativos",busca:"",pagina:1}); }}>Limpar filtros</button></div>
             <div className="process-filter-search">
               <div className="relative flex-1">
@@ -1205,7 +1188,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
               }
             />
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {items.map((p) => (
                 <article
                   key={p.id}
@@ -1230,121 +1213,83 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                       void abrir(p.id);
                     }
                   }}
-                  className={`group cursor-pointer rounded-xl border bg-white p-3.5 shadow-sm transition-all hover:border-accent-400 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 dark:bg-zinc-900 ${!p.lida ? "border-l-4 border-l-accent-600 dark:border-zinc-800 dark:border-l-accent-500" : "border-zinc-200 dark:border-zinc-800"}`}
+                  className={`group cursor-pointer rounded-lg border bg-white px-3 py-2.5 shadow-sm transition-all hover:border-accent-400 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 dark:bg-zinc-900 ${!p.lida ? "border-l-4 border-l-accent-600 dark:border-zinc-800 dark:border-l-accent-500" : "border-zinc-200 dark:border-zinc-800"}`}
                 >
-                  {filtro.arquivo === "ativos" && <label className="mb-1.5 inline-flex cursor-pointer items-center gap-2 text-xs text-zinc-500">
-                    <Checkbox checked={selecionados.includes(p.id)} onChange={(e) => setSelecionados((atual) => e.target.checked ? [...new Set([...atual, p.id])] : atual.filter((id) => id !== p.id))} />
-                    Selecionar processo
-                  </label>}
-                  <div className="flex flex-col gap-4 sm:flex-row sm:justify-between">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-                        {dia(p.data_disponibilizacao)} · {p.tipo_documento || "Andamento"}
-                      </p>
-                      {(() => {
-                        const sinais = sinaisDoCartao(p);
-                        const destaque = sinais.slice(0, 3);
-                        const resto = sinais.slice(3);
-                        return (
-                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                            {destaque.map((x) => <Badge key={x.chave} tone={x.tom} title={x.dica}>{x.texto}</Badge>)}
+                  {(() => {
+                    const sinais = sinaisDoCartao(p);
+                    const prazo = p.proximo_prazo ? `Prazo até ${dia(p.proximo_prazo)} · ${p.prazos_abertos} em aberto` : p.acao?.tipo === "prazo_explicito" ? "Prazo expresso · conferir" : p.acao?.tipo === "cumprimento" ? "Providência para o escritório" : "";
+                    const linha = [p.situacao, prazo].filter(Boolean).join(" · ");
+                    const meta = `${p.tribunal} · ${p.orgao}${p.captured_at ? ` · captada ${instanteBR(p.captured_at)}` : ""}${p.historico_djen?.status === "atualizado" && p.historico_djen.fim ? ` · DJEN até ${dia(p.historico_djen.fim)}` : ""}${p.advogados.length ? ` · ${p.advogados.map((a) => a.nome).join(", ")}` : ""}`;
+                    return (
+                      <div className="flex items-start gap-3">
+                        {filtro.arquivo === "ativos" && (
+                          <Checkbox aria-label={`Selecionar processo ${p.processo}`} checked={selecionados.includes(p.id)} onChange={(e) => setSelecionados((atual) => e.target.checked ? [...new Set([...atual, p.id])] : atual.filter((id) => id !== p.id))} />
+                        )}
+                        <div className="min-w-0 flex-1" title={meta}>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{dia(p.data_disponibilizacao)} · {p.tipo_documento || "Andamento"}</span>
+                            {sinais.slice(0, 3).map((x) => <Badge key={x.chave} tone={x.tom} title={x.dica}>{x.texto}</Badge>)}
                             {!p.concluida && <ActivityBadge atividade={p.atividade} />}
-                            {resto.length > 0 && (
+                            {sinais.length > 3 && (
                               <details className="inline-block text-[11px] text-zinc-500">
-                                <summary className="cursor-pointer select-none rounded-md bg-zinc-100 px-2 py-0.5 font-medium hover:bg-zinc-200 dark:bg-zinc-800">+{resto.length} sinais</summary>
-                                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                                  {resto.map((x) => <Badge key={x.chave} tone={x.tom} title={x.dica}>{x.texto}</Badge>)}
-                                </div>
+                                <summary className="cursor-pointer select-none rounded-md bg-zinc-100 px-1.5 py-0.5 font-medium hover:bg-zinc-200 dark:bg-zinc-800">+{sinais.length - 3}</summary>
+                                <div className="mt-1 flex flex-wrap gap-1.5">{sinais.slice(3).map((x) => <Badge key={x.chave} tone={x.tom} title={x.dica}>{x.texto}</Badge>)}</div>
                               </details>
                             )}
                           </div>
-                        );
-                      })()}
-                      <h2 className="mt-1.5 text-base font-semibold text-zinc-900 dark:text-zinc-100">{p.cliente_exibicao || "Cliente não identificado"}</h2>
-                      <p className="mt-1 break-all text-xs font-medium text-zinc-600 dark:text-zinc-300">Processo {p.processo || "não informado"}</p>
-                      {Boolean(p.andamentos_total && p.andamentos_total > 1) && (
-                        <p className="mt-1 text-[11px] font-medium text-accent-700 dark:text-accent-300">
-                          {p.andamentos_total} andamentos agrupados neste processo
-                          {p.andamentos_nao_lidos
-                            ? ` · ${p.andamentos_nao_lidos} não lido${p.andamentos_nao_lidos > 1 ? "s" : ""}`
-                            : ""}
-                        </p>
-                      )}
-                      {!p.cliente_vinculado && <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-300">Cliente da publicação · confirmar vínculo com a agenda</p>}
-                      <p className="mt-0.5 text-[11px] text-zinc-500">
-                        {p.tribunal} · {p.orgao}{p.captured_at ? ` · captada ${instanteBR(p.captured_at)}` : ""}
-                        {p.historico_djen?.status === "atualizado" && p.historico_djen.fim ? ` · DJEN consultado até ${dia(p.historico_djen.fim)}` : ""}
-                      </p>
-                      {p.historico_djen && p.historico_djen.status !== "atualizado" && <HistoryCoverage historico={p.historico_djen} publicacaoId={p.id} />}
-                      {p.situacao && (
-                        <p className="mt-1 text-xs font-medium text-zinc-700 dark:text-zinc-200">
-                          {p.situacao}
-                        </p>
-                      )}
-                      {p.proximo_prazo && (
-                        <p className="mt-2 text-xs font-semibold text-amber-700 dark:text-amber-300">Prazo registrado até {dia(p.proximo_prazo)} · {p.prazos_abertos} em aberto</p>
-                      )}
-                      {!p.proximo_prazo && p.acao?.tipo === "prazo_explicito" && <p className="mt-2 text-xs font-semibold text-amber-700 dark:text-amber-300">Prazo expresso na publicação · conferir e calcular</p>}
-                      {!p.proximo_prazo && p.acao?.tipo === "cumprimento" && <p className="mt-2 text-xs font-semibold text-amber-700 dark:text-amber-300">Providência para o escritório · sem prazo expresso</p>}
-                      {!p.proximo_prazo && (!p.acao || p.acao.tipo === "ciencia") && <p className="mt-2 text-xs text-zinc-500">Ciência / acompanhamento · sem prazo identificado para a parte</p>}
-                      {p.acao?.situacao === "decorrido" && <p className="mt-1 text-xs font-semibold text-red-700 dark:text-red-300">Publicação posterior menciona decurso do prazo · conferir se foi cumprido</p>}
-                      {!!p.acao?.encerradas?.length && <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300" title={p.acao.encerradas.map((e) => `${ROTULO_SITUACAO[e.situacao] || e.situacao}: ${e.motivo}`).join("\n")}>{p.acao.encerradas.length} providência(s) anterior(es) encerrada(s): {[...new Set(p.acao.encerradas.map((e) => (ROTULO_SITUACAO[e.situacao] || e.situacao).toLowerCase()))].join(", ")}</p>}
-                      <p className="mt-1.5 line-clamp-2 whitespace-pre-line break-words text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
-                        {p.resumo}
-                      </p>
-                      <p className="mt-1.5 truncate text-[10px] text-zinc-500" title={p.advogados.map((a) => `${a.nome} · OAB ${a.uf_oab} ${a.numero_oab}`).join(" / ")}>
-                        {p.advogados.map((a) => `${a.nome} · OAB ${a.uf_oab} ${a.numero_oab}`).join(" / ")}
-                      </p>
-                      {p.advogados.some((a) => a.correspondencia !== "oab") && (
-                        <p className="mt-1 text-[10px] text-amber-700 dark:text-amber-300">
-                          Correspondência da busca a conferir no inteiro teor e
-                          na OAB.
-                        </p>
-                      )}
-                    </div>
-                    <div className="grid w-full shrink-0 grid-cols-2 content-start gap-2 self-start sm:w-52">
-                      <Button size="sm" className="col-span-2 w-full" onClick={() => void abrir(p.id)}>Abrir processo <ArrowRight className="h-3.5 w-3.5" /></Button>
-                      {!p.concluida && <RegisterAction publicacaoId={p.id} onSaved={carregarLista} className="col-span-2 w-full" />}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="w-full"
-                        disabled={salvando}
-                        onClick={() => {
-                          if (!p.concluida) {
-                            setConcluindo({ id: p.id, rotulo: `${p.tipo_documento || "Andamento"} de ${dataDoAndamento(p.data_disponibilizacao)}`, total: p.andamentos_total ?? 1 });
-                            return;
-                          }
-                          void acao(async () => {
-                            await api.post(`/djen/publicacoes/${p.id}/conclusao`, { concluida: false, escopo: "processo" });
-                            await carregarLista();
-                            await carregarStatus();
-                            show("Publicação reaberta.", "success");
-                          });
-                        }}
-                      >
-                        {p.concluida ? "Reabrir" : "Concluir"}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="w-full text-zinc-500"
-                        disabled={salvando}
-                        onClick={() =>
-                          void acao(async () => {
-                            await api.post(
-                              `/djen/publicacoes/${p.id}/leitura`,
-                              { lida: !p.lida },
-                            );
-                            await carregarLista();
-                            await carregarStatus();
-                          })
-                        }
-                      >
-                        {p.lida ? "Não lida" : "Marcar lida"}
-                      </Button>
-                    </div>
-                  </div>
+                          <div className="mt-1 flex flex-wrap items-baseline gap-x-2">
+                            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{p.cliente_exibicao || "Cliente não identificado"}</h2>
+                            <span className="break-all text-xs text-zinc-500">{p.processo || "processo não informado"}</span>
+                            {Boolean(p.andamentos_total && p.andamentos_total > 1) && (
+                              <span className="text-[11px] font-medium text-accent-700 dark:text-accent-300">· {p.andamentos_total} andamentos{p.andamentos_nao_lidos ? ` (${p.andamentos_nao_lidos} não lido${p.andamentos_nao_lidos > 1 ? "s" : ""})` : ""}</span>
+                            )}
+                            {!p.cliente_vinculado && <span className="text-[11px] text-amber-700 dark:text-amber-300">· vínculo a confirmar</span>}
+                          </div>
+                          {linha && <p className="mt-0.5 truncate text-xs font-medium text-zinc-700 dark:text-zinc-200">{linha}</p>}
+                          {p.historico_djen && p.historico_djen.status !== "atualizado" && <HistoryCoverage historico={p.historico_djen} publicacaoId={p.id} />}
+                          {p.acao?.situacao === "decorrido" && <p className="mt-0.5 text-xs font-semibold text-red-700 dark:text-red-300">Publicação posterior menciona decurso do prazo · conferir</p>}
+                        </div>
+                        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:flex-nowrap">
+                          <Button size="sm" onClick={() => void abrir(p.id)}>Abrir <ArrowRight className="h-3.5 w-3.5" /></Button>
+                          {!p.concluida && <RegisterAction publicacaoId={p.id} onSaved={carregarLista} />}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={salvando}
+                            onClick={() => {
+                              if (!p.concluida) {
+                                setConcluindo({ id: p.id, rotulo: `${p.tipo_documento || "Andamento"} de ${dataDoAndamento(p.data_disponibilizacao)}`, total: p.andamentos_total ?? 1 });
+                                return;
+                              }
+                              void acao(async () => {
+                                await api.post(`/djen/publicacoes/${p.id}/conclusao`, { concluida: false, escopo: "processo" });
+                                await carregarLista();
+                                await carregarStatus();
+                                show("Publicação reaberta.", "success");
+                              });
+                            }}
+                          >
+                            {p.concluida ? "Reabrir" : "Concluir"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-zinc-500"
+                            disabled={salvando}
+                            onClick={() =>
+                              void acao(async () => {
+                                await api.post(`/djen/publicacoes/${p.id}/leitura`, { lida: !p.lida });
+                                await carregarLista();
+                                await carregarStatus();
+                              })
+                            }
+                          >
+                            {p.lida ? "Não lida" : "Lida"}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </article>
               ))}
             </div>
