@@ -1207,7 +1207,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                   }}
                   className={`group cursor-pointer rounded-xl border bg-white p-3.5 shadow-sm transition-all hover:border-accent-400 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 dark:bg-zinc-900 ${!p.lida ? "border-l-4 border-l-accent-600 dark:border-zinc-800 dark:border-l-accent-500" : "border-zinc-200 dark:border-zinc-800"}`}
                 >
-                  {filtro.arquivo === "ativos" && <label className="mb-3 inline-flex cursor-pointer items-center gap-2 text-xs text-zinc-500">
+                  {filtro.arquivo === "ativos" && <label className="mb-1.5 inline-flex cursor-pointer items-center gap-2 text-xs text-zinc-500">
                     <Checkbox checked={selecionados.includes(p.id)} onChange={(e) => setSelecionados((atual) => e.target.checked ? [...new Set([...atual, p.id])] : atual.filter((id) => id !== p.id))} />
                     Selecionar processo
                   </label>}
@@ -1235,7 +1235,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                           </div>
                         );
                       })()}
-                      <h2 className="mt-2 text-base font-semibold text-zinc-900 dark:text-zinc-100">{p.cliente_exibicao || "Cliente não identificado"}</h2>
+                      <h2 className="mt-1.5 text-base font-semibold text-zinc-900 dark:text-zinc-100">{p.cliente_exibicao || "Cliente não identificado"}</h2>
                       <p className="mt-1 break-all text-xs font-medium text-zinc-600 dark:text-zinc-300">Processo {p.processo || "não informado"}</p>
                       {Boolean(p.andamentos_total && p.andamentos_total > 1) && (
                         <p className="mt-1 text-[11px] font-medium text-accent-700 dark:text-accent-300">
@@ -1246,14 +1246,13 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                         </p>
                       )}
                       {!p.cliente_vinculado && <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-300">Cliente da publicação · confirmar vínculo com a agenda</p>}
-                      <p className="mt-1 text-[11px] text-zinc-500">
-                        {p.tribunal} · {p.orgao} · Disponibilizada em{" "}
-                        {dia(p.data_disponibilizacao)}
+                      <p className="mt-0.5 text-[11px] text-zinc-500">
+                        {p.tribunal} · {p.orgao}{p.captured_at ? ` · captada ${instanteBR(p.captured_at)}` : ""}
+                        {p.historico_djen?.status === "atualizado" && p.historico_djen.fim ? ` · DJEN consultado até ${dia(p.historico_djen.fim)}` : ""}
                       </p>
-                      {p.captured_at && <p className="mt-1 text-[11px] text-zinc-500">Capturada pelo sistema em {instanteBR(p.captured_at)}</p>}
-                      <HistoryCoverage historico={p.historico_djen} publicacaoId={p.id} />
+                      {p.historico_djen && p.historico_djen.status !== "atualizado" && <HistoryCoverage historico={p.historico_djen} publicacaoId={p.id} />}
                       {p.situacao && (
-                        <p className="mt-2 text-xs font-medium text-zinc-700 dark:text-zinc-200">
+                        <p className="mt-1 text-xs font-medium text-zinc-700 dark:text-zinc-200">
                           {p.situacao}
                         </p>
                       )}
@@ -1265,16 +1264,11 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                       {!p.proximo_prazo && (!p.acao || p.acao.tipo === "ciencia") && <p className="mt-2 text-xs text-zinc-500">Ciência / acompanhamento · sem prazo identificado para a parte</p>}
                       {p.acao?.situacao === "decorrido" && <p className="mt-1 text-xs font-semibold text-red-700 dark:text-red-300">Publicação posterior menciona decurso do prazo · conferir se foi cumprido</p>}
                       {!!p.acao?.encerradas?.length && <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300" title={p.acao.encerradas.map((e) => `${ROTULO_SITUACAO[e.situacao] || e.situacao}: ${e.motivo}`).join("\n")}>{p.acao.encerradas.length} providência(s) anterior(es) encerrada(s): {[...new Set(p.acao.encerradas.map((e) => (ROTULO_SITUACAO[e.situacao] || e.situacao).toLowerCase()))].join(", ")}</p>}
-                      <p className="mt-3 line-clamp-3 whitespace-pre-line break-words text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
+                      <p className="mt-1.5 line-clamp-2 whitespace-pre-line break-words text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
                         {p.resumo}
                       </p>
-                      <p className="mt-3 text-[10px] text-zinc-500">
-                        {p.advogados
-                          .map(
-                            (a) =>
-                              `${a.nome} · OAB ${a.uf_oab} ${a.numero_oab}`,
-                          )
-                          .join(" / ")}
+                      <p className="mt-1.5 truncate text-[10px] text-zinc-500" title={p.advogados.map((a) => `${a.nome} · OAB ${a.uf_oab} ${a.numero_oab}`).join(" / ")}>
+                        {p.advogados.map((a) => `${a.nome} · OAB ${a.uf_oab} ${a.numero_oab}`).join(" / ")}
                       </p>
                       {p.advogados.some((a) => a.correspondencia !== "oab") && (
                         <p className="mt-1 text-[10px] text-amber-700 dark:text-amber-300">
