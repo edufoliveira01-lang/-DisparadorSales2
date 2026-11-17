@@ -103,3 +103,27 @@ describe("local reescrito pela IA não derruba a análise (causa final da períc
     expect(r.alertas.join(" ")).toMatch(/não confere/);
   });
 });
+
+import { dataPadrao, dataHoraAgendamento } from "../src/services/djen/periciaIntegration";
+describe("data em ISO devolvida pela IA entra no controle de perícias", () => {
+  it("dataPadrao reconhece ISO, numérica e por extenso", () => {
+    expect(dataPadrao("2026-12-03")).toBe("03/12/2026");
+    expect(dataPadrao("03/12/2026")).toBe("03/12/2026");
+    expect(dataPadrao("03 de dezembro de 2026")).toBe("03/12/2026");
+    expect(dataPadrao("sem data")).toBeNull();
+  });
+  it("data e hora ISO viram um instante válido", () => {
+    expect(Number.isFinite(dataHoraAgendamento("2026-12-03", "16:00"))).toBe(true);
+  });
+});
+
+import { horarioPadrao } from "../src/services/djen/periciaIntegration";
+describe("horário", () => {
+  it("lê 16:00, 9:30, 16h e 14h30", () => {
+    expect(horarioPadrao("16:00")).toBe("16:00");
+    expect(horarioPadrao("9:30")).toBe("09:30");
+    expect(horarioPadrao("16h")).toBe("16:00");
+    expect(horarioPadrao("14h30")).toBe("14:30");
+    expect(horarioPadrao("25:00")).toBeNull();
+  });
+});

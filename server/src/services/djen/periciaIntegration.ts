@@ -51,6 +51,9 @@ const MESES: Record<string, number> = {
 
 export function dataPadrao(value: string | null) {
   if (!value) return null;
+  // A IA devolve a data em ISO («2026-12-03»): sem isto o compromisso «não tinha data legível» e não entrava no controle.
+  const iso = value.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+  if (iso && Number(iso[2]) >= 1 && Number(iso[2]) <= 12 && Number(iso[3]) >= 1 && Number(iso[3]) <= 31) return `${iso[3]}/${iso[2]}/${iso[1]}`;
   const numerica = value.match(/\b(\d{1,2})\s*[/.\-]\s*(\d{1,2})\s*[/.\-]\s*(\d{4})\b/);
   if (numerica)
     return `${numerica[1].padStart(2, "0")}/${numerica[2].padStart(2, "0")}/${numerica[3]}`;
@@ -63,6 +66,12 @@ export function dataPadrao(value: string | null) {
 
 export function horarioPadrao(value: string | null) {
   if (!value) return null;
+  // «16:00» / «9:30»: lido no texto cru (a normalização abaixo troca os dois-pontos por espaço e confundia «16 00 horas» com meia-noite).
+  const doisPontos = value.match(/\b(\d{1,2})\s*:\s*(\d{2})\b/);
+  if (doisPontos) {
+    const h = Number(doisPontos[1]), m = Number(doisPontos[2]);
+    return h <= 23 && m <= 59 ? `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}` : null;
+  }
   const match = canon(value).match(/\b(\d{1,2})\s*(?::|h|horas?)\s*(\d{0,2})/);
   if (!match) return null;
   const hora = Number(match[1]);
