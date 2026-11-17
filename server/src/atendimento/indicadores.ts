@@ -21,7 +21,9 @@ export interface MesDoAtendimento {
   fontes?: Record<string, number>;
 }
 export interface EtapaAgora { nome: string; total: number; posicao: number }
-export interface RetratoDoAtendimento { gerado_em: string; meses: MesDoAtendimento[]; por_etapa: EtapaAgora[]; abertos: number }
+/** Quem JÁ É CLIENTE (funil de clientes do atendimento): acompanhado à parte, fora da conta de captação (leads). */
+export interface ClientesNoAtendimento { abertos: number; por_etapa: EtapaAgora[] }
+export interface RetratoDoAtendimento { gerado_em: string; meses: MesDoAtendimento[]; por_etapa: EtapaAgora[]; abertos: number; clientes?: ClientesNoAtendimento }
 
 const inteiro = (v: unknown) => (Number.isFinite(Number(v)) && Number(v) >= 0 ? Math.floor(Number(v)) : 0);
 const texto = (v: unknown, max = 80) => String(v ?? "").slice(0, max);
@@ -41,7 +43,12 @@ export function normalizarRetrato(bruto: unknown): RetratoDoAtendimento | null {
     const x = (e ?? {}) as Record<string, unknown>;
     return { nome: texto(x.nome), total: inteiro(x.total), posicao: inteiro(x.posicao) };
   }).filter((e) => e.nome);
-  return { gerado_em: new Date().toISOString(), meses, por_etapa, abertos: inteiro(b.abertos) };
+  const c = (b.clientes && typeof b.clientes === "object" ? b.clientes : null) as Record<string, unknown> | null;
+  const clientes: ClientesNoAtendimento | undefined = c ? {
+    abertos: inteiro(c.abertos),
+    por_etapa: (Array.isArray(c.por_etapa) ? c.por_etapa : []).slice(0, 30).map((e) => { const x = (e ?? {}) as Record<string, unknown>; return { nome: texto(x.nome), total: inteiro(x.total), posicao: inteiro(x.posicao) }; }).filter((e) => e.nome),
+  } : undefined;
+  return { gerado_em: new Date().toISOString(), meses, por_etapa, abertos: inteiro(b.abertos), ...(clientes ? { clientes } : {}) };
 }
 
 export function guardarRetrato(bruto: unknown): RetratoDoAtendimento | null {

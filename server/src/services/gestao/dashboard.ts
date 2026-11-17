@@ -138,6 +138,7 @@ export function dashboardDoInicio(mesBruto: unknown, podeVerReceita: boolean) {
     serie: meses.map((m) => retrato.meses.find((x) => x.mes === m) ?? { mes: m, novos: 0, qualificados: 0, desqualificados: 0, sem_interesse: 0, em_andamento: 0 }),
     por_etapa: retrato.por_etapa,
     abertos: retrato.abertos,
+    clientes: retrato.clientes ?? null,
   } : null;
 
   return { hoje, mes, meses, contratos, negocios, processos, clientes, periciasEAudiencias, tarefas, publicacoes, financeiro, documentos, atendimento };

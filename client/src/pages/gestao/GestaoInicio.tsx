@@ -33,7 +33,7 @@ interface Dash {
   publicacoes: { nao_lidas: number; prazos_vencidos: number; prazos_7_dias: number };
   financeiro: { recebido_mes_centavos: number; a_receber_mes_centavos: number; em_atraso_centavos: number; em_atraso_quantidade: number; a_pagar_mes_centavos: number; serie_recebido: { mes: string; total: number }[] } | null;
   documentos: { enviados_mes: number; com_erro: number; aguardando_pasta: number; esperando_assinatura: number; problema: string | null } | null;
-  atendimento: { atualizado_em: string; mes: MesAtendimento; serie: MesAtendimento[]; por_etapa: { nome: string; total: number; posicao: number }[]; abertos: number } | null;
+  atendimento: { atualizado_em: string; mes: MesAtendimento; serie: MesAtendimento[]; por_etapa: { nome: string; total: number; posicao: number }[]; abertos: number; clientes: { abertos: number; por_etapa: { nome: string; total: number; posicao: number }[] } | null } | null;
 }
 interface MeuPainel { atrasadas: Tarefa[]; hoje_lista: Tarefa[]; proximas: Tarefa[] }
 interface Resumo { pendentes_importacao: number; contatos_sem_cadastro: number }
@@ -163,7 +163,7 @@ export function GestaoInicio() {
 
       {/* Atendimento + gráficos mensais */}
       <div className="grid gap-4 lg:grid-cols-3">
-        <Secao titulo="Atendimento no mês" subtitulo={at ? `Leads que chegaram em ${rotuloDoMes(mesAtual)} e como estão agora · atualizado ${haQuanto(at.atualizado_em)}` : undefined}>
+        <Secao titulo="Atendimento no mês" subtitulo={at ? `Leads e primeiros contatos (sem quem já é cliente) que chegaram em ${rotuloDoMes(mesAtual)} e como estão agora · atualizado ${haQuanto(at.atualizado_em)}` : undefined}>
           {!at || !am ? (
             <p className="text-sm text-zinc-500">Os números do atendimento aparecem aqui assim que o atendimento enviar o primeiro resumo (leva alguns minutos depois de conectado).</p>
           ) : (
@@ -173,6 +173,11 @@ export function GestaoInicio() {
               <LinhaDeFunil rotulo="Em atendimento" valor={am.em_andamento} total={am.novos} cor="bg-accent-500" />
               <LinhaDeFunil rotulo="Sem interesse" valor={am.sem_interesse} total={am.novos} cor="bg-amber-500" />
               <LinhaDeFunil rotulo="Desqualificados na triagem" valor={am.desqualificados} total={am.novos} cor="bg-red-500" />
+              {at?.clientes && (
+                <p className="border-t border-zinc-100 pt-3 text-xs text-zinc-500 dark:border-white/10">
+                  Quem já é cliente fica fora desta conta: <strong className="text-zinc-800 dark:text-zinc-100">{at.clientes.abertos}</strong> {at.clientes.abertos === 1 ? "cliente em andamento" : "clientes em andamento"}{at.clientes.por_etapa.length > 0 ? ` (${at.clientes.por_etapa.map((e) => `${e.nome}: ${e.total}`).join(" · ")})` : ""}.
+                </p>
+              )}
               {d?.contratos && <p className="border-t border-zinc-100 pt-3 text-xs text-zinc-500 dark:border-white/10">Contratos assinados no mês: <strong className="text-zinc-800 dark:text-zinc-100">{d.contratos.assinados_mes}</strong>{am.novos > 0 && <> · {Math.round((d.contratos.assinados_mes / am.novos) * 100)}% dos que chegaram</>}</p>}
             </div>
           )}
