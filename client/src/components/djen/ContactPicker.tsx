@@ -1,3 +1,4 @@
+import { useAuth } from "@/context/AuthContext";
 import { useMemo, useState } from "react";
 import type { Contact } from "@/lib/types";
 import { Input, Label } from "@/components/ui/Input";
@@ -22,6 +23,7 @@ export function ContactPicker({
   processo: string;
   onCreated: (c: Contact) => void;
 }) {
+  const { can } = useAuth();
   const [busca, setBusca] = useState(""),
     [criando, setCriando] = useState(false),
     [busy, setBusy] = useState(false),
@@ -105,9 +107,7 @@ export function ContactPicker({
           </p>
         )}
       </div>
-      <Button size="sm" variant="outline" onClick={() => setCriando(!criando)}>
-        Cadastrar novo cliente
-      </Button>
+      {can("contacts.manage") && <Button size="sm" variant="outline" onClick={() => setCriando(!criando)}>Cadastrar novo cliente</Button>}
       {criando && (
         <div className="grid gap-3 rounded-lg border p-3 sm:grid-cols-2">
           <div>

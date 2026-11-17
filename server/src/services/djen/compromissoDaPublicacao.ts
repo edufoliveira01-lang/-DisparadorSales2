@@ -1,5 +1,6 @@
+import { limparCachesDjen } from "./cache";
 import { db } from "../../db";
-import { adicionarPublicacaoAoControle, agendamentoDaPublicacao, agendamentoNoTexto, dataHoraAgendamento, publicacao, type CompromissoManual } from "./periciaIntegration";
+import { adicionarPublicacaoAoControle, agendamentoDaPublicacao, agendamentoNoTexto, dataHoraAgendamento, publicacao, salvarAgendamentoRevisado, type CompromissoManual } from "./periciaIntegration";
 import { DjenInputError } from "./store";
 
 /**
@@ -11,6 +12,7 @@ export interface ResultadoDoCompromisso { estado: EstadoDoCompromisso; motivo: s
 
 function gravar(id: number, r: ResultadoDoCompromisso) {
   db.prepare("UPDATE djen_publicacoes SET compromisso_estado=?,compromisso_motivo=?,compromisso_tipo=? WHERE id=?").run(r.estado, r.motivo, r.tipo, id);
+  limparCachesDjen();
   return r;
 }
 
@@ -24,6 +26,11 @@ export function sincronizarCompromisso(publicacaoId: number, manual: Compromisso
   const nome = tipo === "pericia" ? "perícia" : "audiência";
 
   if (!p.cliente_id) return gravar(publicacaoId, { estado: "completar", motivo: `Vincule o cliente ao processo para avisar sobre a ${nome}.`, tipo });
+  if (manual.data || manual.horario || manual.local) {
+    const anterior = agendamentoDaPublicacao(p);
+    const novos = salvarAgendamentoRevisado(publicacaoId, { data: manual.data || anterior.data, horario: manual.horario || anterior.horario, local: manual.local || anterior.local });
+    p.agendamento_revisado_json = JSON.stringify(novos);
+  }
   const da = agendamentoDaPublicacao(p);
   const tx = !da.data || !da.horario ? agendamentoNoTexto(p.texto, tipo) : { data: null, horario: null };
   const data = manual.data || da.data || tx.data, horario = manual.horario || da.horario || tx.horario;

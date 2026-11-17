@@ -1,3 +1,4 @@
+import { useSearchParams } from "react-router-dom";
 import { CalendarReminderButton } from "@/components/CalendarReminderButton";
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 import { calendarWeek, shiftCalendarDate } from "@/lib/calendarWeek";
@@ -223,6 +224,7 @@ function contarEventosResumo(eventos: PericiaAgendada[]) {
 }
 
 export function Calendario() {
+  const [parametros, setParametros] = useSearchParams();
   const { can } = useAuth();
   const { show } = useToast();
   const [pericias, setPericias] = useState<PericiaAgendada[] | null>(null);
@@ -261,6 +263,18 @@ export function Calendario() {
   }, [carregar]);
 
   useRealtimeRefresh(carregar, CALENDAR_EVENTS);
+  useEffect(() => {
+    const id = Number(parametros.get("compromisso"));
+    if (!pericias || !Number.isSafeInteger(id) || id <= 0) return;
+    const evento = pericias.find(p => p.id === id);
+    if (evento) {
+      const dia = diaLocalYMD(evento.data_hora_ms);
+      const [ano, mes] = dia.split("-").map(Number);
+      setAnoMes({ ano, mes }); setDiaSelecionado(dia); setVisualizacao("mes");
+    } else show("O compromisso já não está disponível neste calendário.", "info");
+    const novos = new URLSearchParams(parametros); novos.delete("compromisso"); setParametros(novos, { replace: true });
+  }, [pericias, parametros, setParametros, show]);
+
 
   async function confirmarApagar() {
     if (!apagarAlvo) return;

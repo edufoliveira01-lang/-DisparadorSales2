@@ -120,7 +120,7 @@ const acompanhamentos = () => memoDjenAsync("acompanhamentos", 60_000, async () 
 ]);
 const filtroPublicacoes = (req: import("express").Request) => {
   const filtro: Record<string, string> = {};
-  for (const key of ["arquivo", "categoria", "resultado", "advogado_id", "situacao", "busca", "inicio", "fim", "pagina"])
+  for (const key of ["arquivo", "categoria", "resultado", "advogado_id", "situacao", "busca", "inicio", "fim", "pagina", "agrupamento", "prioridade", "responsavel"])
     if (typeof req.query[key] === "string") filtro[key] = req.query[key] as string;
     else if (Array.isArray(req.query[key]) && (req.query[key] as unknown[]).every((v) => typeof v === "string"))
       filtro[key] = (req.query[key] as string[]).join(",");
@@ -293,7 +293,7 @@ djenRouter.post(
   "/publicacoes/conclusao-em-lote",
   wrap((req, res) => {
     try {
-      const resultado = concluirLoteComSeguranca(req.body?.ids, { forcar: req.body?.forcar === true, justificativa: typeof req.body?.justificativa === "string" ? req.body.justificativa : "" });
+      const resultado = concluirLoteComSeguranca(req.body?.ids, { escopo: req.body?.escopo === "andamentos" ? "andamentos" : "processos", forcar: req.body?.forcar === true, justificativa: typeof req.body?.justificativa === "string" ? req.body.justificativa : "" });
       changed(); res.json(resultado);
     } catch (e) {
       if (e instanceof ConclusaoBloqueada) return void res.status(409).json({ error: e.message, bloqueada: true, total: e.total, pendencias: e.pendencias });
@@ -396,7 +396,7 @@ djenRouter.put(
 djenRouter.put(
   "/publicacoes/:id/revisao",
   wrap((req, res) => {
-    res.json(revisarPublicacao(id(req.params.id), req.body));
+    res.json(revisarPublicacao(id(req.params.id), req.body, req.accessUser?.id));
     changed();
   }),
 );
@@ -598,6 +598,7 @@ djenRouter.post(
       const r = concluirComSeguranca({
         id: n,
         concluida: req.body.concluida,
+        ids: req.body.ids,
         escopo: req.body.escopo === "processo" ? "processo" : "andamento",
         forcar: req.body.forcar === true,
         justificativa: typeof req.body.justificativa === "string" ? req.body.justificativa : "",
@@ -629,12 +630,11 @@ djenRouter.post(
       .prepare("SELECT processo_chave FROM djen_publicacoes WHERE id=?")
       .get(n) as { processo_chave: string } | undefined;
     if (!processo) throw new DjenInputError("Publicação não encontrada.");
-    const afetadas = db.prepare("UPDATE djen_publicacoes SET lida=? WHERE processo_chave=? AND cancelada=0 AND lida<>?").run(
-      req.body.lida ? 1 : 0,
-      processo.processo_chave,
-      req.body.lida ? 1 : 0,
+    const escopo = req.body.escopo === "andamento" ? "id" : "processo_chave";
+    const afetadas = db.prepare(`UPDATE djen_publicacoes SET lida=? WHERE ${escopo}=? AND cancelada=0 AND lida<>?`).run(
+      req.body.lida ? 1 : 0, escopo === "id" ? n : processo.processo_chave, req.body.lida ? 1 : 0,
     ).changes;
-    if (afetadas > 0) { try { registrarHistoricoDjen(n, "leitura", req.body.lida ? `Marcado como lido (${afetadas} andamento(s) do processo).` : `Marcado como não lido (${afetadas} andamento(s) do processo).`); } catch { /* registro complementar */ } }
+    if (afetadas > 0) { try { registrarHistoricoDjen(n, "leitura", req.body.lida ? `Marcado como lido (${afetadas} andamento(s)).` : `Marcado como não lido (${afetadas} andamento(s)).`); } catch { /* registro complementar */ } }
     changed();
     res.json({ ok: true });
   }),

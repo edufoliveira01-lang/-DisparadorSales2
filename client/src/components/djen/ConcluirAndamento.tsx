@@ -25,7 +25,7 @@ export function ConcluirAndamento({ open, publicacaoId, rotulo, totalAndamentos,
   rotulo: string;
   totalAndamentos: number;
   onClose: () => void;
-  onConcluido: (info: { escopo: Escopo; total: number; publicacaoId: number }) => void;
+  onConcluido: (info: { escopo: Escopo; total: number; publicacaoId: number; ids: number[] }) => void;
 }) {
   const [escopo, setEscopo] = useState<Escopo>("andamento");
   const [previa, setPrevia] = useState<Previa | null>(null);
@@ -42,7 +42,7 @@ export function ConcluirAndamento({ open, publicacaoId, rotulo, totalAndamentos,
   useEffect(() => {
     if (!open) return;
     let ativo = true;
-    setCarregando(true); setErro("");
+    setCarregando(true); setPrevia(null); setErro("");
     api.get<Previa>(`/djen/publicacoes/${publicacaoId}/conclusao-previa?escopo=${escopo}`)
       .then((r) => { if (ativo) setPrevia(r); })
       .catch((e) => { if (ativo) setErro(erroTexto(e)); })
@@ -58,10 +58,10 @@ export function ConcluirAndamento({ open, publicacaoId, rotulo, totalAndamentos,
   async function concluir() {
     setSalvando(true); setErro("");
     try {
-      await api.post(`/djen/publicacoes/${publicacaoId}/conclusao`, {
+      const resultado = await api.post<{ conclusao: { ids: number[]; total: number } }>(`/djen/publicacoes/${publicacaoId}/conclusao`, {
         concluida: true, escopo, ...(comPendencia ? { forcar: true, justificativa: justificativa.trim() } : {}),
       });
-      onConcluido({ escopo, total: alcance, publicacaoId });
+      onConcluido({ escopo, total: resultado.conclusao.total, publicacaoId, ids: resultado.conclusao.ids });
       onClose();
     } catch (e) { setErro(erroTexto(e)); }
     finally { setSalvando(false); }

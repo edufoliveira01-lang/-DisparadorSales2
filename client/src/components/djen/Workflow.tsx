@@ -1,3 +1,4 @@
+import { useAuth } from "@/context/AuthContext";
 import { DeadlineSuggestion } from "./DeadlineSuggestion";
 import { useState } from "react";
 import {
@@ -98,29 +99,16 @@ export function DjenDocumentos({
   const descricaoTribunal = !tribunal ? "" : pecaEspecifica
     ? `Peça no ${hostDoTribunal || "tribunal"} · pode exigir login`
     : `Portal geral (${hostDoTribunal || "tribunal"}) · não abre a peça. Se aparecer erro de certificado, é do site do tribunal: use o PDF do DJEN ou o texto`;
-  return (
-    <section className={panel}>
-      <h3 className="flex items-center gap-2 text-sm font-semibold">
-        <FileText className="h-4 w-4" />
-        Documentos do andamento
-      </h3>
-      <div className="mt-3 grid gap-2 sm:grid-cols-3">
-        {[
-          { url: `/api/djen/publicacoes/${id}/documento`, titulo: "Texto da publicação", descricao: "Versão capturada, abre sempre", tipo: "Texto" },
-          { url: certidao, titulo: "Certidão oficial DJEN", descricao: "PDF com o teor da publicação", tipo: "PDF oficial" },
-          { url: tribunal, titulo: pecaEspecifica ? "Peça no tribunal" : "Portal do tribunal", descricao: descricaoTribunal, tipo: "Tribunal" },
-          ...documentos.map((d) => ({ url: d.url, titulo: d.nome, descricao: "Documento vinculado ao andamento", tipo: "Anexo" })),
-        ].map((d, i) => d.url ? <a key={i} href={d.url} target="_blank" rel="noopener noreferrer" className="group flex min-w-0 items-start gap-3 rounded-xl border border-zinc-200 bg-zinc-50/70 p-4 transition-colors hover:border-accent-300 hover:bg-accent-50 dark:border-zinc-700 dark:bg-zinc-800/40 dark:hover:bg-accent-950/30">
-          <span className="rounded-lg bg-white p-2 text-accent-600 dark:bg-zinc-900"><FileText className="h-4 w-4" /></span><span className="min-w-0 flex-1"><span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">{d.tipo}</span><strong className="mt-1 block break-words text-sm text-zinc-800 dark:text-zinc-100">{d.titulo}</strong><span className="mt-1 block text-xs text-zinc-500">{d.descricao}</span></span><ExternalLink className="mt-1 h-4 w-4 shrink-0 text-zinc-400 group-hover:text-accent-600" />
-        </a> : <div key={i} className="rounded-xl border border-dashed border-zinc-200 p-4 text-xs text-zinc-500"><strong className="block">{d.titulo}</strong><p className="mt-2">Link não fornecido nesta publicação.</p></div>)}
-      </div>
-      <p className="mt-2 text-[11px] text-zinc-500">
-        O PDF do DJEN é a certidão oficial com o teor da publicação. A íntegra
-        de uma peça dos autos depende do documento disponibilizado pelo tribunal
-        e pode exigir autenticação.
-      </p>
-    </section>
-  );
+  return <section aria-label="Documentos do andamento">
+    <div className="pub-section-heading"><h3>Documentos do andamento</h3></div>
+    <div className="pub-document-links">
+      {certidao && <a href={certidao} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3 w-3" />Certidão oficial DJEN</a>}
+      {tribunal && <a href={tribunal} target="_blank" rel="noopener noreferrer" title={descricaoTribunal}><ExternalLink className="h-3 w-3" />{pecaEspecifica ? "Peça no tribunal" : "Portal do tribunal"}</a>}
+      <a href={`/api/djen/publicacoes/${id}/documento`} target="_blank" rel="noopener noreferrer"><FileText className="h-3 w-3" />Texto capturado</a>
+      {documentos.map(d => <a key={d.id} href={d.url} target="_blank" rel="noopener noreferrer">{d.nome}<ExternalLink className="h-3 w-3" /></a>)}
+    </div>
+    {tribunal && !pecaEspecifica && <p className="mt-2 text-xs text-zinc-500">O portal abre a consulta geral do tribunal. A certidão e o texto capturado estão disponíveis nos outros links.</p>}
+  </section>;
 }
 
 export function DjenPrazos({
@@ -134,6 +122,8 @@ export function DjenPrazos({
   data: string;
   refresh: () => Promise<void>;
 }) {
+  const { can } = useAuth();
+  const podeEditar = can("deadlines.manage");
   const { busy, executar } = useAcao(refresh);
   const { show } = useToast();
   const vazio = {
@@ -158,12 +148,12 @@ export function DjenPrazos({
           <CalendarDays className="h-4 w-4" />
           Prazos deste andamento
         </h3>
-        <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => setForm({ ...vazio })}><Plus className="h-3.5 w-3.5" />Registrar prazo</Button><Button size="sm" onClick={() => setForm({ ...vazio, agendar: true })}><CalendarDays className="h-3.5 w-3.5" />Adicionar à agenda de prazos</Button></div>
+        {podeEditar && <Button size="sm" variant="outline" onClick={() => setForm({ ...vazio })}><Plus className="h-3.5 w-3.5" />Registrar prazo</Button>}
       </div>
       <p className="mt-2 text-xs text-zinc-500">
         Confira quem recebeu a ordem e as datas. Prazos do escritório exigem providência; prazos da parte contrária e de terceiros são acompanhamentos. A agenda de prazos é separada da agenda de perícias.
       </p>
-      <DeadlineSuggestion
+      {podeEditar && <DeadlineSuggestion
         id={id}
         data={data}
         onSave={async (s) => {
@@ -175,7 +165,7 @@ export function DjenPrazos({
           await refresh();
           show("Prazo calculado e salvo.", "success");
         }}
-      />
+      />}
       {!prazos.length && (
         <p className="mt-3 text-xs text-zinc-500">
           Nenhum prazo cadastrado para este andamento.
@@ -220,7 +210,7 @@ export function DjenPrazos({
             {p.observacoes && (
               <p className="mt-2 whitespace-pre-wrap">{p.observacoes}</p>
             )}
-            <div className="mt-3 flex flex-wrap gap-2">
+            {podeEditar && <div className="mt-3 flex flex-wrap gap-2">
               <Button
                 size="sm"
                 variant="outline"
@@ -266,7 +256,7 @@ export function DjenPrazos({
                 <Trash2 className="h-3 w-3" />
                 Excluir prazo
               </Button>
-            </div>
+            </div>}
           </article>
         ))}
       </div>
@@ -327,6 +317,7 @@ export function DjenPrazos({
               }
             />
           </div>
+          <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={form.agendar} disabled={!form.termino || form.status !== "aberto"} onChange={e => setForm({ ...form, agendar: e.target.checked })} />Adicionar também à agenda de prazos</label>
           <div className="flex gap-2">
             <Button
               size="sm"

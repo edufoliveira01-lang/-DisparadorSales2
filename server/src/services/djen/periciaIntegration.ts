@@ -9,6 +9,7 @@ import { parseBrazilianDate, type Pericia } from "../parserService";
 import { registrarPericiaAgendadaComResultado } from "../periciasAgendadasService";
 import { registrarHistoricoDjen } from "./history";
 import { DjenInputError } from "./store";
+import { dataValida } from "./api";
 
 type StatusControle =
   | "nao_cadastrada"
@@ -89,7 +90,7 @@ export function dataHoraAgendamento(data: string | null, horario: string | null)
 export function publicacao(id: number) {
   return db
     .prepare(
-      `SELECT p.id,p.processo_chave,p.categorias_json,p.ia_json,p.texto,
+      `SELECT p.id,p.processo_chave,p.categorias_json,p.ia_json,p.agendamento_revisado_json,p.texto,
               pr.numero AS processo,pr.cliente_id,c.nome AS cliente_nome,c.telefone
          FROM djen_publicacoes p
          JOIN djen_processos pr ON pr.chave=p.processo_chave
@@ -103,6 +104,7 @@ export function publicacao(id: number) {
         processo: string;
         categorias_json: string;
         ia_json: string | null;
+        agendamento_revisado_json: string | null;
         texto: string;
         cliente_id: number | null;
         cliente_nome: string | null;
@@ -118,10 +120,13 @@ export function agendamentoDaPublicacao(p: NonNullable<ReturnType<typeof publica
   } catch {
     analise = {};
   }
+  let revisado: NonNullable<AnaliseAgendamento["agendamento"]> = {};
+  try { revisado = JSON.parse(p.agendamento_revisado_json || "{}"); } catch { /* registro legado */ }
+  const agendamento = { ...analise.agendamento, ...revisado };
   return {
-    data: analise.agendamento?.data?.trim() || null,
-    horario: analise.agendamento?.horario?.trim() || null,
-    local: analise.agendamento?.local?.trim() || null,
+    data: agendamento.data?.trim() || null,
+    horario: agendamento.horario?.trim() || null,
+    local: agendamento.local?.trim() || null,
   };
 }
 
@@ -228,6 +233,17 @@ export function agendamentoNoTexto(texto: string, tipo: "pericia" | "audiencia")
 }
 
 export type CompromissoManual = { data?: string | null; horario?: string | null; local?: string | null };
+
+export function salvarAgendamentoRevisado(id: number, dados: CompromissoManual) {
+  const data = dataPadrao(dados.data || null), horario = horarioPadrao(dados.horario || null);
+  const iso = data?.split("/").reverse().join("-");
+  if (!iso || !dataValida(iso) || !horario || typeof dados.local !== "string" || dados.local.trim().length > 1000)
+    throw new DjenInputError("Confira data, horário e local do compromisso.");
+  const agendamento = { data, horario, local: dados.local.trim() || null };
+  db.prepare("UPDATE djen_publicacoes SET agendamento_revisado_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(JSON.stringify(agendamento), id);
+  return agendamento;
+}
+
 export function adicionarPublicacaoAoControle(publicacaoId: number, manual: CompromissoManual = {}) {
   const p = publicacao(publicacaoId);
   if (!p) throw new DjenInputError("Publicação não encontrada.");
