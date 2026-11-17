@@ -69,6 +69,24 @@ export function GestaoInicio() {
     } catch { setErro(true); show("Não foi possível carregar o painel.", "error"); }
   }, [mes, show]);
   useEffect(() => { void carregar(); }, [carregar]);
+  // Os números se atualizam sozinhos: a cada 30 s com a aba aberta e ao voltar para ela (sem mostrar erro nem piscar a tela).
+  const carregarSemAviso = useCallback(async () => {
+    try {
+      const [a, b, c] = await Promise.all([
+        api.get<Dash>(`/gestao/dashboard${mes ? `?mes=${mes}` : ""}`),
+        api.get<MeuPainel>("/gestao/meu-painel").catch(() => null),
+        api.get<Resumo>("/gestao/resumo").catch(() => null),
+      ]);
+      setD(a); setMeu(b); setR(c);
+    } catch { /* tenta de novo no próximo ciclo */ }
+  }, [mes]);
+  useEffect(() => {
+    const ativo = () => document.visibilityState === "visible";
+    const t = window.setInterval(() => { if (ativo()) void carregarSemAviso(); }, 30_000);
+    const aoVoltar = () => { if (ativo()) void carregarSemAviso(); };
+    document.addEventListener("visibilitychange", aoVoltar);
+    return () => { window.clearInterval(t); document.removeEventListener("visibilitychange", aoVoltar); };
+  }, [carregarSemAviso]);
   useEffect(() => { api.get<Responsavel[]>("/gestao/responsaveis").then(setResp).catch(() => undefined); }, []);
 
   const concluir = async (t: Tarefa) => { try { await api.post(`/gestao/tarefas/${t.id}/concluir`, {}); await carregar(); } catch (e) { show(e instanceof ApiError ? e.message : "Não foi possível concluir.", "error"); } };
