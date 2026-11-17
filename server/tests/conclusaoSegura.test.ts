@@ -15,7 +15,7 @@ function publicar(chave: string, data: string, extra: { categorias?: string[]; c
 const concluida = (id: number) => (db.prepare("SELECT concluida FROM djen_publicacoes WHERE id=?").get(id) as { concluida: number }).concluida;
 
 beforeEach(() => {
-  db.exec("DELETE FROM djen_prazos; DELETE FROM djen_historico; DELETE FROM djen_publicacao_advogados; DELETE FROM djen_publicacoes;");
+  db.exec("DELETE FROM djen_mensagens; DELETE FROM djen_prazos; DELETE FROM djen_historico; DELETE FROM djen_publicacao_advogados; DELETE FROM djen_publicacoes;");
 });
 
 describe("conclusão segura de andamentos", () => {
@@ -94,7 +94,7 @@ describe("conclusão segura de andamentos", () => {
 describe("fila por urgência", () => {
   it("prazo vencido ou que vence hoje aparece antes de uma ciência mais recente", async () => {
     const { listarPublicacoes } = await import("../src/services/djen/store");
-    db.exec("DELETE FROM djen_prazos; DELETE FROM djen_historico; DELETE FROM djen_publicacao_advogados; DELETE FROM djen_publicacoes;");
+    db.exec("DELETE FROM djen_mensagens; DELETE FROM djen_prazos; DELETE FROM djen_historico; DELETE FROM djen_publicacao_advogados; DELETE FROM djen_publicacoes;");
     const antigo = publicar("fila-1", "2026-10-01", { texto: "Intime-se para manifestação." });
     const recente = publicar("fila-2", "2026-11-16", { texto: "Ciência." });
     db.prepare("INSERT INTO djen_prazos(publicacao_id,descricao,inicio,termino,status) VALUES (?,?,?,?,?)").run(antigo, "Manifestação", "2026-10-02", "2026-10-20", "aberto");

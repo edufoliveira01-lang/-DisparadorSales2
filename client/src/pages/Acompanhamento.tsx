@@ -1,8 +1,11 @@
+import "./Publicacoes.css";
+import { ResumoPublicacao } from "@/components/djen/ResumoPublicacao";
+import { ConferirCompromisso } from "@/components/djen/ConferirCompromisso";
+import { useConfirmar } from "@/components/ui/useConfirmar";
 import { HistoryCoverage, RegisterFulfillment, instanteBR, type CoberturaHistorico } from "@/components/djen/HistoryCoverage";
 import { ActivityBadge, RegisterAction, type AtividadeProcesso } from "@/components/djen/ActivityBadge";
 import { AcompanhamentosLista } from "@/components/djen/Acompanhamentos";
 import { ProcessosSemVinculo } from "@/components/djen/ProcessosSemVinculo";
-import { CompromissosPendentes } from "@/components/djen/CompromissosPendentes";
 import { PainelDeDetalhes, useLargura } from "@/components/djen/PainelDeDetalhes";
 import { ConcluirAndamento, FaixaDesfazer, dataBR as dataDoAndamento } from "@/components/djen/ConcluirAndamento";
 import { ContactPicker } from "@/components/djen/ContactPicker";
@@ -79,8 +82,8 @@ function sinaisDoCartao(p: Publicacao): SinalDoCartao[] {
   if (Boolean(p.cancelada)) out.push({ chave: "cancelada", texto: "Cancelada na origem", tom: "danger", peso: 100 });
   if (p.compromisso_estado === "completar") out.push({ chave: "completar", texto: `⚠ ${p.compromisso_tipo === "audiencia" ? "Audiência" : "Perícia"}: completar dados para avisar`, tom: "warning", peso: 98, dica: p.compromisso_motivo });
   else if (Boolean(p.prioridade_compromisso)) out.push({ chave: "marcada", texto: `● ${nomeCompromisso} marcada · revisar agora`, tom: "danger", peso: 99 });
-  if (p.compromisso_estado === "informado") out.push({ chave: "no-controle", texto: "✓ No controle: vai para “Avisar”", tom: "success", peso: 60 });
-  if (p.ia_status === "erro") out.push({ chave: "ia-falhou", texto: "IA falhou · revisão necessária", tom: "danger", peso: 95, dica: p.ia_erro ?? undefined });
+  if (p.compromisso_estado === "informado") out.push({ chave: "no-controle", texto: "Registrado no controle · conferir aviso", tom: "success", peso: 60 });
+  if (p.ia_status === "erro" && !p.revisada) out.push({ chave: "ia-falhou", texto: "IA falhou · revisão necessária", tom: "danger", peso: 95, dica: p.ia_erro ?? undefined });
   if (p.ia_status === "concluida" && p.ia_provedor === "regra" && !p.revisada) out.push({ chave: "regra", texto: "Provisória por regra · conferir", tom: "warning", peso: 94, dica: "A IA não concluiu; uma regra de segurança leu o texto. Confira data, horário e local." });
   if (p.pericia_controle && ehCompromisso) {
     const st = p.pericia_controle.status;
@@ -180,7 +183,15 @@ export interface Advogado {
   ultimo_erro: string | null;
   correspondencia?: string;
 }
-interface Publicacao {
+export interface Publicacao {
+  revisada_por_nome?: string | null;
+  revisada_em?: string | null;
+  triagem?: {
+    prioridade: number; data_prioridade: string | null; motivo: string; vencido: boolean; vence_hoje: boolean;
+    compromisso_proximo: boolean; conferencia_pendente: boolean; prazo_a_lancar: boolean; dados_incompletos: boolean; prazo_aberto: boolean;
+    responsavel_id: number | null; responsavel_nome: string | null; gestao_processo_id: number | null;
+    compromisso: { tipo: "pericia" | "audiencia"; data: string | null; horario: string | null; local: string | null; registro_id: number | null; avisado: boolean } | null;
+  } | null;
   prioridade_compromisso?: number;
   compromisso_estado?: string;
   compromisso_motivo?: string;
@@ -466,39 +477,65 @@ const UFS =
 
 export function Acompanhamento(props: { detailId?: number; onCloseDetail?: () => void } = {}) {
   const { can } = useAuth();
-  return can("processes.manage") ? <AcompanhamentoEditor {...props} /> : <PublicacoesConsulta />;
+  return can("processes.manage") ? <AcompanhamentoEditor {...props} /> : <PublicacoesConsulta {...props} />;
 }
 
-function PublicacoesConsulta() {
+function PublicacoesConsulta({ detailId, onCloseDetail }: { detailId?: number; onCloseDetail?: () => void }) {
+  const { can } = useAuth();
+  const { search } = useLocation();
+  const abrirId = Number(new URLSearchParams(search).get("abrir"));
+  useEffect(() => { if (!detailId && abrirId > 0) void abrirConsulta(abrirId); }, [detailId, abrirId]);
   const [items, setItems] = useState<Publicacao[]>([]);
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
+  const [busca, setBusca] = useState("");
+  const [pagina, setPagina] = useState(0);
   const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [erroConsulta, setErroConsulta] = useState("");
+  const [detalhe, setDetalhe] = useState<Publicacao | null>(null);
+  const [aba, setAba] = useState("publicacao");
+  const sequencia = useRef(0);
+  const [carregando, setCarregando] = useState(false);
+  async function abrirConsulta(id: number) {
+    const atual = ++sequencia.current;
+    setCarregando(true);
+    try { const p = await api.get<Publicacao>(`/djen/publicacoes/${id}`); if (atual === sequencia.current) { setDetalhe(p); setAba("publicacao"); setErroConsulta(""); } }
+    catch (e) { if (atual === sequencia.current) setErroConsulta(erro(e)); }
+    finally { if (atual === sequencia.current) setCarregando(false); }
+  }
   useEffect(() => {
-    let active = true;
-    setLoading(true);
-    const query = new URLSearchParams({ busca: search, pagina: String(page), arquivo: "ativos" });
-    api.get<{ items: Publicacao[]; total: number }>(`/djen/publicacoes?${query}`).then((result) => {
-      if (active) { setItems(result.items); setTotal(result.total); setError(""); }
-    }).catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : "Falha ao carregar publicações."); })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [search, page]);
-  return <div className="space-y-5">
-    <PageHeader title="Publicações processuais" description="Consulta de decisões, perícias e andamentos dos processos." />
-    <div className="surface-panel space-y-4 p-5"><label className="block text-sm font-medium" htmlFor="consulta-processo">Buscar cliente ou processo</label><Input id="consulta-processo" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Nome ou número do processo" />
-      <p className="text-xs text-zinc-500">{loading ? "Carregando…" : `${total} publicação(ões) encontrada(s)`}</p>
-    </div>
-    {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
-    <div className="space-y-3">{items.map((item) => <article key={item.id} className="surface-panel p-5"><div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">{item.cliente_exibicao || item.cliente_nome || item.processo}</strong><span className="text-xs text-zinc-500">{item.tribunal} · {item.data_disponibilizacao}</span></div><div className="mt-2"><ActivityBadge atividade={item.atividade} /></div>{item.captured_at && <p className="mt-1 text-xs text-zinc-500">Capturada em {instanteBR(item.captured_at)}</p>}<HistoryCoverage historico={item.historico_djen} /><p className="mt-2 text-xs text-zinc-500">Processo {item.processo} · {item.situacao || "Em acompanhamento"}</p><p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">{item.resumo || item.analise?.resumo || "Resumo ainda não disponível."}</p></article>)}</div>
-    {!loading && total > 25 && <div className="flex items-center justify-center gap-4"><Button variant="outline" disabled={page === 1} onClick={() => setPage(page - 1)}>Anterior</Button><span className="text-sm">Página {page}</span><Button variant="outline" disabled={page * 25 >= total} onClick={() => setPage(page + 1)}>Próxima</Button></div>}
+    if (detailId) { void abrirConsulta(detailId); return; }
+    let ativa = true;
+    const timer = window.setTimeout(() => {
+      api.get<{ items: Publicacao[]; total: number }>(`/djen/publicacoes?${new URLSearchParams({ busca, pagina: String(pagina + 1), arquivo: "ativos", agrupamento: "andamentos" })}`)
+        .then(r => { if (ativa) { setItems(r.items); setTotal(r.total); setErroConsulta(""); } })
+        .catch(e => { if (ativa) setErroConsulta(erro(e)); });
+    }, 250);
+    return () => { ativa = false; window.clearTimeout(timer); };
+  }, [busca, pagina, detailId]);
+  function fecharConsulta() { sequencia.current++; setDetalhe(null); setCarregando(false); onCloseDetail?.(); }
+  return <div className="publicacoes-page space-y-4">
+    {!detailId && <><PageHeader title="Publicações" description="Consulta dos andamentos e documentos do escritório." />
+    <Input aria-label="Buscar publicações" placeholder="Buscar cliente, processo ou trecho…" value={busca} onChange={e => { setBusca(e.target.value); setPagina(0); }} />
+    <p className="text-xs text-zinc-500">{total} andamento(s) encontrado(s)</p>
+    <div className="desk desk-readonly"><div className="desk-queue">{items.map(p => <button type="button" key={p.id} className="desk-row desk-row-main" onClick={() => void abrirConsulta(p.id)}><span className="desk-row-top"><span>{p.tipo_documento}</span><span>{p.triagem?.data_prioridade ? dia(p.triagem.data_prioridade) : dia(p.data_disponibilizacao)}</span></span><strong className="desk-row-cliente">{p.cliente_exibicao || p.processo}</strong><span className="desk-row-processo">{p.processo}</span><span className="desk-row-proximo">{p.triagem?.motivo || p.situacao}</span></button>)}</div></div>
+    <Pagination page={pagina} totalItems={total} pageSize={25} onPageChange={setPagina} /></>}
+    {erroConsulta && <p role="alert" className="text-sm text-red-700">{erroConsulta}</p>}
+    <Modal open={Boolean(detalhe) || carregando} onClose={fecharConsulta} title="Consultar publicação" maxWidth="max-w-4xl" footer={<Button variant="outline" onClick={fecharConsulta}>Voltar à fila</Button>}>
+      {carregando ? <p role="status">Carregando publicação…</p> : detalhe && <div className="space-y-4"><header className="pub-detail-heading"><h2>{detalhe.cliente_exibicao || detalhe.processo}</h2><p>{detalhe.processo} · {detalhe.tribunal}</p></header>
+      <nav className="flex gap-3 border-b" aria-label="Seções da publicação"><Button variant={aba === "publicacao" ? "primary" : "ghost"} size="sm" onClick={() => setAba("publicacao")}>Publicação</Button>{can("deadlines.view") && <Button variant={aba === "prazos" ? "primary" : "ghost"} size="sm" onClick={() => setAba("prazos")}>Prazos</Button>}<Button variant={aba === "historico" ? "primary" : "ghost"} size="sm" onClick={() => setAba("historico")}>Histórico</Button></nav>
+      {aba === "publicacao" && <><p className="pub-fulltext">{detalhe.texto}</p><DjenDocumentos id={detalhe.id} certidao={detalhe.certidao_url} tribunal={detalhe.link} documentos={detalhe.documentos} refresh={async () => {}} /></>}
+      {aba === "prazos" && <div className="space-y-3">{detalhe.prazos?.length ? detalhe.prazos.map(p => <article key={p.id} className="pub-source"><strong>{p.descricao}</strong><p>{dia(p.inicio || "")} a {dia(p.termino || "")} · {p.status}</p></article>) : <p className="text-xs">Nenhum prazo cadastrado neste andamento.</p>}</div>}
+      {aba === "historico" && <DjenHistorico id={detalhe.id} eventos={detalhe.historico} andamentos={detalhe.relacionadas} tipos={TIPOS} total={detalhe.relacionadas_total} abrir={id => void abrirConsulta(id)} />}
+      </div>}
+    </Modal>
   </div>;
 }
 
 function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; onCloseDetail?: () => void } = {}) {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
+  const { confirmar, dialogo } = useConfirmar();
+  const [conferirCompromisso, setConferirCompromisso] = useState<Publicacao | null>(null);
+  const [responsaveis, setResponsaveis] = useState<{ id: number; nome: string }[]>([]);
+  const [totalProcessos, setTotalProcessos] = useState(0);
   const quickFiltersKey = `djen-quick-filters:${user.id}`;
   const [quickFilters, setQuickFilters] = useState<string[]>(() => {
     try {
@@ -527,7 +564,12 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     [total, setTotal] = useState(0),
     [carregando, setCarregando] = useState(true),
     [falha, setFalha] = useState("");
-  const [filtro, setFiltro] = useState({
+  const filtroKey = `publicacoes-filtros:${user.id}`;
+  const [filtro, setFiltro] = useState(() => {
+    const inicial = {
+      agrupamento: "andamentos",
+      prioridade: "",
+      responsavel: "",
       categoria: "",
       resultado: "",
       advogado_id: "",
@@ -535,8 +577,19 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
       arquivo: "ativos",
       busca: "",
       pagina: 1,
-    }),
-    [buscaTexto, setBuscaTexto] = useState("");
+    };
+    try {
+      const salvo = JSON.parse(sessionStorage.getItem(filtroKey) || "null");
+      if (salvo && typeof salvo === "object") for (const chave of Object.keys(inicial) as (keyof typeof inicial)[]) {
+        if (typeof salvo[chave] === typeof inicial[chave]) Object.assign(inicial, { [chave]: salvo[chave] });
+      }
+    } catch { /* A consulta funciona também sem armazenamento local. */ }
+    inicial.agrupamento = "andamentos";
+    inicial.pagina = Math.max(1, Math.floor(inicial.pagina) || 1);
+    return inicial;
+  });
+  const [buscaTexto, setBuscaTexto] = useState(filtro.busca);
+  useEffect(() => { try { sessionStorage.setItem(filtroKey, JSON.stringify(filtro)); } catch { /* Sem persistência local. */ } }, [filtro, filtroKey]);
   const filtroAtualRef = useRef(filtro);
   filtroAtualRef.current = filtro;
   const [consulta, setConsulta] = useState({
@@ -596,7 +649,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
   const largo = useLargura(1100);
   const detalheAoLado = largo && !detailId && secao === "publicacoes" && alvoDetalhe !== null;
   const [concluindo, setConcluindo] = useState<{ id: number; rotulo: string; total: number } | null>(null);
-  const [desfazer, setDesfazer] = useState<{ escopo: "andamento" | "processo"; total: number; publicacaoId: number } | null>(null);
+  const [desfazer, setDesfazer] = useState<{ escopo: "andamento" | "processo"; total: number; publicacaoId: number; ids?: number[] } | null>(null);
   const [bloqueioLote, setBloqueioLote] = useState<{ pendencias: { publicacao_id: number; texto: string }[]; total: number } | null>(null);
   const [justificativaLote, setJustificativaLote] = useState("");
   const [removerAdv, setRemoverAdv] = useState<Advogado | null>(null);
@@ -626,13 +679,16 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
     hoverTimer.current = setTimeout(() => { void carregarDetalhe(id).catch(() => {}); }, 150);
   }
-  const [urgencia, setUrgencia] = useState<{ vencidos: number; vencem_hoje: number; compromissos_7_dias: number; datas_a_confirmar: number; prazo_a_lancar: number; novas_para_triagem: number } | null>(null);
+  const [urgencia, setUrgencia] = useState<{ pendentes: number; precisam_conferencia: number; vencidos: number; vencem_hoje: number; compromissos_7_dias: number; datas_a_confirmar: number; prazo_a_lancar: number; novas_para_triagem: number } | null>(null);
   const carregarStatus = useCallback(async () => {
     const data = await api.get<Status>("/djen/status");
     setStatus(data);
-    void api.get<NonNullable<typeof urgencia>>("/djen/urgencia").then(setUrgencia).catch(() => undefined);
+    void api.get<NonNullable<typeof urgencia>>("/djen/urgencia").then(setUrgencia).catch(() => setUrgencia(null));
     return data;
   }, []);
+  useEffect(() => {
+    if (can("gestao.view")) void api.get<{ id: number; nome: string }[]>("/gestao/responsaveis").then(setResponsaveis).catch(() => setResponsaveis([]));
+  }, [can]);
   const carregarSemLaudo = useCallback(async () => {
     setCarregandoSemLaudo(true);
     void api.get<NonNullable<typeof diagnostico>>("/djen/acompanhamentos/diagnostico").then(setDiagnostico).catch(() => setDiagnostico(null));
@@ -689,7 +745,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
           Object.entries(filtro).map(([k, v]) => [k, String(v)]),
         ),
       );
-      const r = await api.get<{ items: Publicacao[]; total: number }>(
+      const r = await api.get<{ items: Publicacao[]; total: number; total_processos?: number }>(
         "/djen/publicacoes?" + q,
       );
       if (current === seq.current) {
@@ -700,6 +756,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
         }
         setItems(r.items);
         setTotal(r.total);
+        setTotalProcessos(r.total_processos ?? r.total);
         setFalha("");
       }
     } catch (e) {
@@ -728,7 +785,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
   }, [carregarAguardando, secao]);
   useEffect(() => {
     const timer = setTimeout(
-      () => setFiltro((f) => ({ ...f, busca: buscaTexto, pagina: 1 })),
+      () => setFiltro((f) => f.busca === buscaTexto ? f : ({ ...f, busca: buscaTexto, pagina: 1 })),
       300,
     );
     return () => clearTimeout(timer);
@@ -781,6 +838,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     };
   }, [detalhe, status?.config.ia_ativa, status?.ia.pausa, revisaoAlterada]);
   const atualizarEmTempoReal = useCallback(() => {
+    prefetchRef.current.clear();
     void carregarStatus().catch((e) => setFalha(erro(e)));
     if (secao === "publicacoes") void carregarLista();
     if (secao === "aguardando") void carregarAguardando();
@@ -789,14 +847,15 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
   useSocketEvent("connect", atualizarEmTempoReal);
   const filtrar = (key: string, value: string) =>
     setFiltro((f) => ({ ...f, [key]: value, pagina: 1 }));
-  useEffect(() => setSelecionados([]), [filtro.categoria, filtro.resultado, filtro.advogado_id, filtro.situacao, filtro.arquivo, filtro.busca]);
+  useEffect(() => setSelecionados([]), [filtro.categoria, filtro.resultado, filtro.advogado_id, filtro.situacao, filtro.arquivo, filtro.busca, filtro.prioridade, filtro.responsavel]);
   const tiposAguardando: Record<AguardandoRetorno["tipo"] | "honorarios_periciais", string> = {
     honorarios_periciais: "Honorários periciais (antecipação)",
     aguardo_juizo: "Aguardando juízo", perito_laudo: "Laudo pelo perito",
     perito_esclarecimentos: "Esclarecimentos do perito", perito_calculos: "Cálculos periciais",
     inss_implantacao: "Implantação pelo INSS", parte_contraria: "Manifestação da outra parte", terceiro_oficio: "Resposta de terceiro (ofício)",
   };
-  const paginaSelecionada = items.length > 0 && items.every((item) => selecionados.includes(item.id));
+  const itensSelecionaveis = items.filter(p => !p.concluida);
+  const paginaSelecionada = itensSelecionaveis.length > 0 && itensSelecionaveis.every(item => selecionados.includes(item.id));
   async function selecionarTodosFiltrados() {
     setSelecionandoTodos(true);
     try {
@@ -805,21 +864,21 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
       const resposta = await api.get<{ ids: number[]; total: number }>(`/djen/publicacoes/ids?${q}`);
       if (JSON.stringify({ ...filtroAtualRef.current, pagina: 1 }) !== filtroSolicitado) return;
       setSelecionados(resposta.ids);
-      show(`${resposta.total} processo(s) selecionado(s) neste filtro.`, "success");
+      show(`${resposta.total} andamento(s) selecionado(s) neste filtro.`, "success");
     } catch (e) { show(erro(e), "error"); }
     finally { setSelecionandoTodos(false); }
   }
   async function concluirSelecionados(forcar = false) {
     setSalvando(true);
     try {
-      const resultado = await api.post<{ processos: number }>("/djen/publicacoes/conclusao-em-lote", { ids: selecionados, ...(forcar ? { forcar: true, justificativa: justificativaLote.trim() } : {}) });
+      const resultado = await api.post<{ processos: number; publicacoes: number }>("/djen/publicacoes/conclusao-em-lote", { ids: selecionados, escopo: "andamentos", ...(forcar ? { forcar: true, justificativa: justificativaLote.trim() } : {}) });
       setConfirmarLote(false);
       setBloqueioLote(null);
       setJustificativaLote("");
       setSelecionados([]);
       await carregarLista();
       await carregarStatus();
-      show(`${resultado.processos} processo(s) concluído(s).`, "success");
+      show(`${resultado.publicacoes} andamento(s) concluído(s).`, "success");
     } catch (e) {
       if (e instanceof ApiError && e.status === 409 && e.data?.bloqueada) {
         setConfirmarLote(false);
@@ -833,7 +892,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     const info = desfazer;
     setDesfazer(null);
     try {
-      await api.post(`/djen/publicacoes/${info.publicacaoId}/conclusao`, { concluida: false, escopo: info.escopo });
+      await api.post(`/djen/publicacoes/${info.publicacaoId}/conclusao`, { concluida: false, escopo: info.escopo, ids: info.ids });
       await carregarLista();
       await carregarStatus();
       show("Conclusão desfeita.", "success");
@@ -848,6 +907,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     } catch (e) {
       show(erro(e), "error");
     } finally {
+      prefetchRef.current.clear();
       lock.current = false;
       setSalvando(false);
     }
@@ -876,6 +936,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
   }
   const [semVinculoAberto, setSemVinculoAberto] = useState(false);
   async function abrir(id: number) {
+    if ((revisaoAlterada || Boolean(detalhe && (processo.cliente_id !== String(detalhe.cliente_id || "") || processo.observacoes !== detalhe.observacoes))) && !(await confirmar({ titulo: "Há uma revisão em edição", mensagem: "Descartar as alterações ainda não salvas para abrir outro andamento?", confirmar: "Descartar e abrir" }))) return;
     const current = ++detailSeq.current;
     setDetalhe(null);
     setPreviaDetalhe(items.find((p) => p.id === id) || null);
@@ -883,7 +944,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     setCarregandoDetalhe(true);
     try {
       // A lista de contatos pode ser grande; o painel não depende dela para abrir.
-      if (!contatos.length) void api.get<Contact[]>("/contacts").then((contacts) => {
+      if (!contatos.length && can("contacts.view")) void api.get<Contact[]>("/contacts").then((contacts) => {
         if (current === detailSeq.current) setContatos(contacts);
       }).catch(() => { /* A aba de cliente pode ser recarregada na próxima abertura. */ });
       const p = await carregarDetalhe(id);
@@ -900,11 +961,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
         cliente_id: p.cliente_id ? String(p.cliente_id) : "",
         observacoes: p.observacoes || "",
       });
-      void api.post(`/djen/publicacoes/${id}/lida`).then(() => {
-        if (current !== detailSeq.current) return;
-        if (!detailId) void carregarLista();
-        void carregarStatus();
-      }).catch((error) => { if (current === detailSeq.current) show(erro(error), "error"); });
+
     } catch (e) {
       if (current !== detailSeq.current) return;
       setCarregandoDetalhe(false);
@@ -915,7 +972,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
   }
   async function compor() {
     if (!detalhe) return;
-    const contato = contatos.find((c) => String(c.id) === processo.cliente_id);
+    const contato = contatos.find(c => String(c.id) === processo.cliente_id) || (String(detalhe.cliente_id) === processo.cliente_id && detalhe.cliente_nome && detalhe.cliente_telefone ? { id: detalhe.cliente_id!, nome: detalhe.cliente_nome, telefone: detalhe.cliente_telefone } : null);
     if (!contato) {
       setAbaDetalhe("cliente");
       show(
@@ -930,11 +987,15 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
       });
       return;
     }
-    const atualizado = await api.put<Publicacao>(
-      `/djen/publicacoes/${detalhe.id}/processo`,
-      { ...processo, cliente_id: contato.id },
-    );
-    setDetalhe(atualizado);
+    if (!detalhe.revisada || revisaoAlterada) {
+      setAbaDetalhe("resumo");
+      show("Salve a conferência da classificação antes de preparar o aviso.", "info");
+      document.getElementById("classificacao-publicacao")?.setAttribute("open", "");
+      return;
+    }
+    if (Number(processo.cliente_id) !== detalhe.cliente_id) {
+      setAbaDetalhe("cliente"); show("Salve o vínculo do cliente antes de preparar o aviso.", "info"); return;
+    }
     setConfirmacaoEnvio(false);
     setMensagem({
       cliente_id: contato.id,
@@ -943,7 +1004,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
       request_id:
         globalThis.crypto?.randomUUID?.() ||
         `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`,
-      texto: textoDoAviso(contato.nome, detalhe.processo, categorias.map((c) => String(c)), situacao, categorias.map((c) => TIPOS[c]).join(", "), detalhe.analise?.agendamento),
+      texto: textoDoAviso(contato.nome, detalhe.processo, categorias.map((c) => String(c)), situacao, categorias.map((c) => TIPOS[c]).join(", "), detalhe.triagem?.compromisso || detalhe.analise?.agendamento),
     });
   }
   async function enviar() {
@@ -951,16 +1012,6 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     lock.current = true;
     setEnviando(true);
     try {
-      if (!detalhe.revisada || revisaoAlterada) {
-        setDetalhe(
-          await api.put<Publicacao>(`/djen/publicacoes/${detalhe.id}/revisao`, {
-            categorias,
-            resultado,
-            situacao,
-          }),
-        );
-        setRevisaoAlterada(false);
-      }
       const r = await api.post<{ mensagem: { status: string } }>(
         `/djen/publicacoes/${detalhe.id}/mensagem`,
         {
@@ -1000,7 +1051,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     try { await navigator.clipboard.writeText(texto); show(`${nome} copiado.`, "success"); }
     catch { show("Não foi possível copiar. Selecione o texto e use Ctrl+C.", "error"); }
   }
-  function fecharDetalhe() { if (!salvando) { detailSeq.current++; if (detalhe) prefetchRef.current.delete(detalhe.id); setDetalheAberto(false); setCarregandoDetalhe(false); setDetalhe(null); setPreviaDetalhe(null); onCloseDetail?.(); } }
+  async function fecharDetalhe() { if ((revisaoAlterada || Boolean(detalhe && (processo.cliente_id !== String(detalhe.cliente_id || "") || processo.observacoes !== detalhe.observacoes))) && !(await confirmar({ titulo: "Há uma revisão em edição", mensagem: "Descartar as alterações ainda não salvas e fechar este andamento?", confirmar: "Descartar e fechar" }))) return; if (!salvando) { detailSeq.current++; if (detalhe) prefetchRef.current.delete(detalhe.id); setDetalheAberto(false); setCarregandoDetalhe(false); setDetalhe(null); setPreviaDetalhe(null); onCloseDetail?.(); } }
   const conteudoAguardando = (
     <AcompanhamentosLista itens={aguardando} superados={superados} tipos={tiposAguardando} diasPadrao={status?.config.aguardo_dias ?? 30} diagnostico={diagnostico ? { publicacoes: diagnostico.publicacoes, ordens_externas: diagnostico.ordens_externas } : null} ocupado={salvando}
       onAbrir={(id) => void abrir(id)} onAtualizar={async () => { await carregarAguardando(); await carregarStatus(); }}
@@ -1018,7 +1069,13 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
           ? "Acompanhamentos"
         : "Publicações processuais";
   return (
-    <div className="space-y-5">
+    <div className={secao === "publicacoes" ? "publicacoes-page" : "space-y-5"}>
+      {dialogo}
+      <ConferirCompromisso publicacao={conferirCompromisso} aoFechar={() => setConferirCompromisso(null)} aoSalvar={(p) => {
+        setDetalhe(p); setCategorias(p.categorias); setSituacao(p.situacao || ""); setResultado(p.resultado); setRevisaoAlterada(false);
+        void carregarLista(); void carregarStatus();
+        show(p.compromisso_estado === "informado" ? "Compromisso registrado no controle. Confira o aviso ao cliente." : p.compromisso_motivo || "Dados conferidos.", p.compromisso_estado === "informado" ? "success" : "info");
+      }} />
       <div hidden={Boolean(detailId)} className="space-y-3">
       {status?.historicos_djen && status.historicos_djen.total > (status.historicos_djen.atualizados || 0) && <p className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200">{status.historicos_djen.total - (status.historicos_djen.atualizados || 0)} histórico(s) aguardando atualização ou conferência no DJEN. Esses casos não são contados como atraso confirmado.</p>}
       <PageHeader
@@ -1065,7 +1122,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
           <button type="button" aria-pressed={!filtro.categoria} onClick={() => filtrar("categoria", "")}>Todos</button>
           {quickFilters.map((categoria) => (
             <button key={categoria} type="button" aria-pressed={filtro.categoria.split(",").includes(categoria)}
-              onClick={() => filtrar("categoria", filtro.categoria === categoria ? "" : categoria)}>{FILTROS[categoria as keyof typeof FILTROS]}</button>
+              onClick={() => filtrar("categoria", filtro.categoria.split(",").includes(categoria) ? filtro.categoria.split(",").filter(c => c !== categoria).join(",") : [...filtro.categoria.split(",").filter(Boolean), categoria].join(","))}>{FILTROS[categoria as keyof typeof FILTROS]}</button>
           ))}
           <button type="button" className="quick-filter-add" aria-label="Personalizar filtros rápidos" title="Adicionar ou organizar filtros rápidos" onClick={() => { setQuickFiltersDraft(quickFilters); setQuickFiltersOpen(true); }}><Plus className="h-4 w-4" /></button>
         </nav>
@@ -1092,22 +1149,23 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
       {secao === "publicacoes" && (
         <div className="process-workbench"><aside className="process-filter-rail"><div className="pub-metricas" role="group" aria-label="Prioridades da fila">
           {[
-            { label: "Pendentes na fila", value: total, tom: "", icone: "▤", title: "Processos na lista", action: () => filtrar("categoria", "") },
-            { label: "Vencem hoje ou vencidos", value: urgencia ? urgencia.vencem_hoje + urgencia.vencidos : 0, tom: "red", icone: "◷", title: "Prazos do escritório que vencem hoje ou já venceram", action: () => void carregarAlerta("prazos").catch((e) => show(erro(e), "error")) },
-            { label: "Perícias e audiências · 7 dias", value: urgencia?.compromissos_7_dias ?? 0, tom: "amber", icone: "▦", title: "Compromissos nos próximos 7 dias", action: () => filtrar("categoria", "pericia") },
-            { label: "Precisam de conferência", value: urgencia ? urgencia.novas_para_triagem + urgencia.datas_a_confirmar + urgencia.prazo_a_lancar : 0, tom: "amber", icone: "!", title: "Novas para triagem, datas a confirmar e prazos a lançar", action: () => filtrar("situacao", "nao_lidas") },
-          ].map(({ label, value, tom, icone, title, action }) => (
-            <button key={label} type="button" title={title} onClick={action} className={`pub-metrica ${value > 0 && tom ? `pub-metrica-${tom}` : ""}`}>
-              <span><small>{label}</small><strong>{value}</strong></span>
-              <i aria-hidden="true">{icone}</i>
+            { label: "Pendentes na fila", value: urgencia?.pendentes, tom: "", icone: "▤", filtro: "" },
+            { label: "Vencidos ou vencem hoje", value: urgencia ? urgencia.vencem_hoje + urgencia.vencidos : undefined, tom: "red", icone: "◷", filtro: "urgentes" },
+            { label: "Compromissos em 7 dias", value: urgencia?.compromissos_7_dias, tom: "", icone: "▦", filtro: "compromissos" },
+            { label: "Precisam de conferência", value: urgencia?.precisam_conferencia, tom: "amber", icone: "!", filtro: "conferir" },
+          ].map(({ label, value, tom, icone, filtro: prioridade }) => (
+            <button key={label} type="button" aria-pressed={filtro.prioridade === prioridade} onClick={() => {
+              setBuscaTexto(""); setFiltro({ agrupamento: "andamentos", prioridade, responsavel: "", categoria: "", resultado: "", advogado_id: "", situacao: "", arquivo: "ativos", busca: "", pagina: 1 });
+            }} className={`pub-metrica ${value && tom ? `pub-metrica-${tom}` : ""}`}>
+              <span><small>{label}</small><strong>{value ?? "…"}</strong></span><i aria-hidden="true">{icone}</i>
             </button>
           ))}
           <details className="pub-mais-indicadores">
             <summary>Mais indicadores</summary>
             <div className="pub-faixa">
               {[
-                { label: "Prazos a lançar", value: urgencia?.prazo_a_lancar ?? 0, tom: "red", title: "Ordem com prazo para o escritório e nenhum prazo lançado", action: () => filtrar("situacao", "sem_prazo") },
-                { label: "Datas a confirmar", value: urgencia?.datas_a_confirmar ?? 0, tom: "amber", title: "Perícias e audiências com dados incompletos", action: () => document.getElementById("compromissos-pendentes")?.scrollIntoView({ behavior: "smooth", block: "start" }) },
+                { label: "Prazos a lançar", value: urgencia?.prazo_a_lancar ?? 0, tom: "red", title: "Ordem com prazo para o escritório e nenhum prazo lançado", action: () => filtrar("prioridade", "sem_prazo") },
+                { label: "Datas a confirmar", value: urgencia?.datas_a_confirmar ?? 0, tom: "amber", title: "Perícias e audiências com dados incompletos", action: () => filtrar("prioridade", "datas") },
                 { label: "Não lidos", value: status?.resumo.nao_lidas ?? 0, tom: "", title: "Processos não lidos", action: () => filtrar("situacao", "nao_lidas") },
                 { label: "Aguardando retorno", value: status?.aguardando_retorno ?? 0, tom: "", title: "Aguardando retorno", action: () => { setAguardandoAberto(true); void carregarAguardando().catch(e => show(erro(e), "error")); } },
                 { label: "Sem laudo · 60 dias", value: status?.pericias_sem_laudo ?? 0, tom: "", title: "Perícias sem laudo identificado em 60 dias", action: () => { setMostrarSemLaudo(true); void carregarSemLaudo(); } },
@@ -1121,28 +1179,29 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
             </div>
           </details>
         </div>
-          <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"><div className="process-filter-heading"><h2 className="text-sm font-semibold">Filtrar publicações</h2><button type="button" className="text-xs text-accent-600 dark:text-accent-300" onClick={() => { setBuscaTexto(""); setFiltro({categoria:"",resultado:"",advogado_id:"",situacao:"",arquivo:"ativos",busca:"",pagina:1}); }}>Limpar filtros</button></div>
+          <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"><div className="process-filter-heading"><h2 className="text-sm font-semibold">Filtrar publicações</h2><button type="button" className="text-xs text-accent-600 dark:text-accent-300" onClick={() => { setBuscaTexto(""); setFiltro({agrupamento:"andamentos",prioridade:"",responsavel:"",categoria:"",resultado:"",advogado_id:"",situacao:"",arquivo:"ativos",busca:"",pagina:1}); }}>Limpar filtros</button></div>
             <div className="process-filter-search">
               <div className="relative flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
                 <Input className="pl-9" aria-label="Buscar publicações" placeholder="Buscar cliente, processo ou trecho…" value={buscaTexto} onChange={(e) => setBuscaTexto(e.target.value)} />
               </div>
               <Select className="lg:max-w-[210px]" aria-label="Situação dos processos" value={filtro.arquivo} onChange={(e) => filtrar("arquivo", e.target.value)}>
-                <option value="ativos">Pendentes de conclusão</option>
+                <option value="ativos">Pendentes e prazos abertos</option>
                 <option value="concluidos">Concluídos</option>
                 <option value="todos">Todos</option>
               </Select>
               <Button type="button" variant="outline" size="sm" aria-expanded={maisFiltros} onClick={() => setMaisFiltros((v) => !v)}>Mais filtros {maisFiltros ? "▴" : "▾"}</Button>
             </div>
-{maisFiltros && <div className="process-filter-fields"><div><span className="process-filter-label">Categorias de andamento</span><MultiSelect inline label="Categorias (múltiplas)" placeholder="Todas as categorias" value={filtro.categoria.split(",").filter(Boolean)} options={Object.entries(FILTROS).map(([value, label]) => ({ value, label }))} onChange={(v) => filtrar("categoria", v.join(","))} /></div><div><span className="process-filter-label">Leitura e pendências</span><MultiSelect inline label="Situação" placeholder="Todas as situações" value={filtro.situacao.split(",").filter(Boolean)} options={[{ value: "nao_lidas", label: "Não lidas" }, { value: "lidas", label: "Lidas" }, { value: "revisar", label: "A revisar" }, { value: "com_prazo", label: "Com prazo em aberto" }]} onChange={(v) => filtrar("situacao", v.join(","))} /></div><><div><span className="process-filter-label">Resultado da sentença</span><MultiSelect inline label="Resultado da sentença" placeholder="Todos os resultados" value={filtro.resultado.split(",").filter(Boolean)} options={Object.entries(RESULTADOS).map(([value, label]) => ({ value, label }))} onChange={(v) => filtrar("resultado", v.join(","))} /></div><div><span className="process-filter-label">Advogado</span><MultiSelect inline label="Advogado" placeholder={(status?.advogados || []).length ? "Todos os advogados" : "Nenhum advogado acompanhado cadastrado"} value={filtro.advogado_id.split(",").filter(Boolean)} options={(status?.advogados || []).map((a) => ({ value: String(a.id), label: `${a.nome} · ${a.uf_oab} ${a.numero_oab}` }))} onChange={(v) => filtrar("advogado_id", v.join(","))} /></div></></div>}          </section>
+{maisFiltros && <div className="process-filter-fields">{can("gestao.view") && <div><span className="process-filter-label">Responsável interno</span><Select aria-label="Responsável interno" value={filtro.responsavel} onChange={e => filtrar("responsavel", e.target.value)}><option value="">Toda a equipe</option><option value="sem">Sem responsável</option>{responsaveis.map(r => <option key={r.id} value={r.id}>{r.nome}</option>)}</Select></div>}<div><span className="process-filter-label">Categorias de andamento</span><MultiSelect inline label="Categorias (múltiplas)" placeholder="Todas as categorias" value={filtro.categoria.split(",").filter(Boolean)} options={Object.entries(FILTROS).map(([value, label]) => ({ value, label }))} onChange={(v) => filtrar("categoria", v.join(","))} /></div><div><span className="process-filter-label">Leitura e pendências</span><MultiSelect inline label="Situação" placeholder="Todas as situações" value={filtro.situacao.split(",").filter(Boolean)} options={[{ value: "nao_lidas", label: "Não lidas" }, { value: "lidas", label: "Lidas" }, { value: "revisar", label: "A revisar" }, { value: "com_prazo", label: "Com prazo em aberto" }]} onChange={(v) => filtrar("situacao", v.join(","))} /></div><><div><span className="process-filter-label">Resultado da sentença</span><MultiSelect inline label="Resultado da sentença" placeholder="Todos os resultados" value={filtro.resultado.split(",").filter(Boolean)} options={Object.entries(RESULTADOS).map(([value, label]) => ({ value, label }))} onChange={(v) => filtrar("resultado", v.join(","))} /></div><div><span className="process-filter-label">Advogado acompanhado no DJEN</span><MultiSelect inline label="Advogado" placeholder={(status?.advogados || []).length ? "Todos os advogados" : "Nenhum advogado acompanhado cadastrado"} value={filtro.advogado_id.split(",").filter(Boolean)} options={(status?.advogados || []).map((a) => ({ value: String(a.id), label: `${a.nome} · ${a.uf_oab} ${a.numero_oab}` }))} onChange={(v) => filtrar("advogado_id", v.join(","))} /></div></></div>}          </section>
           </aside><div className="process-results">
           {(Boolean(status?.ia.pausa) || (status?.ia.pendentes ?? 0) > 0) && <p className="flex items-center gap-2 text-[11px] text-zinc-500"><Sparkles className="h-3.5 w-3.5" />{status?.ia.pausa ? `Análise pausada: ${status.ia.pausa}` : `${status?.ia.pendentes ?? 0} publicação(ões) aguardando classificação pela IA`}. Classificações pendentes aparecem em Outros até a análise.</p>}
-          <div id="compromissos-pendentes"><CompromissosPendentes key={`cp-${total}`} aoAbrirPublicacao={(pid) => void abrir(pid)} aoMudar={() => void carregarLista()} /></div>
+          {!urgencia && <p role="status" className="text-xs text-amber-700">Indicadores ainda indisponíveis. Use Atualizar para tentar novamente.</p>}
+          {filtro.prioridade && <div className="pub-filter-active"><ListFilter className="h-3.5 w-3.5" />{({ urgentes: "Vencidos ou vencem hoje", compromissos: "Compromissos em 7 dias", conferir: "Precisam de conferência", sem_prazo: "Prazos a lançar", datas: "Dados do compromisso a confirmar" } as Record<string,string>)[filtro.prioridade]}<button type="button" onClick={() => filtrar("prioridade", "")}>Remover filtro ×</button></div>}
           <div
             id="navegacao-publicacoes"
             className="sticky top-20 z-20 scroll-mt-24 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white/95 px-4 py-2 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95"
           >
-            <p className="text-xs font-medium text-zinc-600 dark:text-zinc-300">{total} processo(s) encontrado(s)</p>
+            <p className="text-xs font-medium text-zinc-600 dark:text-zinc-300">{total} andamento(s) · {totalProcessos} processo(s)</p>
             <Pagination
               page={filtro.pagina - 1}
               totalItems={total}
@@ -1154,11 +1213,11 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
             <div className="pub-selecao flex flex-wrap items-center gap-3 rounded-xl border border-zinc-200 bg-white px-4 py-3 text-xs dark:border-zinc-800 dark:bg-zinc-900">
               <label className="flex cursor-pointer items-center gap-2">
                 <Checkbox checked={paginaSelecionada} onChange={(e) => setSelecionados((atual) => e.target.checked
-                  ? [...new Set([...atual, ...items.map((item) => item.id)])]
+                  ? [...new Set([...atual, ...itensSelecionaveis.map((item) => item.id)])]
                   : atual.filter((id) => !items.some((item) => item.id === id)))} />
-                Selecionar esta página ({items.length})
+                Selecionar pendentes desta página
               </label>
-              {total > items.length && <Button size="sm" variant="ghost" loading={selecionandoTodos} onClick={() => void selecionarTodosFiltrados()}>Selecionar todos os {total} processos filtrados</Button>}
+              {total > items.length && <Button size="sm" variant="ghost" loading={selecionandoTodos} onClick={() => void selecionarTodosFiltrados()}>Selecionar todos os andamentos pendentes do filtro</Button>}
               {selecionados.length > 0 && <>
                 <span className="text-zinc-500">{selecionados.length} selecionado(s)</span>
                 <Button size="sm" disabled={salvando} onClick={() => setConfirmarLote(true)}>Concluir selecionados</Button>
@@ -1209,7 +1268,10 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                   const sinais = sinaisDoCartao(p);
                   const ativo = detalheAberto && (detalhe?.id === p.id || previaDetalhe?.id === p.id);
                   const prazo = p.proximo_prazo ? `Prazo até ${dia(p.proximo_prazo)}` : p.acao?.tipo === "prazo_explicito" ? "Prazo expresso · conferir" : p.acao?.tipo === "cumprimento" ? "Providência para o escritório" : "";
-                  const proximo = [p.situacao, prazo].filter(Boolean).join(" · ");
+                  const proximo = p.triagem?.motivo || [p.situacao, prazo].filter(Boolean).join(" · ");
+                  const ag = p.triagem?.compromisso;
+                  const dataAcao = p.triagem?.data_prioridade;
+                  const rotuloData = p.triagem?.vencido ? `Vencido · ${dia(dataAcao || "")}` : p.triagem?.vence_hoje ? "Vence hoje" : dataAcao ? `${ag ? "" : "Até "}${dia(dataAcao)}${ag?.horario ? ` · ${ag.horario}` : ""}` : p.triagem?.prazo_a_lancar ? "Prazo a confirmar" : "Conferir andamento";
                   return (
                     <div
                       key={p.id}
@@ -1219,30 +1281,30 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                       <button
                         type="button"
                         className="desk-row-main"
-                        aria-label={`Abrir processo ${p.processo}`}
+                        aria-label={`Abrir publicação ${p.id} de ${p.cliente_exibicao || p.processo}`}
                         aria-pressed={ativo}
                         onPointerEnter={() => anteciparDetalhe(p.id)}
                         onPointerLeave={() => { if (hoverTimer.current) clearTimeout(hoverTimer.current); }}
                         onClick={() => void abrir(p.id)}
                       >
                         <span className="desk-row-top">
-                          <span className="desk-row-tipo">{p.tipo_documento || "Andamento"}</span>
-                          <span className="desk-row-data">{dia(p.data_disponibilizacao)}</span>
+                          <span className="desk-row-tipo">{ag ? ag.tipo === "audiencia" ? "Audiência" : "Perícia" : p.triagem?.prazo_aberto ? "Prazo cadastrado" : p.acao?.tipo === "prazo_explicito" ? "Prazo do escritório" : p.tipo_documento || "Andamento"}</span>
+                          <span className={`desk-row-data ${p.triagem?.vencido || p.triagem?.vence_hoje ? "is-urgent" : ""}`}>{rotuloData}</span>
                         </span>
                         <span className="desk-row-cliente">
                           {!p.lida && <span className="desk-row-naolida" aria-label="Não lida" />}
                           {p.cliente_exibicao || "Cliente não identificado"}
                         </span>
-                        <span className="desk-row-processo">{p.processo || "processo não informado"}{Boolean(p.andamentos_total && p.andamentos_total > 1) ? ` · ${p.andamentos_total} andamentos` : ""}</span>
+                        <span className="desk-row-processo">{p.processo || "processo não informado"} · publicada em {dia(p.data_disponibilizacao)}</span>
                         {proximo && <span className="desk-row-proximo">{proximo}</span>}
                         <span className="desk-row-sinais">
                           {sinais.slice(0, 2).map((x) => <Badge key={x.chave} tone={x.tom} title={x.dica}>{x.texto}</Badge>)}
-                          {sinais.length > 2 && <span className="desk-row-mais" title={sinais.slice(2).map((x) => x.texto).join(" · ")}>+{sinais.length - 2}</span>}
+                          <span className="desk-row-owner">{p.triagem?.responsavel_nome || "Sem responsável"}</span>
                         </span>
                       </button>
-                      {filtro.arquivo === "ativos" && (
+                      {filtro.arquivo === "ativos" && !p.concluida && (
                         <label className="desk-row-selecao" title="Selecionar para concluir em lote" onClick={(e) => e.stopPropagation()}>
-                          <Checkbox aria-label={`Selecionar processo ${p.processo}`} checked={selecionados.includes(p.id)} onChange={(e) => setSelecionados((atual) => e.target.checked ? [...new Set([...atual, p.id])] : atual.filter((id) => id !== p.id))} />
+                          <Checkbox aria-label={`Selecionar andamento ${p.id} do processo ${p.processo}`} checked={selecionados.includes(p.id)} onChange={(e) => setSelecionados((atual) => e.target.checked ? [...new Set([...atual, p.id])] : atual.filter((id) => id !== p.id))} />
                         </label>
                       )}
                     </div>
@@ -1483,8 +1545,8 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
       />
       <ConfirmDialog
         open={confirmarLote}
-        title="Concluir processos selecionados?"
-        message={`Os ${selecionados.length} processos selecionados sairão da lista de pendentes e poderão ser encontrados em Concluídos. Os alertas de obrigações externas continuam no acompanhamento até serem resolvidos.`}
+        title="Concluir andamentos selecionados?"
+        message={`Os ${selecionados.length} andamentos selecionados terão a triagem concluída. Prazos do escritório ainda abertos continuarão na fila para acompanhamento. Os alertas de obrigações externas continuam no acompanhamento até serem resolvidos.`}
         confirmLabel={`Concluir ${selecionados.length}`}
         confirmVariant="primary"
         loading={salvando}
@@ -1495,7 +1557,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
         presentation="center"
         open={bloqueioLote !== null}
         onClose={() => { setBloqueioLote(null); setJustificativaLote(""); }}
-        title="Há pendências nos processos selecionados"
+        title="Há pendências nos andamentos selecionados"
         description="A conclusão em lote não esconde trabalho pendente sem confirmação."
         maxWidth="max-w-xl"
         footer={
@@ -1524,7 +1586,13 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
           rotulo={concluindo.rotulo}
           totalAndamentos={concluindo.total}
           onClose={() => setConcluindo(null)}
-          onConcluido={(info) => { setDesfazer(info); void carregarLista(); void carregarStatus(); if (detalhe?.id === info.publicacaoId) void api.get<Publicacao>(`/djen/publicacoes/${info.publicacaoId}`).then(setDetalhe).catch(() => undefined); }}
+          onConcluido={(info) => {
+            setDesfazer(info); prefetchRef.current.clear(); setRevisaoAlterada(false);
+            const proxima = items.find(p => !info.ids.includes(p.id));
+            if (proxima && !detailId) void abrir(proxima.id);
+            else { setDetalheAberto(false); setDetalhe(null); onCloseDetail?.(); }
+            void carregarLista(); void carregarStatus();
+          }}
         />
       )}
       <FaixaDesfazer info={desfazer} onDesfazer={() => void desfazerConclusao()} onFechar={() => setDesfazer(null)} />
@@ -1655,7 +1723,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                   variant="ghost"
                   disabled={salvando}
                   onClick={() => void acao(async () => {
-                    await api.post(`/djen/publicacoes/${detalhe.id}/leitura`, { lida: !detalhe.lida });
+                    await api.post(`/djen/publicacoes/${detalhe.id}/leitura`, { lida: !detalhe.lida, escopo: "andamento" });
                     setDetalhe(await api.get<Publicacao>(`/djen/publicacoes/${detalhe.id}`));
                     await carregarLista();
                     await carregarStatus();
@@ -1670,7 +1738,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                     onClick={() => {
                       if (detalhe.concluida) {
                         void acao(async () => {
-                          await api.post(`/djen/publicacoes/${detalhe.id}/conclusao`, { concluida: false, escopo: "processo" });
+                          await api.post(`/djen/publicacoes/${detalhe.id}/conclusao`, { concluida: false, escopo: "andamento" });
                           setDetalhe(await api.get<Publicacao>(`/djen/publicacoes/${detalhe.id}`));
                           await carregarLista();
                           await carregarStatus();
@@ -1678,7 +1746,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                         });
                         return;
                       }
-                      setConcluindo({ id: detalhe.id, rotulo: `${detalhe.tipo_documento || "Andamento"} de ${dataDoAndamento(detalhe.data_disponibilizacao)}`, total: detalhe.andamentos_total ?? 1 });
+                      setConcluindo({ id: detalhe.id, rotulo: `${detalhe.tipo_documento || "Andamento"} de ${dataDoAndamento(detalhe.data_disponibilizacao)}`, total: detalhe.relacionadas_total ?? 1 });
                     }}
                   >
                     {detalhe.concluida ? "Reabrir" : "Concluir andamento"}
@@ -1686,153 +1754,30 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                 )}
               </>
             )}
-            <Button
+            {can("messages.send") && <Button variant="outline"
               onClick={() => void acao(compor)}
-              disabled={salvando || !detalhe || Boolean(detalhe?.cancelada)}
+              disabled={salvando || !detalhe || !detalhe.revisada || revisaoAlterada || Boolean(detalhe?.cancelada)}
             >
               <Send className="h-3.5 w-3.5" />
-              Avisar cliente pelo WhatsApp
-            </Button>
+              Preparar aviso ao cliente
+            </Button>}
           </>
         }
       >
         {carregandoDetalhe && <div role="status" className="space-y-3 rounded-xl bg-accent-50 p-5 text-sm text-accent-700 dark:bg-accent-950/30 dark:text-accent-200"><p className="flex items-center gap-3"><RefreshCw className="h-4 w-4 animate-spin" />Carregando histórico e ações do processo…</p>{previaDetalhe && <div className="space-y-2 border-t border-accent-200 pt-3 dark:border-accent-800"><strong className="block">{previaDetalhe.cliente_exibicao || previaDetalhe.processo}</strong><p>Processo {previaDetalhe.processo}</p><p>{previaDetalhe.situacao}</p><p className="whitespace-pre-line text-zinc-600 dark:text-zinc-300">{previaDetalhe.resumo}</p></div>}</div>}
         {detalhe && (
           <div className="space-y-5">
-            {Boolean(detalhe.relacionadas_total && detalhe.relacionadas_total > 1) && (
-              <button type="button" onClick={() => setAbaDetalhe("historico")} className="flex w-full items-center justify-between gap-2 rounded-xl border border-accent-200 bg-accent-50/50 px-4 py-3 text-left text-xs font-medium text-accent-800 hover:bg-accent-50 dark:border-accent-900 dark:bg-accent-950/20 dark:text-accent-200">
-                <span>Este processo tem {detalhe.relacionadas_total} andamentos. Você está vendo um deles; consulte os demais no histórico.</span>
-                <ArrowRight className="h-4 w-4 shrink-0" />
-              </button>
-            )}
-            <div className="rounded-xl border border-zinc-200 bg-zinc-50/70 p-4 dark:border-zinc-800 dark:bg-zinc-800/30">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                    Processo · publicação #{detalhe.id}
-                  </p>
-                  <div className="mt-1 flex items-center gap-2"><h3 className="break-all text-base font-semibold">{detalhe.processo || "Processo não informado"}</h3>{detalhe.processo && <button type="button" aria-label="Copiar número do processo" title="Copiar número do processo" className="shrink-0 rounded-lg p-1.5 text-zinc-500 hover:bg-accent-100 hover:text-accent-700" onClick={() => void copiarDetalhe(detalhe.processo, "Número do processo")}><Copy className="h-3.5 w-3.5" /></button>}</div>
-                  <p
-                    className={`mt-2 flex flex-wrap items-center gap-2 text-sm font-semibold ${detalhe.cliente_vinculado ? "text-zinc-800 dark:text-zinc-100" : "text-amber-700 dark:text-amber-300"}`}
-                  >
-                    <span>{detalhe.cliente_exibicao
-                      ? `Cliente: ${detalhe.cliente_exibicao}${detalhe.cliente_vinculado ? "" : " · vínculo pendente"}`
-                      : "Cliente não identificado na publicação"}</span>{detalhe.cliente_exibicao && <button type="button" aria-label="Copiar nome da parte" title="Copiar nome da parte" className="shrink-0 rounded-lg p-1.5 hover:bg-amber-100" onClick={() => void copiarDetalhe(detalhe.cliente_exibicao!, "Nome da parte")}><Copy className="h-3.5 w-3.5" /></button>}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {(detalhe.categorias.length
-                    ? detalhe.categorias
-                    : (["outros"] as const)
-                  ).map((c) => (
-                    <Badge
-                      key={c}
-                      tone={c === "outros" ? "neutral" : tons[c]}
-                    >
-                      {c === "outros" ? "Outros" : TIPOS[c]}
-                    </Badge>
-                  ))}
-                  <Badge tone={detalhe.revisada ? "success" : "warning"}>
-                    {detalhe.revisada ? "Revisada" : "A revisar"}
-                  </Badge>
-                </div>
-              </div>
-              {(() => {
-                const ehPericia = detalhe.categorias.includes("pericia" as never);
-                const ehAudiencia = detalhe.categorias.includes("audiencia" as never);
-                const ag = detalhe.analise?.agendamento;
-                if ((ehPericia || ehAudiencia) && !detalhe.concluida) {
-                  const nome = ehPericia ? "Perícia" : "Audiência";
-                  const noControle = detalhe.compromisso_estado === "informado";
-                  return (
-                    <section role="region" aria-label="Ação principal" className={`mt-4 rounded-xl border p-4 ${noControle ? "border-emerald-300 bg-emerald-50/70 dark:border-emerald-900 dark:bg-emerald-950/20" : "border-red-300 bg-red-50/70 dark:border-red-900 dark:bg-red-950/20"}`}>
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">{noControle ? "Compromisso no controle" : "Ação principal · compromisso marcado"}</p>
-                      <h3 className="mt-1 text-base font-semibold">
-                        {nome} {ag?.data ? `em ${dataPorExtenso(ag.data)}${ag.horario ? `, às ${horaPorExtenso(ag.horario)}` : ""}` : "marcada · data a confirmar no inteiro teor"}
-                      </h3>
-                      {ag?.local && <p className="mt-1 text-xs text-zinc-700 dark:text-zinc-300">Local: {ag.local}</p>}
-                      {detalhe.ia_provedor === "regra" && <p className="mt-1 text-[11px] font-medium text-amber-800 dark:text-amber-300">Classificação provisória por regra de segurança (a IA não concluiu): confira data, horário e local no inteiro teor.</p>}
-                      {!noControle && detalhe.compromisso_motivo && <p className="mt-1 text-xs text-red-800 dark:text-red-300">{detalhe.compromisso_motivo}</p>}
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {!noControle && (
-                          <Button size="sm" disabled={salvando} onClick={() => void acao(async () => {
-                            const r = await api.post<{ estado: string; motivo: string }>(`/djen/publicacoes/${detalhe.id}/compromisso`, {});
-                            setDetalhe(await api.get<Publicacao>(`/djen/publicacoes/${detalhe.id}`));
-                            await carregarLista();
-                            show(r.estado === "informado" ? `${nome} adicionada ao controle (Avisar).` : r.motivo || `Não foi possível adicionar a ${nome.toLowerCase()} ao controle.`, r.estado === "informado" ? "success" : "error");
-                          })}>Adicionar ao controle</Button>
-                        )}
-                        {noControle && <Button size="sm" variant="outline" onClick={() => navigate("/pericias")}>Abrir em Perícias e compromissos</Button>}
-                        <Button size="sm" variant="outline" onClick={() => setAbaDetalhe("publicacao")}>Ver inteiro teor</Button>
-                      </div>
-                    </section>
-                  );
-                }
-                if (detalhe.acao?.tipo === "prazo_explicito" && !detalhe.concluida) {
-                  return (
-                    <section role="region" aria-label="Ação principal" className="mt-4 rounded-xl border border-amber-300 bg-amber-50/70 p-4 dark:border-amber-900 dark:bg-amber-950/20">
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Ação principal · prazo expresso</p>
-                      <p className="mt-1 text-sm text-zinc-800 dark:text-zinc-200">{detalhe.acao.prazo_texto || detalhe.acao.descricao}</p>
-                      <Button size="sm" className="mt-3" onClick={() => setAbaDetalhe("prazos")}>Conferir e calcular prazo <ArrowRight className="h-3.5 w-3.5" /></Button>
-                    </section>
-                  );
-                }
-                return null;
-              })()}
-              <HistoryCoverage historico={detalhe.historico_djen} publicacaoId={detalhe.id} />
-              <details className="mt-4 text-xs">
-                <summary className="cursor-pointer font-medium text-accent-600">
-                  Ver dados do processo e links oficiais
-                </summary>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {[
-                  ["Tribunal", detalhe.tribunal],
-                  ["Órgão julgador", detalhe.orgao],
-                  ["Classe", detalhe.classe],
-                  ["Tipo de documento", detalhe.tipo_documento],
-                  ["Tipo de comunicação", detalhe.tipo_comunicacao],
-                  ["Captura pelo sistema", detalhe.captured_at ? instanteBR(detalhe.captured_at) : "Não informada"],
-                  [
-                    "Disponibilização no DJEN",
-                    dia(detalhe.data_disponibilizacao),
-                  ],
-                  ].map(([label, value]) => (
-                    <div key={label}>
-                      <p className="text-[10px] text-zinc-500">{label}</p>
-                      <p className="mt-1 break-words">
-                        {value || "Não informado na publicação"}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-3 flex flex-wrap gap-3 text-xs text-accent-600">
-                  {detalhe.certidao_url && (
-                    <a
-                      href={detalhe.certidao_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      Certidão oficial DJEN
-                    </a>
-                  )}
-                  {detalhe.link && (
-                    <a
-                      href={detalhe.link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      Consultar no tribunal
-                    </a>
-                  )}
-                </div>
-              </details>
-            </div>
+            <header className="pub-detail-heading">
+              <div className="pub-detail-topline"><span>ANDAMENTO #{detalhe.id} · DJEN {dia(detalhe.data_disponibilizacao)}</span><div className="flex gap-1">
+                <Button size="sm" variant="ghost" disabled={salvando || items.findIndex(p => p.id === detalhe.id) <= 0} aria-label="Publicação anterior" onClick={() => { const i = items.findIndex(p => p.id === detalhe.id); if(i > 0) void abrir(items[i - 1].id); }}>‹</Button>
+                <Button size="sm" variant="ghost" disabled={salvando || items.findIndex(p => p.id === detalhe.id) < 0 || items.findIndex(p => p.id === detalhe.id) >= items.length - 1} aria-label="Próxima publicação" onClick={() => { const i = items.findIndex(p => p.id === detalhe.id); if(i >= 0 && i < items.length - 1) void abrir(items[i + 1].id); }}>›</Button>
+              </div></div>
+              <h2>{detalhe.cliente_exibicao || "Cliente não identificado"}<button type="button" aria-label="Copiar nome da parte" onClick={() => void copiarDetalhe(detalhe.cliente_exibicao || "", "Nome da parte")}><Copy className="h-3.5 w-3.5" /></button></h2>
+              <p className="pub-detail-process">{detalhe.processo}<button type="button" aria-label="Copiar número do processo" onClick={() => void copiarDetalhe(detalhe.processo, "Número do processo")}><Copy className="h-3.5 w-3.5" /></button><span>· {detalhe.tribunal}</span></p>
+              <div className="mt-3 flex flex-wrap gap-2"><Badge tone={detalhe.revisada ? "success" : "warning"}>{detalhe.revisada ? `Categoria conferida${detalhe.revisada_por_nome ? ` por ${detalhe.revisada_por_nome}` : ""}` : "Categoria a conferir"}</Badge>{!detalhe.cliente_vinculado && <button type="button" onClick={() => setAbaDetalhe("cliente")}><Badge tone="warning">Vincular cliente</Badge></button>}{Boolean(detalhe.concluida) && <Badge>Triagem concluída</Badge>}</div>
+            </header>
             <nav
-              aria-label="Seções dos detalhes do processo"
+              aria-label="Seções dos detalhes do processo" role="tablist"
               className="sticky top-0 z-10 -mx-1 flex gap-1 overflow-x-auto rounded-xl border border-zinc-200 bg-white/95 p-1 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95"
             >
               {(
@@ -1850,7 +1795,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                 <button
                   key={id}
                   type="button"
-                  onClick={() => setAbaDetalhe(id)}
+                  onClick={() => setAbaDetalhe(id)} role="tab" aria-selected={abaDetalhe === id}
                   className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${abaDetalhe === id ? "bg-accent-600 text-white" : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"}`}
                 >
                   {label}
@@ -1859,50 +1804,16 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
             </nav>
             {abaDetalhe === "resumo" && (
               <div className="space-y-5">
-                <section className={`rounded-xl border p-4 ${detalhe.acao?.tipo === "prazo_explicito" ? "border-amber-200 bg-amber-50/70 dark:border-amber-900 dark:bg-amber-950/20" : "border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/30"}`}>
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">O que fazer agora</p>
-                  <h3 className="mt-1 text-sm font-semibold">
-                    {detalhe.acao?.tipo === "prazo_explicito" ? "Escritório · conferir prazo expresso" : detalhe.acao?.tipo === "cumprimento" ? "Escritório · providência sem prazo expresso" : "Conferir providências da publicação"}
-                  </h3>
-                  <p className="mt-2 text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
-                    {detalhe.acao?.prazo_texto || detalhe.acao?.descricao || "Não foi possível confirmar uma providência com prazo para o escritório pela identificação automática. Confira o inteiro teor antes de concluir."}
-                  </p>
-                  {detalhe.acao?.fonte === "publicacao" && <p className="mt-2 text-[11px] font-medium text-accent-700 dark:text-accent-300">Providência identificada no texto da publicação · confira o trecho e o termo inicial.</p>}
-                  {detalhe.acao?.tipo === "prazo_explicito" && (
-                    <Button size="sm" variant="outline" className="mt-3" onClick={() => setAbaDetalhe("prazos")}>Conferir e calcular prazo <ArrowRight className="h-3.5 w-3.5" /></Button>
-                  )}
-                  {detalhe.acao?.situacao === "decorrido" && <p className="mt-2 text-[11px] font-semibold text-red-700 dark:text-red-300">{detalhe.acao.situacao_motivo}</p>}
-                  {!!detalhe.acao?.encerradas?.length && (
-                    <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/70 p-3 text-[11px] dark:border-emerald-900 dark:bg-emerald-950/20">
-                      <p className="font-semibold text-emerald-800 dark:text-emerald-300">Ordens desta publicação já encerradas por andamento posterior</p>
-                      <ul className="mt-1 space-y-1 text-zinc-600 dark:text-zinc-300">
-                        {detalhe.acao.encerradas.map((e, i) => <li key={i}><strong>{ROTULO_SITUACAO[e.situacao] || e.situacao}</strong>{e.data ? ` em ${dia(e.data)}` : ""}: {e.descricao || "Providência"} — {e.motivo}{e.evidencia ? ` (“${e.evidencia}”)` : ""}</li>)}
-                      </ul>
-                      <p className="mt-1 text-zinc-500">Análise operacional pelas publicações capturadas; confirme nos autos antes de deixar de agir.</p>
-                    </div>
-                  )}
-                </section>
-                <section>
-              <h3 className="text-sm font-semibold">
-                Partes e advogados da publicação
-              </h3>
-              <div className="mt-2 grid gap-3 rounded-lg bg-zinc-50 p-3 text-xs dark:bg-zinc-800/40">
-                <p>
-                  {detalhe.destinatarios
-                    ?.map(
-                      (d) =>
-                        `${d.nome || "Parte não identificada"}${d.polo ? ` (${d.polo})` : ""}`,
-                    )
-                    .join(" · ") || "Partes não informadas pelo DJEN."}
-                </p>
-                <p className="text-zinc-500">
-                  {detalhe.advogados_publicacao
-                    ?.map((a) => `${a.nome} · OAB ${a.uf_oab} ${a.numero_oab}`)
-                    .join(" / ") ||
-                    "Advogados não detalhados na resposta da fonte."}
-                </p>
-              </div>
-                </section>
+                <ResumoPublicacao publicacao={detalhe} ocupado={salvando} responsaveis={responsaveis}
+                  aoConferir={() => {
+                    if (revisaoAlterada) { show("Salve a classificação em edição antes de conferir o compromisso.", "info"); document.getElementById("classificacao-publicacao")?.setAttribute("open", ""); return; }
+                    setConferirCompromisso(detalhe);
+                  }}
+                  aoClassificar={() => { document.getElementById("classificacao-publicacao")?.setAttribute("open", ""); document.getElementById("classificacao-publicacao")?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }}
+                  aoPrazos={() => setAbaDetalhe("prazos")} aoPublicacao={() => setAbaDetalhe("publicacao")}
+                  aoAvisar={() => void acao(compor)} aoAtualizar={async () => { setDetalhe(await api.get<Publicacao>(`/djen/publicacoes/${detalhe.id}`)); await carregarLista(); await carregarStatus(); }} />
+                <details className="pub-disclosure"><summary>Partes e advogados</summary><div className="space-y-2 pt-3 text-xs"><p>{detalhe.destinatarios?.map(d => d.nome).join(" · ") || "Partes não informadas"}</p><p>{detalhe.advogados_publicacao?.map(a => `${a.nome} · OAB ${a.uf_oab} ${a.numero_oab}`).join(" / ")}</p></div></details>
+                <details className="pub-disclosure"><summary>Análise pela IA e evidências</summary>
                 <section className="rounded-xl border border-accent-200 bg-accent-50/40 p-4 dark:border-zinc-800 dark:bg-zinc-900">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h3 className="flex items-center gap-2 text-sm font-semibold">
@@ -1941,7 +1852,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                     : "Analisar com IA"}
                 </Button>
               </div>
-              {detalhe.ia_provedor && <p className="mt-2 text-[11px] text-zinc-500">Origem da análise: {detalhe.ia_provedor === "codex" ? "OpenAI · conta ChatGPT" : detalhe.ia_provedor === "anthropic" ? "Anthropic · API" : "OpenAI · API"}{detalhe.ia_modelo ? ` · ${detalhe.ia_modelo}` : " · registro anterior sem modelo identificado"}</p>}
+              {detalhe.ia_provedor && <p className="mt-2 text-[11px] text-zinc-500">Origem da análise: {detalhe.ia_provedor === "regra" ? "Regra de segurança" : detalhe.ia_provedor === "codex" ? "OpenAI · conta ChatGPT" : detalhe.ia_provedor === "anthropic" ? "Anthropic · API" : "OpenAI · API"}{detalhe.ia_modelo ? ` · ${detalhe.ia_modelo}` : " · registro anterior sem modelo identificado"}</p>}
               <p className="mt-2 text-xs text-zinc-500">
                 {detalhe.ia_status === "analisando"
                   ? "Analisando publicação…"
@@ -2090,36 +2001,18 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                   </p>
                 </div>
               )}
-                </section>
+                </section></details>
               </div>
             )}
             {abaDetalhe === "publicacao" && (
               <div className="space-y-5">
-            <DjenDocumentos
-              key={`docs-${detalhe.id}`}
-              id={detalhe.id}
-              certidao={detalhe.certidao_url}
-              tribunal={detalhe.link}
-              documentos={detalhe.documentos}
-              refresh={async () => {
-                setDetalhe(
-                  await api.get<Publicacao>(`/djen/publicacoes/${detalhe.id}`),
-                );
-              }}
-            />
-            <details open>
-              <summary className="cursor-pointer text-sm font-semibold">
-                Inteiro teor da publicação
-              </summary>
-              <p className="mt-3 max-h-[45vh] overflow-y-auto whitespace-pre-wrap rounded-lg border border-zinc-200 p-4 text-xs leading-relaxed [overflow-wrap:anywhere] dark:border-zinc-800">
-                {detalhe.texto}
-              </p>
-            </details>
+            <section><div className="pub-section-heading"><h3>Inteiro teor da publicação</h3><span className="text-xs text-zinc-500">DJEN · {dia(detalhe.data_disponibilizacao)}</span></div><p className="pub-fulltext">{detalhe.texto}</p></section>
+            <DjenDocumentos id={detalhe.id} certidao={detalhe.certidao_url} tribunal={detalhe.link} documentos={detalhe.documentos} refresh={async () => { setDetalhe(await api.get<Publicacao>(`/djen/publicacoes/${detalhe.id}`)); }} />
               </div>
             )}
             {abaDetalhe === "resumo" && (
-            <details className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-              <summary className="flex cursor-pointer items-center gap-2 text-sm font-semibold">
+            <details id="classificacao-publicacao" className="pub-disclosure">
+              <summary>
                 <CheckCheck className="h-4 w-4" />
                 Conferir ou ajustar classificação
               </summary>
@@ -2255,7 +2148,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                 Cliente e anotações do processo
               </h3>
               <div className="mt-3">
-                <ContactPicker
+                {can("contacts.view") ? <ContactPicker
                   contatos={contatos}
                   value={processo.cliente_id}
                   onChange={(cliente_id) =>
@@ -2263,7 +2156,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                   }
                   processo={detalhe.processo}
                   onCreated={(c) => setContatos((list) => [...list, c])}
-                />
+                /> : <p className="text-xs">{detalhe.cliente_nome || "Cliente ainda sem vínculo"}. Seu perfil permite consultar o vínculo atual.</p>}
               </div>
               <div className="mt-3">
                 <Label htmlFor="obs-processo">Anotações internas</Label>
@@ -2319,6 +2212,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
               tipos={TIPOS}
               abrir={(id) => void abrir(id)}
             />
+            <HistoryCoverage historico={detalhe.historico_djen} publicacaoId={detalhe.id} />
             <section>
               <h3 className="text-sm font-semibold">
                 Mensagens desta publicação
@@ -2411,9 +2305,7 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
                 checked={confirmacaoEnvio}
                 onChange={(e) => setConfirmacaoEnvio(e.target.checked)}
               />
-              Conferi o inteiro teor, a classificação, o destinatário e a
-              mensagem. Ao confirmar o envio, a revisão da classificação será
-              salva.
+              Conferi o destinatário, os dados e a mensagem que será enviada.
             </label>
             <div className="rounded-lg bg-zinc-50 p-3 text-xs dark:bg-zinc-800">
               <p className="font-semibold">{mensagem.cliente_nome}</p>
@@ -2439,8 +2331,3 @@ function AcompanhamentoEditor({ detailId, onCloseDetail }: { detailId?: number; 
     </div>
   );
 }
-
-
-
-
-

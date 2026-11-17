@@ -25,7 +25,7 @@ export function ConcluirAndamento({ open, publicacaoId, rotulo, totalAndamentos,
   rotulo: string;
   totalAndamentos: number;
   onClose: () => void;
-  onConcluido: (info: { escopo: Escopo; total: number; publicacaoId: number }) => void;
+  onConcluido: (info: { escopo: Escopo; total: number; publicacaoId: number; ids: number[] }) => void;
 }) {
   const [escopo, setEscopo] = useState<Escopo>("andamento");
   const [previa, setPrevia] = useState<Previa | null>(null);
@@ -42,7 +42,7 @@ export function ConcluirAndamento({ open, publicacaoId, rotulo, totalAndamentos,
   useEffect(() => {
     if (!open) return;
     let ativo = true;
-    setCarregando(true); setErro("");
+    setCarregando(true); setPrevia(null); setErro("");
     api.get<Previa>(`/djen/publicacoes/${publicacaoId}/conclusao-previa?escopo=${escopo}`)
       .then((r) => { if (ativo) setPrevia(r); })
       .catch((e) => { if (ativo) setErro(erroTexto(e)); })
@@ -58,10 +58,10 @@ export function ConcluirAndamento({ open, publicacaoId, rotulo, totalAndamentos,
   async function concluir() {
     setSalvando(true); setErro("");
     try {
-      await api.post(`/djen/publicacoes/${publicacaoId}/conclusao`, {
+      const resultado = await api.post<{ conclusao: { ids: number[]; total: number } }>(`/djen/publicacoes/${publicacaoId}/conclusao`, {
         concluida: true, escopo, ...(comPendencia ? { forcar: true, justificativa: justificativa.trim() } : {}),
       });
-      onConcluido({ escopo, total: alcance, publicacaoId });
+      onConcluido({ escopo, total: resultado.conclusao.total, publicacaoId, ids: resultado.conclusao.ids });
       onClose();
     } catch (e) { setErro(erroTexto(e)); }
     finally { setSalvando(false); }
@@ -73,7 +73,7 @@ export function ConcluirAndamento({ open, publicacaoId, rotulo, totalAndamentos,
       open={open}
       onClose={onClose}
       title="Concluir andamento"
-      description="Concluir tira da fila de pendentes. Dá para desfazer logo depois e em Concluídas."
+      description="Concluir encerra a triagem. Prazos abertos continuam em acompanhamento. É possível desfazer."
       maxWidth="max-w-xl"
       footer={
         <div className="flex w-full flex-wrap justify-end gap-2">
@@ -99,7 +99,7 @@ export function ConcluirAndamento({ open, publicacaoId, rotulo, totalAndamentos,
           {totalAndamentos > 1 && (
             <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-zinc-200 bg-white p-3 hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-900">
               <input type="radio" name="escopo-conclusao" className="mt-1" checked={escopo === "processo"} onChange={() => setEscopo("processo")} />
-              <span><strong>Todos os andamentos abertos deste processo</strong><br /><span className="text-zinc-600 dark:text-zinc-400">O cartão agrupa {totalAndamentos} andamentos; todos sairiam da fila.</span></span>
+              <span><strong>Todos os andamentos abertos deste processo</strong><br /><span className="text-zinc-600 dark:text-zinc-400">Este processo tem {totalAndamentos} andamentos. A triagem dos que estiverem abertos será concluída.</span></span>
             </label>
           )}
         </fieldset>

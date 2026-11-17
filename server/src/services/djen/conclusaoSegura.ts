@@ -1,3 +1,4 @@
+import { limparCachesDjen } from "./cache";
 import { db } from "../../db";
 import { DjenInputError } from "./store";
 import { concluirPublicacao } from "./deadlines";
@@ -89,9 +90,18 @@ export class ConclusaoBloqueada extends Error {
   }
 }
 
-export function concluirComSeguranca(opts: { id: number; concluida: boolean; escopo?: EscopoDaConclusao; forcar?: boolean; justificativa?: string }) {
+export function concluirComSeguranca(opts: { id: number; concluida: boolean; escopo?: EscopoDaConclusao; forcar?: boolean; justificativa?: string; ids?: number[] }) {
   const escopo: EscopoDaConclusao = opts.escopo === "processo" ? "processo" : "andamento";
-  const alvo = andamentosDaConclusao(opts.id, escopo, opts.concluida);
+  let alvo = andamentosDaConclusao(opts.id, escopo, opts.concluida);
+  if (!opts.concluida && opts.ids !== undefined) {
+    if (!Array.isArray(opts.ids) || !opts.ids.length || opts.ids.length > 5000 || opts.ids.some(id => !Number.isSafeInteger(id) || id <= 0))
+      throw new DjenInputError("Identificadores inválidos para desfazer a conclusão.");
+    const permitidos = new Set(alvo.map(a => a.id));
+    const jaReabertos = new Set(andamentosDaConclusao(opts.id, escopo, true).map(a => a.id));
+    if (opts.ids.some(id => !permitidos.has(id) && !jaReabertos.has(id))) throw new DjenInputError("A seleção não pertence ao alcance desta conclusão.");
+    const solicitados = new Set(opts.ids);
+    alvo = alvo.filter(a => solicitados.has(a.id));
+  }
   const justificativa = (opts.justificativa ?? "").trim();
   if (opts.concluida) {
     const pendencias = pendenciasDaConclusao(alvo.map((a) => a.id));
@@ -117,11 +127,12 @@ export function concluirComSeguranca(opts: { id: number; concluida: boolean; esc
       );
     }
   })();
+  limparCachesDjen();
   return { escopo, total: alvo.length, ids: alvo.map((a) => a.id) };
 }
 
 /** Conclusão em lote (processos selecionados): os que têm pendência só entram com confirmação expressa e justificativa. */
-export function concluirLoteComSeguranca(ids: unknown, opts: { forcar?: boolean; justificativa?: string } = {}) {
+export function concluirLoteComSeguranca(ids: unknown, opts: { forcar?: boolean; justificativa?: string; escopo?: "andamentos" | "processos" } = {}) {
   if (!Array.isArray(ids) || !ids.length || ids.length > 5000 || ids.some((n: unknown) => !Number.isSafeInteger(n) || Number(n) <= 0))
     throw new DjenInputError("Selecione de 1 a 5.000 processos válidos.");
   const unicos = [...new Set(ids as number[])];
@@ -134,7 +145,8 @@ export function concluirLoteComSeguranca(ids: unknown, opts: { forcar?: boolean;
   }
   const abertas = db.prepare("SELECT id FROM djen_publicacoes WHERE processo_chave=? AND cancelada=0 AND concluida=0");
   const todos: number[] = [];
-  for (const chave of processos) for (const p of abertas.all(chave) as { id: number }[]) todos.push(p.id);
+  if (opts.escopo === "andamentos") todos.push(...unicos);
+  else for (const chave of processos) for (const p of abertas.all(chave) as { id: number }[]) todos.push(p.id);
   const pendencias = pendenciasDaConclusao(todos);
   const justificativa = (opts.justificativa ?? "").trim();
   if (pendencias.length && !opts.forcar) throw new ConclusaoBloqueada(pendencias, todos.length);
@@ -147,5 +159,6 @@ export function concluirLoteComSeguranca(ids: unknown, opts: { forcar?: boolean;
       registrarHistoricoDjen(id, "conclusao", comPendencia.has(id) ? `Concluído em lote COM PENDÊNCIAS. Justificativa: ${justificativa}` : "Concluído em lote pelo usuário.");
     }
   })();
+  limparCachesDjen();
   return { processos: processos.size, publicacoes: todos.length };
 }

@@ -1,3 +1,4 @@
+import { limparCachesDjen } from "../djen/cache";
 import { db } from "../../db";
 import { normalizeProcesso } from "../../utils/processo";
 import { mensagemSeExcederLimite } from "../../licenca/cliente";
@@ -121,6 +122,7 @@ export function atualizarProcesso(id: number, d: Record<string, unknown>) {
   db.prepare(`UPDATE gestao_processos SET titulo=?,tribunal=?,orgao=?,comarca=?,classe=?,assunto=?,area=?,valor_causa_centavos=?,fase=?,status=?,responsavel_user_id=?,data_distribuicao=?,observacoes=?,atualizado_em=CURRENT_TIMESTAMP WHERE id=?`)
     .run(v.titulo, v.tribunal, v.orgao, v.comarca, v.classe, v.assunto, v.area, v.valor, v.fase, v.status, v.resp, v.dist, v.observacoes, id);
   salvarValores("processo", id, d.campos);
+  limparCachesDjen();
   return obterProcesso(id);
 }
 

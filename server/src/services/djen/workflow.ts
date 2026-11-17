@@ -1,3 +1,4 @@
+import { limparCachesDjen } from "./cache";
 import { db } from "../../db";
 import { dataValida } from "./api";
 import { registrarHistoricoDjen } from "./history";
@@ -204,11 +205,13 @@ export function excluirDocumento(publicacaoId: number, documentoId: number) {
 
 export function salvarPrazo(publicacaoId: number, data: Record<string, unknown>, prazoId?: number) {
   const resultado = salvarPrazoBase(publicacaoId, data, prazoId);
+  limparCachesDjen();
   marcarEtapaParaRevisao(publicacaoId);
   return resultado;
 }
 export function excluirPrazo(publicacaoId: number, prazoId: number) {
   const resultado = excluirPrazoBase(publicacaoId, prazoId);
+  limparCachesDjen();
   marcarEtapaParaRevisao(publicacaoId);
   return resultado;
 }

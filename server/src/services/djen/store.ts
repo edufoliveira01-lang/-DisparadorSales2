@@ -1,3 +1,6 @@
+import { salvarAgendamentoRevisado, type CompromissoManual } from "./periciaIntegration";
+import { limparCachesDjen } from "./cache";
+import { correspondePrioridade, triagensPublicacoes } from "./triagem";
 import { sincronizarCompromisso, refazerPendenciasDoProcesso } from "./compromissoDaPublicacao";
 import { processoFoiExcluido } from "./semVinculo";
 import { classificarComplementar } from "./classificacaoComplementar";
@@ -41,9 +44,9 @@ function vincularProcessoAutomaticamente(
 ) {
   if (!processoChave || !destinatarios.length) return null;
   const processo = db
-    .prepare("SELECT cliente_id FROM djen_processos WHERE chave=?")
-    .get(processoChave) as { cliente_id: number | null } | undefined;
-  if (!processo || processo.cliente_id) return processo?.cliente_id || null;
+    .prepare("SELECT cliente_id,cliente_vinculo_manual FROM djen_processos WHERE chave=?")
+    .get(processoChave) as { cliente_id: number | null; cliente_vinculo_manual: number } | undefined;
+  if (!processo || processo.cliente_id || processo.cliente_vinculo_manual) return processo?.cliente_id || null;
 
   const nomes = new Set(destinatarios.map((d) => nomeChaveCliente(d.nome)).filter(Boolean));
   const candidatos = (
@@ -81,7 +84,7 @@ function vincularProcessosPendentes() {
             WHERE p2.processo_chave=pr.chave
             ORDER BY p2.id DESC LIMIT 1
          )
-        WHERE pr.cliente_id IS NULL`,
+        WHERE pr.cliente_id IS NULL AND pr.cliente_vinculo_manual=0`,
     )
     .all() as { chave: string; destinatarios_json: string }[];
   for (const item of pendentes) {
@@ -345,7 +348,7 @@ export function importarPublicacoes(
     return novas;
   })();
 }
-const SELECT_PUB = `SELECT p.*,(SELECT MIN(termino) FROM djen_prazos dp WHERE dp.publicacao_id=p.id AND dp.status='aberto') AS proximo_prazo,(SELECT count(*) FROM djen_prazos dp WHERE dp.publicacao_id=p.id AND dp.status='aberto') AS prazos_abertos,pr.numero AS processo,pr.cliente_id,pr.observacoes,c.nome AS cliente_nome,c.telefone AS cliente_telefone,
+const SELECT_PUB = `SELECT p.*,(SELECT display_name FROM users WHERE id=p.revisada_por) AS revisada_por_nome,(SELECT MIN(termino) FROM djen_prazos dp WHERE dp.publicacao_id=p.id AND dp.status='aberto') AS proximo_prazo,(SELECT count(*) FROM djen_prazos dp WHERE dp.publicacao_id=p.id AND dp.status='aberto') AS prazos_abertos,pr.numero AS processo,pr.cliente_id,pr.observacoes,c.nome AS cliente_nome,c.telefone AS cliente_telefone,
   (CASE WHEN p.cancelada=0 AND ((p.revisada=0 AND (p.categorias_json LIKE '%"pericia"%' OR p.categorias_json LIKE '%"audiencia"%')) OR p.compromisso_estado='completar') THEN 1 ELSE 0 END) AS prioridade_compromisso
   FROM djen_publicacoes p JOIN djen_processos pr ON pr.chave=p.processo_chave LEFT JOIN contacts c ON c.id=pr.cliente_id`;
 export interface PublicacaoRow {
@@ -467,6 +470,7 @@ export function apresentarPublicacao(p: PublicacaoRow, integral = false) {
     ...dados,
     historico_djen: coberturaHistorico(p.processo_chave),
     analise,
+    triagem: integral ? triagensPublicacoes().get(p.id) ?? null : undefined,
     ordens_processuais: ordens,
     acao: {
       fonte: principal ? "publicacao" : prazoDoCodex || cumprimento ? "ia" : "nao_confirmada",
@@ -638,7 +642,7 @@ function montarConsultaPublicacoes(filtro: Record<string, string>) {
     }
     if (categorias.includes("outros"))
       opcoes.push(
-        `NOT EXISTS(
+        filtro.agrupamento === "andamentos" ? "p.categorias_json='[]'" : `NOT EXISTS(
           SELECT 1 FROM djen_publicacoes outras
            WHERE outras.processo_chave=p.processo_chave
              AND outras.cancelada=0
@@ -671,7 +675,10 @@ function montarConsultaPublicacoes(filtro: Record<string, string>) {
     );
     values.push(...advogados.map(Number));
   }
-  if (arquivo !== "todos") where.push(arquivo === "concluidos" ? "p.concluida=1" : "p.concluida=0");
+  if (filtro.agrupamento === "andamentos") {
+    where.push("p.cancelada=0");
+    if (arquivo !== "todos") where.push(arquivo === "concluidos" ? "p.concluida=1" : "(p.concluida=0 OR EXISTS(SELECT 1 FROM djen_prazos dp WHERE dp.publicacao_id=p.id AND dp.status='aberto' AND dp.responsavel IN ('escritorio','nao_identificado')))");
+  } else if (arquivo !== "todos") where.push(arquivo === "concluidos" ? "p.concluida=1" : "p.concluida=0");
   const situacoes = csv(filtro.situacao);
   const condicoes: Record<string, string> = {
     nao_lidas: "p.lida=0",
@@ -710,8 +717,34 @@ function montarConsultaPublicacoes(filtro: Record<string, string>) {
   const condition = where.length ? " WHERE " + where.join(" AND ") : "";
   return { condition, values, arquivo };
 }
+function andamentosFiltrados(filtro: Record<string, string>) {
+  const { condition, values } = montarConsultaPublicacoes(filtro);
+  const triagens = triagensPublicacoes();
+  const prioridade = filtro.prioridade || "";
+  if (!["", "urgentes", "hoje", "compromissos", "conferir", "sem_prazo", "datas"].includes(prioridade))
+    throw new DjenInputError("Prioridade de filtro inválida.");
+  const responsavel = filtro.responsavel || "";
+  if (responsavel && responsavel !== "sem" && !/^[1-9]\d*$/.test(responsavel))
+    throw new DjenInputError("Responsável de filtro inválido.");
+  return (db.prepare(SELECT_PUB + condition).all(...values) as PublicacaoRow[]).filter(p => {
+    const t = triagens.get(p.id);
+    if (!t || !correspondePrioridade(t, prioridade)) return false;
+    if (responsavel === "sem" && t.responsavel_id !== null) return false;
+    if (responsavel && responsavel !== "sem" && t.responsavel_id !== Number(responsavel)) return false;
+    return true;
+  }).sort((a, b) => {
+    const ta = triagens.get(a.id)!, tb = triagens.get(b.id)!;
+    return ta.prioridade - tb.prioridade || (ta.data_prioridade || "9999").localeCompare(tb.data_prioridade || "9999") || b.data_disponibilizacao.localeCompare(a.data_disponibilizacao) || b.id - a.id;
+  });
+}
+
 export function listarIdsPublicacoes(filtro: Record<string, string>) {
   vincularProcessosPendentes();
+  if (filtro.agrupamento === "andamentos") {
+    const lista = andamentosFiltrados(filtro).filter(p => !p.concluida);
+    if (lista.length > 5000) throw new DjenInputError("Mais de 5.000 andamentos encontrados. Refine os filtros.");
+    return { ids: lista.map(p => p.id), total: lista.length };
+  }
   const { condition, values, arquivo } = montarConsultaPublicacoes(filtro);
   if (arquivo !== "ativos") throw new DjenInputError("Selecione processos pendentes para a conclusão em lote.");
   const from = ` FROM djen_publicacoes p JOIN djen_processos pr ON pr.chave=p.processo_chave
@@ -723,6 +756,15 @@ export function listarIdsPublicacoes(filtro: Record<string, string>) {
 }
 export function listarPublicacoes(filtro: Record<string, string>) {
   vincularProcessosPendentes();
+  if (filtro.agrupamento === "andamentos") {
+    const lista = andamentosFiltrados(filtro);
+    const pagina = Math.max(1, Math.min(10000, Number.parseInt(filtro.pagina || "1", 10) || 1));
+    const triagens = triagensPublicacoes();
+    return {
+      items: lista.slice((pagina - 1) * 25, pagina * 25).map(p => ({ ...apresentarPublicacao(p), pericia_publicacao_id: p.id, triagem: triagens.get(p.id) })),
+      total: lista.length, total_processos: new Set(lista.map(p => p.processo_chave)).size, pagina, por_pagina: 25,
+    };
+  }
   const { condition, values, arquivo } = montarConsultaPublicacoes(filtro);
   const total = (
     db
@@ -786,7 +828,7 @@ export function detalhesPublicacao(id: number) {
     mensagens,
   };
 }
-export function revisarPublicacao(id: number, data: Record<string, unknown>) {
+export function revisarPublicacao(id: number, data: Record<string, unknown>, autorId?: number) {
   const p = publicacaoPorId(id);
   if (!p) throw new DjenInputError("Publicação não encontrada.");
   const categorias = data.categorias;
@@ -803,37 +845,46 @@ export function revisarPublicacao(id: number, data: Record<string, unknown>) {
     (typeof data.situacao !== "string" || data.situacao.length > 250)
   )
     throw new DjenInputError("Use até 250 caracteres para a situação.");
-  db.prepare(
-    "UPDATE djen_publicacoes SET categorias_json=?,resultado=?,revisada=1,ia_status=CASE WHEN ia_status='pendente' THEN 'nao_solicitada' ELSE ia_status END,updated_at=CURRENT_TIMESTAMP WHERE id=?",
-  ).run(
-    JSON.stringify([...new Set(categorias)]),
-    categorias.includes("sentenca") ? data.resultado : "nao_identificado",
-    id,
-  );
-  if (typeof data.situacao === "string")
-    db.prepare("UPDATE djen_publicacoes SET situacao=? WHERE id=?").run(
-      data.situacao.trim(),
+  db.transaction(() => {
+    if (data.agendamento !== undefined) {
+      if (!data.agendamento || typeof data.agendamento !== "object" || !categorias.some(c => c === "pericia" || c === "audiencia"))
+        throw new DjenInputError("Confira a categoria do compromisso.");
+      salvarAgendamentoRevisado(id, data.agendamento as CompromissoManual);
+    }
+    db.prepare(
+      "UPDATE djen_publicacoes SET categorias_json=?,resultado=?,revisada=1,ia_status=CASE WHEN ia_status='pendente' THEN 'nao_solicitada' ELSE ia_status END,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+    ).run(
+      JSON.stringify([...new Set(categorias)]),
+      categorias.includes("sentenca") ? data.resultado : "nao_identificado",
       id,
     );
-  // Perícia/audiência marcada: depois da revisão, o compromisso entra sozinho no controle («Avisar»), ou fica como pendência a completar.
-  try { sincronizarCompromisso(id); } catch (e) { console.warn("[compromisso da publicação]", e instanceof Error ? e.message : "falhou"); }
-  registrarHistoricoDjen(
-    id,
-    "revisao",
-    "Classificação revisada pelo usuário.",
-    {
-      antes: {
-        categorias: JSON.parse(p.categorias_json),
-        resultado: p.resultado,
-        situacao: p.situacao,
+    if (typeof data.situacao === "string")
+      db.prepare("UPDATE djen_publicacoes SET situacao=? WHERE id=?").run(
+        data.situacao.trim(),
+        id,
+      );
+    if (autorId) db.prepare("UPDATE djen_publicacoes SET revisada_por=?,revisada_em=CURRENT_TIMESTAMP WHERE id=?").run(autorId, id);
+    // Perícia/audiência marcada: depois da revisão, o compromisso entra sozinho no controle («Avisar»), ou fica como pendência a completar.
+    try { sincronizarCompromisso(id); } catch (e) { console.warn("[compromisso da publicação]", e instanceof Error ? e.message : "falhou"); }
+    registrarHistoricoDjen(
+      id,
+      "revisao",
+      "Classificação revisada pelo usuário.",
+      {
+        antes: {
+          categorias: JSON.parse(p.categorias_json),
+          resultado: p.resultado,
+          situacao: p.situacao,
+        },
+        depois: {
+          categorias,
+          resultado: data.resultado,
+          situacao: data.situacao,
+        },
       },
-      depois: {
-        categorias,
-        resultado: data.resultado,
-        situacao: data.situacao,
-      },
-    },
-  );
+    );
+  })();
+  limparCachesDjen();
   return detalhesPublicacao(id);
 }
 export function salvarProcessoDaPublicacao(
@@ -851,7 +902,7 @@ export function salvarProcessoDaPublicacao(
   if (typeof data.observacoes !== "string" || data.observacoes.length > 10000)
     throw new DjenInputError("Use até 10 mil caracteres nas observações.");
   db.prepare(
-    "UPDATE djen_processos SET cliente_id=?,observacoes=? WHERE chave=?",
+    "UPDATE djen_processos SET cliente_id=?,observacoes=?,cliente_vinculo_manual=1 WHERE chave=?",
   ).run(cliente, data.observacoes.trim(), p.processo_chave);
   if (cliente !== null) { try { refazerPendenciasDoProcesso(p.processo_chave); } catch { /* a pendência continua visível */ } }
   registrarHistoricoDjen(
@@ -859,6 +910,7 @@ export function salvarProcessoDaPublicacao(
     "processo",
     "Contato ou anotações do processo atualizados pelo usuário.",
   );
+  limparCachesDjen();
   return detalhesPublicacao(id);
 }
 export function resumoDjen() {

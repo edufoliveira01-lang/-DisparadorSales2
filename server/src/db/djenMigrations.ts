@@ -399,6 +399,16 @@ export function runDjenMigrations(db: Database.Database): void {
     const colsPub = (db.prepare("PRAGMA table_info(djen_publicacoes)").all() as { name: string }[]).map((c) => c.name);
     for (const col of ["compromisso_estado", "compromisso_motivo", "compromisso_tipo"]) if (colsPub.length && !colsPub.includes(col)) db.exec(`ALTER TABLE djen_publicacoes ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`);
   }
+  const vinculoCampos = db.prepare("PRAGMA table_info(djen_processos)").all() as { name: string }[];
+  if (!vinculoCampos.some(c => c.name === "cliente_vinculo_manual"))
+    db.exec("ALTER TABLE djen_processos ADD COLUMN cliente_vinculo_manual INTEGER NOT NULL DEFAULT 0");
+  const camposConferencia = db.prepare("PRAGMA table_info(djen_publicacoes)").all() as { name: string }[];
+  if (!camposConferencia.some(c => c.name === "agendamento_revisado_json"))
+    db.exec("ALTER TABLE djen_publicacoes ADD COLUMN agendamento_revisado_json TEXT");
+  if (!camposConferencia.some(c => c.name === "revisada_por"))
+    db.exec("ALTER TABLE djen_publicacoes ADD COLUMN revisada_por INTEGER");
+  if (!camposConferencia.some(c => c.name === "revisada_em"))
+    db.exec("ALTER TABLE djen_publicacoes ADD COLUMN revisada_em TEXT");
   // 2.60.0: área do processo (previdenciário, trabalhista, bancário, cível) e listas por área.
   const colunasProcessos = db.prepare("PRAGMA table_info(djen_processos)").all() as { name: string }[];
   if (!colunasProcessos.some((c) => c.name === "area")) db.exec("ALTER TABLE djen_processos ADD COLUMN area TEXT");
