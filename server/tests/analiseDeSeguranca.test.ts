@@ -52,6 +52,8 @@ describe("a IA escreve a data de outro jeito (causa real da falha da perícia da
     expect(dataNoTexto(TEXTO, "04/12/2026")).toBe(false);
     expect(horaNoTexto(TEXTO, "16:00")).toBe(true);
     expect(horaNoTexto(TEXTO, "16h")).toBe(true);
+    expect(dataNoTexto(TEXTO, "2026-12-03")).toBe(true);
+    expect(dataNoTexto(TEXTO, "2026-12-04")).toBe(false);
     expect(horaNoTexto(TEXTO, "17:00")).toBe(false);
   });
 

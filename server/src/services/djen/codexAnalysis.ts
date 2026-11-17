@@ -340,7 +340,7 @@ function recuperarPorRegra(p: Tarefa, motivo: string): boolean {
     if (!analise) return false;
     const perfil = { modo: "economico", modelo: "regra literal", esforco: "low", provedor: "regra", configuracao: 0 } as unknown as AiProfile;
     if (!salvarAnaliseCodex(p.id, p.texto, p.tipo_documento, analise, perfil)) return false;
-    registrarHistoricoDjen(p.id, "analise", `A IA não concluiu (${motivo.slice(0, 160)}). A publicação foi classificada por regra de segurança: ${analise.categorias.join(", ")} em ${analise.agendamento.data} às ${analise.agendamento.horario}. Confira.`, { provedor: "regra", categorias: analise.categorias });
+    registrarHistoricoDjen(p.id, "analise", `A IA não concluiu (${motivo.slice(0, 420)}). A publicação foi classificada por regra de segurança: ${analise.categorias.join(", ")} em ${analise.agendamento.data} às ${analise.agendamento.horario}. Confira.`, { provedor: "regra", categorias: analise.categorias });
     return true;
   } catch {
     return false;

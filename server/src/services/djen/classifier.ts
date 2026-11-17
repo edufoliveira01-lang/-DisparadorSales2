@@ -238,7 +238,12 @@ function horasNoTexto(texto: string): Set<string> {
   }
   return out;
 }
-const normData = (v: string): string | null => { const s = datasNoTexto(v); return s.size === 1 ? [...s][0]! : null; };
+const normData = (v: string): string | null => {
+  const iso = v.match(/\b(\d{4})-(\d{2})-(\d{2})\b/); // a IA às vezes devolve «2026-12-03»
+  if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+  const s = datasNoTexto(v);
+  return s.size === 1 ? [...s][0]! : null;
+};
 const normHora = (v: string): string | null => { const s = horasNoTexto(v); return s.size >= 1 ? [...s][0]! : null; };
 /** O valor (data) está no texto, literalmente ou como a MESMA data escrita de outro jeito? */
 export const dataNoTexto = (texto: string, v: string): boolean => normalizarTexto(texto).includes(canonLocal(v)) || ((): boolean => { const n = normData(v); return n !== null && datasNoTexto(texto).has(n); })();
