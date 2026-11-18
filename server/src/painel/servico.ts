@@ -30,6 +30,7 @@ interface LinhaEscritorio {
   atendimento_estado: string | null; atendimento_em: string | null; atendimento_erro: string | null;
   chave_hash: string; chave_prefixo: string; ultimo_contato_em: string | null; ultima_versao: string | null; ultimo_ip: string | null;
   observacoes: string; criado_em: string; atualizado_em: string;
+  porta?: number | null; instancia_em?: string | null;
 }
 interface LinhaPlano { id: string; nome: string; preco_centavos: number; entitlements_json: string; ativo: number; criado_em: string; publico?: number; resumo?: string; destaque?: number }
 
