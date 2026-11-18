@@ -31,13 +31,14 @@
     if (nativo || reduzido) return;
     var cena = $('.cena');
     if (!cena) return;
-    var lis = $$('.passos li'), mods = $$('.modulo'), trilho = $('.trilho i'), barra = $('.progresso');
+    var lis = $$('.passos li'), telas = $$('.tela'), menu = $$('.mi'), trilho = $('.trilho i'), barra = $('.progresso');
     function atualizar() {
       var r = cena.getBoundingClientRect(), vh = window.innerHeight;
       var total = r.height + vh, vistos = Math.min(Math.max(vh - r.top, 0), total), p = vistos / total;
       var ativo = Math.min(5, Math.max(0, Math.floor((p - 0.2) / 0.12) + 1));
       lis.forEach(function (li, i) { li.classList.toggle('on', i === ativo - 1); });
-      mods.forEach(function (m, i) { m.classList.toggle('on', i < ativo); });
+      telas.forEach(function (t, i) { t.classList.toggle('on', i === ativo - 1); });
+      menu.forEach(function (m, i) { m.classList.toggle('ativo', i === ativo - 1); });
       if (trilho) trilho.style.transform = 'scaleY(' + Math.min(1, Math.max(0, (p - 0.2) / 0.6)) + ')';
       var h = document.documentElement;
       if (barra) barra.style.transform = 'scaleX(' + (h.scrollTop / Math.max(1, h.scrollHeight - h.clientHeight)) + ')';
@@ -162,6 +163,7 @@
     $$('.produto-nome').forEach(function (n) { n.textContent = nomeProduto; });
     var selo = $('#selo-marca');
     if (selo) selo.textContent = nomeProduto.split(' ').map(function (p) { return p.charAt(0); }).join('').slice(0, 2).toUpperCase() || 'DZ';
+    $$('.produto-dominio').forEach(function (n) { n.textContent = d.dominio; });
     var emp = $('#rodape-empresa');
     if (emp && d.produto && d.produto.empresa) emp.textContent = ' · ' + d.produto.empresa;
     if (!d.planos.length) $('#planos-grade').textContent = 'Planos em breve.';

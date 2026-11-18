@@ -60,11 +60,109 @@
           </ol>
         </div>
         <div class="palco-visual" aria-hidden="true">
-          <div class="modulo m1"><div class="mod-titulo">Publicações</div><div class="linha"></div><div class="linha curta"></div><div class="selo-prazo">Prazo em 5 dias úteis</div></div>
-          <div class="modulo m2"><div class="mod-titulo">Clientes e processos</div><div class="avatar"></div><div class="avatar"></div><div class="avatar"></div><div class="linha"></div></div>
-          <div class="modulo m3"><div class="mod-titulo">Financeiro</div><div class="barras grande"><i style="--h:35%"></i><i style="--h:58%"></i><i style="--h:44%"></i><i style="--h:76%"></i><i style="--h:90%"></i></div></div>
-          <div class="modulo m4"><div class="mod-titulo">Atendimento</div><div class="balao e">Oi, preciso de ajuda com o INSS.</div><div class="balao d">Claro! Pode me enviar o indeferimento?</div><div class="balao e">Enviei agora.</div></div>
-          <div class="modulo m5"><div class="mod-titulo">Indicadores</div><div class="anel"></div><div class="num-vivo"></div></div>
+          <div class="app">
+            <div class="app-barra"><i></i><i></i><i></i><span class="app-url">escritorio-exemplo.<span class="produto-dominio">seudominio.com.br</span></span><span class="app-aviso">Dados de exemplo</span></div>
+            <div class="app-corpo">
+              <nav class="app-menu">
+                <b class="logo">DZ</b>
+                <span class="mi" data-t="1"></span><span class="mi" data-t="2"></span><span class="mi" data-t="3"></span><span class="mi" data-t="4"></span><span class="mi" data-t="5"></span>
+              </nav>
+              <div class="app-telas">
+
+                <!-- 1 · Publicações -->
+                <section class="tela" data-tela="1" style="--w:20">
+                  <header class="t-topo"><b>Publicações</b><span class="chip az">Fila por prioridade</span><span class="chip">3 novas hoje</span></header>
+                  <article class="pub">
+                    <div class="pub-cab"><span class="proc">0000000-00.2026.8.26.0001</span><span class="chip">Intimação</span><span class="chip vm">Urgente · 3 dias</span></div>
+                    <p class="pub-txt">“…fica a parte autora intimada para, no prazo de <mark>15 dias</mark>, manifestar-se sobre o laudo pericial juntado aos autos…”</p>
+                    <div class="ia a" style="--a:1;--b:3"><span class="estrela">✦</span> IA: <b>manifestação sobre o laudo</b> · prazo de <b>15 dias úteis</b></div>
+                    <div class="ia a" style="--a:3;--b:5">Sugestão de vencimento: <b class="digita" style="--a:3.5;--b:6">09/12/2026</b></div>
+                    <div class="pub-acao">
+                      <span class="botao-app antes" style="--a:6;--b:7">Adicionar ao controle</span>
+                      <span class="botao-app depois" style="--a:6.5;--b:7.5">✓ Lançado na agenda · prazo em acompanhamento</span>
+                    </div>
+                    <span class="cursor" style="--a:4;--b:6.4;--x0:62%;--y0:10%;--x1:18%;--y1:92%"></span>
+                  </article>
+                  <article class="pub leve a" style="--a:7;--b:9"><span class="proc">0000000-00.2026.8.26.0002</span><span class="chip">Despacho</span><span>Sem prazo para o escritório</span><span class="chip ok">Concluir</span></article>
+                </section>
+
+                <!-- 2 · Clientes e processos -->
+                <section class="tela" data-tela="2" style="--w:32">
+                  <header class="t-topo"><b>Maria Souza</b><span class="chip az">Cliente</span><span class="chip">Previdenciário</span></header>
+                  <div class="ficha">
+                    <div class="avatar-app a" style="--a:1;--b:2">MS</div>
+                    <div class="ficha-dados a" style="--a:1.5;--b:3"><b>Maria Souza (exemplo)</b><span>maria@exemplo.com.br · (11) 90000-0000</span><span>2 processos · 1 contrato assinado</span></div>
+                  </div>
+                  <div class="abas-app a" style="--a:2.5;--b:4"><span class="at">Processos</span><span>Documentos</span><span>Financeiro</span><span>Tarefas</span></div>
+                  <ul class="lista-app">
+                    <li class="a" style="--a:3.5;--b:5"><span class="proc">0000000-00.2026.8.26.0001</span><span class="chip">Aposentadoria por invalidez</span><span class="chip ok">Em andamento</span></li>
+                    <li class="a" style="--a:4.5;--b:6"><span class="proc">0000000-00.2025.8.26.0002</span><span class="chip">Auxílio-doença</span><span class="chip az">Aguardando perícia</span></li>
+                  </ul>
+                  <div class="tarefas">
+                    <b>Tarefas</b>
+                    <label class="tarefa"><i class="caixa" style="--a:6;--b:7"></i>Pedir laudo atualizado ao cliente</label>
+                    <label class="tarefa"><i class="caixa" style="--a:7.5;--b:8.5"></i>Conferir documentos da inicial</label>
+                    <label class="tarefa"><i class="caixa" style="--a:9;--b:10"></i>Enviar quesitos ao perito</label>
+                  </div>
+                </section>
+
+                <!-- 3 · Financeiro -->
+                <section class="tela" data-tela="3" style="--w:44">
+                  <header class="t-topo"><b>Financeiro</b><span class="chip az">Novembro</span></header>
+                  <div class="kpi-app">
+                    <div class="a" style="--a:1;--b:3"><small>A receber</small><b>R$ 18.400</b></div>
+                    <div class="a" style="--a:1.8;--b:3.8"><small>Recebido no mês</small><b class="ok">R$ 12.600</b></div>
+                    <div class="a" style="--a:2.6;--b:4.6"><small>Em atraso</small><b class="vm">R$ 1.450</b></div>
+                  </div>
+                  <div class="grafico">
+                    <i style="--h:42%;--a:3;--b:5"></i><i style="--h:58%;--a:3.4;--b:5.4"></i><i style="--h:50%;--a:3.8;--b:5.8"></i><i style="--h:72%;--a:4.2;--b:6.2"></i><i style="--h:66%;--a:4.6;--b:6.6"></i><i style="--h:88%;--a:5;--b:7"></i>
+                  </div>
+                  <ul class="lista-app parc">
+                    <li class="a" style="--a:5;--b:6.5"><span>Honorários · parcela 2/6</span><span>R$ 1.200,00</span><span class="chip ok">Pago</span></li>
+                    <li class="a" style="--a:5.8;--b:7.3"><span>Honorários · parcela 3/6</span><span>R$ 1.200,00</span><span class="troca"><span class="chip az t1" style="--a:8;--b:9">Vence hoje</span><span class="chip ok t2" style="--a:8.5;--b:9.5">Pago ✓</span></span></li>
+                    <li class="a" style="--a:6.6;--b:8.1"><span>Honorários · parcela 1/4</span><span>R$ 725,00</span><span class="chip">Em aberto</span></li>
+                  </ul>
+                  <div class="lembrete a" style="--a:9.5;--b:11">🔔 Lembrete de cobrança enviado por WhatsApp</div>
+                </section>
+
+                <!-- 4 · Atendimento -->
+                <section class="tela" data-tela="4" style="--w:56">
+                  <header class="t-topo"><b>Atendimento</b><span class="chip ok">IA conduzindo</span><span class="chip">João Pereira (exemplo)</span></header>
+                  <div class="chat">
+                    <div class="msg e a" style="--a:1;--b:2">Oi, fui negado no INSS e preciso de ajuda.</div>
+                    <div class="msg d a" style="--a:2.5;--b:3.5">Sinto muito, João. Posso te ajudar. Qual benefício foi negado?</div>
+                    <div class="msg e a" style="--a:4;--b:5">Auxílio por incapacidade.</div>
+                    <div class="msg d a" style="--a:5.5;--b:6.5">Você consegue me enviar a carta de indeferimento e os laudos?</div>
+                    <div class="msg e a" style="--a:7;--b:8">Mandei agora 📎</div>
+                  </div>
+                  <aside class="triagem a" style="--a:6;--b:7.5">
+                    <b>Triagem pela IA</b>
+                    <span>Área: <em>Previdenciário</em></span>
+                    <span>Documentos: <em class="doc"><span class="d1" style="--a:8;--b:9">1/3</span><span class="d2" style="--a:9;--b:10">3/3 ✓</span></em></span>
+                    <span class="pronto a" style="--a:10;--b:11.5">Contrato pronto para assinar →</span>
+                  </aside>
+                </section>
+
+                <!-- 5 · Indicadores -->
+                <section class="tela" data-tela="5" style="--w:68">
+                  <header class="t-topo"><b>Indicadores</b><span class="chip az">Novembro</span></header>
+                  <div class="kpi-app k5">
+                    <div class="a" style="--a:1;--b:3"><small>Processos ativos</small><b class="num" style="--a:1;--b:6;--alvo:132"></b></div>
+                    <div class="a" style="--a:1.8;--b:3.8"><small>Prazos cumpridos</small><b class="num ok" style="--a:1.8;--b:6;--alvo:98"></b><em>%</em></div>
+                    <div class="a" style="--a:2.6;--b:4.6"><small>Novos clientes</small><b class="num" style="--a:2.6;--b:6;--alvo:14"></b></div>
+                  </div>
+                  <div class="duas-app">
+                    <div class="anel-app a" style="--a:3;--b:5"><i style="--a:3;--b:7;--alvo:87"></i><span>87%<small>contratos assinados</small></span></div>
+                    <div class="grafico leve">
+                      <i style="--h:35%;--a:3.4;--b:5.4"></i><i style="--h:48%;--a:3.8;--b:5.8"></i><i style="--h:44%;--a:4.2;--b:6.2"></i><i style="--h:63%;--a:4.6;--b:6.6"></i><i style="--h:71%;--a:5;--b:7"></i><i style="--h:90%;--a:5.4;--b:7.4"></i>
+                    </div>
+                  </div>
+                  <div class="rank a" style="--a:7;--b:9"><span>Mais produtivos do mês</span><b>Equipe previdenciária</b></div>
+                </section>
+
+              </div>
+            </div>
+          </div>
         </div>
         <div class="trilho" aria-hidden="true"><i></i></div>
       </div>
