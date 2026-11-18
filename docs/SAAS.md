@@ -54,6 +54,14 @@ Consulta, relatórios e **exportação/backup continuam**; alterações, envios 
 
 `LICENSE_SERVER_URL`, `LICENSE_KEY` e `LICENSE_PUBLIC_KEY_B64` (as três, ou nenhuma). A instância consulta o painel ao iniciar e a cada 6 horas (a cada 15 min se estiver restrita), recebe uma licença **assinada (Ed25519)** e guarda uma cópia em `DATA_DIR/license.json`. A instância só tem a chave pública: não consegue forjar nem estender a própria licença. A licença traz as datas de vencimento e carência, então a assinatura vencida avança para carência e somente leitura no momento certo mesmo sem contato com o painel. Sem contato por muito tempo (72 h de validade + 14 dias de tolerância) a instância restringe; a primeira instalação sem painel tem 3 dias de carência inicial. Configuração parcial das variáveis deixa a instância em somente leitura com a explicação no aviso, em vez de liberar sem licença.
 
+## Painel de assinaturas (3.54)
+
+Menu lateral com **Visão geral** (receita mensal prevista, escritórios por situação, testes acabando, vencimentos, carência, sistemas sem contato, receita por plano e contratações da página pública), **Escritórios** (busca, filtros por situação e plano, ordenação), **Planos**, **Contratação**, **Atividade** (histórico geral) e **Servidor** (reiniciar sistemas, versão do atendimento, cobrança e regras padrão). O escritório abre num painel com abas: Resumo, Plano e limites, Cobrança, Sistema, Histórico e Zona de perigo.
+
+**Excluir por completo:** só para escritório já **cancelado** (primeiro cancela, depois exclui) e com o endereço digitado. Apaga o cadastro, pagamentos e histórico no painel e, com o provisionamento automático ligado, o sistema no PM2, o endereço no Nginx e a **pasta do escritório com o banco e os arquivos**. Não tem volta. A conta dele no atendimento (Deskcomm) não é apagada.
+
+**Reiniciar sistemas** ignora escritórios cancelados e os que não têm sistema neste servidor (não conta como erro).
+
 ## Planos de fábrica e página de contratação
 
 O painel nasce com quatro planos (editáveis em **Planos**; preços e limites são ponto de partida): **Essencial** (R$ 197), **Profissional** (R$ 397, destacado), **Avançado** (R$ 797) e **Ilimitado** (R$ 1.497). Cada um define limites (usuários, advogados, processos, números de WhatsApp, armazenamento) e módulos (gestão, arquivos e modelos, tarefas, indicadores, captação, financeiro, contratos/cobrança, atendimento com IA). O servidor recusa (403, `modulo_nao_contratado`) a área de um módulo que o plano não inclui e a interface esconde o atalho.

@@ -105,7 +105,7 @@ describe("página pública de contratação", () => {
     const e = db.prepare("SELECT plano_id, teste_ate, criado_em FROM escritorios").get() as { plano_id: string; teste_ate: string; criado_em: string };
     expect(e.plano_id).toBe("profissional");
     const dias = Math.round((Date.parse(e.teste_ate) - Date.parse(e.criado_em.slice(0, 10))) / 86_400_000);
-    expect(dias).toBeGreaterThanOrEqual(7); expect(dias).toBeLessThanOrEqual(8);
+    expect(dias).toBeGreaterThanOrEqual(6); expect(dias).toBeLessThanOrEqual(8); // 7 dias; a data de criação é UTC e a do teste é de Brasília (pode diferir em 1 dia)
   });
   it("recusa sem aceite, plano fora da venda, senha curta e ignora tentativa de mexer nos limites", async () => {
     subir({ PAINEL_CONTRATACAO_PUBLICA: "1" });

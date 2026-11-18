@@ -124,6 +124,9 @@ export function criarAppPainel(deps: DepsPainel) {
     carencia_padrao_dias: cfg.carenciaPadraoDias,
     teste_padrao_dias: cfg.testePadraoDias,
     entitlements: Object.fromEntries(Object.entries(ENTITLEMENTS).map(([k, v]) => [k, { tipo: v.tipo, rotulo: v.rotulo, padrao: v.padrao }])),
+    grupos: GRUPOS_DE_ENTITLEMENTS,
+    contratacao_publica: cfg.contratacaoPublica,
+    url_publica: cfg.urlPublica || null,
   })));
   // Versão do atendimento: a em uso (publicada pela imagem) e a mais nova do original — o painel mostra o aviso de atualização.
   const versaoAtendimento = deps.versaoAtendimento ?? (cfg.atendimento?.urlPublica ? new VerificadorDeVersao(cfg.atendimento.urlPublica) : null);
@@ -220,6 +223,25 @@ export function criarAppPainel(deps: DepsPainel) {
   }));
   admin.get("/escritorios/:id", rota((req) => servico.obterEscritorio(String(req.params.id))));
   admin.put("/escritorios/:id", rota((req) => servico.atualizarEscritorio(String(req.params.id), req.body || {})));
+  admin.get("/resumo", rota(() => servico.resumoGeral()));
+  admin.get("/eventos", rota((req) => servico.eventosGlobais(Number(req.query.limite) || 80, typeof req.query.tipo === "string" ? req.query.tipo : "")));
+  admin.get("/contratacao", rota(() => ({
+    aberta: cfg.contratacaoPublica, teste_dias: cfg.testePadraoDias, provisionamento_automatico: Boolean(prov), cobranca_configurada: Boolean(cfg.asaasApiKey),
+    link: cfg.urlPublica ? `${cfg.urlPublica}/contratar` : null,
+    planos_a_venda: servico.planosPublicos().map((p) => ({ id: p.id, nome: p.nome, preco_centavos: p.preco_centavos })),
+  })));
+  // EXCLUSÃO DEFINITIVA: só de escritório já cancelado e com o endereço digitado. Apaga a instância e os dados do servidor e depois o cadastro.
+  admin.delete("/escritorios/:id", rota((req) => comoErro(async () => {
+    const id = String(req.params.id);
+    const pode = servico.podeExcluir(id);
+    if (!pode.pode) throw new ErroPainel(pode.motivo!, 409);
+    const slug = servico.slugDe(id);
+    if (req.body?.confirmar !== slug) throw new ErroPainel("Para excluir, digite o endereço do escritório exatamente como ele aparece.");
+    let servidor: { pasta_removida: boolean } | null = null;
+    if (prov) servidor = await prov.excluirDefinitivamente(slug);
+    servico.excluirEscritorio(id, req.body?.confirmar);
+    return { ok: true, slug, servidor: prov ? { instancia_e_dados_apagados: true, pasta_removida: servidor?.pasta_removida ?? false } : { instancia_e_dados_apagados: false, aviso: "O provisionamento automático está desligado: se existir uma pasta ou processo desse escritório no servidor, remova-os à mão." } };
+  })));
   admin.post("/escritorios/:id/suspender", rota((req) => servico.suspender(String(req.params.id), String(req.body?.motivo || ""))));
   admin.post("/escritorios/:id/reativar", rota((req) => servico.reativar(String(req.params.id))));
   admin.post("/escritorios/:id/atendimento/sincronizar", rota((req) => servico.sincronizarAtendimento(String(req.params.id))));
@@ -263,10 +285,10 @@ export function criarAppPainel(deps: DepsPainel) {
     const alvo = String(req.body?.alvo || "tudo");
     if (!["escritorios", "painel", "tudo"].includes(alvo)) throw new ErroPainel("Alvo inválido.");
     // Inclui também sistemas que existem no servidor mas ainda não têm a porta registrada no painel (criados antes do provisionamento automático).
-    const slugs = alvo === "painel" ? [] : (db.prepare("SELECT slug, porta FROM escritorios ORDER BY slug").all() as { slug: string; porta: number | null }[])
+    const slugs = alvo === "painel" ? [] : (db.prepare("SELECT slug, porta FROM escritorios WHERE status_manual IS NOT 'cancelada' ORDER BY slug").all() as { slug: string; porta: number | null }[])
       .filter((r) => r.porta !== null || p.portaExistente(r.slug) !== null).map((r) => r.slug);
     const resultado = await p.reiniciarVarias(slugs);
-    servico.registrar(null, "servidor_reiniciado", { alvo, escritorios: resultado.length, falhas: resultado.filter((r) => !r.ok).length });
+    servico.registrar(null, "servidor_reiniciado", { alvo, escritorios: resultado.length, falhas: resultado.filter((r) => !r.ok).length, ignorados: resultado.filter((r) => r.ignorado).length });
     const painel = alvo !== "escritorios";
     if (painel) p.reiniciarPainelDepois();
     return { ok: resultado.every((r) => r.ok), escritorios: resultado, painel };

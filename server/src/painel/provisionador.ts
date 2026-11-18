@@ -181,11 +181,29 @@ export class Provisionador {
     await this.alterarMapa((m) => { m.delete(this.host(slug)); });
   }
 
-  /** Reinicia várias instâncias (uma falha não impede as demais). */
-  async reiniciarVarias(slugs: string[]): Promise<{ slug: string; ok: boolean; erro?: string }[]> {
-    const saida: { slug: string; ok: boolean; erro?: string }[] = [];
+  /**
+   * APAGA POR COMPLETO: para a instância, tira o endereço do ar e remove a pasta do escritório (banco, arquivos, .env). Não tem volta.
+   * Só mexe dentro de `instanciasDir/<slug>`; recusa caminho fora dele.
+   */
+  async excluirDefinitivamente(slug: string): Promise<{ pasta_removida: boolean }> {
+    this.conferirSlug(slug);
+    await this.remover(slug);
+    const base = path.resolve(this.cfg.instanciasDir);
+    const alvo = path.resolve(this.dir(slug));
+    if (!alvo.startsWith(base + path.sep) || alvo === base) throw new ErroProvisionamento("Caminho da instância fora da pasta permitida; nada foi apagado.");
+    if (!fs.existsSync(alvo)) return { pasta_removida: false };
+    fs.rmSync(alvo, { recursive: true, force: true });
+    return { pasta_removida: true };
+  }
+
+  /** Reinicia várias instâncias (uma falha não impede as demais). Quem não tem processo no servidor é ignorado, não é erro. */
+  async reiniciarVarias(slugs: string[]): Promise<{ slug: string; ok: boolean; erro?: string; ignorado?: boolean }[]> {
+    const saida: { slug: string; ok: boolean; erro?: string; ignorado?: boolean }[] = [];
     for (const slug of slugs) {
-      try { await this.reiniciar(slug); saida.push({ slug, ok: true }); }
+      try {
+        if ((await this.statusInstancia(slug)) === "ausente") { saida.push({ slug, ok: true, ignorado: true, erro: "sem instância neste servidor" }); continue; }
+        await this.reiniciar(slug); saida.push({ slug, ok: true });
+      }
       catch (e) { saida.push({ slug, ok: false, erro: (e as Error).message }); }
     }
     return saida;

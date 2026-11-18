@@ -325,6 +325,71 @@ export class ServicoPainel {
     }
     return this.obterEscritorio(id);
   }
+  /** Pode ser apagado por completo? Só escritório já CANCELADO (duas etapas de propósito: cancelar, depois excluir). */
+  podeExcluir(id: string): { pode: boolean; motivo?: string } {
+    const v = this.visao(this.linha(id));
+    return v.status === "cancelada" ? { pode: true } : { pode: false, motivo: "Cancele o escritório antes de excluí-lo por completo." };
+  }
+  /**
+   * Remove o escritório do painel (cadastro, pagamentos e histórico). Exige cancelado e o endereço digitado igual.
+   * A parte do servidor (instância e dados) é feita antes, por quem chama, para só apagar o cadastro se ela deu certo.
+   */
+  excluirEscritorio(id: string, confirmar: unknown) {
+    const l = this.linha(id);
+    const pode = this.podeExcluir(id);
+    if (!pode.pode) throw new ErroPainel(pode.motivo!, 409);
+    if (confirmar !== l.slug) throw new ErroPainel("Para excluir, digite o endereço do escritório exatamente como ele aparece.");
+    this.db.transaction(() => {
+      this.db.prepare("DELETE FROM pagamentos WHERE escritorio_id=?").run(id);
+      this.db.prepare("DELETE FROM eventos WHERE escritorio_id=?").run(id);
+      this.db.prepare("DELETE FROM escritorios WHERE id=?").run(id);
+    })();
+    this.registrar(null, "escritorio_excluido", { slug: l.slug, nome: l.nome, plano: l.plano_id });
+    return { ok: true, slug: l.slug };
+  }
+
+  // ---------- visão geral e atividade ----------
+  /** Números da tela inicial: situação, receita mensal prevista, testes e vencimentos chegando. */
+  resumoGeral() {
+    const todos = this.listarEscritorios();
+    const hoje = hojeIso(this.relogio());
+    const por = (st: string) => todos.filter((e) => e.status === st);
+    const pagantes = todos.filter((e) => (e.status === "ativa" || e.status === "carencia") && e.preco_centavos > 0 && e.pago_ate);
+    const dias = (data: string) => Math.round((Date.parse(`${data}T12:00:00Z`) - Date.parse(`${hoje}T12:00:00Z`)) / 86_400_000);
+    const fim = (e: (typeof todos)[number]) => (e.vence_em ? e.vence_em.slice(0, 10) : null);
+    const proximos = (st: string, ate: number) => todos
+      .filter((e) => e.status === st && fim(e) && dias(fim(e)!) <= ate)
+      .map((e) => ({ id: e.id, nome: e.nome, slug: e.slug, plano_nome: e.plano_nome, vence_em: fim(e), dias: dias(fim(e)!) }))
+      .sort((a, b) => a.dias - b.dias);
+    const porPlano = new Map<string, { plano: string; escritorios: number; ativos: number; receita_centavos: number }>();
+    for (const e of todos) {
+      const p = porPlano.get(e.plano_id) ?? { plano: e.plano_nome, escritorios: 0, ativos: 0, receita_centavos: 0 };
+      p.escritorios++;
+      if (e.status === "ativa" || e.status === "carencia") { p.ativos++; if (e.pago_ate) p.receita_centavos += e.preco_centavos; }
+      porPlano.set(e.plano_id, p);
+    }
+    return {
+      total: todos.length,
+      situacao: { ativa: por("ativa").length, teste: por("teste").length, carencia: por("carencia").length, suspensa: por("suspensa").length, cancelada: por("cancelada").length },
+      receita_mensal_centavos: pagantes.reduce((s, e) => s + e.preco_centavos, 0),
+      pagantes: pagantes.length,
+      testes_acabando: proximos("teste", 3),
+      vencendo: proximos("ativa", 7),
+      em_carencia: por("carencia").map((e) => ({ id: e.id, nome: e.nome, slug: e.slug, carencia_ate: e.carencia_ate })),
+      sem_contato: todos.filter((e) => (e.status === "ativa" || e.status === "teste") && e.porta && (!e.ultimo_contato_em || Date.parse(e.ultimo_contato_em) < this.relogio().getTime() - 3 * 86_400_000)).map((e) => ({ id: e.id, nome: e.nome, slug: e.slug, ultimo_contato_em: e.ultimo_contato_em })),
+      por_plano: [...porPlano.values()].sort((a, b) => b.receita_centavos - a.receita_centavos),
+      contratacoes_recentes: (this.db.prepare("SELECT e.escritorio_id, e.criado_em, x.nome, x.slug FROM eventos e LEFT JOIN escritorios x ON x.id=e.escritorio_id WHERE e.tipo='contratacao_publica' ORDER BY e.id DESC LIMIT 8").all()),
+    };
+  }
+  /** Histórico geral (todas as ações), mais recente primeiro. */
+  eventosGlobais(limite = 80, tipo = "") {
+    const n = Math.min(Math.max(Number(limite) || 80, 1), 300);
+    const linhas = (tipo
+      ? this.db.prepare("SELECT e.*, x.nome, x.slug FROM eventos e LEFT JOIN escritorios x ON x.id=e.escritorio_id WHERE e.tipo=? ORDER BY e.id DESC LIMIT ?").all(tipo, n)
+      : this.db.prepare("SELECT e.*, x.nome, x.slug FROM eventos e LEFT JOIN escritorios x ON x.id=e.escritorio_id ORDER BY e.id DESC LIMIT ?").all(n)) as { detalhe_json: string }[];
+    return linhas.map((e) => ({ ...e, detalhe: JSON.parse(e.detalhe_json) }));
+  }
+
   /** Libera o uso até a data informada (pagamento fora do Asaas, cortesia, acerto comercial). */
   registrarPagamentoManual(id: string, ate: unknown, observacao = "") {
     this.linha(id);
