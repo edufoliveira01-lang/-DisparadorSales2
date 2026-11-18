@@ -74,7 +74,7 @@ function ir(pagina, extra = {}) { Object.assign(state, { pagina }, extra); desen
 function desenhar() {
   const nav = h('nav', { class: 'menu', 'aria-label': 'Seções' }, PAGINAS.map(([id, rot, d]) => h('button', { class: 'item' + (state.pagina === id ? ' ativo' : ''), onclick: () => ir(id), 'aria-current': state.pagina === id ? 'page' : null }, icone(d), h('span', {}, rot))));
   const lateral = h('aside', { class: 'lateral' },
-    h('div', { class: 'marca' }, h('span', { class: 'selo' }, 'DZ'), h('div', {}, h('b', {}, 'DisparaZap'), h('small', {}, 'Assinaturas'))),
+    h('div', { class: 'marca' }, h('span', { class: 'selo' }, (state.config.produto_nome || 'DZ').split(' ').map((p) => p.charAt(0)).join('').slice(0, 2).toUpperCase()), h('div', {}, h('b', {}, state.config.produto_nome || 'DisparaZap'), h('small', {}, 'Assinaturas'))),
     nav,
     h('div', { class: 'rodape' }, h('small', {}, 'Painel ' + (state.versao || '')), h('button', { class: 'sair', onclick: async () => { await api('POST', '/logout', {}); mostrarLogin(); } }, 'Sair')));
   const telas = { geral: telaGeral, escritorios: telaEscritorios, planos: telaPlanos, contratacao: telaContratacao, atividade: telaAtividade, servidor: telaServidor };
@@ -218,6 +218,14 @@ function telaContratacao() {
           linha('Criação automática do sistema', c.provisionamento_automatico, 'Cada cadastro cria o sistema do escritório no servidor na hora.', 'Desligada: o cadastro só entra no painel e você cria o sistema depois.'),
           linha('Cobrança automática (Asaas)', c.cobranca_configurada, 'A cobrança é criada com vencimento no fim do teste.', 'Sem ASAAS_API_KEY: registre o pagamento à mão.')))),
       cartao('Planos à venda', c.planos_a_venda.length ? h('ul', { class: 'lista' }, c.planos_a_venda.map((p) => h('li', {}, h('div', { class: 'lista-item estatico' }, h('b', {}, p.nome), h('span', { class: 'fim' }, reais(p.preco_centavos) + '/mês'))))) : vazio('Nenhum plano marcado como “à venda”. Edite um plano e marque essa opção.'), { acao: h('button', { class: 'ghost', onclick: () => ir('planos') }, 'Editar planos') })),
+    h('div', { class: 'duas-colunas' },
+      cartao('Termos de uso e privacidade', h('div', {},
+        c.textos_legais.completo ? h('div', { class: 'note ok' }, 'Dados da empresa completos nos textos.') : h('div', { class: 'note' }, 'Faltam dados da empresa nos textos (aparecem como “[a definir]” na página). Defina no arquivo de configuração do painel: ' + c.textos_legais.faltam.join(', ') + '.'),
+        h('div', { class: 'linkbox' }, c.textos_legais.termos ? h('a', { href: c.textos_legais.termos, target: '_blank', rel: 'noopener noreferrer' }, 'Termos de uso') : 'Termos de uso', c.textos_legais.privacidade ? h('a', { href: c.textos_legais.privacidade, target: '_blank', rel: 'noopener noreferrer' }, 'Política de privacidade') : null),
+        h('p', { class: 'mut sm' }, 'Os textos são uma minuta redigida a partir do que o sistema faz. Peça ao advogado responsável para revisar (prazos de reajuste, limite de responsabilidade, retenção de dados e foro) antes de divulgar o link.'))),
+      cartao('E-mails ao cliente', h('div', {},
+        c.email.configurado ? h('div', { class: 'note ok' }, 'E-mail configurado' + (c.email.de ? ' (remetente: ' + c.email.de + ')' : '') + '. O cliente recebe a confirmação do cadastro' + (c.email.aviso_admin ? ' e você recebe um aviso em ' + c.email.aviso_admin : '') + '.') : h('div', { class: 'note' }, 'E-mail não configurado: o cliente só vê a confirmação na tela. Defina PAINEL_SMTP_HOST, PAINEL_SMTP_USER, PAINEL_SMTP_PASS (e PAINEL_EMAIL_DE) no arquivo de configuração do painel. Para receber aviso de cada cadastro, defina PAINEL_EMAIL_AVISO.'),
+        c.email.configurado ? h('div', { class: 'acoes' }, h('button', { onclick: async (ev) => { const para = prompt('Enviar e-mail de teste para:', c.email.aviso_admin || ''); if (!para) return; ev.target.disabled = true; try { await api('POST', '/email/teste', { para }); aviso('E-mail de teste enviado para ' + para + '.'); } catch (x) { aviso(x.message); } finally { ev.target.disabled = false; } } }, 'Enviar e-mail de teste')) : null))),
     c.aberta && c.provisionamento_automatico ? h('div', { class: 'note' }, 'Atenção: com a criação automática ligada, cada cadastro cria um sistema de verdade no servidor. Acompanhe a Visão geral e a Atividade, e use a exclusão definitiva para limpar testes.') : null);
 }
 

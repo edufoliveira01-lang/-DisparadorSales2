@@ -158,6 +158,12 @@
 
   fetch('/api/publico/planos').then(function (r) { return r.json(); }).then(function (d) {
     window.__teste = d.teste_dias;
+    var nomeProduto = (d.produto && d.produto.nome) || 'DisparaZap';
+    $$('.produto-nome').forEach(function (n) { n.textContent = nomeProduto; });
+    var selo = $('#selo-marca');
+    if (selo) selo.textContent = nomeProduto.split(' ').map(function (p) { return p.charAt(0); }).join('').slice(0, 2).toUpperCase() || 'DZ';
+    var emp = $('#rodape-empresa');
+    if (emp && d.produto && d.produto.empresa) emp.textContent = ' · ' + d.produto.empresa;
     if (!d.planos.length) $('#planos-grade').textContent = 'Planos em breve.';
     else pintarPlanos(d);
     if (!d.contratacao_aberta) {
@@ -169,6 +175,6 @@
     var h = $('.contratar-texto h2');
     if (h) h.textContent = d.teste_dias + ' dias grátis, sem cartão';
     $$('.botao.grande').forEach(function (b) { if (/Começar/.test(b.textContent)) b.textContent = 'Começar ' + d.teste_dias + ' dias grátis'; });
-    document.title = 'DisparaZap · Teste grátis por ' + d.teste_dias + ' dias';
+    document.title = nomeProduto + ' · Teste grátis por ' + d.teste_dias + ' dias';
   }).catch(function () { $('#planos-grade').textContent = 'Não foi possível carregar os planos agora. Atualize a página.'; });
 })();

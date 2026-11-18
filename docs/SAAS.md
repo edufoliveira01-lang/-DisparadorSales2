@@ -24,6 +24,9 @@ Inicie com `npm run painel` (desenvolvimento) ou `npm run painel --prefix server
 | `PAINEL_BASE_DOMAIN` | Domínio dos workspaces (padrão `saleseassociados.com.br`: escritórios em `nome.saleseassociados.com.br`; `disparazap` e outros endereços já em uso são reservados). Requer DNS curinga `*` e, no acesso direto, certificado curinga. |
 | `ASAAS_API_KEY`, `ASAAS_BASE_URL`, `ASAAS_WEBHOOK_TOKEN` | Cobrança. Por padrão aponta para o **sandbox** do Asaas. |
 | `PAINEL_CONTRATACAO_PUBLICA` (`1` abre a página pública `/contratar`; desligada por padrão) | Contratação online: o visitante escolhe um plano à venda e o painel cria o escritório em teste. |
+| `PAINEL_NOME_PRODUTO` | Nome do sistema na página de contratação, nos e-mails e nos textos legais (ainda não definido: padrão provisório). |
+| `PAINEL_EMPRESA_NOME`, `PAINEL_EMPRESA_CNPJ`, `PAINEL_EMPRESA_ENDERECO`, `PAINEL_EMAIL_PRIVACIDADE`, `PAINEL_EMAIL_SUPORTE`, `PAINEL_FORO` | Dados da empresa que vende o serviço, preenchidos nos **termos de uso** (`/termos`) e na **política de privacidade** (`/privacidade`). O que faltar aparece como «[a definir]». |
+| `PAINEL_SMTP_HOST`, `PAINEL_SMTP_PORT`, `PAINEL_SMTP_SECURE`, `PAINEL_SMTP_USER`, `PAINEL_SMTP_PASS`, `PAINEL_EMAIL_DE`, `PAINEL_EMAIL_AVISO` | E-mail do painel (usa `SMTP_*` do sistema se estes faltarem). Quem contrata recebe a confirmação (sem a senha); `PAINEL_EMAIL_AVISO` recebe um aviso a cada cadastro. Em Contratação há o botão de e-mail de teste. |
 | `PAINEL_CARENCIA_DIAS` (7), `PAINEL_TESTE_DIAS` (7), `PAINEL_VALIDADE_LICENCA_HORAS` (72), `PAINEL_TOLERANCIA_OFFLINE_DIAS` (14) | Regras padrão. |
 
 ### Fluxo de um novo assinante

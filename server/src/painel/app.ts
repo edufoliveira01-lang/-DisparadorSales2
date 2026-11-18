@@ -9,15 +9,18 @@ import { ENTITLEMENTS, GRUPOS_DE_ENTITLEMENTS, combinarEntitlements, type ChaveE
 import { ErroProvisionamento, type Provisionador } from "./provisionador";
 import { montarExtensaoDeskcomm } from "./extensaoDeskcomm";
 import { VerificadorDeVersao } from "./versaoAtendimento";
+import { criarEnviadorSmtp, emailAvisoCadastro, emailBoasVindas, emailTeste, type EnviarEmail } from "./email";
+import { dadosLegaisCompletos, paginaPrivacidade, paginaTermos } from "./paginasLegais";
 
 const COOKIE = "painel_sessao";
 const IP = (req: Request) => (req.ip || req.socket.remoteAddress || "").replace(/^::ffff:/, "");
 
-export interface DepsPainel { db: Banco; cfg: ConfigPainel; servico: ServicoPainel; chavePublicaPem: string; versao: string; webDir?: string; provisionador?: Provisionador; asaas?: import("express").Router; ponte?: import("express").Router; contratos?: import("express").Router; mcp?: import("express").Router; versaoAtendimento?: VerificadorDeVersao }
+export interface DepsPainel { db: Banco; cfg: ConfigPainel; servico: ServicoPainel; chavePublicaPem: string; versao: string; webDir?: string; provisionador?: Provisionador; asaas?: import("express").Router; ponte?: import("express").Router; contratos?: import("express").Router; mcp?: import("express").Router; versaoAtendimento?: VerificadorDeVersao; enviarEmail?: EnviarEmail | null }
 
 export function criarAppPainel(deps: DepsPainel) {
   const { db, cfg, servico } = deps;
   const prov = deps.provisionador && deps.provisionador.ativo ? deps.provisionador : null;
+  const enviarEmail: EnviarEmail | null = deps.enviarEmail !== undefined ? deps.enviarEmail : criarEnviadorSmtp(cfg);
   const comoErro = <T,>(fn: () => Promise<T>) => fn().catch((e) => { if (e instanceof ErroProvisionamento) throw new ErroPainel(e.message, 502); throw e; });
   const app = express();
   app.disable("x-powered-by");
@@ -125,6 +128,7 @@ export function criarAppPainel(deps: DepsPainel) {
     teste_padrao_dias: cfg.testePadraoDias,
     entitlements: Object.fromEntries(Object.entries(ENTITLEMENTS).map(([k, v]) => [k, { tipo: v.tipo, rotulo: v.rotulo, padrao: v.padrao }])),
     grupos: GRUPOS_DE_ENTITLEMENTS,
+    produto_nome: cfg.nomeProduto,
     contratacao_publica: cfg.contratacaoPublica,
     url_publica: cfg.urlPublica || null,
   })));
@@ -173,6 +177,7 @@ export function criarAppPainel(deps: DepsPainel) {
     res.setHeader("Cache-Control", "no-store");
     return {
       contratacao_aberta: cfg.contratacaoPublica,
+      produto: { nome: cfg.nomeProduto, empresa: cfg.empresa.nome || null },
       teste_dias: cfg.testePadraoDias,
       dominio: cfg.baseDomain,
       planos: servico.planosPublicos().map((p) => {
@@ -204,6 +209,12 @@ export function criarAppPainel(deps: DepsPainel) {
     const r = await criarComProvisionamento(limpo);
     servico.registrar(r.escritorio.id, "contratacao_publica", { plano: plano.id, ip: IP(req) });
     const inst = (r as { instancia?: { ok: boolean; url?: string } }).instancia;
+    // E-mails (não derrubam o cadastro se falharem): confirmação ao cliente e aviso interno. A senha NUNCA vai por e-mail.
+    if (enviarEmail) {
+      const envia = async (rotulo: string, m: import("./email").MensagemEmail) => { try { await enviarEmail(m); servico.registrar(r.escritorio.id, "email_enviado", { tipo: rotulo }); } catch (e) { servico.registrar(r.escritorio.id, "email_erro", { tipo: rotulo, erro: (e as Error).message.slice(0, 200) }); } };
+      void envia("boas_vindas", emailBoasVindas(cfg, { nome: String(b.nome || "").trim(), para: r.escritorio.email, endereco: `https://${r.escritorio.slug}.${cfg.baseDomain}`, usuario: String(b.admin_usuario || "").trim() || "admin", testeAte: r.escritorio.teste_ate, pronto: Boolean(inst?.ok), plano: plano.nome }));
+      if (cfg.email?.avisarAdmin) void envia("aviso_cadastro", emailAvisoCadastro(cfg, { nome: r.escritorio.nome, slug: r.escritorio.slug, email: r.escritorio.email, telefone: String(b.telefone || "").trim() || undefined, plano: plano.nome, pronto: Boolean(inst?.ok) }));
+    }
     res.status(201);
     return {
       ok: true,
@@ -214,6 +225,8 @@ export function criarAppPainel(deps: DepsPainel) {
       mensagem: inst?.ok ? "Seu ambiente está pronto. Entre com o usuário e a senha que você escolheu." : "Recebemos seu cadastro. Estamos preparando o seu ambiente: em instantes ele estará disponível no endereço abaixo.",
     };
   }));
+  app.get("/termos", (_req, res) => { res.type("html").send(paginaTermos(cfg)); });
+  app.get("/privacidade", (_req, res) => { res.type("html").send(paginaPrivacidade(cfg)); });
   app.get(["/contratar", "/contratar/"], (_req, res) => res.sendFile(path.resolve(deps.webDir ?? path.resolve(__dirname, "../../painel-web"), "contratar.html")));
 
   admin.post("/escritorios", rota(async (req, res) => {
@@ -225,9 +238,19 @@ export function criarAppPainel(deps: DepsPainel) {
   admin.put("/escritorios/:id", rota((req) => servico.atualizarEscritorio(String(req.params.id), req.body || {})));
   admin.get("/resumo", rota(() => servico.resumoGeral()));
   admin.get("/eventos", rota((req) => servico.eventosGlobais(Number(req.query.limite) || 80, typeof req.query.tipo === "string" ? req.query.tipo : "")));
+  admin.post("/email/teste", rota(async (req) => {
+    if (!enviarEmail) throw new ErroPainel("O e-mail não está configurado (defina PAINEL_SMTP_HOST e as credenciais).", 409);
+    const para = String(req.body?.para || cfg.email?.avisarAdmin || "").trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(para)) throw new ErroPainel("Informe um e-mail válido para o teste.");
+    try { await enviarEmail(emailTeste(cfg, para)); } catch (e) { throw new ErroPainel("O envio falhou: " + (e as Error).message.slice(0, 200), 502); }
+    return { ok: true, para };
+  }));
   admin.get("/contratacao", rota(() => ({
     aberta: cfg.contratacaoPublica, teste_dias: cfg.testePadraoDias, provisionamento_automatico: Boolean(prov), cobranca_configurada: Boolean(cfg.asaasApiKey),
     link: cfg.urlPublica ? `${cfg.urlPublica}/contratar` : null,
+    textos_legais: { ...dadosLegaisCompletos(cfg), termos: cfg.urlPublica ? `${cfg.urlPublica}/termos` : null, privacidade: cfg.urlPublica ? `${cfg.urlPublica}/privacidade` : null },
+    email: { configurado: Boolean(enviarEmail), aviso_admin: cfg.email?.avisarAdmin || null, de: cfg.email?.de || null },
+    nome_produto: cfg.nomeProduto,
     planos_a_venda: servico.planosPublicos().map((p) => ({ id: p.id, nome: p.nome, preco_centavos: p.preco_centavos })),
   })));
   // EXCLUSÃO DEFINITIVA: só de escritório já cancelado e com o endereço digitado. Apaga a instância e os dados do servidor e depois o cadastro.

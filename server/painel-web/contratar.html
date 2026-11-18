@@ -11,7 +11,7 @@
   <div class="progresso" aria-hidden="true"></div>
 
   <header class="topo">
-    <a class="marca" href="#inicio"><span class="selo">DZ</span> DisparaZap</a>
+    <a class="marca" href="#inicio"><span class="selo" id="selo-marca">DZ</span> <span class="produto-nome">DisparaZap</span></a>
     <nav class="menu" aria-label="Seções">
       <a href="#montagem">Como funciona</a>
       <a href="#planos">Planos</a>
@@ -127,7 +127,7 @@
             <label>Senha <small>(12+ caracteres, sem espaços)</small><input name="admin_senha" type="password" required minlength="12" autocomplete="new-password"></label>
           </div>
           <input name="site" class="armadilha" tabindex="-1" autocomplete="off" aria-hidden="true">
-          <label class="aceite"><input type="checkbox" name="aceite" required> Li e aceito os termos de uso e a política de privacidade (LGPD).</label>
+          <label class="aceite"><input type="checkbox" name="aceite" required> <span>Li e aceito os <a href="/termos" target="_blank" rel="noopener">termos de uso</a> e a <a href="/privacidade" target="_blank" rel="noopener">política de privacidade</a> (LGPD).</span></label>
           <button class="botao grande" type="submit">Criar meu escritório e testar 7 dias</button>
         </form>
         <div id="sucesso" class="sucesso" hidden>
@@ -136,6 +136,7 @@
           <p id="sucesso-msg"></p>
           <p class="endereco-final"><a id="sucesso-link" href="#"></a></p>
           <p class="nota" id="sucesso-nota"></p>
+          <p class="nota">Enviamos uma confirmação para o seu e-mail, se o envio estiver disponível.</p>
         </div>
         <div id="fechado" class="sucesso" hidden>
           <h2>Contratação em breve</h2>
@@ -145,7 +146,7 @@
     </section>
   </main>
 
-  <footer class="rodape"><span>© DisparaZap · Sales &amp; Associados</span><span>A IA auxilia a triagem e não substitui a conferência do advogado.</span></footer>
+  <footer class="rodape"><span>© <span class="produto-nome">DisparaZap</span><span id="rodape-empresa"></span></span><span><a href="/termos">Termos de uso</a> · <a href="/privacidade">Privacidade</a> · A IA auxilia a triagem e não substitui a conferência do advogado.</span></footer>
   <script src="contratar.js"></script>
 </body>
 </html>

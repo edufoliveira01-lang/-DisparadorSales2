@@ -130,3 +130,48 @@ describe("página pública de contratação", () => {
     expect((await post(valido)).status).toBe(429);
   });
 });
+
+describe("e-mails, termos e nome do produto", () => {
+  let db: ReturnType<typeof abrirBancoPainel>; let server: Server; let base: string; const enviados: { para: string; assunto: string; texto: string; html: string }[] = [];
+  const subir = (extra: Record<string, string>, falharEnvio = false) => {
+    enviados.length = 0; db = abrirBancoPainel(":memory:");
+    const cfg = lerConfigPainel(env({ PAINEL_CONTRATACAO_PUBLICA: "1", PAINEL_SMTP_HOST: "smtp.exemplo.com", PAINEL_EMAIL_DE: "no-reply@exemplo.com", PAINEL_EMAIL_AVISO: "dono@exemplo.com", ...extra }));
+    const enviarEmail = async (m: { para: string; assunto: string; texto: string; html: string }) => { if (falharEnvio) throw new Error("SMTP fora do ar"); enviados.push(m); };
+    server = criarAppPainel({ db, cfg, servico: new ServicoPainel(db, cfg, new Falso(), par.privada), chavePublicaPem: par.publica, versao: "t", webDir: __dirname, enviarEmail }).listen(0);
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  };
+  afterEach(() => { server?.close(); db?.close(); });
+  const post = (c: unknown) => fetch(`${base}/api/publico/contratar`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(c) });
+  const valido = { plano_id: "essencial", nome: "Silva & Associados", slug: "silva-mail", email: "a@silva.com.br", admin_usuario: "silva", admin_senha: "senha-bem-forte-1", aceite: true };
+  const esperar = async () => { for (let i = 0; i < 20 && enviados.length < 2; i++) await new Promise((r) => setTimeout(r, 10)); };
+
+  it("cadastro envia confirmação ao cliente e aviso ao dono, sem a senha", async () => {
+    subir({ PAINEL_NOME_PRODUTO: "Nome Novo" });
+    expect((await post(valido)).status).toBe(201); await esperar();
+    const cliente = enviados.find((m) => m.para === "a@silva.com.br")!; const dono = enviados.find((m) => m.para === "dono@exemplo.com")!;
+    expect(cliente.assunto).toMatch(/Nome Novo/); expect(cliente.texto).toMatch(/silva-mail\.exemplo\.com\.br/);
+    expect(JSON.stringify(cliente)).not.toMatch(/senha-bem-forte/); expect(JSON.stringify(dono)).not.toMatch(/senha-bem-forte/);
+    expect(dono.assunto).toMatch(/Novo cadastro/);
+  });
+  it("falha no e-mail não derruba o cadastro e fica registrada", async () => {
+    subir({}, true);
+    expect((await post(valido)).status).toBe(201);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(db.prepare("SELECT COUNT(*) n FROM escritorios").get()).toEqual({ n: 1 });
+    expect(db.prepare("SELECT COUNT(*) n FROM eventos WHERE tipo='email_erro'").get()).toEqual({ n: 2 });
+  });
+  it("termos e privacidade abrem, usam o nome do produto e sinalizam o que falta definir", async () => {
+    subir({ PAINEL_NOME_PRODUTO: "Nome Novo" });
+    const t = await (await fetch(`${base}/termos`)).text(); const p = await (await fetch(`${base}/privacidade`)).text();
+    expect(t).toMatch(/Nome Novo/); expect(t).toMatch(/7 dias/); expect(t).toMatch(/\[a definir\]/);
+    expect(p).toMatch(/LGPD/); expect(p).toMatch(/operadores/);
+    subir({ PAINEL_EMPRESA_NOME: "Sales & Associados <b>", PAINEL_EMPRESA_CNPJ: "00.000.000/0001-00", PAINEL_EMPRESA_ENDERECO: "Rua A, 1", PAINEL_EMAIL_PRIVACIDADE: "lgpd@exemplo.com", PAINEL_FORO: "Santos/SP" });
+    const t2 = await (await fetch(`${base}/termos`)).text();
+    expect(t2).not.toMatch(/\[a definir\]/); expect(t2).toMatch(/Sales &amp; Associados &lt;b&gt;/); expect(t2).toMatch(/Santos\/SP/);
+  });
+  it("a API pública informa o nome do produto", async () => {
+    subir({ PAINEL_NOME_PRODUTO: "Nome Novo", PAINEL_EMPRESA_NOME: "Minha Empresa" });
+    const j = await (await fetch(`${base}/api/publico/planos`)).json();
+    expect(j.produto).toEqual({ nome: "Nome Novo", empresa: "Minha Empresa" });
+  });
+});

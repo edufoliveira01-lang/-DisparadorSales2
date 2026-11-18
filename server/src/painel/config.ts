@@ -10,6 +10,12 @@ export interface ConfigPainel {
   testePadraoDias: number;
   /** Página pública de contratação aberta (PAINEL_CONTRATACAO_PUBLICA=1). Desligada por padrão. */
   contratacaoPublica: boolean;
+  /** Nome do produto mostrado na página de contratação, nos e-mails e nos textos legais (PAINEL_NOME_PRODUTO). Ainda não definido: usa o nome provisório. */
+  nomeProduto: string;
+  /** Dados da empresa que vende o serviço, usados nos termos e na política de privacidade. */
+  empresa: { nome: string; documento: string; endereco: string; emailPrivacidade: string; emailSuporte: string; foro: string };
+  /** E-mail (SMTP) do painel: confirmação ao cliente e aviso de novo cadastro. Vazio = e-mails desligados. */
+  email: { host: string; porta: number; seguro: boolean; usuario: string; senha: string; de: string; avisarAdmin: string } | null;
   toleranciaOfflineDias: number;
   validadeLicencaHoras: number;
   asaasApiKey: string;
@@ -48,6 +54,17 @@ export function lerConfigPainel(env: NodeJS.ProcessEnv = process.env): ConfigPai
     carenciaPadraoDias: inteiro(env.PAINEL_CARENCIA_DIAS, 7),
     testePadraoDias: inteiro(env.PAINEL_TESTE_DIAS, 7),
     contratacaoPublica: env.PAINEL_CONTRATACAO_PUBLICA === "1",
+    nomeProduto: (env.PAINEL_NOME_PRODUTO || "DisparaZap").trim().slice(0, 60),
+    empresa: {
+      nome: (env.PAINEL_EMPRESA_NOME || "").trim().slice(0, 160), documento: (env.PAINEL_EMPRESA_CNPJ || "").trim().slice(0, 30), endereco: (env.PAINEL_EMPRESA_ENDERECO || "").trim().slice(0, 240),
+      emailPrivacidade: (env.PAINEL_EMAIL_PRIVACIDADE || "").trim().slice(0, 160), emailSuporte: (env.PAINEL_EMAIL_SUPORTE || env.PAINEL_EMAIL_PRIVACIDADE || "").trim().slice(0, 160),
+      foro: (env.PAINEL_FORO || "").trim().slice(0, 120),
+    },
+    email: (env.PAINEL_SMTP_HOST || env.SMTP_HOST) ? {
+      host: (env.PAINEL_SMTP_HOST || env.SMTP_HOST)!, porta: inteiro(env.PAINEL_SMTP_PORT || env.SMTP_PORT, 587, 1, 65535), seguro: (env.PAINEL_SMTP_SECURE || env.SMTP_SECURE) === "true",
+      usuario: env.PAINEL_SMTP_USER || env.SMTP_USER || "", senha: env.PAINEL_SMTP_PASS || env.SMTP_PASS || "",
+      de: env.PAINEL_EMAIL_DE || env.SMTP_FROM || env.PAINEL_SMTP_USER || env.SMTP_USER || "", avisarAdmin: (env.PAINEL_EMAIL_AVISO || "").trim(),
+    } : null,
     toleranciaOfflineDias: inteiro(env.PAINEL_TOLERANCIA_OFFLINE_DIAS, 14),
     validadeLicencaHoras: inteiro(env.PAINEL_VALIDADE_LICENCA_HORAS, 72, 1, 720),
     asaasApiKey: env.ASAAS_API_KEY || "",
